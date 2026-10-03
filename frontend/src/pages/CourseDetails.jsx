@@ -16,6 +16,7 @@ import ConfirmationModal from '../components/ConfirmationModal'
 import { getApiErrorMessage } from '../utils/apiErrors'
 import { TXT } from '../utils/terminology'
 import { formatGradeLevel } from '../utils/presentation'
+import { useAttemptScope } from '../hooks/useAttemptScope'
 
 import {
   useCourseDetails,
@@ -101,6 +102,7 @@ const CourseDetails = ({ courseIdOverride, readOnly = false, allowedActions, nav
   const createCourseClass = useCreateCourseClass()
   const updateCourseClass = useUpdateCourseClass()
   const deleteCourseClass = useDeleteCourseClass()
+  const attemptScope = useAttemptScope()
 
   // --- STATE: Edição do header ---
   const [editingHeader, setEditingHeader] = useState(false)
@@ -151,13 +153,13 @@ const CourseDetails = ({ courseIdOverride, readOnly = false, allowedActions, nav
 
     updateCourse.mutate(
       { courseId, data: { name: trimName, abbreviation: trimAbbr } },
-      {
+      attemptScope.guard({
         onSuccess: () => {
           setEditingHeader(false)
           toast.success('Curso atualizado.')
         },
         onError: (error) => toast.error(getApiErrorMessage(error, 'Não foi possível guardar as alterações. Tente novamente.')),
-      }
+      })
     )
   }
 
@@ -185,14 +187,14 @@ const CourseDetails = ({ courseIdOverride, readOnly = false, allowedActions, nav
     if (selectedClass && canUpdateClass) {
       updateCourseClass.mutate(
         { courseId, classId: selectedClass.id, data: formData },
-        {
+        attemptScope.guard({
           onSuccess: () => {
             setClassModalVisible(false)
             setSelectedClass(null)
             toast.success('Turma atualizada.')
           },
           onError: (error) => toast.error(getApiErrorMessage(error, 'Não foi possível guardar a turma. Tente novamente.')),
-        }
+        })
       )
       return
     }
@@ -200,13 +202,13 @@ const CourseDetails = ({ courseIdOverride, readOnly = false, allowedActions, nav
     if (!canCreateClass) return
     createCourseClass.mutate(
       { courseId, data: formData },
-      {
+      attemptScope.guard({
         onSuccess: () => {
           setClassModalVisible(false)
           toast.success('Turma criada.')
         },
         onError: (error) => toast.error(getApiErrorMessage(error, 'Não foi possível criar a turma. Tente novamente.')),
-      }
+      })
     )
   }
 
@@ -216,22 +218,22 @@ const CourseDetails = ({ courseIdOverride, readOnly = false, allowedActions, nav
 
   const handleConfirmDelete = () => {
     if (deleteConfirmation?.type === 'course') {
-      deleteCourse.mutate(courseId, {
+      deleteCourse.mutate(courseId, attemptScope.guard({
         onSuccess: () => { navigate('/courses') },
         onSettled: () => setDeleteConfirmation(null),
-      })
+      }))
       return
     }
 
     if (deleteConfirmation?.type === 'class') {
       deleteCourseClass.mutate(
         { courseId, classId: deleteConfirmation.classData.id },
-        {
+        attemptScope.guard({
           onSuccess: (data) => {
             toast.success(data?.remove_effect === 'archive' ? TXT.CLASS_ARCHIVED : TXT.CLASS_REMOVED)
           },
           onSettled: () => setDeleteConfirmation(null),
-        }
+        })
       )
     }
   }

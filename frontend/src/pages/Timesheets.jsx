@@ -18,7 +18,8 @@ import LessonLogModal from '../components/LessonLogModal'
 import TeacherCard from '../components/timesheets/TeacherCard'
 import { formatWeekRange, toWeekMonday } from '../utils/formatUtils'
 import { TXT } from '../utils/terminology'
-import { getApiErrorMessage } from '../utils/apiErrors'
+import { getApiErrorMessage, isApiErrorTransient } from '../utils/apiErrors'
+import { useAttemptScope } from '../hooks/useAttemptScope'
 import ConfirmationModal from '../components/ConfirmationModal'
 import { getTimesheetStatus } from '../utils/presentation'
 import WeekNavigator from '../components/WeekNavigator'
@@ -57,15 +58,21 @@ const Timesheets = ({ initialWeekStart, readOnly = false, allowedActions, naviga
   } = useWeekSchedule(null, selectedTeacherId, weekFilter)
 
   const updateMutation = useUpdateTimesheetStatus()
+  const attemptScope = useAttemptScope()
 
   const handleUpdateStatus = async (timesheetId, status) => {
     if (!canManageWeek) return
     setStatusActionError('')
+    const attempt = attemptScope.capture()
     try {
       await updateMutation.mutateAsync({ timesheetId, status })
+      if (!attemptScope.isCurrent(attempt)) return
       toast.success(status === 'APPROVED' ? 'Semana aprovada.' : status === 'OPEN' ? 'Semana reaberta.' : 'Estado atualizado.')
     } catch (err) {
-      setStatusActionError(getApiErrorMessage(err, 'Erro ao alterar estado. Tente novamente.'))
+      if (!attemptScope.isCurrent(attempt)) return
+      const message = getApiErrorMessage(err, 'Erro ao alterar estado. Tente novamente.')
+      if (isApiErrorTransient(err)) toast.error(message)
+      else setStatusActionError(message)
     }
   }
 

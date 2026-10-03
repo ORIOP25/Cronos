@@ -19,7 +19,8 @@ import {
 } from '../features/operations/data'
 import { useCurrentMember } from '../features/members/data'
 import { getCurrentWeekMonday, addDays, formatWeekRange, formatDate, toWeekMonday, isAfterDate } from '../utils/formatUtils'
-import { getApiErrorMessage, getApiErrorPresentation } from '../utils/apiErrors'
+import { getApiErrorMessage, getApiErrorPresentation, isApiErrorTransient } from '../utils/apiErrors'
+import { useAttemptScope } from '../hooks/useAttemptScope'
 import FailureState from '../components/FailureState'
 import { getWeekSubmissionBlockers } from '../features/operations/weekSubmission'
 
@@ -130,6 +131,7 @@ function MySchedules() {
 
   const { data: timesheet } = useMyTimesheet(weekStart)
   const submitMutation = useSubmitMyTimesheet()
+  const attemptScope = useAttemptScope()
 
   const blockingSlots = useMemo(() => getWeekSubmissionBlockers(weekSlots), [weekSlots])
   const canSubmit = weekSlots.length > 0
@@ -156,11 +158,16 @@ function MySchedules() {
   const handleConfirmSubmit = async () => {
     setShowSubmitConfirm(false)
     setSubmitError('')
+    const attempt = attemptScope.capture()
     try {
       await submitMutation.mutateAsync(weekStart)
+      if (!attemptScope.isCurrent(attempt)) return
       toast.success('Semana submetida.')
     } catch (err) {
-      setSubmitError(getApiErrorMessage(err, 'Erro ao submeter a semana. Tente novamente.'))
+      if (!attemptScope.isCurrent(attempt)) return
+      const message = getApiErrorMessage(err, 'Erro ao submeter a semana. Tente novamente.')
+      if (isApiErrorTransient(err)) toast.error(message)
+      else setSubmitError(message)
     }
   }
 

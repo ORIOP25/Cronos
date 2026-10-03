@@ -1,9 +1,11 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { act } from 'react'
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { fireEvent, screen, within } from '@testing-library/react'
+import { renderWithProviders } from './testUtils'
+import { resetClerkState, setClerkState } from './setup'
+import MyAvailability from '../pages/MyAvailability'
 
 const toastHost = () => document.querySelector('[data-rht-toaster]')
-import { renderWithProviders } from './testUtils'
-import MyAvailability from '../pages/MyAvailability'
 
 const operations = vi.hoisted(() => ({ save: vi.fn() }))
 
@@ -40,6 +42,11 @@ vi.mock('../features/operations/data', () => ({
 describe('MyAvailability', () => {
   beforeEach(() => {
     operations.save.mockReset()
+    resetClerkState()
+  })
+
+  afterEach(() => {
+    resetClerkState()
   })
 
   it('renders teacher availability preferences without crashing', () => {
@@ -76,6 +83,31 @@ describe('MyAvailability', () => {
     expect(await within(toastHost()).findByText('Preferências guardadas.')).toBeInTheDocument()
     expect(screen.getByText(/0 blocos alterados/i)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /guardar preferências/i })).toBeDisabled()
+  })
+
+  it('ignores a save that resolves after the organization changed and keeps the new draft', async () => {
+    let resolveSave
+    operations.save.mockImplementation(() => new Promise((resolve) => { resolveSave = resolve }))
+    setClerkState({ isSignedIn: true, userId: 'user_a', orgId: 1 })
+    const { rerender } = renderWithProviders(<MyAvailability />, { withToaster: true })
+
+    fireEvent.keyDown(screen.getByRole('button', { name: /segunda, 08:00/i }), { key: 'Enter' })
+    fireEvent.click(screen.getByRole('button', { name: /guardar preferências/i }))
+    expect(screen.getByText(/1 bloco alterado/i)).toBeInTheDocument()
+
+    act(() => { setClerkState({ orgId: 2 }) })
+    rerender(<MyAvailability />)
+
+    await act(async () => { resolveSave() })
+
+    expect(screen.queryByText('Preferências guardadas.')).not.toBeInTheDocument()
+    expect(screen.getByText(/1 bloco alterado/i)).toBeInTheDocument()
+
+    operations.save.mockImplementation(() => Promise.resolve())
+    fireEvent.click(screen.getByRole('button', { name: /guardar preferências/i }))
+
+    expect(await within(toastHost()).findByText('Preferências guardadas.')).toBeInTheDocument()
+    expect(screen.getByText(/0 blocos alterados/i)).toBeInTheDocument()
   })
 
   it('keeps the draft and a retry available when saving fails', async () => {

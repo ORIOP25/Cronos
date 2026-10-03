@@ -1,14 +1,38 @@
-import { useState } from 'react'
+import { act, useState } from 'react'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import SmartTable from '../components/SmartTable'
 import { renderWithProviders } from './testUtils'
+import { resetClerkState, setClerkState } from './setup'
 
 const deleteErrorWithCode = (status, code) => Object.assign(new Error('Falha da API'), {
   response: { status, data: { detail: { code } } },
 })
 
 describe('SmartTable', () => {
+  afterEach(() => {
+    resetClerkState()
+  })
+
+  it('ignores a removal that resolves after the organization changed', async () => {
+    let resolveDelete
+    const onDelete = vi.fn(() => new Promise((resolve) => { resolveDelete = resolve }))
+    setClerkState({ isSignedIn: true, userId: 'user_a', orgId: 1 })
+    const renderTable = () => (
+      <SmartTable columns={[{ key: 'name', label: 'Nome' }]} data={[{ id: 4, name: 'Sala E' }]} actions onEdit={vi.fn()} onDelete={onDelete} />
+    )
+    const { rerender } = renderWithProviders(renderTable(), { withToaster: true })
+
+    fireEvent.click(screen.getByRole('button', { name: /remover sala e/i }))
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
+
+    act(() => { setClerkState({ orgId: 2 }) })
+    rerender(renderTable())
+    await act(async () => { resolveDelete({ remove_effect: 'hard_delete' }) })
+
+    expect(document.querySelector('[data-rht-toaster]')).toBeEmptyDOMElement()
+  })
+
   it('renders columns and calls edit and async delete callbacks', async () => {
     const row = { id: 7, name: 'Sala 7' }
     const onEdit = vi.fn()

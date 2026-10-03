@@ -20,7 +20,8 @@ import {
 import CIcon from '@coreui/icons-react'
 import { cilActionUndo, cilPencil, cilPlus, cilReload, cilTrash } from '@coreui/icons'
 import PageHeader from '../components/PageHeader'
-import { getApiErrorMessage } from '../utils/apiErrors'
+import { getApiErrorMessage, isApiErrorTransient } from '../utils/apiErrors'
+import { useAttemptScope } from '../hooks/useAttemptScope'
 import {
   useCreateMember,
   useMembers,
@@ -254,6 +255,7 @@ const Members = ({ readOnly = false, allowedActions }) => {
   const canUpdate = !readOnly && (!isTutorial || allowedActions.includes('UPDATE_MEMBER_COMPETENCIES'))
   const canCreate = !readOnly && !isTutorial
   const activeMutation = selectedMember ? updateMember : createMember
+  const attemptScope = useAttemptScope()
   const members = useMemo(() => {
     const rows = data?.items ?? []
     const normalizedSearch = search.trim().toLowerCase()
@@ -276,20 +278,45 @@ const Members = ({ readOnly = false, allowedActions }) => {
   }
 
   const save = async (payload) => {
-    await activeMutation.mutateAsync(payload)
-    setModalVisible(false)
-    toast.success(selectedMember ? 'Membro atualizado.' : 'Membro adicionado.')
+    const attempt = attemptScope.capture()
+    try {
+      await activeMutation.mutateAsync(payload)
+      if (!attemptScope.isCurrent(attempt)) return
+      setModalVisible(false)
+      toast.success(selectedMember ? 'Membro atualizado.' : 'Membro adicionado.')
+    } catch (error) {
+      if (!attemptScope.isCurrent(attempt)) return
+      if (isApiErrorTransient(error)) {
+        activeMutation.reset()
+        toast.error(getApiErrorMessage(error))
+      }
+    }
   }
 
   const remove = async () => {
     if (!removeTarget || !canCreate) return
-    await removeMember.mutateAsync(removeTarget.id)
-    setRemoveTarget(null)
-    toast.success(removeTarget.remove_effect === 'hard_delete' ? 'Membro removido.' : 'Membro arquivado.')
+    const attempt = attemptScope.capture()
+    try {
+      await removeMember.mutateAsync(removeTarget.id)
+      if (!attemptScope.isCurrent(attempt)) return
+      toast.success(removeTarget.remove_effect === 'hard_delete' ? 'Membro removido.' : 'Membro arquivado.')
+    } catch (error) {
+      if (!attemptScope.isCurrent(attempt)) return
+      if (isApiErrorTransient(error)) {
+        removeMember.reset()
+        toast.error(getApiErrorMessage(error))
+      }
+    } finally {
+      setRemoveTarget(null)
+    }
   }
 
   const actionErrorSource = removeMember.error || resendInvitation.error || retrySync.error || restoreMember.error
   const actionError = actionErrorSource ? getApiErrorMessage(actionErrorSource) : null
+
+  const handleActionError = (error) => {
+    if (isApiErrorTransient(error)) toast.error(getApiErrorMessage(error))
+  }
 
   return (
     <div className="p-4">
@@ -366,9 +393,9 @@ const Members = ({ readOnly = false, allowedActions }) => {
                   </td>
                   <td className="text-end">
                     <ActionButton title="Editar membro" icon={cilPencil} disabled={!member.actions?.can_edit || !canUpdate} onClick={() => openModal(member)} tutorialTarget={`edit-member-${member.id}`} />
-                    <ActionButton title="Reenviar convite" icon={cilReload} disabled={isTutorial || !member.actions?.can_resend_invite} loading={resendInvitation.isPending} onClick={() => resendInvitation.mutate(member.id, { onSuccess: () => toast.success('Convite reenviado.') })} />
-                    <ActionButton title="Tentar sincronização novamente" icon={cilReload} color="warning" disabled={isTutorial || !member.actions?.can_retry_sync} loading={retrySync.isPending} onClick={() => retrySync.mutate(member.id, { onSuccess: () => toast.success('Sincronização concluída.') })} />
-                    <ActionButton title="Restaurar membro" icon={cilActionUndo} color="success" disabled={isTutorial || !member.actions?.can_restore} loading={restoreMember.isPending} onClick={() => restoreMember.mutate({ id: member.id, payload: restorePayloadFromMember(member) }, { onSuccess: () => toast.success('Membro restaurado.') })} />
+                    <ActionButton title="Reenviar convite" icon={cilReload} disabled={isTutorial || !member.actions?.can_resend_invite} loading={resendInvitation.isPending} onClick={() => resendInvitation.mutate(member.id, attemptScope.guard({ onSuccess: () => toast.success('Convite reenviado.'), onError: handleActionError }))} />
+                    <ActionButton title="Tentar sincronização novamente" icon={cilReload} color="warning" disabled={isTutorial || !member.actions?.can_retry_sync} loading={retrySync.isPending} onClick={() => retrySync.mutate(member.id, attemptScope.guard({ onSuccess: () => toast.success('Sincronização concluída.'), onError: handleActionError }))} />
+                    <ActionButton title="Restaurar membro" icon={cilActionUndo} color="success" disabled={isTutorial || !member.actions?.can_restore} loading={restoreMember.isPending} onClick={() => restoreMember.mutate({ id: member.id, payload: restorePayloadFromMember(member) }, attemptScope.guard({ onSuccess: () => toast.success('Membro restaurado.'), onError: handleActionError }))} />
                     <ActionButton title="Remover membro" icon={cilTrash} color="danger" disabled={isTutorial || !member.actions?.can_remove} loading={removeMember.isPending} onClick={() => setRemoveTarget(member)} />
                   </td>
                 </tr>

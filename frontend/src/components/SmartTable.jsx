@@ -6,6 +6,7 @@ import { toast } from 'react-hot-toast'
 import ConfirmationModal from './ConfirmationModal'
 import { TXT } from '../utils/terminology'
 import { getApiErrorMessage, isApiErrorBlock } from '../utils/apiErrors'
+import { useAttemptScope } from '../hooks/useAttemptScope'
 import StatePanel from './StatePanel'
 import FeedbackBanner from './FeedbackBanner'
 
@@ -77,16 +78,26 @@ const SmartTable = ({
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [isDeleting, setIsDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState('')
+  const attemptScope = useAttemptScope()
 
   const handleDeleteConfirm = async () => {
     if (!deleteTarget || !onDelete) return
+    const attempt = attemptScope.capture()
     setIsDeleting(true)
     setDeleteError('')
     try {
       const result = await onDelete(deleteTarget)
+      if (!attemptScope.isCurrent(attempt)) {
+        setDeleteTarget(null)
+        return
+      }
       toast.success(result?.remove_effect === 'archive' ? TXT.RECORD_ARCHIVED : TXT.RECORD_REMOVED)
       setDeleteTarget(null)
     } catch (error) {
+      if (!attemptScope.isCurrent(attempt)) {
+        setDeleteTarget(null)
+        return
+      }
       if (isApiErrorBlock(error)) {
         setDeleteError(getApiErrorMessage(error))
         setDeleteTarget(null)

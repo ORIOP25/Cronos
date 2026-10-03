@@ -22,7 +22,8 @@ import { formatDate, formatDateTime, formatDurationHours, isAfterDate } from '..
 import { TXT, OPERATIONAL_STATE_LABELS, OPERATIONAL_STATE_COLORS } from '../utils/terminology'
 import ConfirmationModal from '../components/ConfirmationModal'
 import PortugueseDateInput from '../components/PortugueseDateInput'
-import { getApiErrorMessage } from '../utils/apiErrors'
+import { getApiErrorMessage, isApiErrorTransient } from '../utils/apiErrors'
+import { useAttemptScope } from '../hooks/useAttemptScope'
 
 const HISTORY_TABLE_MEDIA_QUERY = '(min-width: 1000px)'
 
@@ -612,6 +613,7 @@ const OccurrencesPanel = ({
   const { data: subjects = EMPTY_ARRAY } = useSubjects()
   const updateMutation = useUpdateOccurrence()
   const cancelMutation = useCancelOccurrence()
+  const attemptScope = useAttemptScope()
   const [expandedId, setExpandedId] = useState(null)
   const isWideHistory = useWideHistoryLayout()
   const isTutorial = Array.isArray(allowedActions)
@@ -695,7 +697,7 @@ const OccurrencesPanel = ({
       id: occurrence.id,
       version: occurrence.version,
       cancelCompletedSubstituteLog: hasSubstituteLog,
-    }, {
+    }, attemptScope.guard({
       onSuccess: () => {
         setRevertingId(null)
         setRevertConfirmation(null)
@@ -705,21 +707,27 @@ const OccurrencesPanel = ({
       onError: (error) => {
         setRevertingId(null)
         setRevertConfirmation(null)
-        setSaveErrorMessage(buildUpdateErrorMessage(error))
+        const message = buildUpdateErrorMessage(error)
+        if (isApiErrorTransient(error)) toast.error(message)
+        else setSaveErrorMessage(message)
       },
-    })
+    }))
   }
 
   const handleSave = (payload) => {
     if (!canDecide) return
     setSaveErrorMessage('')
-    updateMutation.mutate(payload, {
+    updateMutation.mutate(payload, attemptScope.guard({
       onSuccess: () => {
         closeEditModal()
         toast.success('Decisão registada.')
       },
-      onError: (error) => setSaveErrorMessage(buildUpdateErrorMessage(error)),
-    })
+      onError: (error) => {
+        const message = buildUpdateErrorMessage(error)
+        if (isApiErrorTransient(error)) toast.error(message)
+        else setSaveErrorMessage(message)
+      },
+    }))
   }
 
   if (isLoading) {

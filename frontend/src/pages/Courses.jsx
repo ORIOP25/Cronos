@@ -10,6 +10,7 @@ import SmartTable from '../components/SmartTable'
 import GenericModalForm from '../components/GenericModalForm'
 import CourseForm from '../components/Forms/CourseForm'
 import { getApiErrorMessage } from '../utils/apiErrors'
+import { useAttemptScope } from '../hooks/useAttemptScope'
 
 import { 
   useCourses,
@@ -23,6 +24,7 @@ const Courses = () => {
   // 1. Hooks de Dados
   const { data: courses, isLoading, isError, error, refetch } = useCourses()
   const createMutation = useCreateCourse()
+  const attemptScope = useAttemptScope()
 
   // 2. Colunas da Tabela
   const columns = [
@@ -52,13 +54,13 @@ const Courses = () => {
 
   // Submissão do formulário (apenas criação — edição movida para CourseDetails)
   const handleFormSubmit = (formData) => {
-    createMutation.mutate(formData, {
+    createMutation.mutate(formData, attemptScope.guard({
       onSuccess: () => {
         setModalVisible(false)
         toast.success('Curso criado.')
       },
       onError: (error) => toast.error(getApiErrorMessage(error, 'Não foi possível criar o curso. Tente novamente.')),
-    })
+    }))
   }
 
   return (

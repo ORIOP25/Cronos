@@ -11,6 +11,7 @@ import GenericModalForm from '../components/GenericModalForm'
 import RoomForm from '../components/Forms/RoomForm'
 import RoomTypeBadge from '../components/RoomTypeBadge'
 import { getApiErrorMessage } from '../utils/apiErrors'
+import { useAttemptScope } from '../hooks/useAttemptScope'
 
 // Hooks (Factory)
 import { 
@@ -30,6 +31,7 @@ const Rooms = ({ readOnly = false, allowedActions }) => {
   const createMutation = useCreateRoom()
   const updateMutation = useUpdateRoom()
   const deleteMutation = useDeleteRoom()
+  const attemptScope = useAttemptScope()
   const isTutorial = Array.isArray(allowedActions)
   const canUpdate = !readOnly && (!isTutorial || allowedActions.includes('UPDATE_ROOM'))
   const canCreate = !isTutorial && !readOnly
@@ -59,16 +61,20 @@ const Rooms = ({ readOnly = false, allowedActions }) => {
   const handleDelete = (id) => canDelete ? deleteMutation.mutateAsync(id) : Promise.resolve()
 
   const handleFormSubmit = async (formData) => {
+    const attempt = attemptScope.capture()
     try {
       if (selectedItem) {
         await updateMutation.mutateAsync({ id: selectedItem.id, ...formData })
+        if (!attemptScope.isCurrent(attempt)) return
         toast.success('Sala atualizada.')
       } else {
         await createMutation.mutateAsync(formData)
+        if (!attemptScope.isCurrent(attempt)) return
         toast.success('Sala criada.')
       }
       setModalVisible(false)
     } catch (error) {
+      if (!attemptScope.isCurrent(attempt)) return
       toast.error(getApiErrorMessage(error, 'Não foi possível guardar a sala. Tente novamente.'))
     }
   }

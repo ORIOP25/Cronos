@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { toast } from 'react-hot-toast'
 import {
   CCard, CCardBody, CCardHeader, CButton, CAlert,
-  CBadge, CSpinner, CFormSelect,
+  CBadge, CSpinner, CFormFeedback, CFormSelect,
   CModal, CModalHeader, CModalTitle,
   CModalBody, CModalFooter,
 } from '@coreui/react'
@@ -24,7 +24,8 @@ import Breadcrumbs from '../components/Breadcrumbs'
 import ConfirmationModal from '../components/ConfirmationModal'
 import FeedbackBanner from '../components/FeedbackBanner'
 import RoomTypeBadge from '../components/RoomTypeBadge'
-import { getApiErrorMessage, isApiErrorBlock } from '../utils/apiErrors'
+import { getApiErrorMessage, isApiErrorBlock, isApiErrorTransient } from '../utils/apiErrors'
+import { useAttemptScope } from '../hooks/useAttemptScope'
 import { formatGradeLevel } from '../utils/presentation'
 
 // ==========================================
@@ -41,8 +42,11 @@ const SubjectRow = ({
   isUpdating,
   canEditTeacher = true,
   canRemove = true,
+  teacherError = '',
 }) => {
   const { data: eligibleTeachers, isLoading: teachersLoading } = useEligibleTeachers(subject.subject_id)
+  const teacherSelectId = `class-subject-teacher-${subject.subject_id}`
+  const teacherErrorId = `class-subject-teacher-error-${subject.subject_id}`
   
   const handleTeacherChange = (e) => {
     const teacherId = e.target.value ? Number.parseInt(e.target.value, 10) : null
@@ -69,12 +73,16 @@ const SubjectRow = ({
                 <CSpinner size="sm" />
               ) : (
                 <CFormSelect
+                  id={teacherSelectId}
                   size="sm"
                   className="flex-grow-1"
                   aria-label={`Professor de ${subject.subject_name}`}
                   value={subject.teacher_id || ''}
                   onChange={handleTeacherChange}
                   disabled={isUpdating || !canEditTeacher}
+                  invalid={Boolean(teacherError)}
+                  aria-invalid={Boolean(teacherError) || undefined}
+                  aria-describedby={teacherError ? teacherErrorId : undefined}
                   data-tutorial-target="class-subject-teacher"
                 >
                   <option value="">
@@ -99,6 +107,9 @@ const SubjectRow = ({
                 <CIcon icon={cilWarning} className="text-warning flex-shrink-0" title="Sem professor" />
               )}
             </div>
+            {teacherError && (
+              <CFormFeedback id={teacherErrorId} invalid className="d-block" role="alert">{teacherError}</CFormFeedback>
+            )}
           </div>
 
           {/* Botão Remover */}
@@ -141,6 +152,7 @@ const ClassSubjects = ({ courseIdOverride, classIdOverride, navigationDisabled =
   const [selectedSubjectToAdd, setSelectedSubjectToAdd] = useState('')
   const [subjectToRemove, setSubjectToRemove] = useState(null)
   const [blockedMessage, setBlockedMessage] = useState('')
+  const [teacherBlock, setTeacherBlock] = useState(null)
 
   // Data hooks
   const { data: classSubjects, isLoading, error } = useClassSubjects(numClassId)
@@ -150,6 +162,7 @@ const ClassSubjects = ({ courseIdOverride, classIdOverride, navigationDisabled =
   const addSubject = useAddClassSubject()
   const updateTeacher = useUpdateClassSubjectTeacher()
   const removeSubject = useRemoveClassSubject()
+  const attemptScope = useAttemptScope()
 
   const isUpdating = addSubject.isPending || updateTeacher.isPending || removeSubject.isPending
 
@@ -166,14 +179,14 @@ const ClassSubjects = ({ courseIdOverride, classIdOverride, navigationDisabled =
     if (!selectedSubjectToAdd) return
     addSubject.mutate(
       { classId: numClassId, subjectId: Number.parseInt(selectedSubjectToAdd, 10) },
-      {
+      attemptScope.guard({
         onSuccess: () => {
           setShowAddModal(false)
           setSelectedSubjectToAdd('')
           toast.success('Disciplina adicionada.')
         },
         onError: (error) => toast.error(getApiErrorMessage(error, 'Não foi possível adicionar a disciplina. Tente novamente.')),
-      }
+      })
     )
   }
 
@@ -186,7 +199,7 @@ const ClassSubjects = ({ courseIdOverride, classIdOverride, navigationDisabled =
     if (!subjectToRemove) return
     removeSubject.mutate(
       { classId: numClassId, subjectId: subjectToRemove.subject_id },
-      {
+      attemptScope.guard({
         onSuccess: () => {
           setSubjectToRemove(null)
           setBlockedMessage('')
@@ -197,7 +210,7 @@ const ClassSubjects = ({ courseIdOverride, classIdOverride, navigationDisabled =
           if (isApiErrorBlock(error)) setBlockedMessage(getApiErrorMessage(error))
           else toast.error(getApiErrorMessage(error, 'Não foi possível remover a disciplina. Tente novamente.'))
         },
-      }
+      })
     )
   }
 
@@ -205,10 +218,17 @@ const ClassSubjects = ({ courseIdOverride, classIdOverride, navigationDisabled =
     if (!canEditTeacher) return
     updateTeacher.mutate(
       { classId: numClassId, subjectId, teacherId },
-      {
-        onSuccess: () => toast.success('Professor atualizado.'),
-        onError: (error) => toast.error(getApiErrorMessage(error, 'Não foi possível atribuir o professor. Tente novamente.')),
-      }
+      attemptScope.guard({
+        onSuccess: () => {
+          setTeacherBlock(null)
+          toast.success('Professor atualizado.')
+        },
+        onError: (error) => {
+          const message = getApiErrorMessage(error, 'Não foi possível atribuir o professor. Tente novamente.')
+          if (isApiErrorTransient(error)) toast.error(message)
+          else setTeacherBlock({ subjectId, message })
+        },
+      })
     )
   }
 
@@ -356,6 +376,7 @@ const ClassSubjects = ({ courseIdOverride, classIdOverride, navigationDisabled =
                 isUpdating={isUpdating}
                 canEditTeacher={canEditTeacher}
                 canRemove={canRemove}
+                teacherError={teacherBlock?.subjectId === subject.subject_id ? teacherBlock.message : ''}
               />
             ))
           )}

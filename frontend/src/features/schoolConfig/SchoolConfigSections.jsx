@@ -21,6 +21,7 @@ import {
   toSchoolSettingsPayload,
 } from '../../utils/schoolConfigPayloads'
 import { timeOfDayToMinutes } from '../../utils/timeOfDay'
+import { useAttemptScope } from '../../hooks/useAttemptScope'
 import FeedbackBanner from '../../components/FeedbackBanner'
 import StatePanel from '../../components/StatePanel'
 import ConfirmationModal from '../../components/ConfirmationModal'
@@ -61,6 +62,7 @@ export const CalendarSection = () => {
   const [lastFlowResult, setLastFlowResult] = useState(null)
   const [showGenerateConfirm, setShowGenerateConfirm] = useState(false)
   const [stalePreviewMsg, setStalePreviewMsg] = useState('')
+  const attemptScope = useAttemptScope()
 
   const { data: events = [], isLoading } = useCalendarEvents()
   const { data: classes = [] } = useClasses()
@@ -126,7 +128,7 @@ export const CalendarSection = () => {
         || sortedClassIds(editingFlowOriginal.class_ids) !== sortedClassIds(newEvent.class_ids)
       )
       : newEvent.class_ids.length > 0
-    const options = {
+    const options = attemptScope.guard({
       onSuccess: () => {
         toast.success(editingFlowId ? 'Fluxo de estágio atualizado.' : 'Fluxo de estágio criado.')
         setStalePreviewMsg('')
@@ -140,7 +142,7 @@ export const CalendarSection = () => {
         resetForm()
       },
       onError: handleMutationError,
-    }
+    })
     if (editingFlowId) {
       updateMutation.mutate({ id: editingFlowId, ...payload }, options)
     } else {
@@ -158,7 +160,7 @@ export const CalendarSection = () => {
       start_date: newEvent.start_date,
       end_date: newEvent.end_date,
       class_ids: newEvent.class_ids,
-    }, {
+    }, attemptScope.guard({
       onSuccess: (data) => {
         if (data.requires_confirmation) {
           setPreviewState(data)
@@ -167,7 +169,7 @@ export const CalendarSection = () => {
         }
       },
       onError: handleMutationError,
-    })
+    }))
   }
 
   const handleSubmit = () => {
@@ -183,12 +185,15 @@ export const CalendarSection = () => {
         end_date: newEvent.end_date,
         event_type: newEvent.event_type,
       },
-      {
+      attemptScope.guard({
         onSuccess: () => {
           resetForm()
           toast.success('Evento adicionado.')
         },
-      },
+        onError: (error) => toast.error(
+          getApiErrorMessage(error, 'Erro ao adicionar evento. Verifique as datas e tente novamente.'),
+        ),
+      }),
     )
   }
 
@@ -213,12 +218,12 @@ export const CalendarSection = () => {
 
   const handleGenerate = () => {
     generateMutation.reset()
-    generateMutation.mutate({}, {
+    generateMutation.mutate({}, attemptScope.guard({
       onSuccess: () => toast.success('Regeneração pedida. Acompanhe a proposta em Horários.'),
       onError: (error) => toast.error(
         getApiErrorMessage(error, 'Não foi possível regenerar o horário.', 'schedule.generate'),
       ),
-    })
+    }))
   }
 
   const appliesToLabel = (event) => {
@@ -331,16 +336,7 @@ export const CalendarSection = () => {
           {getApiErrorMessage(settingsMutation.error, 'Erro ao guardar a preferência de feriados automáticos.')}
         </FeedbackBanner>
       )}
-      {createMutation.isError && !isFlow && (
-        <FeedbackBanner tone="danger">
-          {getApiErrorMessage(createMutation.error, 'Erro ao adicionar evento. Verifique as datas e tente novamente.')}
-        </FeedbackBanner>
-      )}
-      {updateMutation.isError && (
-        <FeedbackBanner tone="danger">
-          {getApiErrorMessage(updateMutation.error, 'Erro ao guardar o fluxo de estágio.')}
-        </FeedbackBanner>
-      )}
+
 
       <CCard className="border-0 shadow-sm mb-4 calendar-event-editor">
         <CCardHeader className="bg-white fw-bold py-2 calendar-event-editor__header">
@@ -475,7 +471,7 @@ export const CalendarSection = () => {
               setAutomaticHolidaysOverride(enabled)
               settingsMutation.mutate(
                 { automatic_holidays_enabled: enabled },
-                {
+                attemptScope.guard({
                   onSuccess: () => {
                     setAutomaticHolidaysOverride(null)
                     toast.success(
@@ -485,7 +481,7 @@ export const CalendarSection = () => {
                     )
                   },
                   onError: () => setAutomaticHolidaysOverride(null),
-                },
+                }),
               )
             }}
           />
@@ -567,7 +563,7 @@ export const CalendarSection = () => {
         visible={Boolean(deleteTarget)}
         onClose={() => setDeleteTarget(null)}
         onConfirm={() => {
-          deleteMutation.mutate(deleteTarget.id, {
+          deleteMutation.mutate(deleteTarget.id, attemptScope.guard({
             onSuccess: () => {
               setDeleteTarget(null)
               toast.success('Evento eliminado.')
@@ -576,7 +572,7 @@ export const CalendarSection = () => {
               setDeleteTarget(null)
               toast.error(getApiErrorMessage(error, 'Não foi possível eliminar o evento. Tente novamente.'))
             },
-          })
+          }))
         }}
         title="Eliminar evento"
         message={deleteTarget
@@ -642,11 +638,12 @@ const SettingsEditor = ({ settings }) => {
   const [resetError, setResetError] = useState('')
 
   const resetMutation = useSoftResetSchoolYear()
+  const attemptScope = useAttemptScope()
 
   const handleSoftReset = () => {
     setResetError('')
     if (resetConfirmText !== 'Confirmo' || !resetChecked) return
-    resetMutation.mutate({ confirm_phrase: resetConfirmText }, {
+    resetMutation.mutate({ confirm_phrase: resetConfirmText }, attemptScope.guard({
       onSuccess: () => {
         toast.success('Ano letivo recomeçado. Os horários deixaram de estar ativos.')
         setShowResetModal(false)
@@ -657,7 +654,7 @@ const SettingsEditor = ({ settings }) => {
       onError: (err) => {
         setResetError(getApiErrorMessage(err, 'Erro ao recomeçar ano letivo.'))
       },
-    })
+    }))
   }
 
   const updateForm = (field, value) => {
@@ -677,14 +674,14 @@ const SettingsEditor = ({ settings }) => {
   }
 
   const confirmSave = () => {
-    upsertMutation.mutate(toSchoolSettingsPayload(form), {
+    upsertMutation.mutate(toSchoolSettingsPayload(form), attemptScope.guard({
       onSuccess: () => {
         toast.success('Período letivo guardado.')
         setSavePromptMsg(null)
         setShowSaveModal(false)
       },
       onError: () => setShowSaveModal(false),
-    })
+    }))
   }
 
   const canDisableAutomaticHolidays = getApiErrorCode(upsertMutation.error) === 'HOLIDAY_SYNC_FAILED'
@@ -698,13 +695,13 @@ const SettingsEditor = ({ settings }) => {
     }
     upsertMutation.mutate(
       { ...toSchoolSettingsPayload(form), automatic_holidays_enabled: false },
-      {
+      attemptScope.guard({
         onSuccess: () => {
           setForm((current) => ({ ...current, automatic_holidays_enabled: false }))
           toast.success('Período letivo guardado com os feriados automáticos desativados.')
           setSavePromptMsg(null)
         },
-      },
+      }),
     )
   }
 
@@ -1069,6 +1066,7 @@ const GridEditor = ({
   const regenerateMutation = useRegenerateGrid()
   const previewMutation = useGridChangePreview()
   const proposeMutation = useGridChangePropose()
+  const attemptScope = useAttemptScope()
 
   const applyFormData = (updater) => {
     setFormData(updater)
@@ -1124,7 +1122,7 @@ const GridEditor = ({
     setStaleProposalMessage('')
     previewMutation.reset()
     setProposal(null)
-    previewMutation.mutate({ timeslots: toGridTimeslotsPayload(formData) }, {
+    previewMutation.mutate({ timeslots: toGridTimeslotsPayload(formData) }, attemptScope.guard({
       onSuccess: (data) => {
         setPreview(data)
         setDecisions({})
@@ -1133,7 +1131,7 @@ const GridEditor = ({
       onError: (error) => {
         toast.error(getApiErrorMessage(error, 'Erro ao pré-visualizar a alteração da grelha.'))
       },
-    })
+    }))
   }
 
   const handlePropose = () => {
@@ -1147,7 +1145,7 @@ const GridEditor = ({
       timeslots: toGridTimeslotsPayload(formData),
       fingerprint: preview.fingerprint,
       decisions: decisionsPayload,
-    }, {
+    }, attemptScope.guard({
       onSuccess: (data) => {
         setProposal(data)
         setPreview(null)
@@ -1163,7 +1161,7 @@ const GridEditor = ({
         }
         toast.error(getApiErrorMessage(error, 'Erro ao propor a alteração da grelha.'))
       },
-    })
+    }))
   }
 
   const handleSubmit = (event) => {
@@ -1179,14 +1177,14 @@ const GridEditor = ({
       return
     }
     setValidationMessage('')
-    regenerateMutation.mutate(toGridConfigurationPayload({ formData, gridSettings }), {
+    regenerateMutation.mutate(toGridConfigurationPayload({ formData, gridSettings }), attemptScope.guard({
       onSuccess: (payload) => {
         toast.success(payload.message)
       },
       onError: (error) => {
         toast.error(getApiErrorMessage(error, 'Erro ao guardar configuração da grelha.'))
       },
-    })
+    }))
   }
 
   const toggleDay = (idx) => {

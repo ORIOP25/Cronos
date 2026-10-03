@@ -21,6 +21,7 @@ import {
 import Breadcrumbs from '../components/Breadcrumbs'
 import RoomTypeBadge from '../components/RoomTypeBadge'
 import { getApiErrorMessage } from '../utils/apiErrors'
+import { useAttemptScope } from '../hooks/useAttemptScope'
 import { formatGradeLevel } from '../utils/presentation'
 
 // ==========================================
@@ -180,6 +181,7 @@ const ClassDetails = () => {
   const { data: classSubjects } = useClassSubjects(numClassId)
   const updateClass = useUpdateClass()
   const updateProgress = useUpdateClassProgress()
+  const attemptScope = useAttemptScope()
 
   // --- STATE: Edição do header ---
   const [editingHeader, setEditingHeader] = useState(false)
@@ -228,13 +230,13 @@ const ClassDetails = () => {
 
     updateClass.mutate(
       { id: numClassId, name: trimName, size },
-      {
+      attemptScope.guard({
         onSuccess: () => {
           setEditingHeader(false)
           toast.success('Turma atualizada.')
         },
         onError: (error) => toast.error(getApiErrorMessage(error, 'Não foi possível guardar a turma. Tente novamente.')),
-      }
+      })
     )
   }
 
@@ -281,14 +283,14 @@ const ClassDetails = () => {
 
     updateProgress.mutate(
       { classId: numClassId, progress: changes },
-      {
+      attemptScope.guard({
         onSuccess: () => {
           setEditingProgress(false)
           setProgressEdit({})
           toast.success('Progresso atualizado.')
         },
         onError: (error) => toast.error(getApiErrorMessage(error, 'Não foi possível atualizar o progresso. Tente novamente.')),
-      }
+      })
     )
   }
 

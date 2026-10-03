@@ -13,6 +13,7 @@ import {
 } from '@coreui/react'
 import PageHeader from '../components/PageHeader'
 import { useApiClient } from '../ApiClientContext'
+import { useAttemptScope } from '../hooks/useAttemptScope'
 import { getApiErrorMessage } from '../utils/apiErrors'
 import {
   createBulkImportReport,
@@ -48,15 +49,19 @@ const BulkImport = () => {
   const [downloadingResource, setDownloadingResource] = useState('')
   const validateMutation = useValidateBulkImport()
   const commitMutation = useCommitBulkImport()
+  const attemptScope = useAttemptScope()
 
   const downloadTemplate = async (resourceKey) => {
     if (downloadingResource) return
     setLocalError('')
     setDownloadingResource(resourceKey)
+    const attempt = attemptScope.capture()
     try {
       await downloadBulkImportTemplate(apiClient, resourceKey)
+      if (!attemptScope.isCurrent(attempt)) return
       toast.success('Download pedido ao browser. Verifique a pasta de transferências.')
     } catch (error) {
+      if (!attemptScope.isCurrent(attempt)) return
       toast.error(getApiErrorMessage(error, 'Não foi possível preparar o modelo.'))
     } finally {
       setDownloadingResource('')
@@ -84,21 +89,26 @@ const BulkImport = () => {
       return
     }
     setLocalError('')
+    const attempt = attemptScope.capture()
     try {
       setValidation(await validateMutation.mutateAsync(files))
     } catch (error) {
+      if (!attemptScope.isCurrent(attempt)) return
       toast.error(getApiErrorMessage(error, 'Não foi possível verificar os ficheiros. Tente novamente.'))
     }
   }
 
   const commit = async () => {
     if (!validation?.can_commit) return
+    const attempt = attemptScope.capture()
     try {
       await commitMutation.mutateAsync(files)
+      if (!attemptScope.isCurrent(attempt)) return
       toast.success('Importação concluída.')
       const origin = IMPORT_RESOURCES.find((item) => item.key === initialResource)?.origin || '/courses'
       navigate(origin)
     } catch (error) {
+      if (!attemptScope.isCurrent(attempt)) return
       toast.error(getApiErrorMessage(error, 'Não foi possível concluir a importação. Tente novamente.'))
     }
   }

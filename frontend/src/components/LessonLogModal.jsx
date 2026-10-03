@@ -16,7 +16,8 @@ import {
 import CIcon from '@coreui/icons-react'
 import { cilCheckCircle, cilXCircle, cilActionUndo, cilWarning } from '@coreui/icons'
 import { useUpsertLessonLog, useUpdateTimesheetStatus } from '../features/operations/data'
-import { getApiErrorMessage } from '../utils/apiErrors'
+import { getApiErrorMessage, isApiErrorTransient } from '../utils/apiErrors'
+import { useAttemptScope } from '../hooks/useAttemptScope'
 import { formatDateLong } from '../utils/formatUtils'
 import { getLessonLogStatus } from '../utils/presentation'
 
@@ -36,6 +37,7 @@ const LessonLogModal = ({ onClose, slot, isAdmin = false, readOnly = false, allo
 
   const upsertLogMutation = useUpsertLessonLog()
   const updateTimesheetStatusMutation = useUpdateTimesheetStatus()
+  const attemptScope = useAttemptScope()
   const isTutorial = Array.isArray(allowedActions)
   const canEditTimesheet = !readOnly && !isTutorial
 
@@ -44,6 +46,7 @@ const LessonLogModal = ({ onClose, slot, isAdmin = false, readOnly = false, allo
 
   const handleSubmit = async (status) => {
     if (!canCreateOccurrence || (isTutorial && status !== 'OCCURRENCE')) return
+    const attempt = attemptScope.capture()
     setErrorMessage('')
     try {
       await upsertLogMutation.mutateAsync({
@@ -52,10 +55,14 @@ const LessonLogModal = ({ onClose, slot, isAdmin = false, readOnly = false, allo
         schedulerLessonId: slot.scheduler_lesson_id,
         payload: { status, summary, notes },
       })
+      if (!attemptScope.isCurrent(attempt)) return
       onClose()
       toast.success('Registo guardado.')
     } catch (err) {
-      setErrorMessage(getApiErrorMessage(err, 'Erro ao guardar o registo. Tente novamente.'))
+      if (!attemptScope.isCurrent(attempt)) return
+      const message = getApiErrorMessage(err, 'Erro ao guardar o registo. Tente novamente.')
+      if (isApiErrorTransient(err)) toast.error(message)
+      else setErrorMessage(message)
     }
   }
 
@@ -70,15 +77,20 @@ const LessonLogModal = ({ onClose, slot, isAdmin = false, readOnly = false, allo
 
   const handleConfirmReopen = async () => {
     setShowReopenConfirm(false)
+    const attempt = attemptScope.capture()
     try {
       await updateTimesheetStatusMutation.mutateAsync({
         timesheetId: slot.timesheet_id,
         status: 'OPEN',
       })
+      if (!attemptScope.isCurrent(attempt)) return
       onClose()
       toast.success('Semana reaberta.')
     } catch (err) {
-      setErrorMessage(getApiErrorMessage(err, 'Não foi possível reabrir a semana. Tente novamente.'))
+      if (!attemptScope.isCurrent(attempt)) return
+      const message = getApiErrorMessage(err, 'Não foi possível reabrir a semana. Tente novamente.')
+      if (isApiErrorTransient(err)) toast.error(message)
+      else setErrorMessage(message)
     }
   }
 

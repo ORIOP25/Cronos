@@ -33,6 +33,7 @@ import { useOrganization } from '@clerk/react'
 import { addDays, formatDate, getCurrentWeekMonday } from '../utils/formatUtils'
 import { collectInternshipDays } from '../utils/internshipDays'
 import { getApiErrorMessage, getApiErrorPresentation } from '../utils/apiErrors'
+import { useAttemptScope } from '../hooks/useAttemptScope'
 import { readExpiringValue, writeExpiringValue } from '../utils/expiringStorage'
 
 // ---------------------------------------------------------------------------
@@ -194,6 +195,7 @@ const Schedules = ({ initialClassId = '', initialWeekStart, persistView = true, 
   const cancelGenerationMutation = useCancelScheduleTask()
   const approveMutation  = useApproveDraft()
   const rejectMutation   = useRejectDraft()
+  const attemptScope = useAttemptScope()
   const serverJobId = schedulerStatus?.active_job?.id ?? null
   const effectiveJobId = activeJobId ?? serverJobId
   const { data: jobData } = useScheduleTaskStatus(effectiveJobId)
@@ -320,17 +322,20 @@ const Schedules = ({ initialClassId = '', initialWeekStart, persistView = true, 
     if (!canGenerate || !canGenerateNow) return
     setGenerationConfirmation(null)
     setGenerationActionError(null)
+    const attempt = attemptScope.capture()
     try {
       const result = await generateMutation.mutateAsync({
         idempotencyKey: globalThis.crypto.randomUUID(),
         expectedInputRevision: schedulerStatus?.revisions?.input ?? 0,
       })
+      if (!attemptScope.isCurrent(attempt)) return
       const jobId = result?.job?.id
       if (jobId) {
         setActiveJobId(jobId)
         toast.success('Geração pedida. Acompanhe o progresso nesta página.')
       }
     } catch (err) {
+      if (!attemptScope.isCurrent(attempt)) return
       const detail = err?.response?.data?.detail
       if (detail?.code === 'active_job' && detail?.context?.job_id) {
         setActiveJobId(detail.context.job_id)
@@ -370,11 +375,11 @@ const Schedules = ({ initialClassId = '', initialWeekStart, persistView = true, 
       return
     }
 
-    cancelGenerationMutation.mutate(effectiveJobId, {
+    cancelGenerationMutation.mutate(effectiveJobId, attemptScope.guard({
       onError: () => {
         toast.error('Não foi possível cancelar a geração. Tente novamente.')
       },
-    })
+    }))
     setActiveJobId(null)
   }
 
@@ -534,10 +539,12 @@ const Schedules = ({ initialClassId = '', initialWeekStart, persistView = true, 
               draft={currentDraft || schedulerStatus.pending_proposal}
               onApprove={async (proposalId) => {
                 try {
+                  const attempt = attemptScope.capture()
                   await approveMutation.mutateAsync({
                     proposalId,
                     expectedInputRevision: schedulerStatus?.revisions?.input ?? null,
                   })
+                  if (!attemptScope.isCurrent(attempt)) return
                   toast.success('Proposta aprovada.')
                 }
                 catch (err) {
@@ -548,7 +555,9 @@ const Schedules = ({ initialClassId = '', initialWeekStart, persistView = true, 
               }}
               onReject={async (proposalId) => {
                 try {
+                  const attempt = attemptScope.capture()
                   await rejectMutation.mutateAsync(proposalId)
+                  if (!attemptScope.isCurrent(attempt)) return
                   toast.success('Proposta rejeitada.')
                 }
                 catch (err) {

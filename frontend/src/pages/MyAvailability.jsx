@@ -6,6 +6,7 @@ import AvailabilityGrid from '../components/AvailabilityGrid'
 import { useCurrentMember } from '../features/members/data'
 import { useTimeslots } from '../features/catalog/data'
 import { useMyAvailability, useSaveAvailability } from '../features/operations/data'
+import { useAttemptScope } from '../hooks/useAttemptScope'
 import { PREFERENCE_LEVELS, DEFAULT_PREFERENCE } from '../constants'
 
 const mapAvailabilityApiMessage = (err, context) => {
@@ -28,6 +29,7 @@ export default function MyAvailability({ readOnly = false, allowedActions, warnO
   const timeslotsQuery = useTimeslots()
   const availabilityQuery = useMyAvailability({ enabled: Boolean(teacherId) })
   const saveMutation = useSaveAvailability()
+  const attemptScope = useAttemptScope()
   const isTutorial = Array.isArray(allowedActions)
   const canSave = !readOnly && (!isTutorial || allowedActions.includes('UPDATE_AVAILABILITY'))
   const timeslots = useMemo(() => timeslotsQuery.data ?? [], [timeslotsQuery.data])
@@ -60,13 +62,16 @@ export default function MyAvailability({ readOnly = false, allowedActions, warnO
 
   const handleSave = async () => {
     if (!canSave || !teacherId || !isDirty) return
+    const attempt = attemptScope.capture()
     const validIds = new Set(timeslots.map((slot) => slot.id))
     const payload = Object.entries(draftMap).filter(([id]) => validIds.has(Number(id))).map(([id, score]) => ({ timeslot_id: Number(id), score }))
     try {
       await saveMutation.mutateAsync({ teacherId, payload })
+      if (!attemptScope.isCurrent(attempt)) return
       setDraftEdits({})
       toast.success('Preferências guardadas.')
     } catch (error) {
+      if (!attemptScope.isCurrent(attempt)) return
       toast.error(mapAvailabilityApiMessage(error, 'save'))
     }
   }

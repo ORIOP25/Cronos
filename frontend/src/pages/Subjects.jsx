@@ -11,6 +11,7 @@ import GenericModalForm from '../components/GenericModalForm'
 import SubjectForm from '../components/Forms/SubjectForm'
 import RoomTypeBadge from '../components/RoomTypeBadge'
 import { getApiErrorMessage } from '../utils/apiErrors'
+import { useAttemptScope } from '../hooks/useAttemptScope'
 
 // Hooks de Dados
 import {
@@ -30,6 +31,7 @@ const Subjects = ({ readOnly = false, allowedActions }) => {
   const createMutation = useCreateSubject()
   const updateMutation = useUpdateSubject()
   const deleteMutation = useDeleteSubject()
+  const attemptScope = useAttemptScope()
   const isTutorial = Array.isArray(allowedActions)
   const canUpdate = !readOnly && (!isTutorial || allowedActions.includes('UPDATE_SUBJECT'))
   const canOpenDetails = canUpdate || readOnly
@@ -62,16 +64,20 @@ const Subjects = ({ readOnly = false, allowedActions }) => {
   const handleDelete = (id) => canDelete ? deleteMutation.mutateAsync(id) : Promise.resolve()
 
   const handleFormSubmit = async (formData) => {
+    const attempt = attemptScope.capture()
     try {
       if (selectedItem) {
         await updateMutation.mutateAsync({ id: selectedItem.id, ...formData })
+        if (!attemptScope.isCurrent(attempt)) return
         toast.success('Disciplina atualizada.')
       } else {
         await createMutation.mutateAsync(formData)
+        if (!attemptScope.isCurrent(attempt)) return
         toast.success('Disciplina criada.')
       }
       setModalVisible(false)
     } catch (error) {
+      if (!attemptScope.isCurrent(attempt)) return
       toast.error(getApiErrorMessage(error, 'Não foi possível guardar a disciplina. Tente novamente.'))
     }
   }

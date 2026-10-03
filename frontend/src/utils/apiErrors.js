@@ -63,6 +63,12 @@ export function isApiErrorBlock(error) {
   return CONTEXTUAL_BLOCK_CODES.has(getApiErrorCode(error))
 }
 
+export function isApiErrorTransient(error) {
+  const status = error?.response?.status
+  if (status === undefined) return true
+  return status >= 500 || status === 429
+}
+
 const isNetworkError = (error) => error?.code === 'ERR_NETWORK'
   || (!error?.response && /network error/i.test(error?.message || ''))
 

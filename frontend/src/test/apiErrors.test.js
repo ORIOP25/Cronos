@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { getApiErrorCode, getApiErrorMessage, getApiErrorPresentation } from '../utils/apiErrors'
+import { getApiErrorCode, getApiErrorMessage, getApiErrorPresentation, isApiErrorTransient } from '../utils/apiErrors'
 
 describe('api error contract', () => {
   it('uses the safe public message for a known code', () => {
@@ -159,5 +159,18 @@ describe('api error contract', () => {
       response: { status: 500, data: { detail: { code: 'internal_debug_code' } } },
     })
     expect(internal.message).toBe('Ocorreu um erro inesperado. Tente novamente.')
+  })
+
+  it('treats network, throttling and server failures as transient', () => {
+    expect(isApiErrorTransient(new Error('Network Error'))).toBe(true)
+    expect(isApiErrorTransient({ response: { status: 503 } })).toBe(true)
+    expect(isApiErrorTransient({ response: { status: 429 } })).toBe(true)
+  })
+
+  it('keeps client-side blocks and validation in context', () => {
+    expect(isApiErrorTransient({ response: { status: 400 } })).toBe(false)
+    expect(isApiErrorTransient({ response: { status: 409 } })).toBe(false)
+    expect(isApiErrorTransient({ response: { status: 422 } })).toBe(false)
+    expect(isApiErrorTransient({ response: { status: 404 } })).toBe(false)
   })
 })
