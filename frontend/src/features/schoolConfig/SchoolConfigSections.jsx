@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { toast } from 'react-hot-toast'
 import {
   CCard, CCardBody, CCardHeader, CCol, CRow, CForm, CFormInput,
   CFormCheck, CFormLabel, CButton, CAlert, CBadge, CInputGroup, CInputGroupText,
@@ -20,7 +21,6 @@ import {
   toSchoolSettingsPayload,
 } from '../../utils/schoolConfigPayloads'
 import { timeOfDayToMinutes } from '../../utils/timeOfDay'
-import { useTransientMessage } from '../../hooks/useTransientMessage'
 import FeedbackBanner from '../../components/FeedbackBanner'
 import StatePanel from '../../components/StatePanel'
 import ConfirmationModal from '../../components/ConfirmationModal'
@@ -60,8 +60,7 @@ export const CalendarSection = () => {
   const [previewState, setPreviewState] = useState(null)
   const [lastFlowResult, setLastFlowResult] = useState(null)
   const [showGenerateConfirm, setShowGenerateConfirm] = useState(false)
-  const { message: successMsg, show: setSuccessMsg } = useTransientMessage()
-  const { message: feedbackMsg, show: setFeedbackMsg } = useTransientMessage()
+  const [stalePreviewMsg, setStalePreviewMsg] = useState('')
 
   const { data: events = [], isLoading } = useCalendarEvents()
   const { data: classes = [] } = useClasses()
@@ -104,10 +103,10 @@ export const CalendarSection = () => {
   const handleMutationError = (error) => {
     if (getApiErrorCode(error) === 'CALENDAR_EVENT_STALE') {
       setPreviewState(null)
-      setFeedbackMsg('As aulas afetadas mudaram. Repita a pré-visualização antes de guardar.')
+      setStalePreviewMsg('As aulas afetadas mudaram. Repita a pré-visualização antes de guardar.')
       return
     }
-    setFeedbackMsg(getApiErrorMessage(error, 'Erro ao guardar o fluxo de estágio.'))
+    toast.error(getApiErrorMessage(error, 'Erro ao guardar o fluxo de estágio.'))
   }
 
   const submitFlow = (fingerprint, removedCount = 0) => {
@@ -129,9 +128,8 @@ export const CalendarSection = () => {
       : newEvent.class_ids.length > 0
     const options = {
       onSuccess: () => {
-        setSuccessMsg(editingFlowId
-          ? 'Fluxo de estágio atualizado com sucesso.'
-          : 'Fluxo de estágio criado com sucesso.')
+        toast.success(editingFlowId ? 'Fluxo de estágio atualizado.' : 'Fluxo de estágio criado.')
+        setStalePreviewMsg('')
         setLastFlowResult({
           name: payload.name,
           removedCount,
@@ -151,6 +149,7 @@ export const CalendarSection = () => {
   }
 
   const prepareFlowPreview = () => {
+    setStalePreviewMsg('')
     previewMutation.reset()
     previewMutation.mutate({
       operation: editingFlowId ? 'update' : 'create',
@@ -187,7 +186,7 @@ export const CalendarSection = () => {
       {
         onSuccess: () => {
           resetForm()
-          setSuccessMsg('Evento adicionado com sucesso.')
+          toast.success('Evento adicionado.')
         },
       },
     )
@@ -215,8 +214,8 @@ export const CalendarSection = () => {
   const handleGenerate = () => {
     generateMutation.reset()
     generateMutation.mutate({}, {
-      onSuccess: () => setFeedbackMsg('Regeneração pedida. Acompanhe a proposta em Horários.'),
-      onError: (error) => setFeedbackMsg(
+      onSuccess: () => toast.success('Regeneração pedida. Acompanhe a proposta em Horários.'),
+      onError: (error) => toast.error(
         getApiErrorMessage(error, 'Não foi possível regenerar o horário.', 'schedule.generate'),
       ),
     })
@@ -305,8 +304,7 @@ export const CalendarSection = () => {
 
   return (
     <div>
-      {successMsg && <div className="mb-3"><FeedbackBanner tone="success">{successMsg}</FeedbackBanner></div>}
-      {feedbackMsg && <div className="mb-3"><FeedbackBanner tone="warning">{feedbackMsg}</FeedbackBanner></div>}
+      {stalePreviewMsg && <div className="mb-3"><FeedbackBanner tone="warning">{stalePreviewMsg}</FeedbackBanner></div>}
       {lastFlowResult && (
         <div className="mb-3">
           <FeedbackBanner
@@ -480,7 +478,7 @@ export const CalendarSection = () => {
                 {
                   onSuccess: () => {
                     setAutomaticHolidaysOverride(null)
-                    setSuccessMsg(
+                    toast.success(
                       enabled
                         ? 'Feriados automáticos ativados.'
                         : 'Feriados automáticos desativados. Os eventos existentes foram preservados.',
@@ -568,7 +566,18 @@ export const CalendarSection = () => {
       <ConfirmationModal
         visible={Boolean(deleteTarget)}
         onClose={() => setDeleteTarget(null)}
-        onConfirm={() => { deleteMutation.mutate(deleteTarget.id, { onSuccess: () => setDeleteTarget(null) }) }}
+        onConfirm={() => {
+          deleteMutation.mutate(deleteTarget.id, {
+            onSuccess: () => {
+              setDeleteTarget(null)
+              toast.success('Evento eliminado.')
+            },
+            onError: (error) => {
+              setDeleteTarget(null)
+              toast.error(getApiErrorMessage(error, 'Não foi possível eliminar o evento. Tente novamente.'))
+            },
+          })
+        }}
         title="Eliminar evento"
         message={deleteTarget
           ? (deleteTarget.event_type === 'internship_flow'
@@ -615,21 +624,13 @@ function validateSettingsForm(form) {
 
 export const SettingsSection = () => {
   const { data: settings, isLoading } = useSchoolSettings()
-  const { message: resetSuccessMsg, show: showResetSuccess } = useTransientMessage()
-  const { message: saveSuccessMsg, show: showSaveSuccess } = useTransientMessage()
   if (isLoading) return <div className="d-flex justify-content-center p-5"><CSpinner /></div>
 
   const editorKey = `${settings?.school_start_date ?? ''}:${settings?.school_hard_end_date ?? ''}:${settings?.preferred_end_date ?? ''}:${settings?.repair_stability_window_days ?? ''}:${settings?.automatic_holidays_enabled ?? ''}`
-  return (
-    <>
-      {resetSuccessMsg && <CAlert color="success" className="mb-3">{resetSuccessMsg}</CAlert>}
-      {saveSuccessMsg && <CAlert color="success" className="mb-3">{saveSuccessMsg}</CAlert>}
-      <SettingsEditor key={editorKey} settings={settings} onSoftResetSuccess={showResetSuccess} onSaveSuccess={showSaveSuccess} />
-    </>
-  )
+  return <SettingsEditor key={editorKey} settings={settings} />
 }
 
-const SettingsEditor = ({ settings, onSoftResetSuccess, onSaveSuccess }) => {
+const SettingsEditor = ({ settings }) => {
   const [savePromptMsg, setSavePromptMsg] = useState(null)
   const [showSaveModal, setShowSaveModal] = useState(false)
   const [form, setForm] = useState(() => toSettingsForm(settings))
@@ -647,7 +648,7 @@ const SettingsEditor = ({ settings, onSoftResetSuccess, onSaveSuccess }) => {
     if (resetConfirmText !== 'Confirmo' || !resetChecked) return
     resetMutation.mutate({ confirm_phrase: resetConfirmText }, {
       onSuccess: () => {
-        onSoftResetSuccess('Ano letivo recomeçado com sucesso. Os horários deixam de estar ativos e o progresso volta a zero; o histórico auditável é conservado.', 10_000)
+        toast.success('Ano letivo recomeçado. Os horários deixaram de estar ativos.')
         setShowResetModal(false)
         setResetConfirmText('')
         setResetChecked(false)
@@ -678,7 +679,7 @@ const SettingsEditor = ({ settings, onSoftResetSuccess, onSaveSuccess }) => {
   const confirmSave = () => {
     upsertMutation.mutate(toSchoolSettingsPayload(form), {
       onSuccess: () => {
-        onSaveSuccess('Período letivo guardado com sucesso.')
+        toast.success('Período letivo guardado.')
         setSavePromptMsg(null)
         setShowSaveModal(false)
       },
@@ -700,7 +701,7 @@ const SettingsEditor = ({ settings, onSoftResetSuccess, onSaveSuccess }) => {
       {
         onSuccess: () => {
           setForm((current) => ({ ...current, automatic_holidays_enabled: false }))
-          onSaveSuccess('Período letivo guardado com os feriados automáticos desativados.')
+          toast.success('Período letivo guardado com os feriados automáticos desativados.')
           setSavePromptMsg(null)
         },
       },
@@ -1056,13 +1057,14 @@ const GridEditor = ({
   schoolYearPublished,
   pendingProposal,
 }) => {
-  const { message: feedback, show: showFeedback, clear: clearFeedback } = useTransientMessage()
   const [formData, setFormData] = useState(initialFormData)
   const [gridSettings, setGridSettings] = useState(initialGridSettings)
   const [preview, setPreview] = useState(null)
   const [decisions, setDecisions] = useState({})
   const [proposal, setProposal] = useState(null)
   const [breaksModalOpen, setBreaksModalOpen] = useState(false)
+  const [validationMessage, setValidationMessage] = useState('')
+  const [staleProposalMessage, setStaleProposalMessage] = useState('')
 
   const regenerateMutation = useRegenerateGrid()
   const previewMutation = useGridChangePreview()
@@ -1072,6 +1074,7 @@ const GridEditor = ({
     setFormData(updater)
     setPreview(null)
     setDecisions({})
+    setValidationMessage('')
   }
 
   const timeslotValues = {
@@ -1114,28 +1117,27 @@ const GridEditor = ({
   const handlePreview = () => {
     const validationError = validateForm()
     if (validationError) {
-      showFeedback({ color: 'danger', message: validationError }, 6000)
+      setValidationMessage(validationError)
       return
     }
+    setValidationMessage('')
+    setStaleProposalMessage('')
     previewMutation.reset()
     setProposal(null)
     previewMutation.mutate({ timeslots: toGridTimeslotsPayload(formData) }, {
       onSuccess: (data) => {
         setPreview(data)
         setDecisions({})
+        setStaleProposalMessage('')
       },
       onError: (error) => {
-        showFeedback({
-          color: 'danger',
-          message: getApiErrorMessage(error, 'Erro ao pré-visualizar a alteração da grelha.'),
-        }, 6000)
+        toast.error(getApiErrorMessage(error, 'Erro ao pré-visualizar a alteração da grelha.'))
       },
     })
   }
 
   const handlePropose = () => {
     if (!preview) return
-    clearFeedback()
     proposeMutation.reset()
     const decisionsPayload = Object.entries(decisions).map(([timeslotId, action]) => ({
       current_timeslot_id: Number(timeslotId),
@@ -1150,28 +1152,22 @@ const GridEditor = ({
         setProposal(data)
         setPreview(null)
         setDecisions({})
+        setStaleProposalMessage('')
       },
       onError: (error) => {
         if (getApiErrorCode(error) === 'GRID_CHANGE_STALE') {
           setPreview(null)
           setDecisions({})
-          showFeedback({
-            color: 'warning',
-            message: 'A análise mudou desde a pré-visualização. Repita a pré-visualização antes de propor a alteração.',
-          }, 8000)
+          setStaleProposalMessage('A análise mudou desde a pré-visualização. Repita a pré-visualização antes de propor a alteração.')
           return
         }
-        showFeedback({
-          color: 'danger',
-          message: getApiErrorMessage(error, 'Erro ao propor a alteração da grelha.'),
-        }, 6000)
+        toast.error(getApiErrorMessage(error, 'Erro ao propor a alteração da grelha.'))
       },
     })
   }
 
   const handleSubmit = (event) => {
     event.preventDefault()
-    clearFeedback()
     if (schoolYearPublished) {
       handlePreview()
       return
@@ -1179,18 +1175,16 @@ const GridEditor = ({
     regenerateMutation.reset()
     const validationError = validateForm()
     if (validationError) {
-      showFeedback({ color: 'danger', message: validationError }, 6000)
+      setValidationMessage(validationError)
       return
     }
+    setValidationMessage('')
     regenerateMutation.mutate(toGridConfigurationPayload({ formData, gridSettings }), {
       onSuccess: (payload) => {
-        showFeedback({ color: 'success', message: payload.message })
+        toast.success(payload.message)
       },
       onError: (error) => {
-        showFeedback({
-          color: 'danger',
-          message: getApiErrorMessage(error, 'Erro ao guardar configuração da grelha.'),
-        }, 6000)
+        toast.error(getApiErrorMessage(error, 'Erro ao guardar configuração da grelha.'))
       },
     })
   }
@@ -1210,7 +1204,8 @@ const GridEditor = ({
 
   return (
     <div>
-      {feedback && <CAlert color={feedback.color}>{feedback.message}</CAlert>}
+      {validationMessage && <div className="mb-3"><FeedbackBanner tone="danger">{validationMessage}</FeedbackBanner></div>}
+      {staleProposalMessage && <div className="mb-3"><FeedbackBanner tone="warning">{staleProposalMessage}</FeedbackBanner></div>}
       <PendingProposalBanner proposal={pendingProposal} />
       {proposal && (
         <CAlert color="success">

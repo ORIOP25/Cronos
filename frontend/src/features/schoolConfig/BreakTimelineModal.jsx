@@ -14,6 +14,7 @@ import {
   CTableHeaderCell,
   CTableRow,
 } from '@coreui/react'
+import FeedbackBanner from '../../components/FeedbackBanner'
 import {
   buildDailyTimeline,
   normalizeBreakOverrides,
@@ -176,7 +177,7 @@ export function BreakTimelineModal({ values, onClose, onApply }) {
           </div>
         )}
 
-        {error && <div className="alert alert-danger mt-3" role="alert">{error}</div>}
+        {error && <div className="mt-3"><FeedbackBanner tone="danger">{error}</FeedbackBanner></div>}
       </CModalBody>
       <CModalFooter>
         <CButton type="button" color="secondary" variant="outline" onClick={onClose}>

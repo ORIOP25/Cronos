@@ -15,13 +15,14 @@ export function TimeField({ id, label, value, error, onChange }) {
           name={id}
           value={formatTimeOfDay(value)}
           invalid={Boolean(error)}
+          aria-invalid={Boolean(error) || undefined}
           aria-describedby={error ? `${unitId} ${feedbackId}` : unitId}
           onChange={(event) => onChange(event.target.value)}
         />
         <CInputGroupText id={unitId}>h</CInputGroupText>
       </CInputGroup>
       {error && (
-        <CFormFeedback id={feedbackId} invalid className="d-block">
+        <CFormFeedback id={feedbackId} invalid className="d-block" role="alert">
           {error}
         </CFormFeedback>
       )}

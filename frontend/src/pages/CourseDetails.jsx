@@ -9,10 +9,12 @@ import {
   cilArrowLeft, cilPencil, cilSave, cilX, cilTrash,
   cilPeople, cilChevronRight, cilPlus,
 } from '@coreui/icons'
+import { toast } from 'react-hot-toast'
 import GenericModalForm from '../components/GenericModalForm'
 import ClassInCourseForm from '../components/Forms/ClassInCourseForm'
 import ConfirmationModal from '../components/ConfirmationModal'
 import { getApiErrorMessage } from '../utils/apiErrors'
+import { TXT } from '../utils/terminology'
 import { formatGradeLevel } from '../utils/presentation'
 
 import {
@@ -116,7 +118,6 @@ const CourseDetails = ({ courseIdOverride, readOnly = false, allowedActions, nav
   const [classModalVisible, setClassModalVisible] = useState(false)
   const [selectedClass, setSelectedClass] = useState(null)
   const [deleteConfirmation, setDeleteConfirmation] = useState(null)
-  const [deleteNotice, setDeleteNotice] = useState('')
 
   // --- MEMOIZED: Turmas agrupadas por grade_level ---
   // eslint-disable-next-line react-hooks/preserve-manual-memoization
@@ -160,7 +161,13 @@ const CourseDetails = ({ courseIdOverride, readOnly = false, allowedActions, nav
 
     updateCourse.mutate(
       { courseId, data: { name: trimName, abbreviation: trimAbbr } },
-      { onSuccess: () => setEditingHeader(false) }
+      {
+        onSuccess: () => {
+          setEditingHeader(false)
+          toast.success('Curso atualizado.')
+        },
+        onError: (error) => toast.error(getApiErrorMessage(error, 'Não foi possível guardar as alterações. Tente novamente.')),
+      }
     )
   }
 
@@ -192,7 +199,9 @@ const CourseDetails = ({ courseIdOverride, readOnly = false, allowedActions, nav
           onSuccess: () => {
             setClassModalVisible(false)
             setSelectedClass(null)
-          }
+            toast.success('Turma atualizada.')
+          },
+          onError: (error) => toast.error(getApiErrorMessage(error, 'Não foi possível guardar a turma. Tente novamente.')),
         }
       )
       return
@@ -204,7 +213,9 @@ const CourseDetails = ({ courseIdOverride, readOnly = false, allowedActions, nav
       {
         onSuccess: () => {
           setClassModalVisible(false)
-        }
+          toast.success('Turma criada.')
+        },
+        onError: (error) => toast.error(getApiErrorMessage(error, 'Não foi possível criar a turma. Tente novamente.')),
       }
     )
   }
@@ -214,7 +225,6 @@ const CourseDetails = ({ courseIdOverride, readOnly = false, allowedActions, nav
   }
 
   const handleConfirmDelete = () => {
-    setDeleteNotice('')
     if (deleteConfirmation?.type === 'course') {
       deleteCourse.mutate(courseId, {
         onSuccess: () => { navigate('/courses') },
@@ -228,11 +238,7 @@ const CourseDetails = ({ courseIdOverride, readOnly = false, allowedActions, nav
         { courseId, classId: deleteConfirmation.classData.id },
         {
           onSuccess: (data) => {
-            setDeleteNotice(
-              data?.remove_effect === 'archive'
-                ? 'Turma arquivada. O histórico (horários, sumários e progresso) foi preservado.'
-                : 'Turma removida.'
-            )
+            toast.success(data?.remove_effect === 'archive' ? TXT.CLASS_ARCHIVED : TXT.CLASS_REMOVED)
           },
           onSettled: () => setDeleteConfirmation(null),
         }
@@ -281,38 +287,17 @@ const CourseDetails = ({ courseIdOverride, readOnly = false, allowedActions, nav
         { label: course?.name || `Curso #${courseId}` },
       ]} />
 
-      {/* ---- ALERTAS DE MUTAÇÕES ---- */}
-      {updateCourse.isError && (
-        <CAlert color="danger" dismissible onClose={() => updateCourse.reset()}>
-          <strong>Erro ao atualizar:</strong>{' '}
-          {getApiErrorMessage(updateCourse.error)}
-        </CAlert>
-      )}
+      {/* ---- ALERTAS DE BLOQUEIOS PERSISTENTES ---- */}
       {deleteCourse.isError && (
         <CAlert color="danger" dismissible onClose={() => deleteCourse.reset()}>
           <strong>Erro ao apagar:</strong>{' '}
           {getApiErrorMessage(deleteCourse.error, 'Não é possível apagar este curso.')}
         </CAlert>
       )}
-      {(createCourseClass.isError || updateCourseClass.isError || deleteCourseClass.isError) && (
-        <CAlert
-          color="danger"
-          dismissible
-          onClose={() => {
-            createCourseClass.reset()
-            updateCourseClass.reset()
-            deleteCourseClass.reset()
-          }}
-        >
-          <strong>Erro ao gerir turma:</strong>{' '}
-          {getApiErrorMessage(
-            createCourseClass.error || updateCourseClass.error || deleteCourseClass.error
-          )}
-        </CAlert>
-      )}
-      {deleteNotice && (
-        <CAlert color="success" dismissible onClose={() => setDeleteNotice('')}>
-          {deleteNotice}
+      {deleteCourseClass.isError && (
+        <CAlert color="danger" dismissible onClose={() => deleteCourseClass.reset()}>
+          <strong>Erro ao remover turma:</strong>{' '}
+          {getApiErrorMessage(deleteCourseClass.error)}
         </CAlert>
       )}
 
@@ -455,7 +440,6 @@ const CourseDetails = ({ courseIdOverride, readOnly = false, allowedActions, nav
         initialData={selectedClass}
         onSubmit={handleSubmitClass}
         isLoading={createCourseClass.isPending || updateCourseClass.isPending}
-        error={createCourseClass.error || updateCourseClass.error}
       />
       <ConfirmationModal
         visible={Boolean(deleteConfirmation)}

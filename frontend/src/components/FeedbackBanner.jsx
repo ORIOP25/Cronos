@@ -1,16 +1,23 @@
-const TONE_ROLES = { danger: 'alert', success: 'status', warning: 'status', info: 'status' }
+import CIcon from '@coreui/icons-react'
+import { cilCheckCircle, cilInfo, cilWarning, cilXCircle } from '@coreui/icons'
 
-export default function FeedbackBanner({ tone = 'info', title, children, action, onDismiss }) {
+const TONES = {
+  success: { role: 'status', icon: cilCheckCircle },
+  danger: { role: 'alert', icon: cilXCircle },
+  warning: { role: 'status', icon: cilWarning },
+  info: { role: 'status', icon: cilInfo },
+}
+
+export default function FeedbackBanner({ tone = 'info', title, children, action }) {
+  const { role, icon } = TONES[tone] ?? TONES.info
   return (
-    <div className={`feedback-banner feedback-banner--${tone}`} role={TONE_ROLES[tone] ?? 'status'} aria-live={tone === 'danger' ? undefined : 'polite'}>
+    <div className={`feedback-banner feedback-banner--${tone}`} role={role} aria-live={tone === 'danger' ? undefined : 'polite'}>
+      <CIcon icon={icon} className="feedback-banner__icon" aria-hidden="true" />
       <div className="feedback-banner__content">
         {title && <p className="feedback-banner__title">{title}</p>}
         <p className="feedback-banner__message">{children}</p>
       </div>
-      <div className="d-flex align-items-center gap-2">
-        {action && <div className="feedback-banner__action">{action}</div>}
-        {onDismiss && <button type="button" className="feedback-banner__dismiss" aria-label="Fechar mensagem" onClick={onDismiss}>×</button>}
-      </div>
+      {action && <div className="feedback-banner__action">{action}</div>}
     </div>
   )
 }

@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
+import { toast } from 'react-hot-toast'
 import {
   CCard, CCardBody, CCardHeader, CButton, CAlert,
   CBadge, CSpinner, CFormSelect,
@@ -21,8 +22,9 @@ import {
 } from '../features/catalog/data'
 import Breadcrumbs from '../components/Breadcrumbs'
 import ConfirmationModal from '../components/ConfirmationModal'
+import FeedbackBanner from '../components/FeedbackBanner'
 import RoomTypeBadge from '../components/RoomTypeBadge'
-import { getApiErrorMessage } from '../utils/apiErrors'
+import { getApiErrorMessage, isApiErrorBlock } from '../utils/apiErrors'
 import { formatGradeLevel } from '../utils/presentation'
 
 // ==========================================
@@ -138,6 +140,7 @@ const ClassSubjects = ({ courseIdOverride, classIdOverride, navigationDisabled =
   const [showAddModal, setShowAddModal] = useState(false)
   const [selectedSubjectToAdd, setSelectedSubjectToAdd] = useState('')
   const [subjectToRemove, setSubjectToRemove] = useState(null)
+  const [blockedMessage, setBlockedMessage] = useState('')
 
   // Data hooks
   const { data: classSubjects, isLoading, error } = useClassSubjects(numClassId)
@@ -163,7 +166,14 @@ const ClassSubjects = ({ courseIdOverride, classIdOverride, navigationDisabled =
     if (!selectedSubjectToAdd) return
     addSubject.mutate(
       { classId: numClassId, subjectId: Number.parseInt(selectedSubjectToAdd, 10) },
-      { onSuccess: () => { setShowAddModal(false); setSelectedSubjectToAdd('') } }
+      {
+        onSuccess: () => {
+          setShowAddModal(false)
+          setSelectedSubjectToAdd('')
+          toast.success('Disciplina adicionada.')
+        },
+        onError: (error) => toast.error(getApiErrorMessage(error, 'Não foi possível adicionar a disciplina. Tente novamente.')),
+      }
     )
   }
 
@@ -176,13 +186,30 @@ const ClassSubjects = ({ courseIdOverride, classIdOverride, navigationDisabled =
     if (!subjectToRemove) return
     removeSubject.mutate(
       { classId: numClassId, subjectId: subjectToRemove.subject_id },
-      { onSettled: () => setSubjectToRemove(null) }
+      {
+        onSuccess: () => {
+          setSubjectToRemove(null)
+          setBlockedMessage('')
+          toast.success('Disciplina removida.')
+        },
+        onError: (error) => {
+          setSubjectToRemove(null)
+          if (isApiErrorBlock(error)) setBlockedMessage(getApiErrorMessage(error))
+          else toast.error(getApiErrorMessage(error, 'Não foi possível remover a disciplina. Tente novamente.'))
+        },
+      }
     )
   }
 
   const handleTeacherChange = (subjectId, teacherId) => {
     if (!canEditTeacher) return
-    updateTeacher.mutate({ classId: numClassId, subjectId, teacherId })
+    updateTeacher.mutate(
+      { classId: numClassId, subjectId, teacherId },
+      {
+        onSuccess: () => toast.success('Professor atualizado.'),
+        onError: (error) => toast.error(getApiErrorMessage(error, 'Não foi possível atribuir o professor. Tente novamente.')),
+      }
+    )
   }
 
   const renderAddModalBody = () => {
@@ -248,21 +275,8 @@ const ClassSubjects = ({ courseIdOverride, classIdOverride, navigationDisabled =
         { label: 'Disciplinas' },
       ]} />
 
-      {/* Alertas de erro */}
-      {addSubject.isError && (
-        <CAlert color="danger" dismissible onClose={() => addSubject.reset()}>
-          <strong>Erro ao adicionar:</strong> {getApiErrorMessage(addSubject.error, 'Erro desconhecido')}
-        </CAlert>
-      )}
-      {updateTeacher.isError && (
-        <CAlert color="danger" dismissible onClose={() => updateTeacher.reset()}>
-          <strong>Erro ao atribuir professor:</strong> {getApiErrorMessage(updateTeacher.error, 'Erro desconhecido')}
-        </CAlert>
-      )}
-      {removeSubject.isError && (
-        <CAlert color="danger" dismissible onClose={() => removeSubject.reset()}>
-          <strong>Erro ao remover:</strong> {getApiErrorMessage(removeSubject.error, 'Erro desconhecido')}
-        </CAlert>
+      {blockedMessage && (
+        <div className="mb-3"><FeedbackBanner tone="danger">{blockedMessage}</FeedbackBanner></div>
       )}
 
       {/* Header da Turma */}

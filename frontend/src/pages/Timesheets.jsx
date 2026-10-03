@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react'
+import { toast } from 'react-hot-toast'
 import PageHeader from '../components/PageHeader'
 import { useNavigate } from 'react-router-dom'
 import {
@@ -62,6 +63,7 @@ const Timesheets = ({ initialWeekStart, readOnly = false, allowedActions, naviga
     setStatusActionError('')
     try {
       await updateMutation.mutateAsync({ timesheetId, status })
+      toast.success(status === 'APPROVED' ? 'Semana aprovada.' : status === 'OPEN' ? 'Semana reaberta.' : 'Estado atualizado.')
     } catch (err) {
       setStatusActionError(getApiErrorMessage(err, 'Erro ao alterar estado. Tente novamente.'))
     }

@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import SchoolConfig from '../pages/SchoolConfig'
 import { renderWithProviders } from './testUtils'
@@ -144,7 +144,7 @@ describe('SchoolConfig scheduler settings', () => {
       response: { status: 503, data: { detail: { code: 'HOLIDAY_SYNC_FAILED', message: 'sync failed' } } },
     })
 
-    renderWithProviders(<SchoolConfig />)
+    renderWithProviders(<SchoolConfig />, { withToaster: true })
     const endDate = await screen.findByDisplayValue('31/07/2027')
     fireEvent.change(endDate, { target: { value: '31/08/2027' } })
     fireEvent.click(screen.getByRole('button', { name: /^guardar alterações$/i }))
@@ -161,7 +161,7 @@ describe('SchoolConfig scheduler settings', () => {
       repair_stability_window_days: 14,
       automatic_holidays_enabled: false,
     }))
-    expect(await screen.findByText(/guardado com os feriados automáticos desativados/i)).toBeInTheDocument()
+    expect(await within(document.querySelector('[data-rht-toaster]')).findByText(/guardado com os feriados automáticos desativados/i)).toBeInTheDocument()
   })
 
   it('does not offer holiday recovery for a generic settings error', async () => {
@@ -189,7 +189,7 @@ describe('SchoolConfig scheduler settings', () => {
   })
 
   it('submits the grid with one atomic request and shows one success', async () => {
-    const { queryClient } = renderWithProviders(<SchoolConfig />)
+    const { queryClient } = renderWithProviders(<SchoolConfig />, { withToaster: true })
     const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
 
     fireEvent.click(await screen.findByRole('tab', { name: /grelha/i }))
@@ -214,7 +214,8 @@ describe('SchoolConfig scheduler settings', () => {
         },
       })
     })
-    expect(screen.getAllByRole('alert').filter((alert) => alert.textContent.includes('Grelha configurada'))).toHaveLength(1)
+    const toastHost = document.querySelector('[data-rht-toaster]')
+    expect(within(toastHost).getAllByText('Grelha configurada e regenerada com sucesso.')).toHaveLength(1)
     expect(invalidate.mock.calls.map(([options]) => options.queryKey)).toEqual(expect.arrayContaining([
       ['org-grid-settings', 1],
       ['timeslots', 1],
@@ -239,7 +240,7 @@ describe('SchoolConfig scheduler settings', () => {
 
   it('shows only the API error and keeps the button reusable after a conflict', async () => {
     apiClient.post.mockRejectedValueOnce({ response: { status: 409, data: { detail: 'Use Recomeçar Ano Letivo.' } } })
-    const { queryClient } = renderWithProviders(<SchoolConfig />)
+    const { queryClient } = renderWithProviders(<SchoolConfig />, { withToaster: true })
     const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
 
     fireEvent.click(await screen.findByRole('tab', { name: /grelha/i }))

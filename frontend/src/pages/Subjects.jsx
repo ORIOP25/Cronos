@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { toast } from 'react-hot-toast'
 import PageHeader from '../components/PageHeader'
-import { CButton, CAlert } from '@coreui/react'
+import { CButton } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import { cilPlus } from '@coreui/icons'
 
@@ -64,13 +65,14 @@ const Subjects = ({ readOnly = false, allowedActions }) => {
     try {
       if (selectedItem) {
         await updateMutation.mutateAsync({ id: selectedItem.id, ...formData })
+        toast.success('Disciplina atualizada.')
       } else {
         await createMutation.mutateAsync(formData)
+        toast.success('Disciplina criada.')
       }
       setModalVisible(false)
-      // Invalidar cache de cursos (incluem dados de disciplinas/módulos)
-    } catch {
-      // Erro é tratado pelo mutation (mostrado no GenericModalForm)
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, 'Não foi possível guardar a disciplina. Tente novamente.'))
     }
   }
 
@@ -86,13 +88,6 @@ const Subjects = ({ readOnly = false, allowedActions }) => {
           Nova Disciplina
         </CButton>
       </div>}
-
-      {/* Tratamento de Erros de Criação/Eliminação */}
-      {createMutation.isError && (
-        <CAlert color="danger" dismissible onClose={createMutation.reset}>
-          <strong>Erro ao criar:</strong> {getApiErrorMessage(createMutation.error, 'Erro desconhecido.')}
-        </CAlert>
-      )}
 
       <SmartTable
             columns={columns}
@@ -120,7 +115,6 @@ const Subjects = ({ readOnly = false, allowedActions }) => {
         FormComponent={SubjectForm}
         onSubmit={handleFormSubmit}
         isLoading={activeMutation.isPending}
-        error={activeMutation.error}
         tutorialTarget="subject-form"
         readOnly={readOnly}
       />

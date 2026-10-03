@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { toast } from 'react-hot-toast'
 import {
   CModal,
   CModalHeader,
@@ -58,6 +59,7 @@ const LessonLogModal = ({ onClose, slot, isAdmin = false, readOnly = false, allo
         payload: { status, summary, notes },
       })
       onClose()
+      toast.success('Registo guardado.')
     } catch (err) {
       setErrorMessage(getApiErrorMessage(err, 'Erro ao guardar o registo. Tente novamente.'))
     }
@@ -80,6 +82,7 @@ const LessonLogModal = ({ onClose, slot, isAdmin = false, readOnly = false, allo
         status: 'OPEN',
       })
       onClose()
+      toast.success('Semana reaberta.')
     } catch (err) {
       setErrorMessage(getApiErrorMessage(err, 'Não foi possível reabrir a semana. Tente novamente.'))
     }

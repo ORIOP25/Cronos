@@ -1,11 +1,10 @@
 import {
   CModal, CModalHeader, CModalTitle, CModalBody,
 } from '@coreui/react'
-import { getApiErrorMessage } from '../utils/apiErrors'
-import FeedbackBanner from './FeedbackBanner'
 
 /**
  * Componente Genérico para Criar/Editar Entidades via Modal.
+ * O resultado da tentativa é comunicado pelo dono da mutação.
  */
 const GenericModalForm = ({ 
   visible, 
@@ -15,7 +14,6 @@ const GenericModalForm = ({
   FormComponent,
   onSubmit, 
   isLoading,
-  error,
   size,
   tutorialTarget,
   readOnly = false,
@@ -26,8 +24,6 @@ const GenericModalForm = ({
   const prefix = readOnly ? 'Consultar' : isEditing ? 'Editar' : (isFeminine ? 'Nova' : 'Novo')
   const modalTitle = `${prefix} ${title}`
 
-  const errorMessage = error ? getApiErrorMessage(error) : null
-
   if (!visible) return null
 
   return (
@@ -37,11 +33,6 @@ const GenericModalForm = ({
       </CModalHeader>
       
       <CModalBody>
-        {/* Mostra o erro já tratado (agora é garantidamente uma String) */}
-        {errorMessage && (
-          <FeedbackBanner tone="danger" onDismiss={onClose}>Erro: {errorMessage}</FeedbackBanner>
-        )}
-
         <FormComponent 
           initialData={initialData} 
           onSubmit={onSubmit} 

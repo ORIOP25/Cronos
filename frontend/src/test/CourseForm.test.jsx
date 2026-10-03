@@ -44,6 +44,29 @@ describe('CourseForm', () => {
     })
   })
 
+  it('associates the course error with its field and focuses it', () => {
+    renderForm()
+    const nameInput = screen.getByLabelText(/nome do curso/i)
+    fireEvent.submit(nameInput.closest('form'))
+
+    expect(screen.getByRole('alert')).toHaveTextContent(/nome do curso é obrigatório/i)
+    expect(nameInput).toHaveAttribute('aria-invalid', 'true')
+    expect(nameInput).toHaveFocus()
+
+    fireEvent.change(nameInput, { target: { value: 'Técnico' } })
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('associates the class error with the class name field', () => {
+    renderForm()
+    fireEvent.click(screen.getByRole('button', { name: /adicionar turma/i }))
+
+    const classNameInput = screen.getByLabelText(/nome turma/i)
+    expect(screen.getByRole('alert')).toHaveTextContent(/nome da turma/i)
+    expect(classNameInput).toHaveAttribute('aria-invalid', 'true')
+    expect(classNameInput).toHaveFocus()
+  })
+
   it('supports cancel and loading state', () => {
     const onCancel = vi.fn()
     renderForm({ onCancel, isLoading: true })

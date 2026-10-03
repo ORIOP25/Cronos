@@ -56,6 +56,26 @@ describe('SubjectForm', () => {
     expect(onCancel).toHaveBeenCalledOnce()
   })
 
+  it('associates the module error with the module group', () => {
+    renderForm()
+    fireEvent.click(screen.getByRole('button', { name: 'Adicionar' }))
+
+    const moduleName = screen.getByLabelText(/nome do módulo/i)
+    expect(screen.getByRole('alert')).toHaveTextContent(/número de horas válido/i)
+    expect(moduleName).toHaveAttribute('aria-invalid', 'true')
+    expect(moduleName).toHaveFocus()
+  })
+
+  it('associates the subject name error with the field', () => {
+    renderForm()
+    fireEvent.submit(screen.getByRole('button', { name: /guardar disciplina/i }).closest('form'))
+
+    const nameInput = screen.getByLabelText(/nome da disciplina/i)
+    expect(screen.getByRole('alert')).toHaveTextContent(/nome da disciplina é obrigatório/i)
+    expect(nameInput).toHaveAttribute('aria-invalid', 'true')
+    expect(nameInput).toHaveFocus()
+  })
+
   it('keeps the curriculum inspectable without exposing edit controls in read-only mode', () => {
     renderForm({
       readOnly: true,

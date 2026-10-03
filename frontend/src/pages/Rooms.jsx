@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { toast } from 'react-hot-toast'
 import PageHeader from '../components/PageHeader'
 import { CButton, CBadge } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
@@ -9,6 +10,7 @@ import SmartTable from '../components/SmartTable'
 import GenericModalForm from '../components/GenericModalForm'
 import RoomForm from '../components/Forms/RoomForm'
 import RoomTypeBadge from '../components/RoomTypeBadge'
+import { getApiErrorMessage } from '../utils/apiErrors'
 
 // Hooks (Factory)
 import { 
@@ -57,12 +59,18 @@ const Rooms = ({ readOnly = false, allowedActions }) => {
   const handleDelete = (id) => canDelete ? deleteMutation.mutateAsync(id) : Promise.resolve()
 
   const handleFormSubmit = async (formData) => {
-    if (selectedItem) {
-      await updateMutation.mutateAsync({ id: selectedItem.id, ...formData })
-    } else {
-      await createMutation.mutateAsync(formData)
+    try {
+      if (selectedItem) {
+        await updateMutation.mutateAsync({ id: selectedItem.id, ...formData })
+        toast.success('Sala atualizada.')
+      } else {
+        await createMutation.mutateAsync(formData)
+        toast.success('Sala criada.')
+      }
+      setModalVisible(false)
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, 'Não foi possível guardar a sala. Tente novamente.'))
     }
-    setModalVisible(false)
   }
 
   const activeMutation = selectedItem ? updateMutation : createMutation
@@ -102,7 +110,6 @@ const Rooms = ({ readOnly = false, allowedActions }) => {
         FormComponent={RoomForm}
         onSubmit={handleFormSubmit}
         isLoading={activeMutation.isPending}
-        error={activeMutation.error}
         tutorialTarget="room-form"
       />
     </div>

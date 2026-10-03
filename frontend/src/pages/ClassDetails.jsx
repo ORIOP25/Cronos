@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
+import { toast } from 'react-hot-toast'
 import {
   CCard, CCardBody, CCardHeader, CCol, CRow, CButton, CAlert,
   CBadge, CSpinner, CFormInput, CProgress, CProgressBar,
@@ -227,7 +228,13 @@ const ClassDetails = () => {
 
     updateClass.mutate(
       { id: numClassId, name: trimName, size },
-      { onSuccess: () => setEditingHeader(false) }
+      {
+        onSuccess: () => {
+          setEditingHeader(false)
+          toast.success('Turma atualizada.')
+        },
+        onError: (error) => toast.error(getApiErrorMessage(error, 'Não foi possível guardar a turma. Tente novamente.')),
+      }
     )
   }
 
@@ -274,7 +281,14 @@ const ClassDetails = () => {
 
     updateProgress.mutate(
       { classId: numClassId, progress: changes },
-      { onSuccess: () => { setEditingProgress(false); setProgressEdit({}) } }
+      {
+        onSuccess: () => {
+          setEditingProgress(false)
+          setProgressEdit({})
+          toast.success('Progresso atualizado.')
+        },
+        onError: (error) => toast.error(getApiErrorMessage(error, 'Não foi possível atualizar o progresso. Tente novamente.')),
+      }
     )
   }
 
@@ -315,20 +329,6 @@ const ClassDetails = () => {
         { label: classData.course?.abbreviation || classData.course?.name || `Curso ${numCourseId}`, to: `/courses/${numCourseId}` },
         { label: classData.name },
       ]} />
-
-      {/* ---- ALERTAS ---- */}
-      {updateClass.isError && (
-        <CAlert color="danger" dismissible onClose={() => updateClass.reset()}>
-          <strong>Erro ao atualizar turma:</strong>{' '}
-          {getApiErrorMessage(updateClass.error)}
-        </CAlert>
-      )}
-      {updateProgress.isError && (
-        <CAlert color="danger" dismissible onClose={() => updateProgress.reset()}>
-          <strong>Erro ao atualizar progresso:</strong>{' '}
-          {getApiErrorMessage(updateProgress.error)}
-        </CAlert>
-      )}
 
       {/* ==== HEADER DA TURMA ==== */}
       <CCard className="mb-4 border-0 shadow-sm">

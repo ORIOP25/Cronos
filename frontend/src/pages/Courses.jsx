@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import PageHeader from '../components/PageHeader'
 import { useNavigate } from 'react-router-dom'
-import { CButton, CAlert, CBadge } from '@coreui/react'
+import { toast } from 'react-hot-toast'
+import { CButton, CBadge } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import { cilPlus } from '@coreui/icons'
 
@@ -52,7 +53,11 @@ const Courses = () => {
   // Submissão do formulário (apenas criação — edição movida para CourseDetails)
   const handleFormSubmit = (formData) => {
     createMutation.mutate(formData, {
-      onSuccess: () => setModalVisible(false)
+      onSuccess: () => {
+        setModalVisible(false)
+        toast.success('Curso criado.')
+      },
+      onError: (error) => toast.error(getApiErrorMessage(error, 'Não foi possível criar o curso. Tente novamente.')),
     })
   }
 
@@ -67,16 +72,6 @@ const Courses = () => {
           Novo Curso
         </CButton>
       </div>
-
-      {/* ERROS */}
-      {createMutation.isError && (
-        <CAlert color="danger" dismissible onClose={() => createMutation.reset()}>
-          <strong>Erro:</strong>
-          <div className="mt-1 text-sm">
-            {getApiErrorMessage(createMutation.error)}
-          </div>
-        </CAlert>
-      )}
 
       {/* TABELA */}
       <SmartTable
@@ -99,7 +94,6 @@ const Courses = () => {
         FormComponent={CourseForm}
         onSubmit={handleFormSubmit}
         isLoading={createMutation.isPending}
-        error={createMutation.error}
         tutorialTarget="course-form"
       />
     </div>

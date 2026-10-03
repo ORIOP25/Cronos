@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { toast } from 'react-hot-toast'
 import PageHeader from '../components/PageHeader'
 import { useSearchParams } from 'react-router-dom'
 import {
@@ -546,6 +547,7 @@ const OccurrencesPanel = ({
         setRevertingId(null)
         setRevertConfirmation(null)
         closeEditModal()
+        toast.success('Ocorrência revertida.')
       },
       onError: (error) => {
         setRevertingId(null)
@@ -561,6 +563,7 @@ const OccurrencesPanel = ({
     updateMutation.mutate(payload, {
       onSuccess: () => {
         closeEditModal()
+        toast.success('Decisão registada.')
       },
       onError: (error) => setSaveErrorMessage(buildUpdateErrorMessage(error)),
     })

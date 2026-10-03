@@ -1,4 +1,5 @@
 import { CFormLabel, CFormInput, CFormFeedback, CInputGroup, CInputGroupText } from '@coreui/react'
+import FeedbackBanner from '../../components/FeedbackBanner'
 import {
   buildDailyTimeline,
   normalizeBreakOverrides,
@@ -162,7 +163,7 @@ export function BreakTimelineEditor({
       )}
 
       {overrideError && (
-        <div className="alert alert-danger mt-3" role="alert">{overrideError}</div>
+        <div className="mt-3"><FeedbackBanner tone="danger">{overrideError}</FeedbackBanner></div>
       )}
     </div>
   )

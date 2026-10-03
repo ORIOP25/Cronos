@@ -1,4 +1,5 @@
 import { CCard, CCardBody, CBadge } from '@coreui/react'
+import FeedbackBanner from '../../../components/FeedbackBanner'
 import { buildDailyTimeline } from '../foundationModel'
 
 const DAY_LABELS = ['Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado', 'Domingo']
@@ -16,9 +17,7 @@ export function PreviewStep({ values, fieldErrors }) {
       </p>
 
       {fieldErrors.preview && (
-        <div className="alert alert-danger mb-4" role="alert">
-          {fieldErrors.preview}
-        </div>
+        <div className="mb-4"><FeedbackBanner tone="danger">{fieldErrors.preview}</FeedbackBanner></div>
       )}
 
       <div className="d-flex flex-wrap gap-2 mb-3">

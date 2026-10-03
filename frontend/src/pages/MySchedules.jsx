@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { toast } from 'react-hot-toast'
 import PageHeader from '../components/PageHeader'
 import { CAlert, CBadge, CButton, CCard, CCardBody, CCardHeader, CSpinner } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
@@ -155,6 +156,7 @@ function MySchedules() {
     setSubmitError('')
     try {
       await submitMutation.mutateAsync(weekStart)
+      toast.success('Semana submetida.')
     } catch (err) {
       setSubmitError(getApiErrorMessage(err, 'Erro ao submeter a semana. Tente novamente.'))
     }

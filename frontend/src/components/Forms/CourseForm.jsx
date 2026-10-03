@@ -1,77 +1,181 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import {
-  CAlert,
   CButton,
   CCol,
   CForm,
+  CFormFeedback,
   CFormInput,
   CModalFooter,
   CRow,
 } from '@coreui/react'
 import { createClassDraft, validateClassDraft } from '../../utils/classDraft'
 
+const COURSE_FEEDBACK_ID = 'courseFormFeedback'
+const CLASS_FEEDBACK_ID = 'courseClassValidation'
+const COURSE_FIELDS = { name: 'course-name', abbreviation: 'course-abbreviation' }
+const CLASS_FIELDS = {
+  name: 'course-class-name',
+  size: 'course-class-size',
+  grade_level: 'course-class-grade',
+  start_year: 'course-class-start',
+  end_year: 'course-class-end',
+}
+const CLASS_ERROR_FIELDS = {
+  name: ['name'],
+  size: ['size'],
+  grade_level: ['grade_level'],
+  start_year: ['start_year'],
+  end_year: ['end_year'],
+  date_range: ['start_year', 'end_year'],
+}
+
+const validateCourseFields = (course) => {
+  if (!course.name.trim()) return { message: 'Nome do curso é obrigatório.', field: 'name' }
+  if (course.abbreviation.trim().length < 2) return { message: 'A sigla deve ter pelo menos 2 caracteres.', field: 'abbreviation' }
+  return null
+}
+
+const toClassError = (result) => (
+  result.error ? { message: result.error, field: result.field } : null
+)
+
 const CourseForm = ({ onSubmit, isLoading, onCancel }) => {
   const [course, setCourse] = useState({ name: '', abbreviation: '', classes_config: [] })
   const [classDraft, setClassDraft] = useState(createClassDraft)
-  const [formError, setFormError] = useState('')
-  const [classError, setClassError] = useState('')
+  const [formError, setFormError] = useState(null)
+  const [classError, setClassError] = useState(null)
+  const fieldRefs = useRef({})
+
+  const setFieldRef = (key) => (element) => { fieldRefs.current[key] = element }
 
   const updateCourse = (field, value) => {
-    setCourse((current) => ({ ...current, [field]: value }))
-    setFormError('')
+    const next = { ...course, [field]: value }
+    setCourse(next)
+    if (formError && formError.field === field) {
+      const nextError = validateCourseFields(next)
+      setFormError(nextError?.field === formError.field ? nextError : null)
+    }
   }
 
   const updateClass = (field, value) => {
-    setClassDraft((current) => ({ ...current, [field]: value }))
-    setClassError('')
+    const next = { ...classDraft, [field]: value }
+    setClassDraft(next)
+    if (classError && CLASS_ERROR_FIELDS[classError.field]?.includes(field)) {
+      setClassError(toClassError(validateClassDraft(next, course.classes_config)))
+    }
+  }
+
+  const focusInvalidClassField = (field) => {
+    const target = field === 'date_range' ? fieldRefs.current.start_year : fieldRefs.current[field]
+    target?.focus()
   }
 
   const addClass = () => {
-    const validation = validateClassDraft(classDraft, course.classes_config)
-    if (validation.error) return setClassError(validation.error)
+    const result = validateClassDraft(classDraft, course.classes_config)
+    const nextError = toClassError(result)
+    setClassError(nextError)
+    if (nextError) {
+      focusInvalidClassField(nextError.field)
+      return
+    }
     setCourse((current) => ({
       ...current,
-      classes_config: [...current.classes_config, validation.value],
+      classes_config: [...current.classes_config, result.value],
     }))
     setClassDraft(createClassDraft())
   }
 
   const submit = (event) => {
     event.preventDefault()
-    const name = course.name.trim()
-    const abbreviation = course.abbreviation.trim()
-    if (!name) return setFormError('Nome do curso é obrigatório.')
-    if (abbreviation.length < 2) return setFormError('A sigla deve ter pelo menos 2 caracteres.')
-    onSubmit({ name, abbreviation, classes_config: course.classes_config })
+    const nextError = validateCourseFields(course)
+    setFormError(nextError)
+    if (nextError) {
+      fieldRefs.current[COURSE_FIELDS[nextError.field]]?.focus()
+      return
+    }
+    onSubmit({ name: course.name.trim(), abbreviation: course.abbreviation.trim(), classes_config: course.classes_config })
   }
+
+  const isClassInvalid = (field) => classError?.field === field
+    || (classError?.field === 'date_range' && (field === 'start_year' || field === 'end_year'))
+
+  const classInputProps = (field) => ({
+    'aria-invalid': isClassInvalid(field) || undefined,
+    'aria-describedby': isClassInvalid(field) ? CLASS_FEEDBACK_ID : undefined,
+    ref: setFieldRef(field),
+  })
+
+  const classFeedback = (field) => (
+    classError?.field === field
+      ? <CFormFeedback id={CLASS_FEEDBACK_ID} invalid className="d-block" role="alert">{classError.message}</CFormFeedback>
+      : null
+  )
 
   return (
     <CForm onSubmit={submit}>
-      {formError && <CAlert color="danger">{formError}</CAlert>}
-
       <fieldset className="mb-4">
         <legend className="h6 mb-3">Dados gerais</legend>
         <CRow className="g-3">
           <CCol md={8}>
-            <CFormInput id="course-name" label="Nome do Curso" value={course.name} onChange={(event) => updateCourse('name', event.target.value)} required />
+            <CFormInput
+              id={COURSE_FIELDS.name}
+              label="Nome do Curso"
+              value={course.name}
+              onChange={(event) => updateCourse('name', event.target.value)}
+              required
+              aria-invalid={formError?.field === 'name' || undefined}
+              aria-describedby={formError?.field === 'name' ? COURSE_FEEDBACK_ID : undefined}
+              ref={setFieldRef('course-name')}
+            />
+            {formError?.field === 'name' && (
+              <CFormFeedback id={COURSE_FEEDBACK_ID} invalid className="d-block" role="alert">{formError.message}</CFormFeedback>
+            )}
           </CCol>
           <CCol md={4}>
-            <CFormInput id="course-abbreviation" label="Sigla" value={course.abbreviation} maxLength={10} onChange={(event) => updateCourse('abbreviation', event.target.value)} required />
+            <CFormInput
+              id={COURSE_FIELDS.abbreviation}
+              label="Sigla"
+              value={course.abbreviation}
+              maxLength={10}
+              onChange={(event) => updateCourse('abbreviation', event.target.value)}
+              required
+              aria-invalid={formError?.field === 'abbreviation' || undefined}
+              aria-describedby={formError?.field === 'abbreviation' ? COURSE_FEEDBACK_ID : undefined}
+              ref={setFieldRef('course-abbreviation')}
+            />
+            {formError?.field === 'abbreviation' && (
+              <CFormFeedback id={COURSE_FEEDBACK_ID} invalid className="d-block" role="alert">{formError.message}</CFormFeedback>
+            )}
           </CCol>
         </CRow>
       </fieldset>
 
       <fieldset>
         <legend className="h6 mb-3">Turmas iniciais</legend>
-        {classError && <CAlert color="danger">{classError}</CAlert>}
         <CRow className="g-2 align-items-end">
-          <CCol md={4}><CFormInput id="course-class-name" label="Nome Turma" value={classDraft.name} onChange={(event) => updateClass('name', event.target.value)} /></CCol>
-          <CCol md={2}><CFormInput id="course-class-grade" label="Ano (10-12)" type="number" min={10} max={12} value={classDraft.grade_level} onChange={(event) => updateClass('grade_level', event.target.value)} /></CCol>
-          <CCol md={2}><CFormInput id="course-class-start" label="Ano de início" type="number" value={classDraft.start_year} onChange={(event) => updateClass('start_year', event.target.value)} /></CCol>
-          <CCol md={2}><CFormInput id="course-class-end" label="Ano de fim" type="number" value={classDraft.end_year} onChange={(event) => updateClass('end_year', event.target.value)} /></CCol>
-          <CCol md={2}><CFormInput id="course-class-size" label="Alunos" type="number" min={1} max={100} value={classDraft.size} onChange={(event) => updateClass('size', event.target.value)} /></CCol>
+          <CCol md={4}>
+            <CFormInput id={CLASS_FIELDS.name} label="Nome Turma" value={classDraft.name} onChange={(event) => updateClass('name', event.target.value)} {...classInputProps('name')} />
+            {classFeedback('name')}
+          </CCol>
+          <CCol md={2}>
+            <CFormInput id={CLASS_FIELDS.grade_level} label="Ano (10-12)" type="number" min={10} max={12} value={classDraft.grade_level} onChange={(event) => updateClass('grade_level', event.target.value)} {...classInputProps('grade_level')} />
+            {classFeedback('grade_level')}
+          </CCol>
+          <CCol md={2}>
+            <CFormInput id={CLASS_FIELDS.start_year} label="Ano de início" type="number" value={classDraft.start_year} onChange={(event) => updateClass('start_year', event.target.value)} {...classInputProps('start_year')} />
+            {classFeedback('start_year')}
+          </CCol>
+          <CCol md={2}>
+            <CFormInput id={CLASS_FIELDS.end_year} label="Ano de fim" type="number" value={classDraft.end_year} onChange={(event) => updateClass('end_year', event.target.value)} {...classInputProps('end_year')} />
+            {classFeedback('end_year')}
+          </CCol>
+          <CCol md={2}>
+            <CFormInput id={CLASS_FIELDS.size} label="Alunos" type="number" min={1} max={100} value={classDraft.size} onChange={(event) => updateClass('size', event.target.value)} {...classInputProps('size')} />
+            {classFeedback('size')}
+          </CCol>
           <CCol xs={12}><CButton type="button" color="secondary" variant="outline" onClick={addClass}>Adicionar turma</CButton></CCol>
         </CRow>
+        {classFeedback('date_range')}
 
         <div className="mt-3 d-grid gap-2">
           {course.classes_config.map((item, index) => (

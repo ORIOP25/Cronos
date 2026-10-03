@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
+import { toast } from 'react-hot-toast'
 import {
   CAlert,
   CBadge,
@@ -70,8 +71,8 @@ const BulkImport = () => {
     setLocalError('')
     try {
       setValidation(await validateMutation.mutateAsync(files))
-    } catch {
-      // The mutation error is rendered below.
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, 'Não foi possível verificar os ficheiros. Tente novamente.'))
     }
   }
 
@@ -79,10 +80,11 @@ const BulkImport = () => {
     if (!validation?.can_commit) return
     try {
       await commitMutation.mutateAsync(files)
+      toast.success('Importação concluída.')
       const origin = IMPORT_RESOURCES.find((item) => item.key === initialResource)?.origin || '/courses'
       navigate(origin)
-    } catch {
-      // The server revalidates the exact selected files.
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, 'Não foi possível concluir a importação. Tente novamente.'))
     }
   }
 
@@ -111,11 +113,7 @@ const BulkImport = () => {
         </p>
       </section>
 
-      <div className="mb-3" role="status" aria-live="polite">
-        {localError && <CAlert color="warning">{localError}</CAlert>}
-        {validateMutation.isError && <CAlert color="danger">{getApiErrorMessage(validateMutation.error, 'Não foi possível verificar os ficheiros.')}</CAlert>}
-        {commitMutation.isError && <CAlert color="danger">{getApiErrorMessage(commitMutation.error, 'Não foi possível concluir a importação.')}</CAlert>}
-      </div>
+      {localError && <div className="mb-3"><CAlert color="warning">{localError}</CAlert></div>}
 
       <div className="row g-3">
         {IMPORT_RESOURCES.map((resource) => {

@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
+import { toast } from 'react-hot-toast'
 import { Link, useLocation } from 'react-router-dom'
 import {
   CCard, CCardBody, CCardHeader, CAlert, CBadge, CSpinner,
@@ -325,7 +326,10 @@ const Schedules = ({ initialClassId = '', initialWeekStart, persistView = true, 
         expectedInputRevision: schedulerStatus?.revisions?.input ?? 0,
       })
       const jobId = result?.job?.id
-      if (jobId) setActiveJobId(jobId)
+      if (jobId) {
+        setActiveJobId(jobId)
+        toast.success('Geração pedida. Acompanhe o progresso nesta página.')
+      }
     } catch (err) {
       const detail = err?.response?.data?.detail
       if (detail?.code === 'active_job' && detail?.context?.job_id) {
@@ -354,10 +358,9 @@ const Schedules = ({ initialClassId = '', initialWeekStart, persistView = true, 
       return
     }
 
-    setGenerationActionError('')
     cancelGenerationMutation.mutate(effectiveJobId, {
       onError: () => {
-        setGenerationActionError('Não foi possível cancelar a geração. Tente novamente.')
+        toast.error('Não foi possível cancelar a geração. Tente novamente.')
       },
     })
     setActiveJobId(null)
@@ -513,19 +516,23 @@ const Schedules = ({ initialClassId = '', initialWeekStart, persistView = true, 
                     proposalId,
                     expectedInputRevision: schedulerStatus?.revisions?.input ?? null,
                   })
+                  toast.success('Proposta aprovada.')
                 }
                 catch (err) {
-                  setGenerationActionError(
-                    getDraftMutationErrorMessage(err, 'Erro ao aprovar proposta.')
-                  )
+                  const message = getDraftMutationErrorMessage(err, 'Erro ao aprovar proposta.')
+                  if (message === STALE_DRAFT_MESSAGE) setGenerationActionError(message)
+                  else toast.error(message)
                 }
               }}
               onReject={async (proposalId) => {
-                try { await rejectMutation.mutateAsync(proposalId) }
+                try {
+                  await rejectMutation.mutateAsync(proposalId)
+                  toast.success('Proposta rejeitada.')
+                }
                 catch (err) {
-                  setGenerationActionError(
-                    getDraftMutationErrorMessage(err, 'Erro ao rejeitar proposta.')
-                  )
+                  const message = getDraftMutationErrorMessage(err, 'Erro ao rejeitar proposta.')
+                  if (message === STALE_DRAFT_MESSAGE) setGenerationActionError(message)
+                  else toast.error(message)
                 }
               }}
               isApproving={approveMutation.isPending}

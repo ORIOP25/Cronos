@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { toast } from 'react-hot-toast'
 import {
   CAlert,
   CBadge,
@@ -256,12 +257,14 @@ const Members = ({ readOnly = false, allowedActions }) => {
   const save = async (payload) => {
     await activeMutation.mutateAsync(payload)
     setModalVisible(false)
+    toast.success(selectedMember ? 'Membro atualizado.' : 'Membro adicionado.')
   }
 
   const remove = async () => {
     if (!removeTarget || !canCreate) return
     await removeMember.mutateAsync(removeTarget.id)
     setRemoveTarget(null)
+    toast.success(removeTarget.remove_effect === 'hard_delete' ? 'Membro removido.' : 'Membro arquivado.')
   }
 
   const actionErrorSource = removeMember.error || resendInvitation.error || retrySync.error || restoreMember.error
@@ -338,9 +341,9 @@ const Members = ({ readOnly = false, allowedActions }) => {
                   </td>
                   <td className="text-end">
                     <ActionButton title="Editar membro" icon={cilPencil} disabled={!member.actions?.can_edit || !canUpdate} onClick={() => openModal(member)} tutorialTarget={`edit-member-${member.id}`} />
-                    <ActionButton title="Reenviar convite" icon={cilReload} disabled={isTutorial || !member.actions?.can_resend_invite} loading={resendInvitation.isPending} onClick={() => resendInvitation.mutate(member.id)} />
-                    <ActionButton title="Tentar sincronização novamente" icon={cilReload} color="warning" disabled={isTutorial || !member.actions?.can_retry_sync} loading={retrySync.isPending} onClick={() => retrySync.mutate(member.id)} />
-                    <ActionButton title="Restaurar membro" icon={cilActionUndo} color="success" disabled={isTutorial || !member.actions?.can_restore} loading={restoreMember.isPending} onClick={() => restoreMember.mutate({ id: member.id, payload: restorePayloadFromMember(member) })} />
+                    <ActionButton title="Reenviar convite" icon={cilReload} disabled={isTutorial || !member.actions?.can_resend_invite} loading={resendInvitation.isPending} onClick={() => resendInvitation.mutate(member.id, { onSuccess: () => toast.success('Convite reenviado.') })} />
+                    <ActionButton title="Tentar sincronização novamente" icon={cilReload} color="warning" disabled={isTutorial || !member.actions?.can_retry_sync} loading={retrySync.isPending} onClick={() => retrySync.mutate(member.id, { onSuccess: () => toast.success('Sincronização concluída.') })} />
+                    <ActionButton title="Restaurar membro" icon={cilActionUndo} color="success" disabled={isTutorial || !member.actions?.can_restore} loading={restoreMember.isPending} onClick={() => restoreMember.mutate({ id: member.id, payload: restorePayloadFromMember(member) }, { onSuccess: () => toast.success('Membro restaurado.') })} />
                     <ActionButton title="Remover membro" icon={cilTrash} color="danger" disabled={isTutorial || !member.actions?.can_remove} loading={removeMember.isPending} onClick={() => setRemoveTarget(member)} />
                   </td>
                 </tr>
