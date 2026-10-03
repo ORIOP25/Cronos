@@ -34,26 +34,31 @@ describe('AppToaster', () => {
     vi.restoreAllMocks()
   })
 
-  it('keeps a success confirmation for four active seconds and then removes it', () => {
+  it('expires a success at four active seconds and removes it after the exit delay', () => {
     render(<AppToaster />)
     act(() => { toast.success('Preferências guardadas.') })
 
+    act(() => { vi.advanceTimersByTime(3999) })
     expect(screen.getByText('Preferências guardadas.')).toBeInTheDocument()
-    act(() => { vi.advanceTimersByTime(3900) })
+
+    act(() => { vi.advanceTimersByTime(1) })
     expect(screen.getByText('Preferências guardadas.')).toBeInTheDocument()
-    act(() => { vi.advanceTimersByTime(4000) })
+
     act(() => { vi.advanceTimersByTime(1000) })
     expect(screen.queryByText('Preferências guardadas.')).not.toBeInTheDocument()
   })
 
-  it('keeps a transient failure for six active seconds, announces it as an alert and then removes it', () => {
+  it('expires an error at six active seconds and removes it after the exit delay', () => {
     render(<AppToaster />)
     act(() => { toast.error('Não foi possível guardar. Tente novamente.') })
 
     expect(screen.getByRole('alert')).toHaveTextContent('Não foi possível guardar. Tente novamente.')
-    act(() => { vi.advanceTimersByTime(5900) })
+    act(() => { vi.advanceTimersByTime(5999) })
     expect(screen.getByRole('alert')).toBeInTheDocument()
-    act(() => { vi.advanceTimersByTime(6000) })
+
+    act(() => { vi.advanceTimersByTime(1) })
+    expect(screen.getByRole('alert')).toBeInTheDocument()
+
     act(() => { vi.advanceTimersByTime(1000) })
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
@@ -65,7 +70,7 @@ describe('AppToaster', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Registo removido.')
   })
 
-  it('pauses the countdown while the message is hovered', () => {
+  it('pauses the countdown while hovered and resumes with the remaining time', () => {
     render(<AppToaster />)
     act(() => { toast.success('Registo removido.') })
     const container = document.querySelector('[data-rht-toaster]')
@@ -76,8 +81,13 @@ describe('AppToaster', () => {
     expect(screen.getByText('Registo removido.')).toBeInTheDocument()
 
     fireEvent.mouseLeave(container)
-    act(() => { vi.advanceTimersByTime(1200) })
-    act(() => { vi.advanceTimersByTime(1200) })
+    act(() => { vi.advanceTimersByTime(999) })
+    expect(screen.getByText('Registo removido.')).toBeInTheDocument()
+
+    act(() => { vi.advanceTimersByTime(1) })
+    expect(screen.getByText('Registo removido.')).toBeInTheDocument()
+
+    act(() => { vi.advanceTimersByTime(1000) })
     expect(screen.queryByText('Registo removido.')).not.toBeInTheDocument()
   })
 
