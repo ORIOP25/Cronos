@@ -96,12 +96,13 @@ const SubjectForm = ({ initialData, onSubmit, isLoading, onCancel, readOnly = fa
 
   const modulesInvalid = validation?.field === 'modules'
   const moduleInputProps = {
+    invalid: modulesInvalid || undefined,
     'aria-invalid': modulesInvalid || undefined,
     'aria-describedby': modulesInvalid ? MODULES_FEEDBACK_ID : undefined,
   }
 
   return (
-    <CForm onSubmit={submit}>
+    <CForm onSubmit={submit} noValidate>
       <fieldset className="mb-4">
         <legend className="h6 mb-3">Dados gerais</legend>
         <CRow className="g-3">
@@ -113,6 +114,7 @@ const SubjectForm = ({ initialData, onSubmit, isLoading, onCancel, readOnly = fa
               onChange={(event) => updateSubject('name', event.target.value)}
               disabled={readOnly}
               required
+              invalid={validation?.field === 'subject-name' || undefined}
               aria-invalid={validation?.field === 'subject-name' || undefined}
               aria-describedby={validation?.field === 'subject-name' ? SUBJECT_FEEDBACK_ID : undefined}
               ref={subjectNameRef}

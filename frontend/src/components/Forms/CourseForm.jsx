@@ -96,6 +96,7 @@ const CourseForm = ({ onSubmit, isLoading, onCancel }) => {
     || (classError?.field === 'date_range' && (field === 'start_year' || field === 'end_year'))
 
   const classInputProps = (field) => ({
+    invalid: isClassInvalid(field) || undefined,
     'aria-invalid': isClassInvalid(field) || undefined,
     'aria-describedby': isClassInvalid(field) ? CLASS_FEEDBACK_ID : undefined,
   })
@@ -107,7 +108,7 @@ const CourseForm = ({ onSubmit, isLoading, onCancel }) => {
   )
 
   return (
-    <CForm onSubmit={submit}>
+    <CForm onSubmit={submit} noValidate>
       <fieldset className="mb-4">
         <legend className="h6 mb-3">Dados gerais</legend>
         <CRow className="g-3">
@@ -118,6 +119,7 @@ const CourseForm = ({ onSubmit, isLoading, onCancel }) => {
               value={course.name}
               onChange={(event) => updateCourse('name', event.target.value)}
               required
+              invalid={formError?.field === 'name' || undefined}
               aria-invalid={formError?.field === 'name' || undefined}
               aria-describedby={formError?.field === 'name' ? COURSE_FEEDBACK_ID : undefined}
             />
@@ -133,6 +135,7 @@ const CourseForm = ({ onSubmit, isLoading, onCancel }) => {
               maxLength={10}
               onChange={(event) => updateCourse('abbreviation', event.target.value)}
               required
+              invalid={formError?.field === 'abbreviation' || undefined}
               aria-invalid={formError?.field === 'abbreviation' || undefined}
               aria-describedby={formError?.field === 'abbreviation' ? COURSE_FEEDBACK_ID : undefined}
             />

@@ -7,6 +7,7 @@
  */
 
 import { render, screen, fireEvent } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { describe, it, expect, vi } from 'vitest'
 import ClassInCourseForm from '../components/Forms/ClassInCourseForm'
 
@@ -67,25 +68,46 @@ describe('ClassInCourseForm', () => {
     expect(alert).toHaveTextContent(/ano de fim/i)
     expect(startYear).toHaveAttribute('aria-invalid', 'true')
     expect(endYear).toHaveAttribute('aria-invalid', 'true')
+    expect(startYear).toHaveClass('is-invalid')
+    expect(endYear).toHaveClass('is-invalid')
     expect(startYear).toHaveFocus()
     expect(endYear).toHaveAccessibleDescription(/ano de fim/i)
   })
 
-  it('associa o erro do nome ao campo e limpa a mensagem quando fica válido', () => {
+  it('associa o erro do nome ao campo e limpa a mensagem quando fica válido', async () => {
+    const user = userEvent.setup()
     const onSubmit = vi.fn()
     render(<ClassInCourseForm {...defaultProps} onSubmit={onSubmit} />)
 
-    fireEvent.change(screen.getByRole('textbox'), { target: { value: '   ' } })
-    fireEvent.submit(screen.getByRole('textbox').closest('form'))
-
     const nameInput = screen.getByRole('textbox')
+    await user.click(screen.getByRole('button', { name: /criar turma/i }))
+
     expect(onSubmit).not.toHaveBeenCalled()
     expect(nameInput).toHaveAttribute('aria-invalid', 'true')
+    expect(nameInput).toHaveClass('is-invalid')
     expect(nameInput).toHaveFocus()
     expect(screen.getByRole('alert')).toHaveTextContent(/nome da turma/i)
 
-    fireEvent.change(nameInput, { target: { value: 'Turma CIF C' } })
+    await user.type(nameInput, 'Turma CIF C')
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(nameInput).not.toHaveClass('is-invalid')
+  })
+
+  it('valida os limites da turma junto ao campo na submissão real', async () => {
+    const user = userEvent.setup()
+    const onSubmit = vi.fn()
+    render(<ClassInCourseForm {...defaultProps} onSubmit={onSubmit} />)
+
+    await user.type(screen.getByRole('textbox'), 'Turma CIF D')
+    const sizeInput = screen.getByLabelText(/nº alunos/i)
+    await user.clear(sizeInput)
+    await user.type(sizeInput, '101')
+    await user.click(screen.getByRole('button', { name: /criar turma/i }))
+
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(screen.getByRole('alert')).toHaveTextContent(/entre 1 e 100/i)
+    expect(sizeInput).toHaveClass('is-invalid')
+    expect(sizeInput).toHaveFocus()
   })
 
   it('popula campos na edição', () => {

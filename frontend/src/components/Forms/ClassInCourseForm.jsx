@@ -32,6 +32,7 @@ const ClassInCourseForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
     || (validation?.field === 'date_range' && (field === 'start_year' || field === 'end_year'))
 
   const inputProps = (field) => ({
+    invalid: isInvalid(field) || undefined,
     'aria-invalid': isInvalid(field) || undefined,
     'aria-describedby': isInvalid(field) ? FEEDBACK_ID : undefined,
   })
@@ -70,7 +71,7 @@ const ClassInCourseForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
   else if (initialData) submitLabel = 'Atualizar Turma'
 
   return (
-    <CForm onSubmit={handleSubmit}>
+    <CForm onSubmit={handleSubmit} noValidate>
       <CRow className="g-3">
         <CCol md={8}>
           <CFormInput
