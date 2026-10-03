@@ -1,6 +1,7 @@
 import '@testing-library/jest-dom'
 import { createElement } from 'react'
 import { afterEach, beforeEach, vi } from 'vitest'
+import { toast } from 'react-hot-toast'
 
 let originalConsoleError
 let unexpectedConsoleErrors
@@ -23,6 +24,25 @@ afterEach(() => {
 
 if (typeof window !== 'undefined') {
   Object.defineProperty(window, 'scrollTo', { value: vi.fn(), writable: true, configurable: true })
+  if (typeof window.matchMedia !== 'function') {
+    Object.defineProperty(window, 'matchMedia', {
+      writable: true,
+      configurable: true,
+      value: (query) => ({
+        matches: false,
+        media: query,
+        onchange: null,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        addListener: () => {},
+        removeListener: () => {},
+        dispatchEvent: () => false,
+      }),
+    })
+  }
+  afterEach(() => {
+    toast.removeAll()
+  })
 }
 
 export const DEFAULT_LEGAL_VERSIONS = {

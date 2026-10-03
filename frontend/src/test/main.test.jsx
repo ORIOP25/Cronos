@@ -1,4 +1,6 @@
+import { Children } from 'react'
 import { describe, it, expect, beforeEach, vi } from 'vitest'
+import AppToaster from '../components/AppToaster'
 
 const reactDom = vi.hoisted(() => ({ rendered: null }))
 
@@ -19,7 +21,7 @@ describe('frontend authentication composition', () => {
     reactDom.rendered = null
   })
 
-  it('delivers the local authentication routes to ClerkProvider', async () => {
+  it('delivers the local authentication routes to ClerkProvider and mounts one feedback host', async () => {
     await import('../main.jsx')
 
     const clerkProvider = reactDom.rendered.props.children
@@ -28,5 +30,9 @@ describe('frontend authentication composition', () => {
     expect(clerkProvider.props.taskUrls).toEqual({
       'choose-organization': '/login/tasks/choose-organization',
     })
+
+    const userQueryProvider = clerkProvider.props.children.props.children
+    const feedbackHosts = Children.toArray(userQueryProvider.props.children).filter((child) => child.type === AppToaster)
+    expect(feedbackHosts).toHaveLength(1)
   }, 15_000)
 })
