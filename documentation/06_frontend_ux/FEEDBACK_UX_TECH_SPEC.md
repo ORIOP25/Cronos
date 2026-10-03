@@ -5,13 +5,13 @@
 Este documento especifica a modernização do feedback visual do Cronos.
 Define comportamento, arquitetura, migração, TDD e critérios de aceitação.
 
-**Estado:** especificação de implementação. As decisões de produto estão fechadas. A implementação está pendente.
+**Estado:** implementado na branch `feat/feedback-ux-modernization`. As decisões de produto estão fechadas.
 **Data:** 3 de outubro de 2026.
 **Base observada:** código local da branch `main`, consultado nesta data.
 
 Os guias existentes descrevem o comportamento atual.
-Os requisitos deste documento descrevem o comportamento proposto.
-Atualize os guias quando implementar cada mudança.
+Os requisitos deste documento descrevem o comportamento implementado na branch.
+A secção de riscos ainda dependentes da implementação regista o que falta confirmar na integração.
 
 ## Intended Reader
 
