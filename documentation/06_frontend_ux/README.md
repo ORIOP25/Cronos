@@ -9,3 +9,4 @@ This section documents React 19 frontend architecture, route permission guards, 
 - [DESIGN_SYSTEM.md](DESIGN_SYSTEM.md): Merged design tokens, 60-30-10 color palette, typography, visual rules.
 - [ACCESSIBILITY.md](ACCESSIBILITY.md): WCAG contrast guidelines, ARIA attributes, keyboard navigation.
 - [FEEDBACK_UX_TECH_SPEC.md](FEEDBACK_UX_TECH_SPEC.md): Feedback modernization implemented on branch `feat/feedback-ux-modernization`, toast rules, contextual messages, architecture, TDD, and acceptance criteria.
+- [FEEDBACK_MESSAGE_MATRIX.md](FEEDBACK_MESSAGE_MATRIX.md): Channel and owner for each feedback message, with justified list-panel exceptions.

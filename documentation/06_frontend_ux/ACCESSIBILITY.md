@@ -30,6 +30,7 @@ The repository does not run an automated full-page WCAG audit in CI.
 | **Keyboard rows** | Enter and Space activation | `SmartTable.jsx` handles keyboard activation for clickable rows |
 | **Live feedback** | Errors alert immediately. Other feedback announces politely. | `FeedbackBanner.jsx` uses `role="alert"` or `role="status"`. |
 | **Transient feedback** | Toasts announce errors as alerts and other results as status. Toasts never move focus. | `AppToaster.jsx` sets the error role and keeps the library reading pause. |
+| **Toasts with modals** | The toast host stays outside hidden regions and above the modal layer. | `FeedbackModal.test.jsx` renders a real CoreUI modal and checks announcements, focus, and Escape. |
 | **Field validation** | Errors stay next to the field or group with an accessible association. | Forms use `aria-invalid`, `aria-describedby`, and focus the first invalid field. |
 | **Availability grid** | Only one cell is in the normal tab order. Arrows move between available cells. | `AvailabilityGrid.jsx` uses roving `tabIndex`. |
 | **Scrollable grids** | Grid scrolling stays inside a labelled focusable region. | `WeekGrid.jsx` and `AvailabilityGrid.jsx` use contained scroll regions. |

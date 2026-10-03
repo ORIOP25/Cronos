@@ -63,7 +63,10 @@ React Query manages server state while component state handles form and view sta
 - Success and information toasts last 4000 ms. Transient error toasts last 6000 ms.
 - The toast position is `top-right` from 768 px and `top-center` below that width.
 - `App.jsx` removes visible toasts when the user or organization changes.
+- `hooks/useAttemptScope.js` guards async results with the identity that started them.
+- A stale result emits no feedback and changes no draft.
 - Field validation stays next to the field or group. Validation never uses a toast.
+- The [Feedback Message Matrix](FEEDBACK_MESSAGE_MATRIX.md) records the channel and owner per operation.
 - Marketing styles use the `cronos-*` namespace.
 - `metadata.js` is the single source for public route metadata.
 - The build emits one HTML file for each route in `metadata.js`, plus `404.html`.
@@ -101,6 +104,7 @@ Availability keeps persisted server data separate from a local paint draft.
 - `frontend/src/main.jsx`
 - `frontend/src/App.jsx`
 - `frontend/src/components/AppToaster.jsx`
+- `frontend/src/hooks/useAttemptScope.js`
 - `frontend/src/apiClient.js`
 - `frontend/src/queryClient.js`
 - `frontend/src/styles/brand.tokens.css`
