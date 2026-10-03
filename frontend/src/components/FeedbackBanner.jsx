@@ -15,7 +15,7 @@ export default function FeedbackBanner({ tone = 'info', title, children, action 
       <CIcon icon={icon} className="feedback-banner__icon" aria-hidden="true" />
       <div className="feedback-banner__content">
         {title && <p className="feedback-banner__title">{title}</p>}
-        <p className="feedback-banner__message">{children}</p>
+        <div className="feedback-banner__message">{children}</div>
       </div>
       {action && <div className="feedback-banner__action">{action}</div>}
     </div>

@@ -914,14 +914,14 @@ const PendingProposalBanner = ({ proposal }) => {
   if (!proposal?.grid_version_id) return null
   const statusLabel = GENERATION_STATUS_LABELS[proposal.job_status] ?? proposal.job_status
   return (
-    <CAlert color="info" className="d-flex flex-wrap align-items-center justify-content-between gap-2">
-      <span>
-        <strong>Proposta de grelha pendente</strong>
-        {' — '}efetiva a {formatDate(proposal.effective_date)}
-        {statusLabel ? ` · ${statusLabel}` : ''}. O cancelamento da proposta é feito em Horários.
-      </span>
-      <a href="/schedules" className="alert-link">Ir para Horários</a>
-    </CAlert>
+    <FeedbackBanner
+      tone="info"
+      action={<a href="/schedules">Ir para Horários</a>}
+    >
+      <strong>Proposta de grelha pendente</strong>
+      {' — '}efetiva a {formatDate(proposal.effective_date)}
+      {statusLabel ? ` · ${statusLabel}` : ''}. O cancelamento da proposta é feito em Horários.
+    </FeedbackBanner>
   )
 }
 
@@ -1206,14 +1206,16 @@ const GridEditor = ({
     <div>
       {validationMessage && <div className="mb-3"><FeedbackBanner tone="danger">{validationMessage}</FeedbackBanner></div>}
       {staleProposalMessage && <div className="mb-3"><FeedbackBanner tone="warning">{staleProposalMessage}</FeedbackBanner></div>}
-      <PendingProposalBanner proposal={pendingProposal} />
+      <div className="mb-3"><PendingProposalBanner proposal={pendingProposal} /></div>
       {proposal && (
-        <CAlert color="success">
-          <strong>Proposta de grelha criada.</strong>
-          {' '}Fica efetiva a {formatDate(proposal.effective_date)}. Estado da geração:{' '}
-          {GENERATION_STATUS_LABELS[proposal.status] ?? proposal.status}.
-          {' '}<a href="/schedules" className="alert-link">Ir para Horários</a> para acompanhar a proposta.
-        </CAlert>
+        <div className="mb-3">
+          <FeedbackBanner tone="success">
+            <strong>Proposta de grelha criada.</strong>
+            {' '}Fica efetiva a {formatDate(proposal.effective_date)}. Estado da geração:{' '}
+            {GENERATION_STATUS_LABELS[proposal.status] ?? proposal.status}.
+            {' '}<a href="/schedules">Ir para Horários</a> para acompanhar a proposta.
+          </FeedbackBanner>
+        </div>
       )}
 
       <p className="text-muted mb-4">
