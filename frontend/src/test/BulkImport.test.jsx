@@ -1,8 +1,8 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { MemoryRouter } from 'react-router-dom'
 import BulkImport from '../pages/BulkImport'
+import { renderWithRouter } from './testUtils'
 
 const mocks = vi.hoisted(() => ({
   validate: vi.fn(),
@@ -39,11 +39,7 @@ describe('BulkImport', () => {
   })
 
   function renderPage() {
-    return render(
-      <MemoryRouter initialEntries={['/imports']}>
-        <BulkImport />
-      </MemoryRouter>,
-    )
+    return renderWithRouter(<BulkImport />, { initialEntries: ['/imports'], withToaster: true })
   }
 
   it('presents plain-language instructions without technical implementation terms', () => {
@@ -90,7 +86,7 @@ describe('BulkImport', () => {
 
     resolveDownload()
     expect(
-      await screen.findByText(/Download pedido ao browser/i)
+      await within(document.querySelector('[data-rht-toaster]')).findByText(/Download pedido ao browser/i)
     ).toBeInTheDocument()
   })
 })

@@ -28,16 +28,26 @@ if (typeof window !== 'undefined') {
     Object.defineProperty(window, 'matchMedia', {
       writable: true,
       configurable: true,
-      value: (query) => ({
-        matches: false,
-        media: query,
-        onchange: null,
-        addEventListener: () => {},
-        removeEventListener: () => {},
-        addListener: () => {},
-        removeListener: () => {},
-        dispatchEvent: () => false,
-      }),
+      value: (query) => {
+        const minWidth = /\(min-width:\s*(\d+)px\)/.exec(query)
+        const maxWidth = /\(max-width:\s*(\d+)px\)/.exec(query)
+        const width = window.innerWidth || 1024
+        const matches = minWidth
+          ? width >= Number(minWidth[1])
+          : maxWidth
+            ? width <= Number(maxWidth[1])
+            : false
+        return {
+          matches,
+          media: query,
+          onchange: null,
+          addEventListener: () => {},
+          removeEventListener: () => {},
+          addListener: () => {},
+          removeListener: () => {},
+          dispatchEvent: () => false,
+        }
+      },
     })
   }
   afterEach(() => {
