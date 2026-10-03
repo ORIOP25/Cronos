@@ -157,4 +157,20 @@ describe('E2E runtime guard classifiers', () => {
       url: '/api/v1/schedule/active-blocks/',
     }])).toBeNull()
   })
+
+  it('ignores external telemetry failures when the base URL is provided', () => {
+    const sentryUrl = 'https://o449981.ingest.us.sentry.io/api/4508852298842113/envelope/'
+
+    expect(getApiResponseError(
+      { status: 429, url: sentryUrl },
+      [],
+      { baseUrl },
+    )).toBeNull()
+
+    expect(getConsoleError({
+      type: 'error',
+      text: 'Failed to load resource: the server responded with a status of 429 ()',
+      locationUrl: sentryUrl,
+    }, [], { baseUrl })).toBeNull()
+  })
 })
