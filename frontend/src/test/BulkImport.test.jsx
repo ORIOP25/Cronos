@@ -86,7 +86,7 @@ describe('BulkImport', () => {
 
     resolveDownload()
     expect(
-      await within(document.querySelector('[data-rht-toaster]')).findByText(/Download pedido ao browser/i)
+      await within(document.querySelector('[data-rht-toaster]')).findByText(/Transferência iniciada/i)
     ).toBeInTheDocument()
   })
 })

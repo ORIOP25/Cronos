@@ -14,7 +14,7 @@ import {
 import { ROUTE_MY_SCHEDULES } from '../roleAccess'
 
 export const ADMIN_NAVIGATION = Object.freeze([
-  { path: '/dashboard', label: 'Dashboard', icon: cilSpeedometer },
+  { path: '/dashboard', label: 'Painel', icon: cilSpeedometer },
   { path: '/schedules', label: 'Horários', icon: cilCalendar },
   { path: '/absences', label: 'Faltas', icon: cilCheckCircle },
   { path: '/timesheets', label: 'Fecho Semanal', icon: cilCalendar },
@@ -22,7 +22,7 @@ export const ADMIN_NAVIGATION = Object.freeze([
   { path: '/courses', label: 'Cursos', icon: cilEducation },
   { path: '/members', label: 'Equipa', icon: cilPeople },
   { path: '/subjects', label: 'Disciplinas', icon: cilLibrary },
-  { section: 'Recursos' },
+  { section: 'Escola' },
   { path: '/rooms', label: 'Salas', icon: cilRoom },
   { path: '/config', label: 'Configuração', icon: cilSettings },
 ])

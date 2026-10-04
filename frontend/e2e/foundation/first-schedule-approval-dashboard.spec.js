@@ -121,7 +121,7 @@ test.describe('Dashboard — First Real Schedule Approval & Discrimination', () 
       const preparationPayload = await (await preparationResponse).json()
       expect(preparationPayload.mode).toBe('PREPARATION')
       await expect(page.getByTestId('preparation-dashboard')).toBeVisible()
-      await expect(page.getByRole('heading', { name: /Cadeia Cumulativa de Validação/i })).toBeVisible()
+      await expect(page.getByRole('heading', { name: /Passos de preparação/i })).toBeVisible()
       await expect(page.getByRole('heading', { name: /Painel de Controlo Operacional/i })).toHaveCount(0)
 
       // 2. Generate and approve a real draft, then read the real operational dashboard.

@@ -48,7 +48,7 @@ const GenerationStatusPanel = ({ jobId }) => {
         <FeedbackBanner tone="info">
           <span className="d-inline-flex align-items-center gap-2">
             <CSpinner size="sm" />
-            A aguardar resposta do servidor...
+            A aguardar...
           </span>
         </FeedbackBanner>
       </div>
@@ -84,7 +84,7 @@ const GenerationStatusPanel = ({ jobId }) => {
     return (
       <div className="mb-4" data-testid="generation-terminal">
         <FeedbackBanner tone={status === 'CANCELLED' || status === 'STALE' ? 'warning' : 'danger'}>
-          <strong>{STATUS_LABELS[status] || status}</strong>
+          <strong>{STATUS_LABELS[status] || 'Estado da geração indisponível'}</strong>
           {' '}
           {roomBlocked ? (
             <>
@@ -109,7 +109,7 @@ const GenerationStatusPanel = ({ jobId }) => {
           {isActive && <CSpinner size="sm" />}
           <strong>{STATUS_LABELS[status]}</strong>
           {status === 'QUEUED' && job.queue_position > 1 && (
-            <span className="small">· posição {job.queue_position} na fila</span>
+            <span className="small">· {job.queue_position}.º pedido em espera</span>
           )}
         </span>
         {queuedTooLong && (

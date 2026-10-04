@@ -145,9 +145,9 @@ const SlotCell = ({ slotEntries, isOperationalEnabled, onOpenOperationalAction }
   let operationalBlockReason = ''
   if (isOperationalEnabled && !canOpenOperationalAction && !isWeekLocked) {
     if (hasCollision) {
-      operationalBlockReason = 'Conflito no slot. Use a página de Faltas para análise.'
+      operationalBlockReason = 'Conflito neste bloco. Use a página Faltas para análise.'
     } else if (!(slot.active_schedule_block_id || slot.operational_block_id) || !slot.date) {
-      operationalBlockReason = 'Este bloco não tem contexto operacional completo.'
+      operationalBlockReason = 'Este bloco ainda não pode ser registado.'
     }
   }
 

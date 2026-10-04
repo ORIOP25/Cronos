@@ -27,7 +27,7 @@ describe('DefaultLayout', () => {
       </MemoryRouter>
     )
     expect(getByRole('navigation')).toBeInTheDocument()
-    expect(getByText('Dashboard')).toBeInTheDocument()
+    expect(getByText('Painel')).toBeInTheDocument()
     expect(getByText('Equipa')).toBeInTheDocument()
     expect(getByRole('button', { name: /terminar sessão/i })).toBeInTheDocument()
     expect(getByTestId('child')).toHaveTextContent('Content')
@@ -40,7 +40,7 @@ describe('DefaultLayout', () => {
         <DefaultLayout navigationRole="admin"><span>Demo</span></DefaultLayout>
       </MemoryRouter>
     )
-    expect(getByText('Dashboard')).toBeInTheDocument()
+    expect(getByText('Painel')).toBeInTheDocument()
     expect(getByText('Disciplinas')).toBeInTheDocument()
   })
 

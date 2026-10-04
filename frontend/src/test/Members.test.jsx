@@ -85,7 +85,7 @@ describe('Members', () => {
 
     renderWithRouter(<Members />)
 
-    for (const description of ['Reenviar convite', 'Tentar sincronização novamente', 'Restaurar membro']) {
+    for (const description of ['Reenviar convite', 'Tentar confirmar o acesso novamente', 'Restaurar membro']) {
       expect(screen.getByTitle(description)).toBeVisible()
     }
   })

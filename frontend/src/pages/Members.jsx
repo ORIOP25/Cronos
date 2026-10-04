@@ -57,7 +57,7 @@ const accessLabels = {
   invite_expired: ['Convite expirado', 'warning'],
   active: ['Com acesso', 'success'],
   blocked: ['Acesso bloqueado', 'dark'],
-  sync_error: ['Erro de sincronização', 'danger'],
+  sync_error: ['Acesso por confirmar', 'warning'],
 }
 
 const accessErrorMessages = {
@@ -147,7 +147,7 @@ const MemberModal = ({ visible, member, subjects, onClose, onSave, isSaving, err
           <div className="mb-3"><FeedbackBanner tone="danger">{getApiErrorMessage(error, undefined, member ? 'team.sync' : 'team.invite')}</FeedbackBanner></div>
         )}
         {syncBlocked && (
-          <div className="mb-3"><FeedbackBanner tone="warning">Resolva a sincronização antes de editar este membro.</FeedbackBanner></div>
+          <div className="mb-3"><FeedbackBanner tone="warning">Confirme primeiro o acesso deste membro para o poder editar.</FeedbackBanner></div>
         )}
         <div className="d-grid gap-3">
           <CFormInput id="member-name" label="Nome" value={draft.organization_display_name} onChange={(event) => setDraft({ ...draft, organization_display_name: event.target.value })} disabled={isSaving || syncBlocked || competenciesOnly} />
@@ -177,7 +177,7 @@ const MemberModal = ({ visible, member, subjects, onClose, onSave, isSaving, err
                 disabled={isSaving || syncBlocked || hasAdmin || competenciesOnly}
                 options={[
                   { value: 'platform', label: 'Com acesso a plataforma' },
-                  { value: 'scheduler_only', label: 'Apenas recurso de horario' },
+                  { value: 'scheduler_only', label: 'Apenas horário (sem acesso à plataforma)' },
                 ]}
               />
               {draft.teacher_access_mode === 'scheduler_only' && !hasAdmin && (
@@ -239,7 +239,7 @@ const Members = ({ readOnly = false, allowedActions }) => {
   const availabilityTeacher = useMemo(() => {
     if (!showAvailability) return null
     return teachers.find((teacher) => teacher.id === availabilityTeacherId)
-      ?? { id: availabilityTeacherId, name: `Professor #${availabilityTeacherId}` }
+      ?? { id: availabilityTeacherId, name: 'Professor por identificar' }
   }, [showAvailability, teachers, availabilityTeacherId])
   const closeAvailability = () => {
     setSearchParams((previous) => {
@@ -342,7 +342,7 @@ const Members = ({ readOnly = false, allowedActions }) => {
               { value: 'active', label: 'Com acesso / ativo' },
               { value: 'pending_invite', label: 'Convite pendente' },
               { value: 'invite_expired', label: 'Convite expirado' },
-              { value: 'sync_error', label: 'Erro de sincronização' },
+              { value: 'sync_error', label: 'Acesso por confirmar' },
               { value: 'blocked', label: 'Acesso bloqueado' },
               { value: 'archived', label: 'Arquivado' },
             ]}
@@ -407,7 +407,7 @@ const Members = ({ readOnly = false, allowedActions }) => {
                   <td className="text-end">
                     <ActionButton title="Editar membro" icon={cilPencil} disabled={!member.actions?.can_edit || !canUpdate} onClick={() => openModal(member)} tutorialTarget={`edit-member-${member.id}`} />
                     <ActionButton title="Reenviar convite" icon={cilReload} disabled={isTutorial || !member.actions?.can_resend_invite} loading={resendInvitation.isPending} onClick={() => resendInvitation.mutate(member.id, attemptScope.guard({ onSuccess: () => toast.success('Convite reenviado.'), onError: handleActionError }))} />
-                    <ActionButton title="Tentar sincronização novamente" icon={cilReload} color="warning" disabled={isTutorial || !member.actions?.can_retry_sync} loading={retrySync.isPending} onClick={() => retrySync.mutate(member.id, attemptScope.guard({ onSuccess: () => toast.success('Sincronização concluída.'), onError: handleActionError }))} />
+                    <ActionButton title="Tentar confirmar o acesso novamente" icon={cilReload} color="warning" disabled={isTutorial || !member.actions?.can_retry_sync} loading={retrySync.isPending} onClick={() => retrySync.mutate(member.id, attemptScope.guard({ onSuccess: () => toast.success('Acesso confirmado.'), onError: handleActionError }))} />
                     <ActionButton title="Restaurar membro" icon={cilActionUndo} color="success" disabled={isTutorial || !member.actions?.can_restore} loading={restoreMember.isPending} onClick={() => restoreMember.mutate({ id: member.id, payload: restorePayloadFromMember(member) }, attemptScope.guard({ onSuccess: () => toast.success('Membro restaurado.'), onError: handleActionError }))} />
                     <ActionButton title="Remover membro" icon={cilTrash} color="danger" disabled={isTutorial || !member.actions?.can_remove} loading={removeMember.isPending} onClick={() => setRemoveTarget(member)} />
                   </td>

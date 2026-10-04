@@ -32,7 +32,7 @@ export function PreparationDashboard({
   const validation = prevalidation || { status: 'BLOCKED' }
 
   if (!bases || typeof bases !== 'object' || !Array.isArray(bases.steps)) {
-    return <StatePanel state="error" title="Resposta de readiness inválida" description="As bases de preparação não foram devolvidas pelo servidor." />
+    return <StatePanel state="error" title="Não foi possível avaliar a preparação" description="Tente novamente dentro de instantes." />
   }
 
   const percentage = bases.percentage ?? 0
@@ -45,18 +45,18 @@ export function PreparationDashboard({
 
   const isBlockedByPrevalidation = complete && !canGenerate
 
-  let cardTitle = `Prontidão das Bases: ${percentage}%`
-  let cardDescription = 'Complete o próximo nível pendente na lista abaixo para progredir.'
+  let cardTitle = `Preparação da escola: ${percentage}%`
+  let cardDescription = 'Complete o próximo passo pendente na lista abaixo para avançar.'
   if (canGenerate) {
-    cardTitle = 'Todas as bases estão prontas para geração.'
-    cardDescription = 'A escola cumpre os invariantes necessários para iniciar a geração.'
+    cardTitle = 'A escola está pronta para gerar o horário.'
+    cardDescription = 'A escola reúne as condições necessárias para gerar o horário.'
   } else if (isBlockedByPrevalidation) {
-    cardTitle = 'Geração bloqueada por validações adicionais.'
+    cardTitle = 'Ainda faltam condições para gerar o horário.'
     cardDescription = (
       <>
-        Consulte a validação detalhada em{' '}
+        Consulte os bloqueios em{' '}
         <Link to="/schedules" className="text-white fw-semibold">Horários</Link>
-        {' '}para rever o bloqueio antes de gerar.
+        {' '}antes de gerar.
       </>
     )
   }
@@ -65,9 +65,9 @@ export function PreparationDashboard({
     <div className="preparation-dashboard p-4" data-testid="preparation-dashboard">
       <PageHeader
         preTitle="Fase de Preparação"
-        title="Prontidão das Bases Escolares"
+        title="Preparação da Escola"
         context={organizationName || 'a sua escola'}
-        description={`Complete a cadeia cumulativa de ${stepCount} níveis antes de lançar a geração de horários.`}
+        description={`Complete os ${stepCount} passos de preparação antes de gerar o horário.`}
       />
 
       <CCard className="mb-4 shadow-sm border-0 bg-primary text-white">
@@ -78,7 +78,7 @@ export function PreparationDashboard({
                 color="light"
                 textColor="primary"
                 className="fw-bold mb-2"
-                aria-label={`Prontidão: ${depth} de ${stepCount}`}
+                aria-label={`Progresso: ${depth} de ${stepCount}`}
               >
                 {depth}/{stepCount}
               </CBadge>
@@ -119,7 +119,7 @@ export function PreparationDashboard({
 
       <CCard className="shadow-sm border-0 mb-4">
         <CCardBody className="p-4">
-          <h2 className="h5 fw-bold mb-3 text-dark">Cadeia Cumulativa de Validação</h2>
+          <h2 className="h5 fw-bold mb-3 text-dark">Passos de preparação</h2>
           <div className="d-flex flex-column gap-3" data-testid="preparation-levels">
             {steps.map((step, index) => {
               const isPassed = step.status === 'COMPLETE'
@@ -142,13 +142,13 @@ export function PreparationDashboard({
                       {isPassed ? '✓ Concluído' : isCurrentTarget ? 'A Realizar' : 'Bloqueado'}
                     </span>
                     <div>
-                      <h3 className="h6 mb-0 fw-semibold text-dark">{index + 1}. {STEP_LABELS[step.code] || step.code}</h3>
+                      <h3 className="h6 mb-0 fw-semibold text-dark">{index + 1}. {STEP_LABELS[step.code] || 'Passo de preparação'}</h3>
                       <small className="text-muted">
                         {isPassed
-                          ? 'Invariante satisfeito'
+                          ? 'Concluído'
                           : isCurrentTarget
-                            ? 'Configure este recurso para desbloquear o próximo nível'
-                            : 'Requer que o nível anterior esteja concluído'}
+                            ? 'Complete este passo para avançar'
+                            : 'Conclua primeiro o passo anterior'}
                       </small>
                     </div>
                   </div>

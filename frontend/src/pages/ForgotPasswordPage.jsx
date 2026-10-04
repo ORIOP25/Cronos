@@ -12,7 +12,7 @@ function errorCode(error) {
 
 function passwordRecoveryErrorMessage(error) {
   if (errorCode(error) === EMAIL_QUOTA_ERROR) {
-    return 'A instância de desenvolvimento atingiu o limite mensal de emails. Entre com Google ou contacte o administrador; insistir no reenvio não fará chegar um email.'
+    return 'Atingiu o limite mensal de emails de recuperação. Entre com Google ou contacte a administração.'
   }
 
   const clerkError = error?.errors?.[0] || error

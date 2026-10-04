@@ -49,12 +49,12 @@ test.describe('Foundation — Conflict Resolution Modal', () => {
       ))
       await pageB.locator('#school_start_date').fill('2025-09-16')
       await pageBConflict
-      await expect(pageB.getByRole('heading', { name: /conflito de edição detetado/i })).toBeVisible()
-      await expect(pageB.getByText(/Versão esperada:/i)).toBeVisible()
+      await expect(pageB.getByRole('heading', { name: /estes dados foram alterados/i })).toBeVisible()
+      await expect(pageB.getByText(/outra pessoa alterou estes dados/i)).toBeVisible()
       await expect(pageB.getByRole('button', { name: /seguinte/i })).toBeDisabled()
 
       await pageB.getByRole('button', { name: /recarregar dados mais recentes/i }).click()
-      await expect(pageB.getByRole('heading', { name: /conflito de edição detetado/i })).toBeHidden()
+      await expect(pageB.getByRole('heading', { name: /estes dados foram alterados/i })).toBeHidden()
 
       await pageB.locator('#school_hard_end_date').fill('2026-07-31')
       await pageB.waitForResponse((response) => (

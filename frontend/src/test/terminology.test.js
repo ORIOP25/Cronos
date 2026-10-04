@@ -22,17 +22,17 @@ describe('terminology', () => {
   })
 
   describe('humanizeOperationalDetail', () => {
-    it('traduz CP-SAT para "motor de cálculo"', () => {
-      expect(humanizeOperationalDetail('Erro no CP-SAT')).toContain('motor de cálculo')
-      expect(humanizeOperationalDetail('CP-SAT failed')).toContain('motor de cálculo')
+    it('traduz CP-SAT para "gerador de horários"', () => {
+      expect(humanizeOperationalDetail('Erro no CP-SAT')).toContain('gerador de horários')
+      expect(humanizeOperationalDetail('CP-SAT failed')).toContain('gerador de horários')
     })
 
-    it('traduz solver para "motor de cálculo"', () => {
-      expect(humanizeOperationalDetail('solver error')).toContain('motor de cálculo')
+    it('traduz solver para "gerador de horários"', () => {
+      expect(humanizeOperationalDetail('solver error')).toContain('gerador de horários')
     })
 
-    it('traduz worker para "servidor de processamento"', () => {
-      expect(humanizeOperationalDetail('worker timeout')).toContain('servidor de processamento')
+    it('traduz worker para "serviço de geração"', () => {
+      expect(humanizeOperationalDetail('worker timeout')).toContain('serviço de geração')
     })
 
     it('retorna o valor original se não houver termos técnicos', () => {

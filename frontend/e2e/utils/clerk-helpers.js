@@ -70,7 +70,7 @@ export function attachRuntimeGuards(page) {
       type: message.type(),
       text: message.text(),
       locationUrl: message.location()?.url,
-    }, runtimeApiFailures(page))
+    }, runtimeApiFailures(page), { baseUrl: E2E_BASE_URL })
     if (error) {
       throw new Error(error)
     }
@@ -89,7 +89,7 @@ export function attachRuntimeGuards(page) {
     const error = getApiResponseError({
       url: response.url(),
       status: response.status(),
-    }, runtimeApiFailures(page))
+    }, runtimeApiFailures(page), { baseUrl: E2E_BASE_URL })
     if (error) {
       throw new Error(error)
     }

@@ -60,7 +60,7 @@ const BulkImport = () => {
     try {
       await downloadBulkImportTemplate(apiClient, resourceKey)
       if (!attemptScope.isCurrent(attempt)) return
-      toast.success('Download pedido ao browser. Verifique a pasta de transferências.')
+      toast.success('Transferência iniciada. Verifique a pasta de transferências.')
     } catch (error) {
       if (!attemptScope.isCurrent(attempt)) return
       toast.error(getApiErrorMessage(error, 'Não foi possível preparar o modelo.'))

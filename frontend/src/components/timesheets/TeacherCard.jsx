@@ -22,7 +22,7 @@ const TeacherCard = ({ teacher, isSelected, onClick }) => {
     >
       <div className="d-flex justify-content-between align-items-center mb-1">
         <span className="fw-semibold" style={{ fontSize: '0.9rem' }}>
-          {teacher.teacher_name || `Prof. #${teacher.teacher_id}`}
+          {teacher.teacher_name || 'Professor por identificar'}
         </span>
         <CBadge color={status.color} style={{ fontSize: '0.7rem' }}>
           {status.label}

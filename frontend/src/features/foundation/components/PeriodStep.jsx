@@ -6,7 +6,7 @@ export function PeriodStep({ values, fieldErrors, onChange }) {
     <div className="foundation-step-period">
       <h4 tabIndex="-1" className="h5 mb-3 text-dark fw-bold">1. Período do Ano Letivo</h4>
       <p className="text-muted small mb-4">
-        Defina o horizonte temporal da sua escola. O Cronos calculará se a totalidade das horas curriculares pode ser ministrada até à data-limite rígida.
+        Defina o horizonte temporal da sua escola. O Cronos calculará se a totalidade das horas curriculares pode ser ministrada até à data de fim do ano letivo.
       </p>
 
       <CRow className="g-3">
@@ -25,7 +25,7 @@ export function PeriodStep({ values, fieldErrors, onChange }) {
         </CCol>
 
         <CCol md={6}>
-          <CFormLabel htmlFor="school_hard_end_date">Data-Limite Rígida *</CFormLabel>
+          <CFormLabel htmlFor="school_hard_end_date">Data de Fim do Ano Letivo *</CFormLabel>
           <PortugueseDateInput
             id="school_hard_end_date"
             name="school_hard_end_date"
@@ -39,7 +39,7 @@ export function PeriodStep({ values, fieldErrors, onChange }) {
         </CCol>
 
         <CCol md={12} className="mt-4">
-          <CFormLabel htmlFor="repair_stability_window_days">Janela de Estabilidade</CFormLabel>
+          <CFormLabel htmlFor="repair_stability_window_days">Dias em que o horário não muda</CFormLabel>
           <CInputGroup>
             <CFormInput
               type="number"

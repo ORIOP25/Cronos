@@ -4,5 +4,5 @@ export const faqItems = [
   { id: 'substitutions', question: 'Como são geridos os furos e as substituições de professores?', answer: 'A escola regista a ocorrência na aula certa e consulta opções elegíveis. A decisão fica associada ao horário e ao acompanhamento das horas.' },
   { id: 'import', question: 'É possível importar dados existentes de turmas e professores?', answer: 'A configuração pode começar com os dados que a escola já organiza. Numa demonstração, mostramos o caminho mais simples para a sua escola.' },
   { id: 'teachers', question: 'De que forma os professores acedem ao seu horário?', answer: 'Cada professor consulta a sua grelha e os registos associados às aulas. A informação publicada fica disponível no mesmo espaço para a equipa.' },
-  { id: 'privacy', question: 'Como é garantida a segurança e privacidade dos dados da escola?', answer: 'O Cronos usa autenticação e isolamento por organização. Os dados são tratados nos fluxos próprios da aplicação e não são publicados no site.' },
+  { id: 'privacy', question: 'Como é garantida a segurança e privacidade dos dados da escola?', answer: 'O Cronos mantém os dados de cada escola separados e protegidos. A informação é tratada nos fluxos próprios da aplicação e não é publicada no site.' },
 ]

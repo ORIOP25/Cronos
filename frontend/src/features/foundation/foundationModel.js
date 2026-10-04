@@ -90,19 +90,19 @@ export function validateFoundationStep(step, values) {
       errors.school_start_date = 'Indique a data de início do ano letivo.'
     }
     if (!values.school_hard_end_date) {
-      errors.school_hard_end_date = 'Indique a data-limite rígida.'
+      errors.school_hard_end_date = 'Indique a data de fim do ano letivo.'
     }
     if (
       values.school_start_date &&
       values.school_hard_end_date &&
       values.school_hard_end_date <= values.school_start_date
     ) {
-      errors.school_hard_end_date = 'A data-limite deve ser posterior à data de início.'
+      errors.school_hard_end_date = 'A data de fim do ano letivo deve ser posterior à data de início.'
     }
     const rawWindowDays = values.repair_stability_window_days
     const windowDays = rawWindowDays === '' || rawWindowDays == null ? 0 : Number(rawWindowDays)
     if (!Number.isInteger(windowDays) || windowDays < 0 || windowDays > 60) {
-      errors.repair_stability_window_days = 'A janela de estabilidade deve estar entre 0 e 60 dias.'
+      errors.repair_stability_window_days = 'Os dias em que o horário não muda devem estar entre 0 e 60.'
     }
   }
 
@@ -311,7 +311,7 @@ export function foundationReducer(state, action) {
         ...state,
         status: 'conflict',
         conflictData: action.payload,
-        error: 'Conflito de versão: o rascunho foi modificado noutra sessão.',
+        error: 'Estes dados foram alterados noutra sessão.',
         errorCode: action.payload?.code || '',
       }
 

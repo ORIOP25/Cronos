@@ -408,6 +408,11 @@ jobs:
           E2E_CLERK_TEACHER_EMAIL: ${{ env.CI_E2E_CLERK_TEACHER_EMAIL }}
           E2E_CLERK_ORG_ID: ${{ steps.prepare-e2e-clerk-state.outputs.clerk_org_id }}
           CAPACITY_HEALTH_URL: http://localhost:8000/health/ready
+          CAPACITY_REPORT_PATH: playwright-report/capacity-report.json
+
+      - name: Show capacity report
+        if: always()
+        run: cat frontend/playwright-report/capacity-report.json || true
 
       - name: Sanitize test artifacts
         if: always()

@@ -77,7 +77,7 @@ describe('Foundation', () => {
       <PeriodStep values={{ ...initialFoundationDraftValues }} fieldErrors={{}} onChange={vi.fn()} />,
     )
 
-    expect(screen.getByLabelText('Janela de Estabilidade')).toBeInTheDocument()
+    expect(screen.getByLabelText('Dias em que o horário não muda')).toBeInTheDocument()
     expect(
       screen.getByText(/com 0, as aulas de hoje ainda podem mudar; com 1, hoje fica intacto/),
     ).toBeInTheDocument()
@@ -481,7 +481,7 @@ describe('Foundation', () => {
     })
 
     renderFoundation()
-    const stabilityInput = await screen.findByLabelText(/janela de estabilidade/i)
+    const stabilityInput = await screen.findByLabelText(/dias em que o horário não muda/i)
     expect(stabilityInput).toHaveValue(14)
 
     // First change: user types 1
@@ -542,7 +542,7 @@ describe('Foundation', () => {
       .mockReturnValueOnce(secondPutPromise)
 
     renderFoundation()
-    const stabilityInput = await screen.findByLabelText(/janela de estabilidade/i)
+    const stabilityInput = await screen.findByLabelText(/dias em que o horário não muda/i)
     fireEvent.change(stabilityInput, { target: { value: '21' } })
     await waitFor(() => expect(apiClient.put).toHaveBeenCalledTimes(1))
 
@@ -591,7 +591,7 @@ describe('Foundation', () => {
     ))
 
     renderFoundation()
-    const stabilityInput = await screen.findByLabelText(/janela de estabilidade/i)
+    const stabilityInput = await screen.findByLabelText(/dias em que o horário não muda/i)
     fireEvent.change(stabilityInput, { target: { value: '21' } })
     fireEvent.click(screen.getByRole('button', { name: /seguinte/i }))
 
@@ -638,7 +638,7 @@ describe('Foundation', () => {
     })
 
     renderFoundation()
-    const stabilityInput = await screen.findByLabelText(/janela de estabilidade/i)
+    const stabilityInput = await screen.findByLabelText(/dias em que o horário não muda/i)
 
     // Trigger failed save
     fireEvent.change(stabilityInput, { target: { value: '7' } })

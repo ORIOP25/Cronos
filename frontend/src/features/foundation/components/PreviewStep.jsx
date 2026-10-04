@@ -32,7 +32,7 @@ export function PreviewStep({ values, fieldErrors }) {
       <CCard className="border-0 shadow-sm bg-light mb-4">
         <CCardBody>
           <h6 className="fw-bold text-secondary mb-3">
-            Estrutura Diária Calculada ({slots.length} tempos letivos por dia)
+            Estrutura diária de tempos letivos ({slots.length} por dia)
           </h6>
           {slots.length === 0 ? (
             <p className="text-muted small mb-0">Nenhum tempo letivo gerado. Verifique os horários e durações.</p>

@@ -1,7 +1,7 @@
 const chapterBlocks = {
   prepare: [
     { class: 'is-course', label: 'Cursos & Turmas' },
-    { class: 'is-room', label: 'Salas & Recursos' },
+    { class: 'is-room', label: 'Salas e equipamentos' },
     { class: 'is-teacher', label: 'Disponibilidade' },
     { class: 'is-calendar', label: 'Calendário Letivo' },
   ],

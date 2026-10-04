@@ -127,31 +127,29 @@ function failedResourceStatus(text) {
   return match ? Number.parseInt(match[1], 10) : null
 }
 
-export function getConsoleError(consoleMessage, allowedFailures) {
+export function getConsoleError(consoleMessage, allowedFailures, { baseUrl } = {}) {
   if (consoleMessage.type !== 'error') return null
 
   const text = normalizedText(consoleMessage.text)
   if (CSP_FALLBACK_NOTE.test(text)) return null
 
   const status = failedResourceStatus(text)
-  if (
-    status !== null
-    && (
-      isAllowedApiFailure(allowedFailures, {
-        status,
-        url: normalizedText(consoleMessage.locationUrl),
-      })
-    )
-  ) {
-    return null
+  if (status !== null) {
+    const locationUrl = normalizedText(consoleMessage.locationUrl)
+    // External telemetry may rate-limit; only same-origin API failures matter.
+    if (baseUrl && !isSameOrigin(locationUrl, baseUrl)) return null
+    if (isAllowedApiFailure(allowedFailures, { status, url: locationUrl })) {
+      return null
+    }
   }
 
   return `Browser console error: ${text} at ${normalizedText(consoleMessage.locationUrl)}`
 }
 
-export function getApiResponseError(response, allowedFailures) {
+export function getApiResponseError(response, allowedFailures, { baseUrl } = {}) {
   const url = normalizedText(response.url)
   const status = Number(response.status)
+  if (baseUrl && !isSameOrigin(url, baseUrl)) return null
   if (
     url.includes('/api/')
     && status >= 400
