@@ -55,7 +55,7 @@ function OrganizationRequired({ memberships }) {
 }
 
 function OnboardingFailure({ retry }) {
-  return <FailureState presentation={{ ...getApiErrorPresentation({}, 'organization'), message: 'Não foi possível concluir a configuração da sessão.' }} onRetry={() => void retry()} variant="inline" />
+  return <FailureState presentation={{ ...getApiErrorPresentation({}, 'organization'), message: 'Não foi possível preparar o seu acesso. Tente novamente.' }} onRetry={() => void retry()} variant="inline" />
 }
 
 function LegalAdminRequired() {
@@ -116,7 +116,7 @@ function MemberQueryFailure({ error, recoverSession, refetch, signOut }) {
   const presentation = {
     ...getApiErrorPresentation(error, 'organization'),
     message: status === 401
-      ? 'A sessão da organização precisa de ser atualizada. Entre novamente para continuar.'
+      ? 'A sua sessão precisa de ser renovada. Entre novamente para continuar.'
       : status === 403
         ? 'A sua conta não tem acesso a esta organização.'
         : 'Não foi possível confirmar o acesso. Verifique a ligação e tente novamente.',

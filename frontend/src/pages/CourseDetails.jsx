@@ -268,7 +268,7 @@ const CourseDetails = ({ courseIdOverride, readOnly = false, allowedActions, nav
     <div className="p-4">
       <Breadcrumbs items={[
         { label: 'Cursos', to: navigationDisabled ? undefined : '/courses' },
-        { label: course?.name || `Curso #${courseId}` },
+        { label: course?.name || 'Curso' },
       ]} />
 
       {/* ---- ALERTAS DE MUTAÇÕES ---- */}

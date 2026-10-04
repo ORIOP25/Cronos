@@ -63,14 +63,14 @@ describe('ConfirmationModal', () => {
 
   it('anuncia que o pedido continua em processamento após cinco segundos', () => {
     render(<ConfirmationModal {...defaultProps} isLoading={true} />)
-    expect(screen.getByText('Pedido em processamento.')).toBeInTheDocument()
+    expect(screen.getByText('Aguarde, por favor…')).toBeInTheDocument()
 
     act(() => {
       vi.advanceTimersByTime(5000)
     })
 
     expect(
-      screen.getByText('O pedido continua em processamento. Aguarde, por favor.')
+      screen.getByText('A operação continua. Aguarde, por favor.')
     ).toBeInTheDocument()
   })
 

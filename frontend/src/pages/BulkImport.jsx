@@ -56,7 +56,7 @@ const BulkImport = () => {
     setDownloadingResource(resourceKey)
     try {
       await downloadBulkImportTemplate(apiClient, resourceKey)
-      setDownloadNotice('Download pedido ao browser. Verifique a pasta de transferências.')
+      setDownloadNotice('Transferência iniciada. Verifique a pasta de transferências.')
     } catch (error) {
       setLocalError(getApiErrorMessage(error, 'Não foi possível preparar o modelo.'))
     } finally {

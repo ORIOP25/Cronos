@@ -31,11 +31,11 @@ export function SummaryStep({ values, organizationName, confirmed, onConfirmedCh
                 <strong>{values.school_start_date || '—'}</strong>
               </div>
               <div className="small mb-2">
-                <span className="text-muted d-block">Data-Limite Rígida:</span>
+                <span className="text-muted d-block">Fim do ano letivo:</span>
                 <strong>{values.school_hard_end_date || '—'}</strong>
               </div>
               <div className="small">
-                <span className="text-muted d-block">Janela de Estabilidade:</span>
+                <span className="text-muted d-block">Dias em que o horário não muda:</span>
                 <strong>{values.repair_stability_window_days ?? 14} dias</strong>
               </div>
               <div className="small mt-2">
@@ -88,7 +88,7 @@ export function SummaryStep({ values, organizationName, confirmed, onConfirmedCh
         className="mt-3"
         checked={confirmed}
         onChange={(event) => onConfirmedChange(event.target.checked)}
-        label="Confirmo que revi os parâmetros e autorizo a ativação definitiva da fundação."
+        label="Confirmo que revi os dados e autorizo a ativação da escola."
       />
     </div>
   )

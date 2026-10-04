@@ -58,8 +58,8 @@ const GenericModalForm = ({
         {isLoading && (
           <p className="small text-muted mb-2" role="status" aria-live="polite">
             {isSlowRequest
-              ? 'O pedido continua em processamento. Aguarde, por favor.'
-              : 'Pedido em processamento.'}
+              ? 'A operação continua. Aguarde, por favor.'
+              : 'Aguarde, por favor…'}
           </p>
         )}
 

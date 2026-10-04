@@ -214,7 +214,7 @@ describe('SchoolConfig grid changes', () => {
 
     const availability = screen.getByText('Segunda 08:30-09:20').closest('fieldset')
     fireEvent.click(within(availability).getByLabelText('Copiar'))
-    const constraint = screen.getByText('Regra CLASS_DAY_OFF').closest('fieldset')
+    const constraint = screen.getByText('Regra de dia sem aulas').closest('fieldset')
     fireEvent.click(within(constraint).getByLabelText('Descartar'))
 
     await waitFor(() => expect(propose).toBeEnabled())
@@ -286,7 +286,7 @@ describe('SchoolConfig grid changes', () => {
     fireEvent.click(screen.getByRole('button', { name: /pré-visualizar alteração/i }))
     await screen.findByText(/primeira data editável/i)
 
-    for (const legend of ['Segunda 08:30-09:20', 'Regra CLASS_DAY_OFF']) {
+    for (const legend of ['Segunda 08:30-09:20', 'Regra de dia sem aulas']) {
       const target = screen.getByText(legend).closest('fieldset')
       fireEvent.click(within(target).getByLabelText('Copiar'))
     }

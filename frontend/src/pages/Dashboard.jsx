@@ -34,7 +34,7 @@ export default function Dashboard() {
         {header}
         <StatePanel
           state="error"
-          title="Não foi possível carregar o dashboard"
+          title="Não foi possível carregar o painel"
           description={getApiErrorMessage(error, 'Tente novamente mais tarde.')}
         />
       </div>
@@ -47,7 +47,7 @@ export default function Dashboard() {
         {header}
         <StatePanel
           state="loading"
-          title="A carregar o dashboard"
+          title="A carregar o painel"
           description="A reunir a prontidão e o estado operacional da escola."
         />
       </div>
@@ -72,8 +72,8 @@ export default function Dashboard() {
     return (
       <StatePanel
         state="error"
-        title="Resposta de dashboard inválida"
-        description="O modo do dashboard não é reconhecido. Atualize a aplicação e tente novamente."
+        title="Não foi possível abrir o painel"
+        description="Os dados do painel não estão disponíveis. Atualize a página e tente novamente."
       />
     )
   }
@@ -103,7 +103,7 @@ export default function Dashboard() {
       </div>
       <div className="zen-card">
         <div className="zen-card-header">
-          <h3 className="mb-0 dashboard-card-title">Recursos</h3>
+          <h3 className="mb-0 dashboard-card-title">A escola em números</h3>
         </div>
         <div className="zen-card-body">
           <ResourceCounts resources={data?.resources} isLoading={isLoading} />

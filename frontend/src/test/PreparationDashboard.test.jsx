@@ -193,7 +193,7 @@ describe('PreparationDashboard tutorial entry points', () => {
     )
 
     expect(screen.getByRole('button', { name: /gerar horário/i })).toBeEnabled()
-    expect(screen.getAllByText('Invariante satisfeito')).toHaveLength(6)
+    expect(screen.getAllByText('Concluído')).toHaveLength(6)
     expect(screen.queryByText(/issues de preparação/i)).not.toBeInTheDocument()
     expect(screen.queryByText('Aviso')).not.toBeInTheDocument()
   })
@@ -258,8 +258,8 @@ describe('PreparationDashboard tutorial entry points', () => {
     )
 
     expect(screen.getByRole('button', { name: /gerar horário/i })).toBeDisabled()
-    expect(screen.queryByText(/todas as bases estão prontas/i)).not.toBeInTheDocument()
-    expect(screen.getByText(/Prontidão das Bases: 50%/i)).toBeInTheDocument()
+    expect(screen.queryByText(/pronta para gerar o horário/i)).not.toBeInTheDocument()
+    expect(screen.getByText(/Preparação da escola: 50%/i)).toBeInTheDocument()
   })
 
 })

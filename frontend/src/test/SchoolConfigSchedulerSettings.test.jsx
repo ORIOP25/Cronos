@@ -53,7 +53,7 @@ describe('SchoolConfig scheduler settings', () => {
   it('exposes units through accessible suffixes without units in labels', async () => {
     renderWithProviders(<SchoolConfig />)
 
-    const stabilityInput = await screen.findByLabelText('Janela de estabilidade')
+    const stabilityInput = await screen.findByLabelText('Dias em que o horário não muda')
     expect(stabilityInput).toHaveAttribute('aria-describedby', expect.stringContaining('repairWindow-unit'))
     expect(document.getElementById('repairWindow-unit')).toHaveTextContent('Dias')
     expect(screen.queryByLabelText(/janela de estabilidade \(dias\)/i)).not.toBeInTheDocument()
@@ -111,7 +111,7 @@ describe('SchoolConfig scheduler settings', () => {
   it('submits hard boundaries and accepts a zero-day stability window', async () => {
     renderWithProviders(<SchoolConfig />)
 
-    const repairWindow = await screen.findByLabelText(/janela de estabilidade/i)
+    const repairWindow = await screen.findByLabelText(/dias em que o horário não muda/i)
     expect(screen.getByLabelText(/data preferencial de fim/i)).toBeInTheDocument()
 
     fireEvent.change(repairWindow, { target: { value: '0' } })

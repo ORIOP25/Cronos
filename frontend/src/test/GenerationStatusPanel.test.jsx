@@ -40,7 +40,7 @@ describe('GenerationStatusPanel', () => {
 
     render(<GenerationStatusPanel jobId={14} />)
 
-    expect(screen.getByText(/posição 3 na fila/i)).toBeInTheDocument()
+    expect(screen.getByText(/3\.º pedido em espera/i)).toBeInTheDocument()
   })
 
   it('offers a retry when loading the job fails temporarily', () => {

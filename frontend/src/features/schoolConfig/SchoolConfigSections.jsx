@@ -354,7 +354,7 @@ export const CalendarSection = () => {
         <CCardBody>
           <p className="text-muted mb-3">
             Registe uma interrupção específica da escola ou um fluxo de estágio.
-            {' '}Os feriados nacionais são sincronizados através da opção automática.
+            {' '}Os feriados nacionais são atualizados automaticamente através desta opção.
           </p>
           <CRow className="g-3">
             <CCol md={3}>
@@ -521,9 +521,9 @@ export const CalendarSection = () => {
             <CTableBody>
               {previewState?.affected_lessons.map((lesson) => (
                 <CTableRow key={lesson.active_schedule_block_id}>
-                  <CTableDataCell>{lesson.class_name ?? `Turma ${lesson.class_id}`}</CTableDataCell>
+                  <CTableDataCell>{lesson.class_name ?? 'Turma'}</CTableDataCell>
                   <CTableDataCell className="text-nowrap">{formatDate(lesson.date)}</CTableDataCell>
-                  <CTableDataCell>{lesson.subject_name ?? `Disciplina ${lesson.subject_id}`}</CTableDataCell>
+                  <CTableDataCell>{lesson.subject_name ?? 'Disciplina'}</CTableDataCell>
                 </CTableRow>
               ))}
             </CTableBody>
@@ -753,11 +753,11 @@ const SettingsEditor = ({ settings, onSoftResetSuccess, onSaveSuccess }) => {
             id="preferredEndDate"
             value={form.preferred_end_date}
             onChange={(value) => updateForm('preferred_end_date', value)}
-            text="Alvo do gerador; tem de ficar antes da data limite"
+            text="Data desejada para o fim das aulas; tem de ser anterior à data limite"
           />
         </CCol>
         <CCol md={3}>
-          <CFormLabel htmlFor="repairWindow" className="school-config-field-label">Janela de estabilidade</CFormLabel>
+          <CFormLabel htmlFor="repairWindow" className="school-config-field-label">Dias em que o horário não muda</CFormLabel>
           <CInputGroup>
             <CFormInput
               id="repairWindow"
@@ -805,7 +805,7 @@ const SettingsEditor = ({ settings, onSoftResetSuccess, onSaveSuccess }) => {
         </CModalHeader>
         <CModalBody>
           <CAlert color="warning">
-              Esta ação repõe o ano letivo no estado inicial: os horários publicados deixam de estar ativos, as propostas pendentes são invalidadas e o progresso do motor volta a zero. O histórico auditável é conservado, mas deixa de influenciar novas gerações.
+              Esta ação repõe o ano letivo no estado inicial: os horários publicados deixam de estar ativos, as propostas pendentes são invalidadas e o progresso da geração volta a zero. O histórico é conservado, mas deixa de influenciar novas gerações.
             </CAlert>
           
           {resetError && <CAlert color="danger">{resetError}</CAlert>}
@@ -907,11 +907,15 @@ export const GridSection = () => {
 
 const DAY_LABELS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo']
 
+const RULE_TYPE_LABELS = {
+  CLASS_DAY_OFF: 'Regra de dia sem aulas',
+}
+
 const shortTime = (value) => String(value ?? '').slice(0, 5)
 
 const PendingProposalBanner = ({ proposal }) => {
   if (!proposal?.grid_version_id) return null
-  const statusLabel = GENERATION_STATUS_LABELS[proposal.job_status] ?? proposal.job_status
+  const statusLabel = GENERATION_STATUS_LABELS[proposal.job_status] ?? 'Em processamento'
   return (
     <CAlert color="info" className="d-flex flex-wrap align-items-center justify-content-between gap-2">
       <span>
@@ -943,9 +947,9 @@ const GridChangeImpactPanel = ({ preview, decisions, onDecision, onPropose, isPr
           Primeira data editável: <strong>{formatDate(preview.first_editable_date)}</strong>
         </p>
         <p className="text-muted small mb-3">
-          {preview.minutes_completed} min concluídos · {preview.minutes_protected} min protegidos ·{' '}
-          {preview.minutes_planned_after_boundary} min planeados após a fronteira ·{' '}
-          {preview.minutes_remaining} min por colocar
+          {preview.minutes_completed} min já dadas · {preview.minutes_protected} min que não mudam ·{' '}
+          {preview.minutes_planned_after_boundary} min previstos depois da data de corte ·{' '}
+          {preview.minutes_remaining} min por agendar
         </p>
 
         {!preview.can_propose && (
@@ -996,12 +1000,12 @@ const GridChangeImpactPanel = ({ preview, decisions, onDecision, onPropose, isPr
                   <legend className="fs-6 fw-semibold">
                     {isAvailability
                       ? `${DAY_LABELS[target.current.day_of_week]} ${shortTime(target.current.start_time)}-${shortTime(target.current.end_time)}`
-                      : `Regra ${target.rule_type}`}
+                      : RULE_TYPE_LABELS[target.rule_type] || 'Regra'}
                   </legend>
                   <div className="text-muted small mb-2">
                     {isAvailability
                       ? `${target.teachers.length} professor(es) com disponibilidade neste bloco.`
-                      : `Regra aplicada ao bloco atual #${target.current_timeslot_id}.`}
+                      : 'Regra aplicada a este bloco horário.'}
                     {' '}
                     {target.proposed
                       ? `Novo bloco: ${DAY_LABELS[target.proposed.day_of_week]} ${shortTime(target.proposed.start_time)}-${shortTime(target.proposed.end_time)}.`
@@ -1216,7 +1220,7 @@ const GridEditor = ({
         <CAlert color="success">
           <strong>Proposta de grelha criada.</strong>
           {' '}Fica efetiva a {formatDate(proposal.effective_date)}. Estado da geração:{' '}
-          {GENERATION_STATUS_LABELS[proposal.status] ?? proposal.status}.
+          {GENERATION_STATUS_LABELS[proposal.status] ?? 'Em processamento'}.
           {' '}<a href="/schedules" className="alert-link">Ir para Horários</a> para acompanhar a proposta.
         </CAlert>
       )}
@@ -1224,7 +1228,7 @@ const GridEditor = ({
       <p className="text-muted mb-4">
         {schoolYearPublished
           ? 'O ano letivo está publicado. As alterações à grelha são analisadas e propostas antes de serem aplicadas.'
-          : <>Defina aqui o funcionamento geral da escola. Ao guardar, o sistema irá <strong>regenerar todos os blocos horários</strong> base.</>}
+          : <>Defina aqui o funcionamento geral da escola. Ao guardar, a grelha horária base será <strong>regenerada</strong>.</>}
       </p>
 
       <CForm onSubmit={handleSubmit}>

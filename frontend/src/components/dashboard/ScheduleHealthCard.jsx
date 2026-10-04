@@ -53,7 +53,7 @@ export default function ScheduleHealthCard({ health, isLoading }) {
                 </div>
               ))}
             </div>
-            <div className="small text-muted text-center">{health.blocks_count} blocos no total{health.generation_id ? ` · Geração #${health.generation_id.slice(0, 12)}...` : ''}</div>
+            <div className="small text-muted text-center">{health.blocks_count} blocos no total</div>
           </>
         )}
       </div>

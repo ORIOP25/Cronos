@@ -94,7 +94,7 @@ const resolveName = (byIdMap, id, fallbackPrefix) => {
   if (!id) return '—'
   const mappedName = byIdMap.get(id)
   if (mappedName) return mappedName
-  return `${fallbackPrefix} #${id}`
+  return `${fallbackPrefix} por identificar`
 }
 
 const buildExecutionSummary = (occurrence, teacherById, subjectById) => {
@@ -123,9 +123,9 @@ const buildDeciderDisplayName = (occurrence) => {
     return occurrence.decided_by_membership_name
   }
   if (occurrence.decided_by_membership_id) {
-    return `Membro #${occurrence.decided_by_membership_id}`
+    return 'Administração'
   }
-  return 'Admin'
+  return 'Administração'
 }
 
 const buildDecisionSummary = (occurrence) => {
@@ -337,7 +337,7 @@ const EditOccurrenceModal = ({
               )}
               {!loadingRecommendations && recommendationsError && (
                 <CAlert color="danger" className="mb-0">
-                  Erro ao carregar ranking de elegíveis. Tente novamente.
+                  Não foi possível carregar as sugestões de substituição. Tente novamente.
                 </CAlert>
               )}
               {!loadingRecommendations && !recommendationsError && recommendations.length === 0 && (
@@ -378,7 +378,7 @@ const EditOccurrenceModal = ({
                         key={`${rec.teacher_id}-${rec.subject_id}`}
                         value={`${rec.teacher_id}:${rec.subject_id}`}
                       >
-                        #{rec.rank} {rec.teacher_name} — {rec.subject_name}
+                        {rec.teacher_name} — {rec.subject_name}
                       </option>
                     ))}
                   </CFormSelect>
@@ -389,7 +389,7 @@ const EditOccurrenceModal = ({
                         className="p-0"
                         onClick={() => setShowAllRecommendations(prev => !prev)}
                       >
-                        {showAllRecommendations ? 'Mostrar apenas top 3' : 'Ver lista completa'}
+                        {showAllRecommendations ? 'Mostrar apenas 3 sugestões' : 'Ver lista completa'}
                       </CButton>
                     </div>
                   )}

@@ -278,7 +278,7 @@ describe('RequireTeacher', () => {
   it('shows session recovery for a member-query 401 without redirecting to create org', () => {
     memberState.error = { response: { status: 401 } }
     renderGuard(<RequireAdmin><div>Admin</div></RequireAdmin>)
-    expect(screen.getByText(/sessão da organização precisa/i)).toBeInTheDocument()
+    expect(screen.getByText(/sessão precisa de ser renovada/i)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Atualizar sessão/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Terminar sessão/i })).toBeInTheDocument()
     expect(screen.queryByText('Admin')).toBeNull()
@@ -429,7 +429,7 @@ describe('SignedInRedirect', () => {
   it('shows a compact retry alert when background onboarding fails', () => {
     onboardingErrorState.value = new Error('bootstrap failed')
     renderGuard(<RequireAdmin><div>Admin</div></RequireAdmin>)
-    expect(screen.getByText(/não foi possível concluir a configuração/i)).toBeInTheDocument()
+    expect(screen.getByText(/não foi possível preparar o seu acesso/i)).toBeInTheDocument()
     screen.getByRole('button', { name: /tentar novamente/i }).click()
     expect(onboardingErrorState.retry).toHaveBeenCalledTimes(1)
   })

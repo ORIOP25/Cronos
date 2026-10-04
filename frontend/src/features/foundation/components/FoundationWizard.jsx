@@ -140,7 +140,7 @@ export function FoundationWizard() {
             setHasFailedSnapshot(true)
             dispatch({
               type: 'SAVE_FAILED',
-              error: apiErrorMessage(err?.response?.data?.detail, 'Não foi possível guardar o rascunho.'),
+              error: apiErrorMessage(err?.response?.data?.detail, 'Não foi possível guardar as alterações.'),
               errorCode: getApiErrorCode(err),
             })
             if (pendingSnapshotRef.current?.explicitTransition) continue
@@ -301,7 +301,7 @@ export function FoundationWizard() {
     try {
       const res = await draftQuery.refetch()
       if (res.error || !res.data) {
-        throw res.error || new Error('O rascunho remoto não foi devolvido.')
+        throw res.error || new Error('Não foi possível obter os dados guardados.')
       }
       confirmedVersionRef.current = res.data.version || 0
       failedSnapshotRef.current = null
@@ -345,7 +345,7 @@ export function FoundationWizard() {
   if (statusQuery.isLoading || draftQuery.isLoading || !isInitialSynced || isRetrying) {
     return (
       <div className="guided-form-shell">
-        <StatePanel state="loading" title="A carregar a fundação da escola" description="A obter dados e rascunho de configuração..." />
+        <StatePanel state="loading" title="A carregar a configuração inicial" description="A preparar a informação da escola..." />
       </div>
     )
   }

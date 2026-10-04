@@ -81,7 +81,7 @@ const Rooms = ({ readOnly = false, allowedActions }) => {
 
       {deleteMutation.isError && (
         <CAlert color="danger" dismissible onClose={deleteMutation.reset}>
-          <strong>Erro ao remover:</strong> {getApiErrorMessage(deleteMutation.error, 'Erro de dependência.')}
+          <strong>Erro ao remover:</strong> {getApiErrorMessage(deleteMutation.error, 'Não foi possível remover porque está a ser utilizado.')}
         </CAlert>
       )}
 

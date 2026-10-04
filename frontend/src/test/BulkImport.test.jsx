@@ -90,7 +90,7 @@ describe('BulkImport', () => {
 
     resolveDownload()
     expect(
-      await screen.findByText(/Download pedido ao browser/i)
+      await screen.findByText(/Transferência iniciada/i)
     ).toBeInTheDocument()
   })
 })

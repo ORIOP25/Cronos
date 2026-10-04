@@ -8,3 +8,6 @@ This section documents React 19 frontend architecture, route permission guards, 
 - [ROUTES_AND_PERMISSIONS.md](ROUTES_AND_PERMISSIONS.md): App routes table, public vs authenticated views, role access rules.
 - [DESIGN_SYSTEM.md](DESIGN_SYSTEM.md): Merged design tokens, 60-30-10 color palette, typography, visual rules.
 - [ACCESSIBILITY.md](ACCESSIBILITY.md): WCAG contrast guidelines, ARIA attributes, keyboard navigation.
+- [FEEDBACK_UX_TECH_SPEC.md](FEEDBACK_UX_TECH_SPEC.md): Proposed feedback modernization, toast rules, contextual messages, architecture, TDD, and acceptance criteria.
+- [FEEDBACK_UX_REMAINING_WBS.md](FEEDBACK_UX_REMAINING_WBS.md): Audit of feedback implementation at `4c18cde`, remaining work packages, dependencies, TDD, and acceptance criteria.
+- [UI_UX_REMEDIATION_WBS_V2.md](UI_UX_REMEDIATION_WBS_V2.md): Verified implementation status, remaining bug fixes, dependencies, TDD tasks, and closure criteria for F01–F18.

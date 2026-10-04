@@ -93,7 +93,7 @@ const DraftPanel = ({ draft, onApprove, onReject, isApproving, isRejecting, allo
 
           {(draft.warnings || []).map((warning) => (
             <div key={warning} className="small text-warning-emphasis mb-1">
-              {WARNING_LABELS[warning] || warning}
+              {WARNING_LABELS[warning] || 'Existem avisos sobre esta proposta.'}
             </div>
           ))}
 
@@ -131,7 +131,7 @@ const DraftPanel = ({ draft, onApprove, onReject, isApproving, isRejecting, allo
                   <div className="d-flex flex-column gap-2">
                     {(diff?.physical || []).map(row => (
                       <div key={`physical-${row.lesson_id}-${row.change_type}`} className="small border-top pt-2">
-                        <strong>{CHANGE_LABELS[row.change_type] || row.change_type}</strong>
+                        <strong>{CHANGE_LABELS[row.change_type] || 'Alteração'}</strong>
                         {' · '}Turma {row.class_id} · Disciplina {row.subject_id}
                         {row.before?.date && row.after?.date && row.before.date !== row.after.date
                           ? <span className="text-muted"> · {row.before.date} → {row.after.date}</span>

@@ -13,7 +13,7 @@ export default function DebtSummaryCard({ debts, isLoading }) {
           <>
             <div className="d-flex justify-content-center gap-4 mb-3">
               <div><span className="text-display d-block dashboard-debt-value" data-alert={hasDebt}>{debts?.total_hours_owed ?? 0}h</span><small>horas em dívida</small></div>
-              <div><span className="text-display d-block dashboard-debt-value">{debts?.total_gaps ?? 0}</span><small>gaps</small></div>
+              <div><span className="text-display d-block dashboard-debt-value">{debts?.total_gaps ?? 0}</span><small>furos</small></div>
             </div>
             <div className="small text-muted mb-2">
               {debts?.affected_classes_count ?? 0} turmas afetadas

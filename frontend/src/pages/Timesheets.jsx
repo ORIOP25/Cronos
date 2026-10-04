@@ -183,7 +183,7 @@ const Timesheets = ({ initialWeekStart, readOnly = false, allowedActions, naviga
                   <div className="d-flex justify-content-between align-items-start flex-wrap gap-3 mb-3">
                     <div>
                       <h4 className="mb-1 fw-bold">
-                        {selectedTeacher.teacher_name || `Prof. #${selectedTeacher.teacher_id}`}
+                        {selectedTeacher.teacher_name || 'Professor por identificar'}
                       </h4>
                       <div className="text-muted small">
                         Semana de {weekLabel} ·{' '}
@@ -251,7 +251,7 @@ const Timesheets = ({ initialWeekStart, readOnly = false, allowedActions, naviga
                         size="sm"
                         className="ms-auto"
                         onClick={handleNavigateToSchedules}
-                        title="Ver horário deste professor em /schedules"
+                        title="Ver o horário deste professor"
                       >
                         <CIcon icon={cilExternalLink} className="me-1" />
                         Ver em Horários

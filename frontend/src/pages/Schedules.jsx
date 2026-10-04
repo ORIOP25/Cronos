@@ -48,11 +48,6 @@ const ELIGIBILITY_MESSAGES = {
   ACTIVE_JOB: 'Já existe um pedido de geração em curso.',
 }
 
-const NO_REASON_MESSAGE = (
-  'Não existem alterações por aplicar ao horário. '
-  + 'Pode otimizar as próximas semanas quando passarem 28 dias.'
-)
-
 function eligibilityMessage(eligibility, schoolYear) {
   if (schoolYear && !schoolYear.preferred_end_date) {
     return 'Defina a data preferencial de fim em Configuração antes de gerar o horário.'
@@ -61,7 +56,7 @@ function eligibilityMessage(eligibility, schoolYear) {
   if (eligibility.blocker) {
     return ELIGIBILITY_MESSAGES[eligibility.blocker] || 'A geração não está disponível de momento.'
   }
-  return NO_REASON_MESSAGE
+  return ''
 }
 
 function getDraftMutationErrorMessage(error, fallback) {
@@ -351,8 +346,8 @@ const Schedules = ({ initialClassId = '', initialWeekStart, persistView = true, 
       ? `Ano letivo com fim previsto em ${formatDate(preferredEnd)}. `
       : ''
     const versionLabel = schedulerStatus?.active_version_id
-      ? `Versão atual: v${schedulerStatus.active_version_id}. `
-      : 'Ainda não existe versão publicada. '
+      ? 'Já existe um horário publicado. '
+      : 'Ainda não existe horário publicado. '
     const effect = hasPendingDraft
       ? 'A proposta pendente é substituída apenas quando a nova geração terminar com sucesso.'
       : isFirstGeneration

@@ -174,7 +174,7 @@ describe('Schedules scheduler flow', () => {
     expect(mocks.generate).not.toHaveBeenCalled()
   })
 
-  it('explains that there is nothing to generate when there is no reason', () => {
+  it('shows no message when there is no reason to generate', () => {
     mocks.status = proposalStatus({
       eligibility: { can_generate: false, reasons: [], blocker: null },
       pending_proposal: null,
@@ -183,7 +183,7 @@ describe('Schedules scheduler flow', () => {
     renderPage()
 
     expect(screen.queryByRole('button', { name: 'Gerar horário' })).not.toBeInTheDocument()
-    expect(screen.getByText(/Não existem alterações por aplicar ao horário/)).toBeInTheDocument()
+    expect(screen.queryByText(/Não existem alterações por aplicar ao horário/)).not.toBeInTheDocument()
   })
 
   it('refreshes the state when a generation finishes without a selected view', async () => {

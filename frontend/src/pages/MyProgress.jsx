@@ -140,7 +140,7 @@ function MyProgress() {
     return (
       <div className="p-4">
         <CAlert color="danger" className="mb-0">
-          Conta de professor sem perfil associado. Contacte um admin para associar o perfil docente.
+          Conta de professor sem perfil associado. Contacte a administração para associar o perfil docente.
         </CAlert>
       </div>
     )

@@ -52,7 +52,7 @@ const GenerationStatusPanel = ({ jobId }) => {
     return (
       <CAlert color="info" className="d-flex align-items-center gap-2 mb-4">
         <CSpinner size="sm" />
-        A aguardar resposta do servidor...
+        A aguardar...
       </CAlert>
     )
   }
@@ -83,7 +83,7 @@ const GenerationStatusPanel = ({ jobId }) => {
     const roomBlocked = job.stop_reason === 'NO_ELIGIBLE_ROOM'
     return (
       <CAlert color={alertColor(status)} className="mb-4" data-testid="generation-terminal">
-        <strong>{STATUS_LABELS[status] || status}</strong>
+        <strong>{STATUS_LABELS[status] || 'Estado da geração indisponível'}</strong>
         {roomBlocked ? (
           <div className="small mt-1">
             Existem turmas sem sala compatível com o tipo e a lotação.{' '}
@@ -107,7 +107,7 @@ const GenerationStatusPanel = ({ jobId }) => {
         {isActive && <CSpinner size="sm" />}
         <strong>{STATUS_LABELS[status]}</strong>
         {status === 'QUEUED' && job.queue_position > 1 && (
-          <span className="small">· posição {job.queue_position} na fila</span>
+          <span className="small">· {job.queue_position}.º pedido em espera</span>
         )}
       </div>
       {queuedTooLong && (

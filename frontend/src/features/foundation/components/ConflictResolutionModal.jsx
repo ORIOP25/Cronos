@@ -9,7 +9,6 @@ import {
 
 export function ConflictResolutionModal({
   isOpen,
-  conflictData,
   onReload,
   reloadError,
   isReloading = false,
@@ -18,15 +17,12 @@ export function ConflictResolutionModal({
     <CModal visible={isOpen} alignment="center" backdrop="static" keyboard={false}>
       <CModalHeader>
         <CModalTitle className="h5 text-warning">
-          ⚠️ Conflito de Edição Detetado
+          ⚠️ Estes dados foram alterados
         </CModalTitle>
       </CModalHeader>
       <CModalBody>
         <p>
-          O rascunho de configuração foi alterado noutro separador ou por outro administrador.
-        </p>
-        <p className="small text-muted mb-0">
-          Versão esperada: <strong>{conflictData?.expected_version ?? '—'}</strong> | Versão no servidor: <strong>{conflictData?.current_version ?? '—'}</strong>
+          Outra pessoa alterou estes dados entretanto. Recarregue para continuar com a versão mais recente.
         </p>
         {reloadError && <div className="alert alert-danger mt-3 mb-0" role="alert">{reloadError}</div>}
       </CModalBody>
