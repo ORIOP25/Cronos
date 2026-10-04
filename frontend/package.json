@@ -28,18 +28,18 @@
     "verify": "npm run lint && npm run lint:dead-code && npm run lint:dead-code:production && npm run test:legal-contract && npm run test:marketing-build && node --test scripts/edge-worker.test.mjs && npm run test:marketing-assets && npm run test:coverage && npm run build"
   },
   "dependencies": {
-    "@clerk/localizations": "^4.16.1",
-    "@clerk/react": "^6.15.2",
+    "@clerk/localizations": "^4.21.1",
+    "@clerk/react": "^6.17.4",
     "@coreui/coreui": "^5.9.0",
     "@coreui/icons": "^3.1.0",
     "@coreui/icons-react": "^2.3.0",
     "@coreui/react": "^5.13.0",
-    "@tanstack/react-query": "^5.102.8",
+    "@tanstack/react-query": "^5.104.0",
     "axios": "^1.20.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "react-hot-toast": "^2.6.1",
-    "react-router-dom": "^7.18.3"
+    "react-router-dom": "^7.18.4"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",
