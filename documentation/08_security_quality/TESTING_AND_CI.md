@@ -46,6 +46,9 @@ All projects use the shared `E2E_BASE_URL`, which defaults to `http://127.0.0.1:
 This address matches the owned Docker stack's IPv4 binding and avoids other processes listening on `localhost` over IPv6.
 The runner supplies `http://localhost:5173` for an external stack.
 
+After sign-in, the E2E helper waits for the loaded Clerk session and expected identity before activating the organization.
+This prevents organization activation during a sign-in navigation while the browser reloads Clerk.
+
 ## CI gates
 
 The owned local E2E stack builds the frontend `ci` target, which permits the dedicated Clerk test domain.

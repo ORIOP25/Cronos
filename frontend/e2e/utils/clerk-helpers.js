@@ -110,6 +110,11 @@ async function loginReal(page, emailEnvironmentVariable) {
       }))
       if (active.email !== emailAddress) {
         await clerk.signIn({ page, emailAddress })
+        await page.waitForFunction(
+          (email) => window.Clerk?.loaded && window.Clerk?.session
+            && window.Clerk?.user?.primaryEmailAddress?.emailAddress === email,
+          emailAddress,
+        )
       }
       if (organizationId && (active.email !== emailAddress || active.organizationId !== organizationId)) {
         await page.evaluate(async (id) => {

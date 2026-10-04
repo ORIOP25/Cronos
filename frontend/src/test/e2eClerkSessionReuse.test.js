@@ -29,7 +29,10 @@ describe('E2E Clerk session reuse', () => {
     vi.stubEnv('E2E_CLERK_ORG_ID', 'org_test')
   })
 
-  afterEach(() => vi.unstubAllEnvs())
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    vi.unstubAllGlobals()
+  })
 
   it('uses the isolated saved session without signing in or switching organizations again', async () => {
     const page = pageWithSession('admin+clerk_test@example.com', 'org_test')
@@ -58,5 +61,33 @@ describe('E2E Clerk session reuse', () => {
     expect(clerkSignIn).not.toHaveBeenCalled()
     expect(page.evaluate).toHaveBeenCalledTimes(2)
     expect(page.evaluate.mock.calls[1][1]).toBe('org_test')
+  })
+
+  it('waits for Clerk to reload after sign-in before activating the organization', async () => {
+    const loadedClerk = {
+      loaded: true,
+      session: {},
+      user: { primaryEmailAddress: { emailAddress: 'admin+clerk_test@example.com' } },
+      organization: null,
+      setActive: vi.fn(async ({ organization }) => {
+        loadedClerk.organization = { id: organization }
+      }),
+    }
+    vi.stubGlobal('window', { Clerk: {
+      loaded: true,
+      user: { primaryEmailAddress: { emailAddress: 'other+clerk_test@example.com' } },
+      organization: null,
+    } })
+    const page = pageWithSession()
+    page.evaluate.mockImplementation(async (callback, argument) => callback(argument))
+    page.waitForFunction.mockImplementation(async (predicate, argument) => {
+      window.Clerk ??= loadedClerk
+      expect(predicate(argument)).toBeTruthy()
+    })
+    clerkSignIn.mockImplementation(async () => { window.Clerk = undefined })
+
+    await loginAsAdminReal(page)
+
+    expect(loadedClerk.setActive).toHaveBeenCalledWith({ organization: 'org_test' })
   })
 })

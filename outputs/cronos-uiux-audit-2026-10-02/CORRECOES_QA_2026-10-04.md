@@ -38,11 +38,12 @@ Nenhum dado de produção foi alterado.
 
 - Backend: 868 testes unitários, 429 integrações e 61 contratos aprovados.
 - Reversão histórica: teste final aprovado após a confirmação de ausência de decisão histórica explícita.
-- Frontend: 558 testes aprovados após integração da main. `npm run verify` e `npm run audit:production` aprovados.
+- Frontend: 559 testes aprovados após integração da main e correção da sincronização da sessão E2E. `npm run verify` e `npm run audit:production` aprovados.
 - Runner: 18 contratos aprovados. Ruff e verificação de formatação aprovados.
 - Alembic: sem drift. Auditorias de triggers e integridade aprovadas.
 - Stack local reconstruída e atualizada; backend e frontend respondem `200`.
 - Browser: 25 testes Playwright aprovados, incluindo os três novos cenários QA.
+- Autenticação: 22 testes Playwright aprovados com Clerk real. O helper espera pela sessão carregada e pela identidade esperada antes de ativar a organização.
 - Downloads: os cinco modelos produzem ficheiros CSV reais com nome esperado, BOM UTF-8, separador e feedback visível.
 - Layout: calendário validado em 768, 1024 e 1440 px; dívida validada em 451 px sem overflow.
 - Acessibilidade: axe não encontra violações WCAG 2 A/AA nos cartões de dívida verificados.
