@@ -40,7 +40,11 @@ Integration runs with `-n 4 --dist=loadscope`. Contracts run serially with rate 
 
 Vitest is configured in `frontend/vitest.config.js` with isolated `node` and `dom` projects, thread pooling, MSW server setup and strict unhandled-request failures. Coverage uses V8 and enforces thresholds of 45 percent statements, 40 percent branches, 35 percent functions, and 45 percent lines. React interactions that cross async boundaries use Testing Library `user-event`.
 
-Playwright is configured in `frontend/playwright.config.js`. The `setup` project feeds `public`, `auth`, and `auth-state`. The `app` project depends on `auth-state`, the `provider` project depends on `app`, and the `faults` project depends on `app` and `provider`. The `capacity` project runs only when `CAPACITY_ENABLED=1`. The `app`, `provider`, and `faults` projects use one worker because they mutate shared E2E state. Retries are disabled; traces are retained on failure and screenshots are captured on failure. All projects use the shared `E2E_BASE_URL`, which defaults to `http://localhost:5174`; the runner supplies `http://localhost:5173` for an external stack.
+Playwright is configured in `frontend/playwright.config.js`. The `setup` project feeds `public`, `auth`, and `auth-state`. The `app` project depends on `auth-state`, the `provider` project depends on `app`, and the `faults` project depends on `app` and `provider`. The `capacity` project runs only when `CAPACITY_ENABLED=1`. The `app`, `provider`, and `faults` projects use one worker because they mutate shared E2E state. Retries are disabled; traces are retained on failure and screenshots are captured on failure.
+
+All projects use the shared `E2E_BASE_URL`, which defaults to `http://127.0.0.1:5174`.
+This address matches the owned Docker stack's IPv4 binding and avoids other processes listening on `localhost` over IPv6.
+The runner supplies `http://localhost:5173` for an external stack.
 
 ## CI gates
 

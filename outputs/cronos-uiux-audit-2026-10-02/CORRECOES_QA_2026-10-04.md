@@ -1,6 +1,6 @@
 # Cronos — Correções da revalidação QA
 
-**Data:** 4 de outubro de 2026. **Baseline:** `1d99169`. **Estado:** correções locais verificadas; produção sem alterações nesta intervenção.
+**Data:** 4 de outubro de 2026. **Baseline:** `1d99169`; integração com `6526fea`. **Estado:** correções locais verificadas; dados de produção sem alterações manuais.
 
 ## Findings e correções
 
@@ -36,9 +36,9 @@ Nenhum dado de produção foi alterado.
 
 ## Verificação local
 
-- Backend: 868 testes unitários, 427 integrações e 61 contratos aprovados.
+- Backend: 868 testes unitários, 429 integrações e 61 contratos aprovados.
 - Reversão histórica: teste final aprovado após a confirmação de ausência de decisão histórica explícita.
-- Frontend: `npm run verify` e `npm run audit:production` aprovados; lint final aprovado.
+- Frontend: 558 testes aprovados após integração da main. `npm run verify` e `npm run audit:production` aprovados.
 - Runner: 18 contratos aprovados. Ruff e verificação de formatação aprovados.
 - Alembic: sem drift. Auditorias de triggers e integridade aprovadas.
 - Stack local reconstruída e atualizada; backend e frontend respondem `200`.
@@ -57,14 +57,18 @@ A correção aplica as três datas antes dos eventos de auditoria.
 Os testes reproduzem a mudança para anos anteriores e posteriores, preservam as revisões e confirmam repetição sem efeitos adicionais.
 O cenário E2E volta a substituir as datas do calendário.
 
-## Trabalho de entrega restante
+O runner isolado usa `127.0.0.1`, conforme o binding IPv4 do Docker.
+Esta escolha evita colisões com servidores locais que escutam a mesma porta em IPv6.
+Clerk e a URL do frontend usam a mesma origem.
+
+## Entrega e operação
 
 | WBS | Ação | Critério de fecho |
 | :--- | :--- | :--- |
 | QA-E2 | Publicar o patch na main, conforme autorização recebida. | Commit revisto, CI aprovada e serviços atualizados em produção. |
 | QA-E3 | Reverter o registo QA, quando autorizado. | Uma compensação de −50 minutos referente à execução `9`; repetição sem novo crédito. |
 | QA-E4 | Revalidar produção. | Semana 19–23/10 carregada, perfil `657` identificado e progresso QA sem os 50 minutos. |
-| QA-E5 | Correção implementada do conflito de calendário. | Reprodução isolada e testes de substituição do calendário aprovados; validação E2E na entrega. |
+| QA-E5 | Concluído: correção do conflito de calendário. | Testes de substituição do calendário e cenário E2E aprovados. |
 
 Não elimine execuções, decisões ou turmas arquivadas para corrigir os resultados.
 Use o procedimento de [reconciliação](../../documentation/09_ops_observability/OCCURRENCE_RECONCILIATION.md) para aplicar e verificar a compensação.

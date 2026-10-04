@@ -228,3 +228,20 @@ export async function generateAndApproveThroughUi(page) {
   expect(approval.ok(), `draft approval failed: ${approval.status()} ${await approval.text()}`).toBeTruthy()
   return job
 }
+
+export async function firstPublishedFutureSlot(page, classId) {
+  const monday = new Date()
+  monday.setHours(12, 0, 0, 0)
+  monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7))
+  for (let week = 0; week < 10; week += 1) {
+    const weekStart = new Date(monday)
+    weekStart.setDate(weekStart.getDate() + week * 7)
+    const slots = await apiRequest(
+      page, 'GET',
+      `/schedule/week?class_id=${classId}&week_start=${weekStart.toISOString().slice(0, 10)}`,
+    )
+    const published = slots.find((slot) => slot.scheduler_lesson_id)
+    if (published) return published
+  }
+  throw new Error('No published future slot was found.')
+}

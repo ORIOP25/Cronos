@@ -141,7 +141,10 @@ test('resolves the owned and external E2E stack origins explicitly', () => {
     resolveE2eBaseUrl({ externalStack: true, baseUrl: 'https://e2e.example.test' }),
     'https://e2e.example.test',
   )
-  assert.equal(resolveE2eBaseUrl(), 'http://localhost:5174')
+  assert.equal(resolveE2eBaseUrl(), 'http://127.0.0.1:5174')
+  const compose = readFileSync(join(ROOT, 'docker-compose.test.yml'), 'utf8')
+  assert.ok(compose.includes(`FRONTEND_URL: ${resolveE2eBaseUrl()}`))
+  assert.ok(compose.includes(`CLERK_AUTHORIZED_PARTIES: ${resolveE2eBaseUrl()}`))
 })
 
 test('uses one E2E base URL in Playwright, setup, helpers and URL-building specs', () => {

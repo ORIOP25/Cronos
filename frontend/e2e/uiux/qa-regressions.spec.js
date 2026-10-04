@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises'
 import AxeBuilder from '@axe-core/playwright'
 import { test, expect } from '@playwright/test'
 import { allowApiFailure, attachRuntimeGuards, expectRouteReady, goTo, loginAsAdminReal } from '../utils/clerk-helpers.js'
-import { apiRequest, generateAndApproveThroughUi, seedMinimalSchedulerInputs } from '../utils/scheduler-fixtures.js'
+import { apiRequest, firstPublishedFutureSlot, generateAndApproveThroughUi, seedMinimalSchedulerInputs } from '../utils/scheduler-fixtures.js'
 
 test.use({ storageState: '.auth/admin.json' })
 
@@ -43,11 +43,9 @@ test('calendar action fits tablet and desktop; mobile debt cards stay inside the
     expect(await button.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true)
   }
   const classroom = await seedMinimalSchedulerInputs(page)
-  const settings = await apiRequest(page, 'GET', '/school/settings/')
   await generateAndApproveThroughUi(page)
-  const slots = await apiRequest(page, 'GET', `/schedule/week?class_id=${classroom.id}&week_start=${settings.school_start_date}`)
-  const lesson = slots.find((slot) => slot.scheduler_lesson_id && slot.can_create_occurrence)
-  expect(lesson).toBeTruthy()
+  const lesson = await firstPublishedFutureSlot(page, classroom.id)
+  expect(lesson.can_create_occurrence).toBe(true)
   await apiRequest(page, 'PUT', `/schedule/lessons/${lesson.scheduler_lesson_id}/log`, { status: 'OCCURRENCE', summary: 'QA mobile', notes: '' })
   const occurrences = await apiRequest(page, 'GET', '/occurrences/')
   const occurrence = occurrences.items.find((item) => item.class_id === classroom.id && item.date === lesson.date)

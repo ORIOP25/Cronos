@@ -11,6 +11,7 @@ import {
   loginAsAdminReal,
 } from '../utils/clerk-helpers.js'
 import {
+  firstPublishedFutureSlot,
   waitForJobToSucceed as waitForSchedulerJob,
 } from '../utils/scheduler-fixtures.js'
 import { createE2eRunKey, E2E_BASE_URL } from '../utils/e2e-config.js'
@@ -416,22 +417,6 @@ function mondayIso(value) {
   monday.setHours(12, 0, 0, 0)
   monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7))
   return monday.toISOString().slice(0, 10)
-}
-
-async function firstPublishedFutureSlot(page, classId) {
-  const cursor = new Date()
-  for (let week = 0; week < 10; week += 1) {
-    const weekStart = new Date(cursor)
-    weekStart.setDate(weekStart.getDate() + (week * 7))
-    const slots = await apiRequest(
-      page,
-      'GET',
-      `/schedule/week?class_id=${classId}&week_start=${mondayIso(weekStart)}`,
-    )
-    const published = slots.find((slot) => slot.scheduler_lesson_id)
-    if (published) return published
-  }
-  throw new Error('No published future slot was found for adaptive repair.')
 }
 
 test.describe('Scheduler generation', () => {
