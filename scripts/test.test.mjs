@@ -17,6 +17,11 @@ import {
 import { redactSecrets, sanitizeDirectory } from './sanitize-test-artifacts.mjs'
 import { classifyPath, collectFiles, countNonBlankLines, measureFiles } from './loc-report.mjs'
 
+test('the isolated E2E frontend uses the Clerk test browser policy', () => {
+  const compose = readFileSync(join(ROOT, 'docker-compose.test.yml'), 'utf8')
+  assert.match(compose, /frontend:\s+build:\s+context: \.\/frontend\s+target: ci/)
+})
+
 test('parses forwarded runner arguments without rebuilding a shell command', () => {
   const parsed = parseArgs(['fast', '--scope', 'backend', '--', 'tests/unit/test name.py', '-q'])
   assert.equal(parsed.scope, 'backend')

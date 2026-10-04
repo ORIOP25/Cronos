@@ -232,14 +232,16 @@ const Members = ({ readOnly = false, allowedActions }) => {
     && !Number.isNaN(availabilityTeacherId)
   const availabilityTeacher = useMemo(() => {
     if (!showAvailability) return null
+    const member = data?.items?.find((item) => item.teacher_id === availabilityTeacherId)
     return teachers.find((teacher) => teacher.id === availabilityTeacherId)
-      ?? { id: availabilityTeacherId, name: 'Professor por identificar' }
-  }, [showAvailability, teachers, availabilityTeacherId])
+      ?? (member ? { id: member.teacher_id, name: member.organization_display_name } : null)
+  }, [showAvailability, teachers, availabilityTeacherId, data])
   const closeAvailability = () => {
     setSearchParams((previous) => {
       const next = new URLSearchParams(previous)
       next.delete('panel')
       next.delete('teacher_id')
+      next.delete('on_date')
       return next
     }, { replace: true })
   }
@@ -322,6 +324,11 @@ const Members = ({ readOnly = false, allowedActions }) => {
       </div>
       {isError && <CAlert color="danger">{getApiErrorMessage(error, 'Não foi possível carregar a equipa.', 'team.load')} <CButton color="link" onClick={() => refetch()}>Tentar novamente</CButton></CAlert>}
       {actionError && <CAlert color="danger">{actionError}</CAlert>}
+      {showAvailability && !isLoading && !isError && !availabilityTeacher && (
+        <CAlert color="warning">Professor não encontrado. Abra a disponibilidade através da equipa.
+          <CButton color="link" onClick={closeAvailability}>Fechar</CButton>
+        </CAlert>
+      )}
       <div className="table-responsive">
         <table className="table align-middle">
           <thead><tr><th>Nome</th><th>Email</th><th>Tipo</th><th>Estado</th><th>Competências</th><th className="text-end">Ações</th></tr></thead>
@@ -362,6 +369,12 @@ const Members = ({ readOnly = false, allowedActions }) => {
                       : '-'}
                   </td>
                   <td className="text-end">
+                    {member.teacher_id && member.lifecycle_status === 'active' && (
+                      <CButton size="sm" color="secondary" variant="outline" disabled={!canUpdate}
+                        onClick={() => setSearchParams({ teacher_id: String(member.teacher_id), panel: 'availability' })}>
+                        Editar disponibilidade
+                      </CButton>
+                    )}
                     <ActionButton title="Editar membro" icon={cilPencil} disabled={!member.actions?.can_edit || !canUpdate} onClick={() => openModal(member)} tutorialTarget={`edit-member-${member.id}`} />
                     <ActionButton title="Reenviar convite" icon={cilReload} disabled={isTutorial || !member.actions?.can_resend_invite} loading={resendInvitation.isPending} onClick={() => resendInvitation.mutate(member.id)} />
                     <ActionButton title="Tentar confirmar o acesso novamente" icon={cilReload} color="warning" disabled={isTutorial || !member.actions?.can_retry_sync} loading={retrySync.isPending} onClick={() => retrySync.mutate(member.id)} />
@@ -396,7 +409,9 @@ const Members = ({ readOnly = false, allowedActions }) => {
       />
       {availabilityTeacher && (
         <TeacherAvailabilityModal
+          key={`${availabilityTeacher.id}:${searchParams.get('on_date') ?? ''}`}
           teacher={availabilityTeacher}
+          onDate={searchParams.get('on_date') || undefined}
           onClose={closeAvailability}
         />
       )}

@@ -260,7 +260,16 @@ def _get_schedule_health(
                 models.ActiveScheduleBlock.teacher_id,
                 models.ActiveScheduleBlock.date,
                 models.ActiveScheduleBlock.timeslot_id,
-            ).where(
+                models.Class.is_archived,
+            )
+            .join(
+                models.Class,
+                and_(
+                    models.Class.organization_id == models.ActiveScheduleBlock.organization_id,
+                    models.Class.id == models.ActiveScheduleBlock.class_id,
+                ),
+            )
+            .where(
                 models.ActiveScheduleBlock.organization_id == organization_id,
                 models.ActiveScheduleBlock.status == models.ActiveScheduleBlockStatus.ACTIVE,
                 models.ActiveScheduleBlock.schedule_version_id == latest_version,
@@ -297,6 +306,7 @@ def _get_schedule_health(
         generation_id=generation_id,
         blocks_count=blocks_count,
         classes_total=classes_total,
+        classes_archived=len({row.class_id for row in blocks if row.is_archived}),
         classes_empty_week=classes_total - len(weekly_counts),
         week_slots_avg=round(mean, 1),
         duplicate_teacher_slots=sum(count > 1 for count in teacher_slots.values()),
@@ -333,6 +343,7 @@ def _get_v1_schedule_health(
             SchedulerLessonV1.school_date,
             SchedulerLessonV1.starts_at,
             SchedulerLessonV1.ends_at,
+            models.Class.is_archived,
         )
         .join(
             SchedulerLessonV1,
@@ -340,6 +351,13 @@ def _get_v1_schedule_health(
                 SchedulerLessonV1.organization_id == CurricularAssignment.organization_id,
                 SchedulerLessonV1.school_year_id == CurricularAssignment.school_year_id,
                 SchedulerLessonV1.assignment_id == CurricularAssignment.id,
+            ),
+        )
+        .join(
+            models.Class,
+            and_(
+                models.Class.organization_id == CurricularAssignment.organization_id,
+                models.Class.id == CurricularAssignment.class_id,
             ),
         )
         .where(
@@ -376,6 +394,7 @@ def _get_v1_schedule_health(
         generation_id=f"v1-{version_id}",
         blocks_count=len(rows),
         classes_total=classes_total,
+        classes_archived=len({row.class_id for row in rows if row.is_archived}),
         classes_empty_week=classes_total - len(weekly_counts),
         week_slots_avg=round(mean, 1),
         duplicate_teacher_slots=sum(count > 1 for count in teacher_slots.values()),

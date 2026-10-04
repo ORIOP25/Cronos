@@ -111,7 +111,7 @@ services:
   frontend:
     build:
       context: ./frontend
-      target: runtime
+      target: ci
       args:
         VITE_CLERK_PUBLISHABLE_KEY: ${VITE_CLERK_PUBLISHABLE_KEY:-pk_test_local_placeholder}
         VITE_API_BASE_URL: /api/v1

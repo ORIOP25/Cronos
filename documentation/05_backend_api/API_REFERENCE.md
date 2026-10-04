@@ -147,6 +147,10 @@ See [Bulk Import CSV](../07_data_and_seed/BULK_IMPORT_CSV.md) for the exact temp
 | `PUT` | `/api/v1/school/calendar-events/{event_id}` | Admin |
 | `DELETE` | `/api/v1/school/calendar-events/{event_id}` | Admin |
 
+School settings validate the combined stored and submitted dates.
+When the calendar and `preferred_end_date` change together, the scheduler year persists all three dates before recording the calendar change.
+Valid calendar replacements do not produce a constraint conflict. Invalid date combinations return `422`.
+
 ### Scheduler and schedule operations
 
 | Method | Route | Access |
@@ -276,6 +280,10 @@ The occurrence read exposes `substitute_block_id`,
 with `eligible`, structured `exclusions`, and `setup_actions`.
 `PUT /api/v1/teachers/{teacher_id}/availability` lets an administrator update a
 teacher availability grid without sending an invite.
+The administrative availability reads and writes accept optional `on_date`.
+Both requests select the grid valid on that school date.
+Saving replaces that grid's preferences and preserves other grid versions.
+The route uses `teacher_id`, not the organization membership identifier.
 
 The server rejects decisions, revisions, and reversals that would change a
 submitted or approved weekly timesheet. The normal summary route cannot change
@@ -285,6 +293,8 @@ The `schedule_health` widget exposes `annual_class_average`,
 `annual_teacher_average`, `classes_total`, `teachers_total`, `period_start`, and
 `period_end`. The annual denominator is the population present in the approved
 schedule version. The weekly indicators use a closed Monday-to-Sunday window.
+`classes_archived` counts archived classes still present in that approved version.
+Archiving a catalog class does not remove its approved lessons or change the annual denominator.
 
 ### Rate limits
 

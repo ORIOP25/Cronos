@@ -71,6 +71,12 @@ Route guards move through loading, signed-out, organization selection, member er
 Contact submission moves through questionnaire steps, pending, error, and success states.
 Foundation moves through ten validated steps, draft persistence, conflict, and completion states.
 Availability keeps persisted server data separate from a local paint draft.
+The team action opens administrative availability with the member's teacher identifier.
+Occurrence links include their school date. Availability queries keep each date's grid in a separate cache entry.
+Unknown teacher links show an explicit error instead of an unidentified grid.
+Course creation includes a filled initial class draft. Incomplete edited drafts block submission and retain their values.
+Import downloads show preparation, success, or failure beside the selected model.
+Mobile debt cards show the class, subject, teacher, gaps, and duration without a wide table.
 
 ## Failure Modes
 

@@ -1,5 +1,6 @@
 # Ficheiro: backend/app/api/endpoints/teachers.py
 
+from datetime import date
 from time import perf_counter
 from typing import Annotated
 
@@ -109,6 +110,7 @@ async def update_teacher_availability(
     availability_data: schemas.TeacherAvailabilityPayload,
     db: deps.DbSession,
     current_user: deps.AdminActor,
+    on_date: Annotated[date | None, Query(description="Data da grelha de disponibilidade")] = None,
 ):
     """Direção atualiza a disponibilidade de um professor, sem convite."""
     return await teacher_service.set_teacher_availability(
@@ -117,6 +119,7 @@ async def update_teacher_availability(
         availability_data,
         organization_id=current_user.organization_id,
         changed_by_membership_id=current_user.membership_id,
+        on_date=on_date,
     )
 
 
@@ -129,6 +132,7 @@ async def read_teacher_availability(
     teacher_id: int,
     db: deps.DbSession,
     current_user: deps.ActiveActor,
+    on_date: Annotated[date | None, Query(description="Data da grelha de disponibilidade")] = None,
 ):
     """Inspetor read-only de disponibilidade para Administrador ou o próprio Professor."""
     is_admin = deps.user_has_admin_capability(current_user)
@@ -143,6 +147,7 @@ async def read_teacher_availability(
         db,
         teacher_id=teacher_id,
         organization_id=current_user.organization_id,
+        on_date=on_date,
     )
     return result
 

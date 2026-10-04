@@ -15,6 +15,7 @@ from app.scheduler.infrastructure.models import (
     SchedulerLessonLogV1,
     SchedulerLessonV1,
     SchedulerRecoveryReservationV1,
+    SchedulerVersionV1,
 )
 from app.scheduler.infrastructure.operations import record_lesson_log, week_schedule
 from app.scheduler.infrastructure.progress import load_executed_minutes, load_open_debt
@@ -23,12 +24,78 @@ from tests._support.db_fixtures import create_teacher_profile
 from tests._support.scheduler_v1 import (
     MOMENT,
     V1Seed,
+    add_lesson,
+    add_version,
     publish_schedule,
     run_generation,
     seed_generatable_school,
 )
 
 pytestmark = pytest.mark.postgresql
+
+
+async def test_premature_historical_credit_is_visible_and_reversible(db_session, monkeypatch):
+    seed = await _school(db_session, suffix="_historical")
+    await db_session.commit()
+    await publish_schedule(db_session, monkeypatch, seed)
+    lesson = (await _lessons(db_session, seed))[0]
+    await record_lesson_log(
+        db_session,
+        seed.organization.id,
+        membership_id=seed.membership.id,
+        lesson_id=lesson.id,
+        status="COMPLETED",
+        summary="Registo histórico QA",
+        notes=None,
+        now_utc=lesson.ends_at,
+    )
+    log = await db_session.scalar(
+        select(SchedulerLessonLogV1).where(
+            SchedulerLessonLogV1.organization_id == seed.organization.id,
+            SchedulerLessonLogV1.lesson_id == lesson.id,
+        )
+    )
+    valid = await occurrences_v1.list_occurrences(db_session, seed.organization.id)
+    assert valid["total"] == 0, "A normal completed lesson is not an occurrence."
+    log.logged_at = lesson.starts_at - timedelta(days=1)
+    for _ in range(2):
+        previous = await db_session.get(SchedulerVersionV1, lesson.version_id)
+        previous.status = "SUPERSEDED"
+        await db_session.flush()
+        version = await add_version(db_session, seed)
+        moved_lesson = await add_lesson(
+            db_session,
+            seed,
+            version,
+            stable_key=lesson.stable_key,
+            school_date=lesson.school_date,
+            start=lesson.starts_at,
+            end=lesson.ends_at,
+            credit_minutes=lesson.credit_minutes,
+        )
+        moved_lesson.source_lesson_id = lesson.id
+        log.lesson_id = moved_lesson.id
+        lesson = moved_lesson
+    await db_session.commit()
+    page = await occurrences_v1.list_occurrences(db_session, seed.organization.id)
+    assert page["total"] == 1
+    item = page["items"][0]
+    assert item["status"] == "GIVEN"
+    assert item["decided_at"] is None
+    for _ in range(2):
+        await occurrences_v1.cancel_occurrence(
+            db_session,
+            seed.organization.id,
+            log.id,
+            version=item["version"],
+            reason="Reversão de crédito QA antecipado",
+            cancelled_by_membership_id=seed.membership.id,
+        )
+        await db_session.commit()
+    executed = await load_executed_minutes(db_session, seed.organization.id, [seed.assignment.id])
+    assert sum(executed.get(seed.assignment.id, {}).values()) == 0
+    assert log.status == "REVOKED"
+    assert log.decision is None, "Reversal must not fabricate a historical decision."
 
 
 async def _school(db_session, *, suffix: str = "", minutes: int = 100) -> V1Seed:
@@ -752,6 +819,21 @@ async def test_a_revoked_occurrence_can_start_a_new_cycle(db_session, monkeypatc
         now_utc=lesson.ends_at,
     )
     await db_session.commit()
+
+    week_start = lesson.school_date - timedelta(days=lesson.school_date.weekday())
+    slots = await week_schedule(
+        db_session,
+        seed.organization.id,
+        week_start=week_start,
+        class_id=seed.class_.id,
+        teacher_id=None,
+        now_utc=lesson.ends_at,
+    )
+    validated = [schemas.WeekSlotRead.model_validate(slot) for slot in slots]
+    reverted = next(slot for slot in validated if slot.scheduler_lesson_id == lesson.id)
+    assert reverted.occurrence_status == "REVOKED"
+    assert reverted.lesson_log_status == models.LessonLogStatus.PENDING
+    assert reverted.can_create_occurrence is True
 
     result = await record_lesson_log(
         db_session,

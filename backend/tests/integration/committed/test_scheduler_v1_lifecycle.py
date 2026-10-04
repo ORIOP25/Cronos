@@ -477,6 +477,16 @@ async def test_first_approval_marks_the_organization_operational_once(db_session
 
     dashboard = await get_dashboard_summary(db_session, seed.organization.id)
     assert dashboard.mode == "OPERATIONAL"
+    health = dashboard.schedule_health
+    assert health is not None
+    seed.class_.is_archived = True
+    await db_session.commit()
+    archived_dashboard = await get_dashboard_summary(db_session, seed.organization.id)
+    assert archived_dashboard.schedule_health.classes_archived == 1
+    assert archived_dashboard.schedule_health.classes_total == health.classes_total
+    assert archived_dashboard.schedule_health.annual_class_average == health.annual_class_average
+    seed.class_.is_archived = False
+    await db_session.commit()
 
     repeated = await approve_proposal(
         db_session,

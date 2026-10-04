@@ -172,6 +172,10 @@ async def _log_rows(
             or_(
                 SchedulerLessonLogV1.status.in_(("OCCURRENCE", "REVOKED")),
                 SchedulerLessonLogV1.decision.is_not(None),
+                and_(
+                    SchedulerLessonLogV1.status == "COMPLETED",
+                    SchedulerLessonLogV1.logged_at < SchedulerLessonV1.ends_at,
+                ),
             ),
         )
         .order_by(SchedulerLessonV1.school_date, SchedulerLessonV1.starts_at)
@@ -466,7 +470,7 @@ async def _items(
         if log.status == "REVOKED":
             status_value = "REVOKED"
             operational_state = OP_STATE_REVOKED
-        elif log.decision == "GIVEN":
+        elif log.decision == "GIVEN" or log.status == "COMPLETED":
             status_value = "GIVEN"
             operational_state = OP_STATE_GIVEN
         elif log.decision == "SUBSTITUTED":
@@ -547,7 +551,7 @@ async def _items(
                 "decided_at": (
                     log.decided_at
                     if log.decided_at is not None
-                    else (log.logged_at if operational_state != OP_STATE_OPEN else None)
+                    else (log.logged_at if log.decision is not None else None)
                 ),
                 "revoked_at": log.revoked_at
                 or (log.updated_at if log.status == "REVOKED" else None),
@@ -1379,7 +1383,7 @@ async def update_occurrence(
                 "A substituição já tem execução concluída. "
                 "Reverta a ocorrência com confirmação explícita.",
             )
-        if log.decision == "GIVEN":
+        if log.decision == "GIVEN" or log.status == "COMPLETED":
             lesson_ctx = await lesson_context(db, organization_id, log.lesson_id)
             await reverse_lesson_execution(
                 db,
@@ -1515,7 +1519,7 @@ async def cancel_occurrence(
         reason="Ocorrência revertida",
         now_utc=moment,
     )
-    if log.decision == "GIVEN":
+    if log.decision == "GIVEN" or log.status == "COMPLETED":
         context = await lesson_context(db, organization_id, log.lesson_id)
         await reverse_lesson_execution(
             db,

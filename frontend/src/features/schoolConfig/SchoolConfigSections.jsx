@@ -402,9 +402,10 @@ export const CalendarSection = () => {
                 <option value="other">Outro</option>
               </CFormSelect>
             </CCol>
-            <CCol md={2} className="d-flex align-items-end">
+            <CCol xs={12} xl="auto" className="d-flex align-items-end">
               <CButton
                 color="primary"
+                className="text-nowrap"
                 onClick={handleSubmit}
                 disabled={createMutation.isPending || updateMutation.isPending || previewMutation.isPending}
               >

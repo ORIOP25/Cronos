@@ -47,6 +47,8 @@ State-version events detect changes that can invalidate a published schedule.
 ## Contracts and Invariants
 
 - `school_hard_end_date` cannot precede `school_start_date`.
+- The school-year start, preferred end, and hard end persist together before scheduler audit events flush the transaction.
+- Calendar changes preserve `start <= preferred <= hard end` without an invalid intermediate write.
 - `repair_stability_window_days` stays between 0 and 60.
 - `automatic_holidays_enabled` refreshes national holidays for the school period.
 - Lunch start and end must appear together.

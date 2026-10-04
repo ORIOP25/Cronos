@@ -1,5 +1,7 @@
 # Ficheiro: app/services/teacher_service.py
 
+from datetime import date
+
 import structlog
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -212,6 +214,7 @@ async def get_teacher_availability(
     db: AsyncSession,
     teacher_id: int,
     organization_id: int,
+    on_date: date | None = None,
 ) -> list[dict]:
     """Lê disponibilidades de um professor dentro da organização autenticada (sintetiza NEUTRAL em memória)."""
     teacher_query = select(models.Teacher).where(
@@ -230,7 +233,7 @@ async def get_teacher_availability(
     resolved = await grid_version_service.resolve_grid(
         db,
         organization_id,
-        await grid_version_service.school_today(db, organization_id),
+        on_date or await grid_version_service.school_today(db, organization_id),
     )
     timeslots = sorted(
         resolved.blocks,
@@ -260,6 +263,7 @@ async def set_teacher_availability(
     availabilities: list[AvailabilitySelfCreate],
     organization_id: int,
     changed_by_membership_id: int | None = None,
+    on_date: date | None = None,
 ):
     """
     Define as disponibilidades de um professor.
@@ -286,15 +290,18 @@ async def set_teacher_availability(
             Availability.teacher_id == teacher_id,
         )
     )
-    before = _availability_snapshot(existing_rows.all())
+    previous_values = existing_rows.all()
 
     # 2. Validar que o payload contém exatamente os blocos da versão visível
     resolved = await grid_version_service.resolve_grid(
         db,
         organization_id,
-        await grid_version_service.school_today(db, organization_id),
+        on_date or await grid_version_service.school_today(db, organization_id),
     )
     all_org_timeslot_ids = {slot.id for slot in resolved.blocks}
+    before = _availability_snapshot(
+        (slot_id, score) for slot_id, score in previous_values if slot_id in all_org_timeslot_ids
+    )
 
     timeslot_ids = [item.timeslot_id for item in availabilities]
     if len(timeslot_ids) != len(set(timeslot_ids)):
@@ -317,6 +324,7 @@ async def set_teacher_availability(
         delete(Availability).where(
             Availability.organization_id == organization_id,
             Availability.teacher_id == teacher_id,
+            Availability.timeslot_id.in_(all_org_timeslot_ids),
         )
     )
 
@@ -342,7 +350,10 @@ async def set_teacher_availability(
             (item.timeslot_id, item.score.value) for item in availabilities
         ),
         changed_by_membership_id=changed_by_membership_id,
-        metadata={"item_count": len(new_records)},
+        metadata={
+            "item_count": len(new_records),
+            **({"on_date": on_date.isoformat()} if on_date else {}),
+        },
         active_resource=active_resource,
     )
     await db.flush()

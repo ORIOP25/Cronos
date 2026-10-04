@@ -50,14 +50,14 @@ export const useClasses = ({ enabled = true } = {}) => {
 }
 
 
-export const useTimeslots = () => {
+export const useTimeslots = ({ onDate } = {}) => {
   const apiClient = useApiClient()
   const orgId = useOrganization().organization?.id
   const { isLoaded } = useAuth()
   return useQuery({
-    queryKey: orgQueryKey('timeslots', orgId),
+    queryKey: onDate ? orgQueryKey('timeslots', orgId, 'date', onDate) : orgQueryKey('timeslots', orgId),
     queryFn: async () => {
-      return apiClient.get('/timeslots/')
+      return onDate ? apiClient.get('/timeslots/', { params: { on_date: onDate } }) : apiClient.get('/timeslots/')
     },
     enabled: Boolean(orgId) && isLoaded,
   })

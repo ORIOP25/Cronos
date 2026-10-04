@@ -48,6 +48,7 @@ describe('Dashboard', () => {
           generation_id: 'generation-123',
           blocks_count: 12,
           classes_total: 3,
+          classes_archived: 1,
           classes_empty_week: 0,
           week_slots_avg: 3,
           duplicate_teacher_slots: 0,
@@ -82,6 +83,7 @@ describe('Dashboard', () => {
     expect(screen.getByText(/12 blocos no total/i)).toBeInTheDocument()
     expect(screen.getByText('Média anual por turma')).toBeInTheDocument()
     expect(screen.getByText(/3 turmas e 2 professores no horário aprovado/i)).toBeInTheDocument()
+    expect(screen.getByText(/Inclui 1 turma arquivada.*catálogo.*turmas ativas/i)).toBeInTheDocument()
     expect(screen.getByText(/14\/09\/2026/)).toBeInTheDocument()
     expect(screen.getByText('Escola Exemplo')).toBeInTheDocument()
     expect(screen.queryByText('Escola: Escola Exemplo')).not.toBeInTheDocument()

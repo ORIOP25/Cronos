@@ -8,8 +8,53 @@ from app import models, schemas
 from app.config import settings
 from app.core.exceptions import AppError
 from app.services import grid_version_service, teacher_service
+from tests._support.db_fixtures import create_teacher_profile
 
 API = settings.API_V1_STR
+
+
+async def test_admin_availability_edits_the_occurrence_grid_without_erasing_other_versions(
+    async_client: AsyncClient, clerk_admin_headers: dict, db_session
+):
+    org_id = await db_session.scalar(
+        select(models.Organization.id).where(models.Organization.clerk_org_id == "org_test_001")
+    )
+    older, newer, _ = await _seed_versions(db_session, org_id)
+    teacher = await create_teacher_profile(db_session, organization_id=org_id, name="QA sem acesso")
+    old_slot = await db_session.scalar(
+        select(models.Timeslot).where(models.Timeslot.grid_version_id == older.id)
+    )
+    new_slot = await db_session.scalar(
+        select(models.Timeslot).where(models.Timeslot.grid_version_id == newer.id)
+    )
+    db_session.add(
+        models.Availability(
+            organization_id=org_id, teacher_id=teacher.id, timeslot_id=old_slot.id, score=-1
+        )
+    )
+    await db_session.commit()
+    response = await async_client.get(
+        f"{API}/teachers/{teacher.id}/availability",
+        params={"on_date": "2031-01-01"},
+        headers=clerk_admin_headers,
+    )
+    assert response.status_code == 200
+    assert [row["timeslot_id"] for row in response.json()] == [new_slot.id]
+    saved = await async_client.put(
+        f"{API}/teachers/{teacher.id}/availability",
+        params={"on_date": "2031-01-01"},
+        json=[{"timeslot_id": new_slot.id, "score": 2}],
+        headers=clerk_admin_headers,
+    )
+    assert saved.status_code == 200
+    values = (
+        await db_session.execute(
+            select(models.Availability.timeslot_id, models.Availability.score).where(
+                models.Availability.teacher_id == teacher.id
+            )
+        )
+    ).all()
+    assert dict(values) == {old_slot.id: -1, new_slot.id: 2}
 
 
 async def _seed_versions(db_session, organization_id: int):

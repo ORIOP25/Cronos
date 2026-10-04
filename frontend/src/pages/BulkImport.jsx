@@ -56,9 +56,9 @@ const BulkImport = () => {
     setDownloadingResource(resourceKey)
     try {
       await downloadBulkImportTemplate(apiClient, resourceKey)
-      setDownloadNotice('Transferência iniciada. Verifique a pasta de transferências.')
+      setDownloadNotice({ resourceKey, tone: 'info', message: 'Transferência iniciada. Verifique a pasta de transferências.' })
     } catch (error) {
-      setLocalError(getApiErrorMessage(error, 'Não foi possível preparar o modelo.'))
+      setDownloadNotice({ resourceKey, tone: 'warning', message: getApiErrorMessage(error, 'Não foi possível preparar o modelo.') })
     } finally {
       setDownloadingResource('')
     }
@@ -130,7 +130,6 @@ const BulkImport = () => {
 
       <div className="mb-3" role="status" aria-live="polite">
         {localError && <CAlert color="warning">{localError}</CAlert>}
-        {downloadNotice && <CAlert color="info">{downloadNotice}</CAlert>}
         {validateMutation.isError && <CAlert color="danger">{getApiErrorMessage(validateMutation.error, 'Não foi possível verificar os ficheiros.')}</CAlert>}
         {commitMutation.isError && <CAlert color="danger">{getApiErrorMessage(commitMutation.error, 'Não foi possível concluir a importação.')}</CAlert>}
       </div>
@@ -157,6 +156,11 @@ const BulkImport = () => {
                   </CButton>
                 </CCardHeader>
                 <CCardBody>
+                  {downloadNotice?.resourceKey === resource.key && (
+                    <CAlert color={downloadNotice.tone} role={downloadNotice.tone === 'info' ? 'status' : 'alert'}>
+                      {downloadNotice.message}
+                    </CAlert>
+                  )}
                   <ul className="small text-muted ps-3 mb-3">
                     {resource.instructions.map((instruction) => <li key={instruction}>{instruction}</li>)}
                   </ul>

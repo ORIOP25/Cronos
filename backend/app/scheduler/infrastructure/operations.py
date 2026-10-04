@@ -365,7 +365,7 @@ async def week_schedule(
                 "occurrence_status": (
                     None
                     if log is None
-                    else (log.decision or ("REVOKED" if log.status == "REVOKED" else "PENDING"))
+                    else ("REVOKED" if log.status == "REVOKED" else log.decision or "PENDING")
                 ),
                 "hours_given": None,
                 "occurrence_id": (
@@ -375,10 +375,16 @@ async def week_schedule(
                     else None
                 ),
                 "occurrence_decided_at": log.decided_at if log is not None else None,
-                "can_create_occurrence": log is None,
+                "can_create_occurrence": log is None or log.status == "REVOKED",
                 "can_decide_occurrence": False,
                 "lesson_log_id": log.id if log else None,
-                "lesson_log_status": log.status if log else None,
+                "lesson_log_status": (
+                    "PENDING"
+                    if log is not None and log.status == "REVOKED"
+                    else log.status
+                    if log
+                    else None
+                ),
                 "lesson_log_summary": log.summary if log else None,
                 "lesson_log_notes": log.notes if log else None,
                 "lesson_log_logged_at": log.logged_at if log else None,
@@ -774,17 +780,41 @@ async def reverse_lesson_execution(
     now_utc: datetime,
 ) -> None:
     entries = await load_execution_entries(db, organization_id, context.assignment.id)
-    origin = LESSON_LOG_ORIGIN.format(lesson_id=context.lesson.id)
+    # Publication moves the log while ledger entries retain their original lesson ID.
+    lineage = (
+        select(SchedulerLessonV1.id, SchedulerLessonV1.source_lesson_id)
+        .where(
+            SchedulerLessonV1.organization_id == organization_id,
+            SchedulerLessonV1.school_year_id == context.year.id,
+            SchedulerLessonV1.assignment_id == context.assignment.id,
+            SchedulerLessonV1.id == context.lesson.id,
+        )
+        .cte("lesson_lineage", recursive=True)
+    )
+    lineage = lineage.union(
+        select(SchedulerLessonV1.id, SchedulerLessonV1.source_lesson_id)
+        .join(lineage, SchedulerLessonV1.id == lineage.c.source_lesson_id)
+        .where(
+            SchedulerLessonV1.organization_id == organization_id,
+            SchedulerLessonV1.school_year_id == context.year.id,
+            SchedulerLessonV1.assignment_id == context.assignment.id,
+        )
+    )
+    origins = {
+        LESSON_LOG_ORIGIN.format(lesson_id=lesson_id)
+        for lesson_id in await db.scalars(select(lineage.c.id))
+    }
     source = next(
         (
             entry
             for entry in reversed(entries)
-            if entry.origin == origin and entry.reversal_of is None
+            if entry.origin in origins and entry.reversal_of is None
         ),
         None,
     )
     if source is None:
         return
+    origin = source.origin
     # Reverse only the balance that is still credited per module. A partial
     # manual reduction must not hide the remaining credit of another module.
     reversed_by_module: dict[int, int] = defaultdict(int)

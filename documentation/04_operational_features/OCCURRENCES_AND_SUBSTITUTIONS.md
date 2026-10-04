@@ -62,6 +62,11 @@ Planning a substitution must not anticipate curricular execution.
 - `GIVEN → GAP` and `GIVEN → SUBSTITUTED` compensate the original execution in the same transaction.
 - A gap compensated by `GIVEN` creates a new debt claim on the next `GAP` cycle.
 - A revoked occurrence can start a new pending cycle. The revocation audit stays on the row.
+- The weekly projection reports a revoked lesson log as `PENDING`, with its occurrence state preserved as `REVOKED`.
+- Premature historical `COMPLETED` logs appear as `GIVEN` when `logged_at` precedes the lesson end.
+- This projection does not invent a historical decision or change the ledger.
+- A reversal follows source lessons across published versions and compensates the original execution origin.
+- Valid completed lessons without an occurrence decision stay outside occurrence history.
 - The diagnostics endpoint explains each excluded candidate with a structured reason and a setup path.
 
 ## States and Transitions

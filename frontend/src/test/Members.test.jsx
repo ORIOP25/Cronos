@@ -30,7 +30,26 @@ vi.mock('../features/catalog/data', () => ({
   useSubjects: () => ({ data: [] }),
 }))
 
+vi.mock('../components/TeacherAvailabilityModal', () => ({
+  default: ({ teacher }) => <div role="dialog">Disponibilidade — {teacher.name} (professor {teacher.id})</div>,
+}))
+
 describe('Members', () => {
+  it('opens administrative availability with the teacher ID, independently of access', () => {
+    useMembersMock.mockReturnValue({ data: { items: [{ id: 684, teacher_id: 657,
+      organization_display_name: 'Professor QA', capabilities: ['teacher'],
+      access_status: 'none', lifecycle_status: 'active', teacher_access_mode: 'scheduler_only',
+    }] }, isLoading: false, isError: false })
+    renderWithRouter(<Members />)
+    fireEvent.click(screen.getByRole('button', { name: 'Editar disponibilidade' }))
+    expect(screen.getByRole('dialog')).toHaveTextContent('Disponibilidade — Professor QA (professor 657)')
+  })
+
+  it('explains an unknown teacher link instead of opening an unidentified grid', () => {
+    renderWithRouter(<Members />, { initialEntries: ['/members?teacher_id=684&panel=availability'] })
+    expect(screen.getByRole('alert')).toHaveTextContent('Professor não encontrado')
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
   beforeEach(() => {
     useMembersMock.mockReturnValue({
       data: { items: [] },

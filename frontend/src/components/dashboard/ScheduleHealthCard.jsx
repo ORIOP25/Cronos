@@ -44,6 +44,11 @@ export default function ScheduleHealthCard({ health, isLoading }) {
             <div className="small text-muted text-center mb-3">
               {health.classes_total} turmas e {health.teachers_total} professores no horário aprovado
               {periodLabel ? ` · ${periodLabel}` : ''}
+              {health.classes_archived > 0 && (
+                <div>Inclui {health.classes_archived} {health.classes_archived === 1 ? 'turma arquivada' : 'turmas arquivadas'}.
+                  {' '}O catálogo apresenta apenas turmas ativas. A média usa todas as turmas do horário aprovado.
+                </div>
+              )}
             </div>
             <div className="row">
               {metrics.map(([label, value, alert]) => (

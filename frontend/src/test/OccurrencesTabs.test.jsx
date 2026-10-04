@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import Occurrences from '../pages/Occurrences'
 import { renderWithRouter } from './testUtils'
@@ -32,6 +32,31 @@ describe('Occurrences active tab ownership', () => {
   beforeEach(() => {
     hooks.debts.mockReset().mockReturnValue({ data: { items: [] }, isLoading: false, isError: false })
     hooks.occurrences.mockReset().mockReturnValue({ data: { items: [] }, isLoading: false, isError: false })
+  })
+
+  it('disables Given for a future occurrence without blocking other decisions', async () => {
+    hooks.occurrences.mockReturnValue({
+      data: { items: [{ id: 19, date: '2099-10-19', ends_at: '2099-10-19T09:50:00Z',
+        status: 'GAP', operational_state: 'OPEN_PENDING', version: 1 }] },
+      isLoading: false, isError: false,
+    })
+    renderWithRouter(<Occurrences />, { initialEntries: ['/absences'] })
+    fireEvent.click(await screen.findByRole('button', { name: 'Decidir' }))
+    expect(screen.getByRole('button', { name: 'Dada' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Furo' })).toBeEnabled()
+    expect(screen.getByText(/Só pode decidir.*Dada.*término/i)).toBeInTheDocument()
+  })
+
+  it('keeps the debt amount and teacher readable in mobile cards', () => {
+    hooks.debts.mockReturnValue({ data: { total_gaps: 1, total_hours_owed: 50 / 60,
+      items: [{ class_id: 3, subject_id: 1, class_name: 'TCONT 10', subject_name: 'Fiscalidade',
+        teacher_name: 'Prof. QA', gap_occurrences: 1, hours_owed: 50 / 60 }] },
+      isLoading: false, isError: false })
+    renderWithRouter(<Occurrences />, { initialEntries: ['/absences?tab=debts'] })
+    const cards = screen.getByRole('region', { name: 'Dívidas por turma' })
+    expect(cards).toHaveClass('d-md-none')
+    expect(within(cards).getByText('50 min')).toBeInTheDocument()
+    expect(within(cards).getByText('Prof. QA')).toBeInTheDocument()
   })
 
   it('mounts only the data hook for the active tab', async () => {
@@ -140,7 +165,7 @@ describe('Occurrences active tab ownership', () => {
     await waitFor(() => {
       expect(screen.queryByText('Resumo de Dívidas de Horas')).not.toBeInTheDocument()
       expect(screen.getByText('Furos acumulados')).toBeInTheDocument()
-      expect(screen.getByText('Horas em dívida')).toBeInTheDocument()
+      expect(screen.getAllByText('Horas em dívida').length).toBeGreaterThan(0)
       expect(screen.getByRole('cell', { name: '2 h' })).toBeInTheDocument()
     })
   })

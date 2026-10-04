@@ -130,6 +130,7 @@ const buildDeciderDisplayName = (occurrence) => {
 
 const buildDecisionSummary = (occurrence) => {
   if (!occurrence.decided_at) {
+    if (occurrence.status === 'GIVEN') return 'Crédito histórico sem decisão. Confirme o registo antes de o reverter.'
     return TXT.OCCURRENCE_PENDING_DECISION
   }
 
@@ -169,7 +170,10 @@ const EditOccurrenceModal = ({
   errorMessage,
   allowedDecisions,
 }) => {
-  const availableDecisions = allowedDecisions ?? ['GIVEN', 'GAP', 'SUBSTITUTED']
+  const [decisionTime] = useState(Date.now)
+  const lessonNotFinished = occurrence.ends_at && Date.parse(occurrence.ends_at) > decisionTime
+  const availableDecisions = (allowedDecisions ?? ['GIVEN', 'GAP', 'SUBSTITUTED'])
+    .filter((decision) => decision !== 'GIVEN' || !lessonNotFinished)
   const [status, setStatus] = useState(
     availableDecisions.includes(occurrence.status) ? occurrence.status : availableDecisions[0] || occurrence.status || 'GAP'
   )
@@ -324,6 +328,11 @@ const EditOccurrenceModal = ({
               Substituída
             </CButton>
           </CButtonGroup>
+          {lessonNotFinished && (
+            <p className="small text-muted mt-2" role="status">
+              Só pode decidir “Dada” depois do término desta aula.
+            </p>
+          )}
         </div>
 
         {status === 'SUBSTITUTED' && (
@@ -350,7 +359,7 @@ const EditOccurrenceModal = ({
                           {item.message}{' '}
                           {item.setup === 'availability' && (
                             <Link
-                              to={`/members?teacher_id=${item.teacher_id}&panel=availability`}
+                              to={`/members?teacher_id=${item.teacher_id}&panel=availability&on_date=${occurrence.date}`}
                               onClick={onClose}
                             >
                               Editar disponibilidade
@@ -460,6 +469,21 @@ const DebtsPanel = ({ classId }) => {
         </CCol>
       </CRow>
 
+      <section aria-label="Dívidas por turma" className="d-md-none">
+        {debtData.items.map((item) => (
+          <article key={`${item.class_id}-${item.subject_id}`} className="border rounded p-3 mb-2">
+            <h3 className="h6 mb-1">{item.class_name}</h3>
+            <div>{item.subject_name}</div>
+            <dl className="mb-0 mt-2">
+              <dt>Professor</dt><dd>{item.teacher_name ?? '—'}</dd>
+              <dt>Furos</dt><dd>{item.gap_occurrences}</dd>
+              <dt>Horas em dívida</dt>
+              <dd className="fw-bold text-danger mb-0">{formatDurationHours(item.hours_owed)}</dd>
+            </dl>
+          </article>
+        ))}
+      </section>
+      <div className="d-none d-md-block">
       <CTable hover responsive className="mb-0">
         <CTableHead color="light">
           <CTableRow>
@@ -486,6 +510,7 @@ const DebtsPanel = ({ classId }) => {
           ))}
         </CTableBody>
       </CTable>
+      </div>
     </>
   )
 }

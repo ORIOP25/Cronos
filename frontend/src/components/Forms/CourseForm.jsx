@@ -14,6 +14,7 @@ import { portugueseValidityProps } from '../../utils/formValidity'
 const CourseForm = ({ onSubmit, isLoading, onCancel }) => {
   const [course, setCourse] = useState({ name: '', abbreviation: '', classes_config: [] })
   const [classDraft, setClassDraft] = useState(createClassDraft)
+  const [classDraftChanged, setClassDraftChanged] = useState(false)
   const [formError, setFormError] = useState('')
   const [classError, setClassError] = useState('')
 
@@ -23,6 +24,7 @@ const CourseForm = ({ onSubmit, isLoading, onCancel }) => {
   }
 
   const updateClass = (field, value) => {
+    setClassDraftChanged(true)
     setClassDraft((current) => ({ ...current, [field]: value }))
     setClassError('')
   }
@@ -35,15 +37,23 @@ const CourseForm = ({ onSubmit, isLoading, onCancel }) => {
       classes_config: [...current.classes_config, validation.value],
     }))
     setClassDraft(createClassDraft())
+    setClassDraftChanged(false)
   }
 
   const submit = (event) => {
     event.preventDefault()
+    if (isLoading) return
     const name = course.name.trim()
     const abbreviation = course.abbreviation.trim()
     if (!name) return setFormError('Nome do curso é obrigatório.')
     if (abbreviation.length < 2) return setFormError('A sigla deve ter pelo menos 2 caracteres.')
-    onSubmit({ name, abbreviation, classes_config: course.classes_config })
+    const classes = [...course.classes_config]
+    if (classDraftChanged) {
+      const validation = validateClassDraft(classDraft, classes)
+      if (validation.error) return setClassError(validation.error)
+      classes.push(validation.value)
+    }
+    onSubmit({ name, abbreviation, classes_config: classes })
   }
 
   return (
@@ -64,7 +74,8 @@ const CourseForm = ({ onSubmit, isLoading, onCancel }) => {
 
       <fieldset>
         <legend className="h6 mb-3">Turmas iniciais</legend>
-        {classError && <CAlert color="danger">{classError}</CAlert>}
+        <p className="small text-muted">A turma preenchida também será incluída ao criar o curso.</p>
+        {classError && <CAlert color="danger" id="course-class-error">{classError}</CAlert>}
         <CRow className="g-2 align-items-end">
           <CCol md={4}><CFormInput id="course-class-name" label="Nome Turma" value={classDraft.name} onChange={(event) => updateClass('name', event.target.value)} /></CCol>
           <CCol md={2}><CFormInput id="course-class-grade" label="Ano (10-12)" type="number" min={10} max={12} value={classDraft.grade_level} onChange={(event) => updateClass('grade_level', event.target.value)} /></CCol>

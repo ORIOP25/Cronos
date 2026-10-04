@@ -44,6 +44,9 @@ Playwright is configured in `frontend/playwright.config.js`. The `setup` project
 
 ## CI gates
 
+The owned local E2E stack builds the frontend `ci` target, which permits the dedicated Clerk test domain.
+Its Nginx application routes include `/imports`. Production keeps its runtime browser policy.
+
 GitHub Actions keeps backend, frontend and E2E in separate jobs. The backend job has a 45-minute timeout, the frontend job has a 20-minute timeout, and the E2E job has a 30-minute timeout.
 
 Backend gates use Python 3.14 with `postgres:16` and `redis:7` services. The job provisions `cronos_migrator`, `cronos_app`, and `cronos_auth_definer`, installs locked dependencies with `--require-hashes`, runs `pip check` and `pip-audit`, checks Ruff formatting and linting, runs Alembic upgrade/check/downgrade/upgrade, runs the database integrity audits, runs unit then integration then contract tests, applies the coverage gates, and builds the hardened runtime image.

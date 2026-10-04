@@ -27,12 +27,12 @@ function toMap(rows = [], validIds) {
 /**
  * Direção edita a disponibilidade de um professor, incluindo quem não tem acesso.
  */
-export default function TeacherAvailabilityModal({ teacher, onClose }) {
+export default function TeacherAvailabilityModal({ teacher, onDate, onClose }) {
   const [draftEdits, setDraftEdits] = useState({})
   const [selectedScore, setSelectedScore] = useState(DEFAULT_PREFERENCE)
   const [feedback, setFeedback] = useState(null)
-  const timeslotsQuery = useTimeslots()
-  const availabilityQuery = useTeacherAvailability({ teacherId: teacher?.id })
+  const timeslotsQuery = useTimeslots({ onDate })
+  const availabilityQuery = useTeacherAvailability({ teacherId: teacher?.id, onDate })
   const saveMutation = useSaveTeacherAvailability()
   const timeslots = useMemo(() => timeslotsQuery.data ?? [], [timeslotsQuery.data])
   const validIds = useMemo(() => new Set(timeslots.map((slot) => slot.id)), [timeslots])
@@ -70,7 +70,7 @@ export default function TeacherAvailabilityModal({ teacher, onClose }) {
       .filter(([id]) => validIds.has(Number(id)))
       .map(([id, score]) => ({ timeslot_id: Number(id), score }))
     try {
-      await saveMutation.mutateAsync({ teacherId: teacher.id, payload })
+      await saveMutation.mutateAsync({ teacherId: teacher.id, payload, ...(onDate ? { onDate } : {}) })
       setDraftEdits({})
       setFeedback({ tone: 'success', message: 'Disponibilidade guardada. Recomendações atualizadas.' })
     } catch (error) {
@@ -100,6 +100,7 @@ export default function TeacherAvailabilityModal({ teacher, onClose }) {
         <p className="small text-muted">
           Esta edição é administrativa. Não envia convite nem altera o acesso do professor.
         </p>
+        {onDate && <p className="small">Grelha válida em {onDate.split('-').reverse().join('/')}.</p>}
         {feedback && <CAlert color={feedback.tone}>{feedback.message}</CAlert>}
         {timeslotsQuery.isLoading || availabilityQuery.isLoading ? (
           <StatePanel state="loading" title="A carregar disponibilidade" compact />

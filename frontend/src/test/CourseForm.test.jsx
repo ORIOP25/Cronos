@@ -51,4 +51,31 @@ describe('CourseForm', () => {
     fireEvent.click(screen.getByRole('button', { name: /cancelar/i }))
     expect(onCancel).toHaveBeenCalledOnce()
   })
+
+  it('includes the filled initial class when creating without clicking Add', () => {
+    const onSubmit = vi.fn()
+    renderForm({ onSubmit })
+    fireEvent.change(screen.getByLabelText(/nome do curso/i), { target: { value: 'QA Revalidação' } })
+    fireEvent.change(screen.getByLabelText(/sigla/i), { target: { value: 'QA26' } })
+    fireEvent.change(screen.getByLabelText(/nome turma/i), { target: { value: 'QA26 10' } })
+    fireEvent.change(screen.getByLabelText(/ano de início/i), { target: { value: '2026' } })
+    fireEvent.change(screen.getByLabelText(/ano de fim/i), { target: { value: '2029' } })
+    fireEvent.click(screen.getByRole('button', { name: /criar curso/i }))
+    expect(onSubmit).toHaveBeenCalledWith({
+      name: 'QA Revalidação', abbreviation: 'QA26',
+      classes_config: [{ name: 'QA26 10', grade_level: 10, start_year: 2026, end_year: 2029, size: 25 }],
+    })
+  })
+
+  it('preserves an incomplete initial class and blocks course creation', () => {
+    const onSubmit = vi.fn()
+    renderForm({ onSubmit })
+    fireEvent.change(screen.getByLabelText(/nome do curso/i), { target: { value: 'QA Revalidação' } })
+    fireEvent.change(screen.getByLabelText(/sigla/i), { target: { value: 'QA26' } })
+    fireEvent.change(screen.getByLabelText(/alunos/i), { target: { value: '30' } })
+    fireEvent.click(screen.getByRole('button', { name: /criar curso/i }))
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(screen.getByRole('alert')).toHaveTextContent('Indique o nome da turma.')
+    expect(screen.getByLabelText(/alunos/i)).toHaveValue(30)
+  })
 })

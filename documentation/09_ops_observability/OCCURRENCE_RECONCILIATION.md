@@ -112,7 +112,7 @@ Repeat the Step 1 queries and compare results.
 
 - The open debt of a pending occurrence is zero.
 - A planned substitution has no execution credit.
-- A concluded substitution keeps one credit and one settlement.
+- A concluded substitution keeps one substitute credit. The original debt stays open unless separately settled on its assignment.
 - Totals before and after explain every difference.
 
 ## Failure Modes
@@ -130,6 +130,16 @@ synthetic QA teacher. Revert the lesson through the corrected reversal flow.
 Verify the 50-minute compensation and the preserved history. Archive or remove
 the teacher with the normal administrative operation after checking
 references.
+
+The 4 October read-only inventory identified organization `27` and active version `22`.
+The QA log is `1`, revision `4`, for lesson `279321`, with source lesson `230239`.
+Execution `9`, origin `lesson-log:230239`, credits 50 minutes. Its reason explicitly identifies a synthetic QA trial.
+Use the administrative occurrence reversal after deploying the correction. Do not delete the execution or edit its credit.
+Verify one negative 50-minute credit referencing execution `9`. Verify that a repeated reversal adds no credit.
+The QA member is `684`; its teacher profile is `657`. Open availability through the team action.
+The six archived approved classes are `743` through `748`. Their presence explains the 54-class denominator.
+The active catalog contains 48 classes. Do not delete approved history to equalize these populations.
+Production data was inspected inside `READ ONLY` transactions. Applying a correction requires separate operator authorization.
 
 ## Source Map
 

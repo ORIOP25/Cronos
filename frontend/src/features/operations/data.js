@@ -284,12 +284,14 @@ export const useSaveAvailability = () => {
 /**
  * Disponibilidade de um professor vista pela Direção.
  */
-export const useTeacherAvailability = ({ teacherId } = {}) => {
+export const useTeacherAvailability = ({ teacherId, onDate } = {}) => {
   const apiClient = useApiClient()
   const orgId = useOrganization().organization?.id
   return useQuery({
-    queryKey: orgQueryKey('teacher-availability', orgId, teacherId),
-    queryFn: async () => apiClient.get(`/teachers/${teacherId}/availability`),
+    queryKey: orgQueryKey('teacher-availability', orgId, teacherId, onDate ?? null),
+    queryFn: async () => apiClient.get(`/teachers/${teacherId}/availability`, {
+      params: onDate ? { on_date: onDate } : {},
+    }),
     enabled: Boolean(orgId) && Boolean(teacherId),
     ...DYNAMIC_OPTS,
   })
@@ -303,14 +305,17 @@ export const useSaveTeacherAvailability = () => {
   const queryClient = useQueryClient()
   const orgId = useOrganization().organization?.id
   return useMutation({
-    mutationFn: async ({ teacherId, payload }) => {
-      return apiClient.put(`/teachers/${teacherId}/availability`, payload)
+    mutationFn: async ({ teacherId, payload, onDate }) => {
+      return apiClient.put(`/teachers/${teacherId}/availability`, payload, {
+        params: onDate ? { on_date: onDate } : {},
+      })
     },
-    onSuccess: (_, { teacherId, payload }) => {
-      queryClient.setQueryData(orgQueryKey('teacher-availability', orgId, teacherId), payload)
+    onSuccess: (_, { teacherId, payload, onDate }) => {
+      queryClient.setQueryData(orgQueryKey('teacher-availability', orgId, teacherId, onDate ?? null), payload)
       void invalidateOrgQueries(queryClient, orgId, [
         'teacher-availability',
         'substitute-recommendations',
+        'substitute-diagnostics',
         'occurrences',
         'dashboard',
         'teacher-progress',

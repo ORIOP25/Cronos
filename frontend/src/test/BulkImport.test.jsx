@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
@@ -72,6 +72,18 @@ describe('BulkImport', () => {
 
     await user.click(screen.getByRole('button', { name: 'Confirmar importação' }))
     await waitFor(() => expect(mocks.commit).toHaveBeenCalledWith({ rooms: file }))
+  })
+
+  it('shows download feedback beside the selected model, including failures', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    const button = screen.getAllByRole('button', { name: 'Descarregar modelo' }).at(-1)
+    const card = within(button.closest('.card'))
+    await user.click(button)
+    expect(await card.findByRole('status')).toHaveTextContent('Transferência iniciada')
+    mocks.download.mockRejectedValueOnce(new Error('offline'))
+    await user.click(button)
+    expect(await card.findByRole('alert')).toHaveTextContent('Não foi possível preparar o modelo')
   })
 
   it('confirms only that the browser was asked to download and blocks duplicate requests', async () => {

@@ -2313,6 +2313,7 @@ class ScheduleHealthWidget(BaseModel):
     generation_id: str | None = Field(None, description="None se não houver geração ativa")
     blocks_count: int = 0
     classes_total: int = 0
+    classes_archived: int = 0
     classes_empty_week: int = 0
     week_slots_avg: float = 0.0
     duplicate_teacher_slots: int = 0
