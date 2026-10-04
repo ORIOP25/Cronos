@@ -11,7 +11,7 @@ test.beforeEach(async ({ page }) => {
   await loginAsAdminReal(page)
 })
 
-test('all CSV models download actual files with feedback beside their buttons', async ({ page }) => {
+test('all CSV models download actual files with feedback visible in the viewport', async ({ page }) => {
   await page.setViewportSize({ width: 451, height: 900 })
   await goTo(page, '/imports')
   await expectRouteReady(page, '/imports')
@@ -26,8 +26,7 @@ test('all CSV models download actual files with feedback beside their buttons', 
     const bytes = await readFile(await download.path())
     expect([...bytes.subarray(0, 3)]).toEqual([239, 187, 191])
     expect(bytes.toString('utf8')).toContain(';')
-    const feedback = button.locator('xpath=ancestor::div[contains(@class,"card ")]').getByRole('status')
-    await expect(feedback).toContainText('Transferência iniciada')
+    const feedback = page.locator('[data-rht-toaster]').getByText('Transferência iniciada. Verifique a pasta de transferências.', { exact: true }).first()
     await expect(feedback).toBeInViewport()
   }
 })

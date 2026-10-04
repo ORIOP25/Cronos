@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
+import { toast } from 'react-hot-toast'
 import { Link, useLocation } from 'react-router-dom'
 import {
   CCard, CCardBody, CCardHeader, CAlert, CBadge, CSpinner,
@@ -26,12 +27,14 @@ import DraftPanel from '../components/schedules/DraftPanel'
 import GenerationStatusPanel from '../components/schedules/GenerationStatusPanel'
 import ConfirmationModal from '../components/ConfirmationModal'
 import FailureState from '../components/FailureState'
+import FeedbackBanner from '../components/FeedbackBanner'
 import PageHeader from '../components/PageHeader'
 import StatePanel from '../components/StatePanel'
 import { useOrganization } from '@clerk/react'
 import { addDays, formatDate, getCurrentWeekMonday } from '../utils/formatUtils'
 import { collectInternshipDays } from '../utils/internshipDays'
 import { getApiErrorMessage, getApiErrorPresentation } from '../utils/apiErrors'
+import { useAttemptScope } from '../hooks/useAttemptScope'
 import { readExpiringValue, writeExpiringValue } from '../utils/expiringStorage'
 
 // ---------------------------------------------------------------------------
@@ -188,6 +191,7 @@ const Schedules = ({ initialClassId = '', initialWeekStart, persistView = true, 
   const cancelGenerationMutation = useCancelScheduleTask()
   const approveMutation  = useApproveDraft()
   const rejectMutation   = useRejectDraft()
+  const attemptScope = useAttemptScope()
   const serverJobId = schedulerStatus?.active_job?.id ?? null
   const effectiveJobId = activeJobId ?? serverJobId
   const { data: jobData } = useScheduleTaskStatus(effectiveJobId)
@@ -314,14 +318,20 @@ const Schedules = ({ initialClassId = '', initialWeekStart, persistView = true, 
     if (!canGenerate || !canGenerateNow) return
     setGenerationConfirmation(null)
     setGenerationActionError(null)
+    const attempt = attemptScope.capture()
     try {
       const result = await generateMutation.mutateAsync({
         idempotencyKey: globalThis.crypto.randomUUID(),
         expectedInputRevision: schedulerStatus?.revisions?.input ?? 0,
       })
+      if (!attemptScope.isCurrent(attempt)) return
       const jobId = result?.job?.id
-      if (jobId) setActiveJobId(jobId)
+      if (jobId) {
+        setActiveJobId(jobId)
+        toast.success('Geração pedida. Acompanhe o progresso nesta página.')
+      }
     } catch (err) {
+      if (!attemptScope.isCurrent(attempt)) return
       const detail = err?.response?.data?.detail
       if (detail?.code === 'active_job' && detail?.context?.job_id) {
         setActiveJobId(detail.context.job_id)
@@ -361,12 +371,11 @@ const Schedules = ({ initialClassId = '', initialWeekStart, persistView = true, 
       return
     }
 
-    setGenerationActionError('')
-    cancelGenerationMutation.mutate(effectiveJobId, {
+    cancelGenerationMutation.mutate(effectiveJobId, attemptScope.guard({
       onError: () => {
-        setGenerationActionError('Não foi possível cancelar a geração. Tente novamente.')
+        toast.error('Não foi possível cancelar a geração. Tente novamente.')
       },
-    })
+    }))
     setActiveJobId(null)
   }
 
@@ -472,9 +481,9 @@ const Schedules = ({ initialClassId = '', initialWeekStart, persistView = true, 
 
       <div data-tutorial-target="schedule-draft">
           {typeof generationActionError === 'string' && (
-            <CAlert color="danger" className="mb-4" style={{ whiteSpace: 'pre-line' }}>
-              {generationActionError}
-            </CAlert>
+            <div className="mb-4">
+              <FeedbackBanner tone="danger">{generationActionError}</FeedbackBanner>
+            </div>
           )}
           {generationActionError && typeof generationActionError === 'object' && (
             <div className="mb-4">
@@ -517,32 +526,42 @@ const Schedules = ({ initialClassId = '', initialWeekStart, persistView = true, 
           )}
           {effectiveJobId && <GenerationStatusPanel jobId={effectiveJobId} />}
           {!hasPendingDraft && !isGenerating && eligibilityMessage(eligibility, schoolYear) && (
-            <CAlert color="secondary" className="mb-4" style={{ whiteSpace: 'pre-line' }}>
-              {eligibilityMessage(eligibility, schoolYear)}
-            </CAlert>
+            <div className="mb-4">
+              <FeedbackBanner tone="info">
+                {eligibilityMessage(eligibility, schoolYear)}
+              </FeedbackBanner>
+            </div>
           )}
           {hasPendingDraft && (currentDraft || schedulerStatus?.pending_proposal) && (
             <DraftPanel
               draft={currentDraft || schedulerStatus.pending_proposal}
               onApprove={async (proposalId) => {
                 try {
+                  const attempt = attemptScope.capture()
                   await approveMutation.mutateAsync({
                     proposalId,
                     expectedInputRevision: schedulerStatus?.revisions?.input ?? null,
                   })
+                  if (!attemptScope.isCurrent(attempt)) return
+                  toast.success('Proposta aprovada.')
                 }
                 catch (err) {
-                  setGenerationActionError(
-                    getDraftMutationErrorMessage(err, 'Erro ao aprovar proposta.')
-                  )
+                  const message = getDraftMutationErrorMessage(err, 'Erro ao aprovar proposta.')
+                  if (message === STALE_DRAFT_MESSAGE) setGenerationActionError(message)
+                  else toast.error(message)
                 }
               }}
               onReject={async (proposalId) => {
-                try { await rejectMutation.mutateAsync(proposalId) }
+                try {
+                  const attempt = attemptScope.capture()
+                  await rejectMutation.mutateAsync(proposalId)
+                  if (!attemptScope.isCurrent(attempt)) return
+                  toast.success('Proposta rejeitada.')
+                }
                 catch (err) {
-                  setGenerationActionError(
-                    getDraftMutationErrorMessage(err, 'Erro ao rejeitar proposta.')
-                  )
+                  const message = getDraftMutationErrorMessage(err, 'Erro ao rejeitar proposta.')
+                  if (message === STALE_DRAFT_MESSAGE) setGenerationActionError(message)
+                  else toast.error(message)
                 }
               }}
               isApproving={approveMutation.isPending}

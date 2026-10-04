@@ -6,26 +6,64 @@ import {
   CFormInput,
   CButton,
   CModalFooter,
-  CAlert,
+  CFormFeedback,
 } from '@coreui/react'
 import { createClassDraft, validateClassDraft } from '../../utils/classDraft'
-import { portugueseValidityProps } from '../../utils/formValidity'
+
+const FEEDBACK_ID = 'classInCourseValidation'
+const FIELD_IDS = {
+  name: 'classInCourseName',
+  size: 'classInCourseSize',
+  grade_level: 'classInCourseGradeLevel',
+  start_year: 'classInCourseStartYear',
+  end_year: 'classInCourseEndYear',
+  date_range: 'classInCourseStartYear',
+}
+
+const toValidation = (result) => (
+  result.error ? { message: result.error, field: result.field } : null
+)
 
 const ClassInCourseForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
   const [formData, setFormData] = useState(() => createClassDraft(initialData))
-  const [error, setError] = useState('')
+  const [validation, setValidation] = useState(null)
+
+  const isInvalid = (field) => validation?.field === field
+    || (validation?.field === 'date_range' && (field === 'start_year' || field === 'end_year'))
+
+  const inputProps = (field) => ({
+    invalid: isInvalid(field) || undefined,
+    'aria-invalid': isInvalid(field) || undefined,
+    'aria-describedby': isInvalid(field) ? FEEDBACK_ID : undefined,
+  })
+
+  const focusField = (field) => {
+    document.getElementById(FIELD_IDS[field])?.focus()
+  }
+
+  const fieldFeedback = (field) => (
+    validation?.field === field
+      ? <CFormFeedback id={FEEDBACK_ID} invalid className="d-block" role="alert">{validation.message}</CFormFeedback>
+      : null
+  )
 
   const handleChange = (e) => {
     const { name, value } = e.target
-    setError('')
-    setFormData((prev) => ({ ...prev, [name]: value }))
+    const next = { ...formData, [name]: value }
+    setFormData(next)
+    if (validation) setValidation(toValidation(validateClassDraft(next)))
   }
 
   const handleSubmit = (e) => {
     e.preventDefault()
-    const validation = validateClassDraft(formData)
-    if (validation.error) return setError(validation.error)
-    onSubmit(validation.value)
+    const result = validateClassDraft(formData)
+    const nextValidation = toValidation(result)
+    setValidation(nextValidation)
+    if (nextValidation) {
+      focusField(nextValidation.field)
+      return
+    }
+    onSubmit(result.value)
   }
 
   let submitLabel = 'Criar Turma'
@@ -33,13 +71,11 @@ const ClassInCourseForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
   else if (initialData) submitLabel = 'Atualizar Turma'
 
   return (
-    <CForm onSubmit={handleSubmit}>
-      {error && <CAlert color="danger" id="class-form-error">{error}</CAlert>}
-
+    <CForm onSubmit={handleSubmit} noValidate>
       <CRow className="g-3">
         <CCol md={8}>
           <CFormInput
-            id="classInCourseName"
+            id={FIELD_IDS.name}
             type="text"
             label="Nome da Turma"
             name="name"
@@ -47,15 +83,14 @@ const ClassInCourseForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
             onChange={handleChange}
             required
             placeholder="Ex: TGPSI 10A"
-            invalid={Boolean(error)}
-            aria-describedby={error ? 'class-form-error' : undefined}
-            {...portugueseValidityProps}
+            {...inputProps('name')}
           />
+          {fieldFeedback('name')}
         </CCol>
 
         <CCol md={4}>
           <CFormInput
-            id="classInCourseSize"
+            id={FIELD_IDS.size}
             type="number"
             label="Nº Alunos"
             name="size"
@@ -64,13 +99,14 @@ const ClassInCourseForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
             min="1"
             max="100"
             required
-            {...portugueseValidityProps}
+            {...inputProps('size')}
           />
+          {fieldFeedback('size')}
         </CCol>
 
         <CCol md={4}>
           <CFormInput
-            id="classInCourseGradeLevel"
+            id={FIELD_IDS.grade_level}
             type="number"
             label="Ano (10-12)"
             name="grade_level"
@@ -79,13 +115,14 @@ const ClassInCourseForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
             min="10"
             max="12"
             required
-            {...portugueseValidityProps}
+            {...inputProps('grade_level')}
           />
+          {fieldFeedback('grade_level')}
         </CCol>
 
         <CCol md={4}>
           <CFormInput
-            id="classInCourseStartYear"
+            id={FIELD_IDS.start_year}
             type="number"
             label="Início"
             name="start_year"
@@ -93,13 +130,14 @@ const ClassInCourseForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
             onChange={handleChange}
             min="2000"
             required
-            {...portugueseValidityProps}
+            {...inputProps('start_year')}
           />
+          {fieldFeedback('start_year')}
         </CCol>
 
         <CCol md={4}>
           <CFormInput
-            id="classInCourseEndYear"
+            id={FIELD_IDS.end_year}
             type="number"
             label="Fim"
             name="end_year"
@@ -107,10 +145,13 @@ const ClassInCourseForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
             onChange={handleChange}
             min="2001"
             required
-            {...portugueseValidityProps}
+            {...inputProps('end_year')}
           />
+          {fieldFeedback('end_year')}
         </CCol>
       </CRow>
+
+      {fieldFeedback('date_range')}
 
       <CModalFooter className="px-0 mt-4 border-0 pb-0">
         <CButton color="secondary" variant="ghost" onClick={onCancel}>

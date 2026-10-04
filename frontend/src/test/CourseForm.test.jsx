@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import CourseForm from '../components/Forms/CourseForm'
 
@@ -42,6 +43,48 @@ describe('CourseForm', () => {
       abbreviation: 'TI',
       classes_config: [{ name: '10 TI', grade_level: 10, start_year: 2026, end_year: 2029, size: 24 }],
     })
+  })
+
+  it('associates the course error with its field after a real submission', async () => {
+    const user = userEvent.setup()
+    renderForm()
+    const nameInput = screen.getByLabelText(/nome do curso/i)
+
+    await user.click(screen.getByRole('button', { name: /criar curso/i }))
+
+    expect(screen.getByRole('alert')).toHaveTextContent(/nome do curso é obrigatório/i)
+    expect(nameInput).toHaveAttribute('aria-invalid', 'true')
+    expect(nameInput).toHaveClass('is-invalid')
+    expect(nameInput).toHaveFocus()
+
+    await user.type(nameInput, 'Técnico')
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(nameInput).not.toHaveClass('is-invalid')
+  })
+
+  it('validates the abbreviation through the real submission', async () => {
+    const user = userEvent.setup()
+    const onSubmit = vi.fn()
+    renderForm({ onSubmit })
+    await user.type(screen.getByLabelText(/nome do curso/i), 'Técnico')
+
+    await user.click(screen.getByRole('button', { name: /criar curso/i }))
+
+    const abbreviation = screen.getByLabelText(/sigla/i)
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(screen.getByRole('alert')).toHaveTextContent(/pelo menos 2 caracteres/i)
+    expect(abbreviation).toHaveClass('is-invalid')
+    expect(abbreviation).toHaveFocus()
+  })
+
+  it('associates the class error with the class name field', () => {
+    renderForm()
+    fireEvent.click(screen.getByRole('button', { name: /adicionar turma/i }))
+
+    const classNameInput = screen.getByLabelText(/nome turma/i)
+    expect(screen.getByRole('alert')).toHaveTextContent(/nome da turma/i)
+    expect(classNameInput).toHaveAttribute('aria-invalid', 'true')
+    expect(classNameInput).toHaveFocus()
   })
 
   it('supports cancel and loading state', () => {

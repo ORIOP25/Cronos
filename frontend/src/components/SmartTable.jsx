@@ -2,9 +2,11 @@ import { useState } from 'react'
 import { CCard, CCardBody } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import { cilPencil, cilTrash, cilChevronRight } from '@coreui/icons'
+import { toast } from 'react-hot-toast'
 import ConfirmationModal from './ConfirmationModal'
 import { TXT } from '../utils/terminology'
-import { getApiErrorMessage } from '../utils/apiErrors'
+import { getApiErrorMessage, isApiErrorBlock } from '../utils/apiErrors'
+import { useAttemptScope } from '../hooks/useAttemptScope'
 import StatePanel from './StatePanel'
 import FeedbackBanner from './FeedbackBanner'
 
@@ -76,23 +78,32 @@ const SmartTable = ({
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [isDeleting, setIsDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState('')
-  const [deleteNotice, setDeleteNotice] = useState('')
+  const attemptScope = useAttemptScope()
 
   const handleDeleteConfirm = async () => {
     if (!deleteTarget || !onDelete) return
+    const attempt = attemptScope.capture()
     setIsDeleting(true)
     setDeleteError('')
-    setDeleteNotice('')
     try {
       const result = await onDelete(deleteTarget)
-      setDeleteNotice(
-        result?.remove_effect === 'archive'
-          ? 'Registo arquivado. O histórico (horários, sumários e progresso) foi preservado.'
-          : 'Registo removido.'
-      )
+      if (!attemptScope.isCurrent(attempt)) {
+        setDeleteTarget(null)
+        return
+      }
+      toast.success(result?.remove_effect === 'archive' ? TXT.RECORD_ARCHIVED : TXT.RECORD_REMOVED)
       setDeleteTarget(null)
     } catch (error) {
-      setDeleteError(getApiErrorMessage(error, 'Não foi possível remover o registo.'))
+      if (!attemptScope.isCurrent(attempt)) {
+        setDeleteTarget(null)
+        return
+      }
+      if (isApiErrorBlock(error)) {
+        setDeleteError(getApiErrorMessage(error))
+        setDeleteTarget(null)
+      } else {
+        toast.error(getApiErrorMessage(error, 'Não foi possível remover. Tente novamente.'))
+      }
     } finally {
       setIsDeleting(false)
     }
@@ -167,7 +178,6 @@ const SmartTable = ({
       </CCardBody></CCard>
 
       {deleteError && <div className="mt-3"><FeedbackBanner tone="danger">{deleteError}</FeedbackBanner></div>}
-      {deleteNotice && <div className="mt-3"><FeedbackBanner tone="success" onDismiss={() => setDeleteNotice('')}>{deleteNotice}</FeedbackBanner></div>}
 
       <ConfirmationModal
         visible={deleteTarget !== null}

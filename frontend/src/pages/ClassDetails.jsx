@@ -1,7 +1,8 @@
 import { useState, useMemo, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
+import { toast } from 'react-hot-toast'
 import {
-  CCard, CCardBody, CCardHeader, CCol, CRow, CButton, CAlert,
+  CCard, CCardBody, CCardHeader, CCol, CRow, CButton,
   CBadge, CSpinner, CFormInput, CProgress, CProgressBar,
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
@@ -18,8 +19,10 @@ import {
   useClassSubjects,
 } from '../features/catalog/data'
 import Breadcrumbs from '../components/Breadcrumbs'
+import FeedbackBanner from '../components/FeedbackBanner'
 import RoomTypeBadge from '../components/RoomTypeBadge'
 import { getApiErrorMessage } from '../utils/apiErrors'
+import { useAttemptScope } from '../hooks/useAttemptScope'
 import { formatGradeLevel } from '../utils/presentation'
 
 // ==========================================
@@ -179,6 +182,7 @@ const ClassDetails = () => {
   const { data: classSubjects } = useClassSubjects(numClassId)
   const updateClass = useUpdateClass()
   const updateProgress = useUpdateClassProgress()
+  const attemptScope = useAttemptScope()
 
   // --- STATE: Edição do header ---
   const [editingHeader, setEditingHeader] = useState(false)
@@ -227,7 +231,13 @@ const ClassDetails = () => {
 
     updateClass.mutate(
       { id: numClassId, name: trimName, size },
-      { onSuccess: () => setEditingHeader(false) }
+      attemptScope.guard({
+        onSuccess: () => {
+          setEditingHeader(false)
+          toast.success('Turma atualizada.')
+        },
+        onError: (error) => toast.error(getApiErrorMessage(error, 'Não foi possível guardar a turma. Tente novamente.')),
+      })
     )
   }
 
@@ -274,7 +284,14 @@ const ClassDetails = () => {
 
     updateProgress.mutate(
       { classId: numClassId, progress: changes },
-      { onSuccess: () => { setEditingProgress(false); setProgressEdit({}) } }
+      attemptScope.guard({
+        onSuccess: () => {
+          setEditingProgress(false)
+          setProgressEdit({})
+          toast.success('Progresso atualizado.')
+        },
+        onError: (error) => toast.error(getApiErrorMessage(error, 'Não foi possível atualizar o progresso. Tente novamente.')),
+      })
     )
   }
 
@@ -293,9 +310,9 @@ const ClassDetails = () => {
   if (error || !classData) {
     return (
       <div className="p-4">
-        <CAlert color="danger">
+        <div className="mb-3"><FeedbackBanner tone="danger">
           <strong>Erro:</strong> {getApiErrorMessage(error, 'Turma não encontrada.')}
-        </CAlert>
+        </FeedbackBanner></div>
         <CButton color="light" onClick={() => navigate(`/courses/${numCourseId}`)}>
           <CIcon icon={cilArrowLeft} className="me-1" /> Voltar ao Curso
         </CButton>
@@ -315,20 +332,6 @@ const ClassDetails = () => {
         { label: classData.course?.abbreviation || classData.course?.name || `Curso ${numCourseId}`, to: `/courses/${numCourseId}` },
         { label: classData.name },
       ]} />
-
-      {/* ---- ALERTAS ---- */}
-      {updateClass.isError && (
-        <CAlert color="danger" dismissible onClose={() => updateClass.reset()}>
-          <strong>Erro ao atualizar turma:</strong>{' '}
-          {getApiErrorMessage(updateClass.error)}
-        </CAlert>
-      )}
-      {updateProgress.isError && (
-        <CAlert color="danger" dismissible onClose={() => updateProgress.reset()}>
-          <strong>Erro ao atualizar progresso:</strong>{' '}
-          {getApiErrorMessage(updateProgress.error)}
-        </CAlert>
-      )}
 
       {/* ==== HEADER DA TURMA ==== */}
       <CCard className="mb-4 border-0 shadow-sm">

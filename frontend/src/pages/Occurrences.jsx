@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { toast } from 'react-hot-toast'
 import PageHeader from '../components/PageHeader'
 import { useSearchParams } from 'react-router-dom'
 import { Link } from 'react-router-dom'
 import {
-  CCard, CCardBody, CCol, CRow, CAlert, CBadge, CSpinner,
+  CCard, CCardBody, CCol, CRow, CBadge, CSpinner,
   CButton, CFormSelect, CFormLabel, CTabs, CTabList, CTab,
   CTable, CTableHead, CTableRow, CTableHeaderCell,
   CTableBody, CTableDataCell, CModal, CModalHeader, CModalTitle,
@@ -20,8 +21,10 @@ import { useTeachers } from '../features/members/data'
 import { formatDate, formatDateTime, formatDurationHours, isAfterDate } from '../utils/formatUtils'
 import { TXT, OPERATIONAL_STATE_LABELS, OPERATIONAL_STATE_COLORS } from '../utils/terminology'
 import ConfirmationModal from '../components/ConfirmationModal'
+import FeedbackBanner from '../components/FeedbackBanner'
 import PortugueseDateInput from '../components/PortugueseDateInput'
-import { getApiErrorMessage } from '../utils/apiErrors'
+import { getApiErrorMessage, isApiErrorTransient } from '../utils/apiErrors'
+import { useAttemptScope } from '../hooks/useAttemptScope'
 
 const HISTORY_TABLE_MEDIA_QUERY = '(min-width: 1000px)'
 
@@ -287,16 +290,16 @@ const EditOccurrenceModal = ({
         <CModalTitle>Decisão Operacional — {formatDate(occurrence.date)}</CModalTitle>
       </CModalHeader>
       <CModalBody>
-        <CAlert color="light" className="mb-3">
-          <div><strong>Docente previsto:</strong> {plannedTeacherName}</div>
-          <div><strong>Execução atual:</strong> {executionSummary}</div>
-          <div><strong>Decisão final:</strong> {buildDecisionSummary(occurrence)}</div>
-        </CAlert>
+        <div className="mb-3">
+          <FeedbackBanner tone="info">
+            <div><strong>Docente previsto:</strong> {plannedTeacherName}</div>
+            <div><strong>Execução atual:</strong> {executionSummary}</div>
+            <div><strong>Decisão final:</strong> {buildDecisionSummary(occurrence)}</div>
+          </FeedbackBanner>
+        </div>
 
         {errorMessage && (
-          <CAlert color="danger" className="mb-3">
-            {errorMessage}
-          </CAlert>
+          <div className="mb-3"><FeedbackBanner tone="danger">{errorMessage}</FeedbackBanner></div>
         )}
 
         <div className="mb-3">
@@ -345,12 +348,12 @@ const EditOccurrenceModal = ({
                 </div>
               )}
               {!loadingRecommendations && recommendationsError && (
-                <CAlert color="danger" className="mb-0">
+                <FeedbackBanner tone="danger">
                   Não foi possível carregar as sugestões de substituição. Tente novamente.
-                </CAlert>
+                </FeedbackBanner>
               )}
               {!loadingRecommendations && !recommendationsError && recommendations.length === 0 && (
-                <CAlert color="warning" className="mb-0">
+                <FeedbackBanner tone="warning">
                   <div className="fw-semibold">Sem elegíveis para este período.</div>
                   {exclusionMessages.length > 0 && (
                     <ul className="mb-1 mt-1 ps-3 small">
@@ -372,7 +375,7 @@ const EditOccurrenceModal = ({
                   <div className="small">
                     Pode decidir “Furo” ou corrigir a configuração indicada.
                   </div>
-                </CAlert>
+                </FeedbackBanner>
               )}
               {!loadingRecommendations && !recommendationsError && recommendations.length > 0 && (
                 <>
@@ -442,13 +445,12 @@ const DebtsPanel = ({ classId }) => {
   const { data: debtData, isLoading, isError } = useDebts({ classId: classId || undefined })
 
   if (isLoading) return <div className="text-center p-4"><CSpinner /></div>
-  if (isError) return <CAlert color="danger">{TXT.ERROR_LOADING}</CAlert>
+  if (isError) return <FeedbackBanner tone="danger">{TXT.ERROR_LOADING}</FeedbackBanner>
   if (!debtData || debtData.total_gaps === 0) {
     return (
-      <CAlert color="success" className="d-flex align-items-center gap-2">
-        <CIcon icon={cilCheckCircle} />
-        <span>Sem dívidas de horas registadas. Todas as aulas estão em dia!</span>
-      </CAlert>
+      <FeedbackBanner tone="success">
+        Sem dívidas de horas registadas. Todas as aulas estão em dia!
+      </FeedbackBanner>
     )
   }
 
@@ -636,6 +638,7 @@ const OccurrencesPanel = ({
   const { data: subjects = EMPTY_ARRAY } = useSubjects()
   const updateMutation = useUpdateOccurrence()
   const cancelMutation = useCancelOccurrence()
+  const attemptScope = useAttemptScope()
   const [expandedId, setExpandedId] = useState(null)
   const isWideHistory = useWideHistoryLayout()
   const isTutorial = Array.isArray(allowedActions)
@@ -719,29 +722,37 @@ const OccurrencesPanel = ({
       id: occurrence.id,
       version: occurrence.version,
       cancelCompletedSubstituteLog: hasSubstituteLog,
-    }, {
+    }, attemptScope.guard({
       onSuccess: () => {
         setRevertingId(null)
         setRevertConfirmation(null)
         closeEditModal()
+        toast.success('Ocorrência revertida.')
       },
       onError: (error) => {
         setRevertingId(null)
         setRevertConfirmation(null)
-        setSaveErrorMessage(buildUpdateErrorMessage(error))
+        const message = buildUpdateErrorMessage(error)
+        if (isApiErrorTransient(error)) toast.error(message)
+        else setSaveErrorMessage(message)
       },
-    })
+    }))
   }
 
   const handleSave = (payload) => {
     if (!canDecide) return
     setSaveErrorMessage('')
-    updateMutation.mutate(payload, {
+    updateMutation.mutate(payload, attemptScope.guard({
       onSuccess: () => {
         closeEditModal()
+        toast.success('Decisão registada.')
       },
-      onError: (error) => setSaveErrorMessage(buildUpdateErrorMessage(error)),
-    })
+      onError: (error) => {
+        const message = buildUpdateErrorMessage(error)
+        if (isApiErrorTransient(error)) toast.error(message)
+        else setSaveErrorMessage(message)
+      },
+    }))
   }
 
   if (isLoading) {
@@ -755,17 +766,17 @@ const OccurrencesPanel = ({
 
   if (isError) {
     return (
-      <CAlert color="danger" className="mb-0">
+      <FeedbackBanner tone="danger">
         Não foi possível carregar as ocorrências. Verifique a ligação e volte a tentar.
-      </CAlert>
+      </FeedbackBanner>
     )
   }
 
   if (occurrences.length === 0) {
     return (
-      <CAlert color="info">
+      <FeedbackBanner tone="info">
         Não foram encontradas ocorrências com os filtros selecionados.
-      </CAlert>
+      </FeedbackBanner>
     )
   }
 
@@ -800,11 +811,11 @@ const OccurrencesPanel = ({
       />
 
       {visibleOccurrences.length === 0 && (
-        <CAlert color="light" className="mb-0">
+        <FeedbackBanner tone="info">
           {mode === 'pending'
             ? 'Sem ocorrências pendentes com os filtros atuais.'
             : 'Sem ocorrências no histórico com os filtros atuais.'}
-        </CAlert>
+        </FeedbackBanner>
       )}
 
       {visibleOccurrences.length > 0 && (
@@ -1047,9 +1058,11 @@ const Occurrences = ({
             </CCol>
           </CRow>
           {invalidDateRange && (
-            <CAlert color="danger" className="mb-0 mt-3" role="alert">
-              A data “De” tem de ser anterior ou igual à data “Até”.
-            </CAlert>
+            <div className="mt-3">
+              <FeedbackBanner tone="danger">
+                A data “De” tem de ser anterior ou igual à data “Até”.
+              </FeedbackBanner>
+            </div>
           )}
         </CCardBody>
       </CCard>

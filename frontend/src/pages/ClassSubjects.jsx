@@ -1,8 +1,9 @@
 import { useState, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
+import { toast } from 'react-hot-toast'
 import {
-  CCard, CCardBody, CCardHeader, CButton, CAlert,
-  CBadge, CSpinner, CFormSelect,
+  CCard, CCardBody, CCardHeader, CButton,
+  CBadge, CSpinner, CFormFeedback, CFormSelect,
   CModal, CModalHeader, CModalTitle,
   CModalBody, CModalFooter,
 } from '@coreui/react'
@@ -21,8 +22,10 @@ import {
 } from '../features/catalog/data'
 import Breadcrumbs from '../components/Breadcrumbs'
 import ConfirmationModal from '../components/ConfirmationModal'
+import FeedbackBanner from '../components/FeedbackBanner'
 import RoomTypeBadge from '../components/RoomTypeBadge'
-import { getApiErrorMessage } from '../utils/apiErrors'
+import { getApiErrorMessage, isApiErrorBlock, isApiErrorTransient } from '../utils/apiErrors'
+import { useAttemptScope } from '../hooks/useAttemptScope'
 import { formatGradeLevel } from '../utils/presentation'
 
 // ==========================================
@@ -39,8 +42,11 @@ const SubjectRow = ({
   isUpdating,
   canEditTeacher = true,
   canRemove = true,
+  teacherError = '',
 }) => {
   const { data: eligibleTeachers, isLoading: teachersLoading } = useEligibleTeachers(subject.subject_id)
+  const teacherSelectId = `class-subject-teacher-${subject.subject_id}`
+  const teacherErrorId = `class-subject-teacher-error-${subject.subject_id}`
   
   const handleTeacherChange = (e) => {
     const teacherId = e.target.value ? Number.parseInt(e.target.value, 10) : null
@@ -67,12 +73,16 @@ const SubjectRow = ({
                 <CSpinner size="sm" />
               ) : (
                 <CFormSelect
+                  id={teacherSelectId}
                   size="sm"
                   className="flex-grow-1"
                   aria-label={`Professor de ${subject.subject_name}`}
                   value={subject.teacher_id || ''}
                   onChange={handleTeacherChange}
                   disabled={isUpdating || !canEditTeacher}
+                  invalid={Boolean(teacherError)}
+                  aria-invalid={Boolean(teacherError) || undefined}
+                  aria-describedby={teacherError ? teacherErrorId : undefined}
                   data-tutorial-target="class-subject-teacher"
                 >
                   <option value="">
@@ -97,6 +107,9 @@ const SubjectRow = ({
                 <CIcon icon={cilWarning} className="text-warning flex-shrink-0" title="Sem professor" />
               )}
             </div>
+            {teacherError && (
+              <CFormFeedback id={teacherErrorId} invalid className="d-block" role="alert">{teacherError}</CFormFeedback>
+            )}
           </div>
 
           {/* Botão Remover */}
@@ -138,6 +151,8 @@ const ClassSubjects = ({ courseIdOverride, classIdOverride, navigationDisabled =
   const [showAddModal, setShowAddModal] = useState(false)
   const [selectedSubjectToAdd, setSelectedSubjectToAdd] = useState('')
   const [subjectToRemove, setSubjectToRemove] = useState(null)
+  const [blockedMessage, setBlockedMessage] = useState('')
+  const [teacherBlock, setTeacherBlock] = useState(null)
 
   // Data hooks
   const { data: classSubjects, isLoading, error } = useClassSubjects(numClassId)
@@ -147,6 +162,7 @@ const ClassSubjects = ({ courseIdOverride, classIdOverride, navigationDisabled =
   const addSubject = useAddClassSubject()
   const updateTeacher = useUpdateClassSubjectTeacher()
   const removeSubject = useRemoveClassSubject()
+  const attemptScope = useAttemptScope()
 
   const isUpdating = addSubject.isPending || updateTeacher.isPending || removeSubject.isPending
 
@@ -163,7 +179,14 @@ const ClassSubjects = ({ courseIdOverride, classIdOverride, navigationDisabled =
     if (!selectedSubjectToAdd) return
     addSubject.mutate(
       { classId: numClassId, subjectId: Number.parseInt(selectedSubjectToAdd, 10) },
-      { onSuccess: () => { setShowAddModal(false); setSelectedSubjectToAdd('') } }
+      attemptScope.guard({
+        onSuccess: () => {
+          setShowAddModal(false)
+          setSelectedSubjectToAdd('')
+          toast.success('Disciplina adicionada.')
+        },
+        onError: (error) => toast.error(getApiErrorMessage(error, 'Não foi possível adicionar a disciplina. Tente novamente.')),
+      })
     )
   }
 
@@ -176,13 +199,37 @@ const ClassSubjects = ({ courseIdOverride, classIdOverride, navigationDisabled =
     if (!subjectToRemove) return
     removeSubject.mutate(
       { classId: numClassId, subjectId: subjectToRemove.subject_id },
-      { onSettled: () => setSubjectToRemove(null) }
+      attemptScope.guard({
+        onSuccess: () => {
+          setSubjectToRemove(null)
+          setBlockedMessage('')
+          toast.success('Disciplina removida.')
+        },
+        onError: (error) => {
+          setSubjectToRemove(null)
+          if (isApiErrorBlock(error)) setBlockedMessage(getApiErrorMessage(error))
+          else toast.error(getApiErrorMessage(error, 'Não foi possível remover a disciplina. Tente novamente.'))
+        },
+      })
     )
   }
 
   const handleTeacherChange = (subjectId, teacherId) => {
     if (!canEditTeacher) return
-    updateTeacher.mutate({ classId: numClassId, subjectId, teacherId })
+    updateTeacher.mutate(
+      { classId: numClassId, subjectId, teacherId },
+      attemptScope.guard({
+        onSuccess: () => {
+          setTeacherBlock(null)
+          toast.success('Professor atualizado.')
+        },
+        onError: (error) => {
+          const message = getApiErrorMessage(error, 'Não foi possível atribuir o professor. Tente novamente.')
+          if (isApiErrorTransient(error)) toast.error(message)
+          else setTeacherBlock({ subjectId, message })
+        },
+      })
+    )
   }
 
   const renderAddModalBody = () => {
@@ -195,9 +242,9 @@ const ClassSubjects = ({ courseIdOverride, classIdOverride, navigationDisabled =
     }
     if (availableSubjects?.length === 0) {
       return (
-        <CAlert color="info" className="mb-0">
+        <FeedbackBanner tone="info">
           Todas as disciplinas já estão associadas a esta turma.
-        </CAlert>
+        </FeedbackBanner>
       )
     }
     return (
@@ -229,9 +276,9 @@ const ClassSubjects = ({ courseIdOverride, classIdOverride, navigationDisabled =
   if (error || !classSubjects) {
     return (
       <div className="p-4">
-        <CAlert color="danger">
+        <div className="mb-3"><FeedbackBanner tone="danger">
           <strong>Erro:</strong> {getApiErrorMessage(error, 'Turma não encontrada.')}
-        </CAlert>
+        </FeedbackBanner></div>
         <CButton color="light" onClick={() => { if (!navigationDisabled) navigate(`/courses/${numCourseId}`) }} disabled={navigationDisabled}>
           <CIcon icon={cilArrowLeft} className="me-1" /> Voltar ao Curso
         </CButton>
@@ -248,21 +295,8 @@ const ClassSubjects = ({ courseIdOverride, classIdOverride, navigationDisabled =
         { label: 'Disciplinas' },
       ]} />
 
-      {/* Alertas de erro */}
-      {addSubject.isError && (
-        <CAlert color="danger" dismissible onClose={() => addSubject.reset()}>
-          <strong>Erro ao adicionar:</strong> {getApiErrorMessage(addSubject.error, 'Erro desconhecido')}
-        </CAlert>
-      )}
-      {updateTeacher.isError && (
-        <CAlert color="danger" dismissible onClose={() => updateTeacher.reset()}>
-          <strong>Erro ao atribuir professor:</strong> {getApiErrorMessage(updateTeacher.error, 'Erro desconhecido')}
-        </CAlert>
-      )}
-      {removeSubject.isError && (
-        <CAlert color="danger" dismissible onClose={() => removeSubject.reset()}>
-          <strong>Erro ao remover:</strong> {getApiErrorMessage(removeSubject.error, 'Erro desconhecido')}
-        </CAlert>
+      {blockedMessage && (
+        <div className="mb-3"><FeedbackBanner tone="danger">{blockedMessage}</FeedbackBanner></div>
       )}
 
       {/* Header da Turma */}
@@ -342,6 +376,7 @@ const ClassSubjects = ({ courseIdOverride, classIdOverride, navigationDisabled =
                 isUpdating={isUpdating}
                 canEditTeacher={canEditTeacher}
                 canRemove={canRemove}
+                teacherError={teacherBlock?.subjectId === subject.subject_id ? teacherBlock.message : ''}
               />
             ))
           )}

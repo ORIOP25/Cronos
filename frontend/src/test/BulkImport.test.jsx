@@ -1,8 +1,8 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { MemoryRouter } from 'react-router-dom'
 import BulkImport from '../pages/BulkImport'
+import { renderWithRouter } from './testUtils'
 
 const mocks = vi.hoisted(() => ({
   validate: vi.fn(),
@@ -39,11 +39,7 @@ describe('BulkImport', () => {
   })
 
   function renderPage() {
-    return render(
-      <MemoryRouter initialEntries={['/imports']}>
-        <BulkImport />
-      </MemoryRouter>,
-    )
+    return renderWithRouter(<BulkImport />, { initialEntries: ['/imports'], withToaster: true })
   }
 
   it('presents plain-language instructions without technical implementation terms', () => {
@@ -74,16 +70,12 @@ describe('BulkImport', () => {
     await waitFor(() => expect(mocks.commit).toHaveBeenCalledWith({ rooms: file }))
   })
 
-  it('shows download feedback beside the selected model, including failures', async () => {
+  it('shows feedback when preparing a model fails', async () => {
     const user = userEvent.setup()
-    renderPage()
-    const button = screen.getAllByRole('button', { name: 'Descarregar modelo' }).at(-1)
-    const card = within(button.closest('.card'))
-    await user.click(button)
-    expect(await card.findByRole('status')).toHaveTextContent('Transferência iniciada')
     mocks.download.mockRejectedValueOnce(new Error('offline'))
-    await user.click(button)
-    expect(await card.findByRole('alert')).toHaveTextContent('Não foi possível preparar o modelo')
+    renderPage()
+    await user.click(screen.getAllByRole('button', { name: 'Descarregar modelo' }).at(-1))
+    expect(await within(document.querySelector('[data-rht-toaster]')).findByText('Não foi possível preparar o modelo.')).toBeInTheDocument()
   })
 
   it('confirms only that the browser was asked to download and blocks duplicate requests', async () => {
@@ -102,7 +94,7 @@ describe('BulkImport', () => {
 
     resolveDownload()
     expect(
-      await screen.findByText(/Transferência iniciada/i)
+      await within(document.querySelector('[data-rht-toaster]')).findByText(/Transferência iniciada/i)
     ).toBeInTheDocument()
   })
 })

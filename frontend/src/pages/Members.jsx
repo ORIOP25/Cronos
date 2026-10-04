@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
+import { toast } from 'react-hot-toast'
 import { useSearchParams } from 'react-router-dom'
 import {
-  CAlert,
   CBadge,
   CButton,
   CFormCheck,
@@ -19,7 +19,9 @@ import {
 import CIcon from '@coreui/icons-react'
 import { cilActionUndo, cilPencil, cilPlus, cilReload, cilTrash } from '@coreui/icons'
 import PageHeader from '../components/PageHeader'
-import { getApiErrorMessage } from '../utils/apiErrors'
+import FeedbackBanner from '../components/FeedbackBanner'
+import { getApiErrorMessage, isApiErrorTransient } from '../utils/apiErrors'
+import { useAttemptScope } from '../hooks/useAttemptScope'
 import {
   useCreateMember,
   useMembers,
@@ -141,8 +143,12 @@ const MemberModal = ({ visible, member, subjects, onClose, onSave, isSaving, err
         <CModalTitle>{member ? 'Editar membro' : 'Adicionar membro'}</CModalTitle>
       </CModalHeader>
       <CModalBody>
-        {error && <CAlert color="danger">{getApiErrorMessage(error, undefined, member ? 'team.sync' : 'team.invite')}</CAlert>}
-        {syncBlocked && <CAlert color="warning">Confirme primeiro o acesso deste membro para o poder editar.</CAlert>}
+        {error && (
+          <div className="mb-3"><FeedbackBanner tone="danger">{getApiErrorMessage(error, undefined, member ? 'team.sync' : 'team.invite')}</FeedbackBanner></div>
+        )}
+        {syncBlocked && (
+          <div className="mb-3"><FeedbackBanner tone="warning">Confirme primeiro o acesso deste membro para o poder editar.</FeedbackBanner></div>
+        )}
         <div className="d-grid gap-3">
           <CFormInput id="member-name" label="Nome" value={draft.organization_display_name} onChange={(event) => setDraft({ ...draft, organization_display_name: event.target.value })} disabled={isSaving || syncBlocked || competenciesOnly} />
           <CFormInput id="member-email" label="Email" type="email" value={draft.email} onChange={(event) => setDraft({ ...draft, email: event.target.value })} disabled={isSaving || syncBlocked || member?.access_status === 'active' || competenciesOnly} />
@@ -175,9 +181,9 @@ const MemberModal = ({ visible, member, subjects, onClose, onSave, isSaving, err
                 ]}
               />
               {draft.teacher_access_mode === 'scheduler_only' && !hasAdmin && (
-                <CAlert color="info" className="mb-0">
+                <FeedbackBanner tone="info">
                   Este professor fica disponível para horários, mas não recebe convite nem acesso para iniciar sessão.
-                </CAlert>
+                </FeedbackBanner>
               )}
               <SubjectPicker subjects={subjects} selected={draft.subject_ids} disabled={isSaving || syncBlocked} onChange={(subject_ids) => setDraft({ ...draft, subject_ids })} />
             </>
@@ -255,6 +261,7 @@ const Members = ({ readOnly = false, allowedActions }) => {
   const canUpdate = !readOnly && (!isTutorial || allowedActions.includes('UPDATE_MEMBER_COMPETENCIES'))
   const canCreate = !readOnly && !isTutorial
   const activeMutation = selectedMember ? updateMember : createMember
+  const attemptScope = useAttemptScope()
   const members = useMemo(() => {
     const rows = data?.items ?? []
     const normalizedSearch = search.trim().toLowerCase()
@@ -277,18 +284,45 @@ const Members = ({ readOnly = false, allowedActions }) => {
   }
 
   const save = async (payload) => {
-    await activeMutation.mutateAsync(payload)
-    setModalVisible(false)
+    const attempt = attemptScope.capture()
+    try {
+      await activeMutation.mutateAsync(payload)
+      if (!attemptScope.isCurrent(attempt)) return
+      setModalVisible(false)
+      toast.success(selectedMember ? 'Membro atualizado.' : 'Membro adicionado.')
+    } catch (error) {
+      if (!attemptScope.isCurrent(attempt)) return
+      if (isApiErrorTransient(error)) {
+        activeMutation.reset()
+        toast.error(getApiErrorMessage(error))
+      }
+    }
   }
 
   const remove = async () => {
     if (!removeTarget || !canCreate) return
-    await removeMember.mutateAsync(removeTarget.id)
-    setRemoveTarget(null)
+    const attempt = attemptScope.capture()
+    try {
+      await removeMember.mutateAsync(removeTarget.id)
+      if (!attemptScope.isCurrent(attempt)) return
+      toast.success(removeTarget.remove_effect === 'hard_delete' ? 'Membro removido.' : 'Membro arquivado.')
+    } catch (error) {
+      if (!attemptScope.isCurrent(attempt)) return
+      if (isApiErrorTransient(error)) {
+        removeMember.reset()
+        toast.error(getApiErrorMessage(error))
+      }
+    } finally {
+      setRemoveTarget(null)
+    }
   }
 
   const actionErrorSource = removeMember.error || resendInvitation.error || retrySync.error || restoreMember.error
   const actionError = actionErrorSource ? getApiErrorMessage(actionErrorSource) : null
+
+  const handleActionError = (error) => {
+    if (isApiErrorTransient(error)) toast.error(getApiErrorMessage(error))
+  }
 
   return (
     <div className="p-4">
@@ -322,12 +356,22 @@ const Members = ({ readOnly = false, allowedActions }) => {
           <CButton color="primary" onClick={() => openModal()} className="d-flex align-items-center gap-2" data-tutorial-target="new-member"><CIcon icon={cilPlus} />Adicionar membro</CButton>
         </div>}
       </div>
-      {isError && <CAlert color="danger">{getApiErrorMessage(error, 'Não foi possível carregar a equipa.', 'team.load')} <CButton color="link" onClick={() => refetch()}>Tentar novamente</CButton></CAlert>}
-      {actionError && <CAlert color="danger">{actionError}</CAlert>}
+      {isError && (
+        <div className="mb-3">
+          <FeedbackBanner
+            tone="danger"
+            action={<CButton color="link" className="p-0" onClick={() => refetch()}>Tentar novamente</CButton>}
+          >
+            {getApiErrorMessage(error, 'Não foi possível carregar a equipa.', 'team.load')}
+          </FeedbackBanner>
+        </div>
+      )}
+      {actionError && <div className="mb-3"><FeedbackBanner tone="danger">{actionError}</FeedbackBanner></div>}
       {showAvailability && !isLoading && !isError && !availabilityTeacher && (
-        <CAlert color="warning">Professor não encontrado. Abra a disponibilidade através da equipa.
-          <CButton color="link" onClick={closeAvailability}>Fechar</CButton>
-        </CAlert>
+        <div className="mb-3"><FeedbackBanner tone="warning"
+          action={<CButton color="link" className="p-0" onClick={closeAvailability}>Fechar</CButton>}>
+          Professor não encontrado. Abra a disponibilidade através da equipa.
+        </FeedbackBanner></div>
       )}
       <div className="table-responsive">
         <table className="table align-middle">
@@ -376,9 +420,9 @@ const Members = ({ readOnly = false, allowedActions }) => {
                       </CButton>
                     )}
                     <ActionButton title="Editar membro" icon={cilPencil} disabled={!member.actions?.can_edit || !canUpdate} onClick={() => openModal(member)} tutorialTarget={`edit-member-${member.id}`} />
-                    <ActionButton title="Reenviar convite" icon={cilReload} disabled={isTutorial || !member.actions?.can_resend_invite} loading={resendInvitation.isPending} onClick={() => resendInvitation.mutate(member.id)} />
-                    <ActionButton title="Tentar confirmar o acesso novamente" icon={cilReload} color="warning" disabled={isTutorial || !member.actions?.can_retry_sync} loading={retrySync.isPending} onClick={() => retrySync.mutate(member.id)} />
-                    <ActionButton title="Restaurar membro" icon={cilActionUndo} color="success" disabled={isTutorial || !member.actions?.can_restore} loading={restoreMember.isPending} onClick={() => restoreMember.mutate({ id: member.id, payload: restorePayloadFromMember(member) })} />
+                    <ActionButton title="Reenviar convite" icon={cilReload} disabled={isTutorial || !member.actions?.can_resend_invite} loading={resendInvitation.isPending} onClick={() => resendInvitation.mutate(member.id, attemptScope.guard({ onSuccess: () => toast.success('Convite reenviado.'), onError: handleActionError }))} />
+                    <ActionButton title="Tentar confirmar o acesso novamente" icon={cilReload} color="warning" disabled={isTutorial || !member.actions?.can_retry_sync} loading={retrySync.isPending} onClick={() => retrySync.mutate(member.id, attemptScope.guard({ onSuccess: () => toast.success('Acesso confirmado.'), onError: handleActionError }))} />
+                    <ActionButton title="Restaurar membro" icon={cilActionUndo} color="success" disabled={isTutorial || !member.actions?.can_restore} loading={restoreMember.isPending} onClick={() => restoreMember.mutate({ id: member.id, payload: restorePayloadFromMember(member) }, attemptScope.guard({ onSuccess: () => toast.success('Membro restaurado.'), onError: handleActionError }))} />
                     <ActionButton title="Remover membro" icon={cilTrash} color="danger" disabled={isTutorial || !member.actions?.can_remove} loading={removeMember.isPending} onClick={() => setRemoveTarget(member)} />
                   </td>
                 </tr>

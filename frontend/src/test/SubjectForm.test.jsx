@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import SubjectForm from '../components/Forms/SubjectForm'
 import { EMPTY_MODULE, normalizeModule } from '../utils/subjectModules'
@@ -54,6 +55,34 @@ describe('SubjectForm', () => {
     expect(screen.getByRole('button', { name: /a guardar/i })).toBeDisabled()
     fireEvent.click(screen.getByRole('button', { name: /^cancelar$/i }))
     expect(onCancel).toHaveBeenCalledOnce()
+  })
+
+  it('associates the module error with the module group', () => {
+    renderForm()
+    fireEvent.click(screen.getByRole('button', { name: 'Adicionar' }))
+
+    const moduleName = screen.getByLabelText(/nome do módulo/i)
+    expect(screen.getByRole('alert')).toHaveTextContent(/número de horas válido/i)
+    expect(moduleName).toHaveAttribute('aria-invalid', 'true')
+    expect(moduleName).toHaveClass('is-invalid')
+    expect(moduleName).toHaveFocus()
+  })
+
+  it('associates the subject name error through the real submission', async () => {
+    const user = userEvent.setup()
+    renderForm()
+
+    await user.click(screen.getByRole('button', { name: /guardar disciplina/i }))
+
+    const nameInput = screen.getByLabelText(/nome da disciplina/i)
+    expect(screen.getByRole('alert')).toHaveTextContent(/nome da disciplina é obrigatório/i)
+    expect(nameInput).toHaveAttribute('aria-invalid', 'true')
+    expect(nameInput).toHaveClass('is-invalid')
+    expect(nameInput).toHaveFocus()
+
+    await user.type(nameInput, 'Programação')
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(nameInput).not.toHaveClass('is-invalid')
   })
 
   it('keeps the curriculum inspectable without exposing edit controls in read-only mode', () => {

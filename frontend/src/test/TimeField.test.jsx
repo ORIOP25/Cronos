@@ -37,6 +37,10 @@ describe('TimeField', () => {
     const input = screen.getByLabelText('Hora de Abertura')
     expect(input).toHaveValue('8:3')
     expect(input).toHaveClass('is-invalid')
+    expect(input).toHaveAttribute('aria-invalid', 'true')
+    expect(input).toHaveAttribute('aria-describedby', expect.stringContaining('opening_time-unit'))
+    expect(input).toHaveAttribute('aria-describedby', expect.stringContaining('opening_time-feedback'))
+    expect(input).toHaveAccessibleDescription(/hora inválida/i)
     expect(screen.getByText('Hora inválida')).toBeInTheDocument()
   })
 

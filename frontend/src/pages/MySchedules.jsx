@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { toast } from 'react-hot-toast'
 import PageHeader from '../components/PageHeader'
-import { CAlert, CBadge, CButton, CCard, CCardBody, CCardHeader, CSpinner } from '@coreui/react'
+import { CBadge, CButton, CCard, CCardBody, CCardHeader, CSpinner } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import { cilArrowLeft, cilArrowRight, cilCalendar } from '@coreui/icons'
 import WeekGrid from '../components/WeekGrid'
 import LessonLogModal from '../components/LessonLogModal'
+import FeedbackBanner from '../components/FeedbackBanner'
 import ConfirmationModal from '../components/ConfirmationModal'
 import { TXT } from '../utils/terminology'
 import {
@@ -18,7 +20,8 @@ import {
 } from '../features/operations/data'
 import { useCurrentMember } from '../features/members/data'
 import { getCurrentWeekMonday, addDays, formatWeekRange, formatDate, toWeekMonday, isAfterDate } from '../utils/formatUtils'
-import { getApiErrorMessage, getApiErrorPresentation } from '../utils/apiErrors'
+import { getApiErrorMessage, getApiErrorPresentation, isApiErrorTransient } from '../utils/apiErrors'
+import { useAttemptScope } from '../hooks/useAttemptScope'
 import FailureState from '../components/FailureState'
 import { getWeekSubmissionBlockers } from '../features/operations/weekSubmission'
 
@@ -129,6 +132,7 @@ function MySchedules() {
 
   const { data: timesheet } = useMyTimesheet(weekStart)
   const submitMutation = useSubmitMyTimesheet()
+  const attemptScope = useAttemptScope()
 
   const blockingSlots = useMemo(() => getWeekSubmissionBlockers(weekSlots), [weekSlots])
   const canSubmit = weekSlots.length > 0
@@ -155,10 +159,16 @@ function MySchedules() {
   const handleConfirmSubmit = async () => {
     setShowSubmitConfirm(false)
     setSubmitError('')
+    const attempt = attemptScope.capture()
     try {
       await submitMutation.mutateAsync(weekStart)
+      if (!attemptScope.isCurrent(attempt)) return
+      toast.success('Semana submetida.')
     } catch (err) {
-      setSubmitError(getApiErrorMessage(err, 'Erro ao submeter a semana. Tente novamente.'))
+      if (!attemptScope.isCurrent(attempt)) return
+      const message = getApiErrorMessage(err, 'Erro ao submeter a semana. Tente novamente.')
+      if (isApiErrorTransient(err)) toast.error(message)
+      else setSubmitError(message)
     }
   }
 
@@ -202,9 +212,9 @@ function MySchedules() {
     return (
       <div className="p-4">
         {pageHeader}
-        <CAlert color="danger" className="mb-0">
+        <FeedbackBanner tone="danger">
           Conta de professor sem perfil associado. Contacte a administração para associar o perfil docente.
-        </CAlert>
+        </FeedbackBanner>
       </div>
     )
   }
@@ -227,9 +237,9 @@ function MySchedules() {
     return (
       <div className="p-4">
         {pageHeader}
-        <CAlert color="danger" className="mb-0">
+        <FeedbackBanner tone="danger">
           {resolveHorizonErrorMessage(horizonError)}
-        </CAlert>
+        </FeedbackBanner>
       </div>
     )
   }
@@ -329,15 +339,11 @@ function MySchedules() {
           </div>
 
           {submitError && (
-            <CAlert color="danger" className="mb-3">
-              {submitError}
-            </CAlert>
+            <div className="mb-3"><FeedbackBanner tone="danger">{submitError}</FeedbackBanner></div>
           )}
 
           {limitFeedback ? (
-            <CAlert color="warning" className="mb-3">
-              {limitFeedback}
-            </CAlert>
+            <div className="mb-3"><FeedbackBanner tone="warning">{limitFeedback}</FeedbackBanner></div>
           ) : null}
 
           {weekContent}

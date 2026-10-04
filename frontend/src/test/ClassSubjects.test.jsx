@@ -1,9 +1,9 @@
 import { renderWithRouter } from './testUtils'
-import { describe, expect, it, vi } from 'vitest'
-import { screen } from '@testing-library/react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { fireEvent, screen, within } from '@testing-library/react'
 import ClassSubjects from '../pages/ClassSubjects'
 
-const { useClassSubjectsMock, mutationMock } = vi.hoisted(() => ({
+const { useClassSubjectsMock, mutationMock, updateTeacherMock } = vi.hoisted(() => ({
   useClassSubjectsMock: vi.fn(),
   mutationMock: () => ({
     error: null,
@@ -12,6 +12,7 @@ const { useClassSubjectsMock, mutationMock } = vi.hoisted(() => ({
     mutate: vi.fn(),
     reset: vi.fn(),
   }),
+  updateTeacherMock: vi.fn(),
 }))
 
 vi.mock('../features/catalog/data', () => ({
@@ -22,11 +23,64 @@ vi.mock('../features/catalog/data', () => ({
     isLoading: false,
   }),
   useAddClassSubject: mutationMock,
-  useUpdateClassSubjectTeacher: mutationMock,
+  useUpdateClassSubjectTeacher: () => updateTeacherMock(),
   useRemoveClassSubject: mutationMock,
 }))
 
+const baseSubjects = {
+  data: {
+    class_name: 'TEE 26/29',
+    course_name: 'Técnico de Eletrónica',
+    grade_level: 10,
+    subjects: [
+      { id: 1, subject_id: 1, subject_name: 'Português', required_room_type: 'normal', teacher_id: 5, teacher_name: 'Ana Silva' },
+      { id: 2, subject_id: 2, subject_name: 'Programação', required_room_type: 'normal', teacher_id: 5, teacher_name: 'Ana Silva' },
+    ],
+  },
+  error: null,
+  isLoading: false,
+}
+
 describe('ClassSubjects', () => {
+  beforeEach(() => {
+    useClassSubjectsMock.mockReturnValue(baseSubjects)
+    updateTeacherMock.mockReset()
+    updateTeacherMock.mockReturnValue(mutationMock())
+  })
+
+  it('keeps a competency block beside the assignment without a toast', async () => {
+    const error = {
+      response: { status: 422, data: { detail: { code: 'teacher_competency_missing' } } },
+    }
+    updateTeacherMock.mockReturnValue({
+      ...mutationMock(),
+      mutate: (_payload, options) => options.onError(error),
+    })
+    renderWithRouter(<ClassSubjects courseIdOverride="9" classIdOverride="11" />, { withToaster: true })
+
+    const select = screen.getByRole('combobox', { name: 'Professor de Português' })
+    fireEvent.change(select, { target: { value: '5' } })
+
+    expect(await screen.findByText(/não tem competência/i)).toBeInTheDocument()
+    expect(select).toHaveAttribute('aria-invalid', 'true')
+    expect(select).toHaveAttribute('aria-describedby', 'class-subject-teacher-error-1')
+    expect(document.querySelector('[data-rht-toaster]')).toBeEmptyDOMElement()
+  })
+
+  it('reports a transient teacher failure as a single toast', async () => {
+    const error = { response: { status: 503, data: { detail: { code: 'service_unavailable' } } } }
+    updateTeacherMock.mockReturnValue({
+      ...mutationMock(),
+      mutate: (_payload, options) => options.onError(error),
+    })
+    renderWithRouter(<ClassSubjects courseIdOverride="9" classIdOverride="11" />, { withToaster: true })
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Professor de Português' }), { target: { value: '5' } })
+
+    expect(await within(document.querySelector('[data-rht-toaster]')).findByText(/tente novamente dentro de instantes/i)).toBeInTheDocument()
+    expect(screen.queryByText(/não tem competência/i)).not.toBeInTheDocument()
+  })
+
   it('keeps teachers in one column without duplicating names or the section total', () => {
     useClassSubjectsMock.mockReturnValue({
       data: {

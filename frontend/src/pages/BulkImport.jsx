@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
+import { toast } from 'react-hot-toast'
 import {
   CAlert,
   CBadge,
@@ -10,8 +11,10 @@ import {
   CFormInput,
   CSpinner,
 } from '@coreui/react'
+import FeedbackBanner from '../components/FeedbackBanner'
 import PageHeader from '../components/PageHeader'
 import { useApiClient } from '../ApiClientContext'
+import { useAttemptScope } from '../hooks/useAttemptScope'
 import { getApiErrorMessage } from '../utils/apiErrors'
 import {
   createBulkImportReport,
@@ -45,20 +48,22 @@ const BulkImport = () => {
   const [validation, setValidation] = useState(null)
   const [localError, setLocalError] = useState('')
   const [downloadingResource, setDownloadingResource] = useState('')
-  const [downloadNotice, setDownloadNotice] = useState('')
   const validateMutation = useValidateBulkImport()
   const commitMutation = useCommitBulkImport()
+  const attemptScope = useAttemptScope()
 
   const downloadTemplate = async (resourceKey) => {
     if (downloadingResource) return
     setLocalError('')
-    setDownloadNotice('')
     setDownloadingResource(resourceKey)
+    const attempt = attemptScope.capture()
     try {
       await downloadBulkImportTemplate(apiClient, resourceKey)
-      setDownloadNotice({ resourceKey, tone: 'info', message: 'Transferência iniciada. Verifique a pasta de transferências.' })
+      if (!attemptScope.isCurrent(attempt)) return
+      toast.success('Transferência iniciada. Verifique a pasta de transferências.')
     } catch (error) {
-      setDownloadNotice({ resourceKey, tone: 'warning', message: getApiErrorMessage(error, 'Não foi possível preparar o modelo.') })
+      if (!attemptScope.isCurrent(attempt)) return
+      toast.error(getApiErrorMessage(error, 'Não foi possível preparar o modelo.'))
     } finally {
       setDownloadingResource('')
     }
@@ -85,21 +90,27 @@ const BulkImport = () => {
       return
     }
     setLocalError('')
+    const attempt = attemptScope.capture()
     try {
       setValidation(await validateMutation.mutateAsync(files))
-    } catch {
-      // The mutation error is rendered below.
+    } catch (error) {
+      if (!attemptScope.isCurrent(attempt)) return
+      toast.error(getApiErrorMessage(error, 'Não foi possível verificar os ficheiros. Tente novamente.'))
     }
   }
 
   const commit = async () => {
     if (!validation?.can_commit) return
+    const attempt = attemptScope.capture()
     try {
       await commitMutation.mutateAsync(files)
+      if (!attemptScope.isCurrent(attempt)) return
+      toast.success('Importação concluída.')
       const origin = IMPORT_RESOURCES.find((item) => item.key === initialResource)?.origin || '/courses'
       navigate(origin)
-    } catch {
-      // The server revalidates the exact selected files.
+    } catch (error) {
+      if (!attemptScope.isCurrent(attempt)) return
+      toast.error(getApiErrorMessage(error, 'Não foi possível concluir a importação. Tente novamente.'))
     }
   }
 
@@ -128,11 +139,7 @@ const BulkImport = () => {
         </p>
       </section>
 
-      <div className="mb-3" role="status" aria-live="polite">
-        {localError && <CAlert color="warning">{localError}</CAlert>}
-        {validateMutation.isError && <CAlert color="danger">{getApiErrorMessage(validateMutation.error, 'Não foi possível verificar os ficheiros.')}</CAlert>}
-        {commitMutation.isError && <CAlert color="danger">{getApiErrorMessage(commitMutation.error, 'Não foi possível concluir a importação.')}</CAlert>}
-      </div>
+      {localError && <div className="mb-3"><FeedbackBanner tone="warning">{localError}</FeedbackBanner></div>}
 
       <div className="row g-3">
         {IMPORT_RESOURCES.map((resource) => {
@@ -156,11 +163,6 @@ const BulkImport = () => {
                   </CButton>
                 </CCardHeader>
                 <CCardBody>
-                  {downloadNotice?.resourceKey === resource.key && (
-                    <CAlert color={downloadNotice.tone} role={downloadNotice.tone === 'info' ? 'status' : 'alert'}>
-                      {downloadNotice.message}
-                    </CAlert>
-                  )}
                   <ul className="small text-muted ps-3 mb-3">
                     {resource.instructions.map((instruction) => <li key={instruction}>{instruction}</li>)}
                   </ul>

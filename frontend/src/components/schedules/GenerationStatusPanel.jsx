@@ -1,8 +1,9 @@
-import { CAlert, CSpinner } from '@coreui/react'
+import { CSpinner } from '@coreui/react'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useScheduleTaskStatus } from '../../features/scheduling/data'
 import FailureState from '../FailureState'
+import FeedbackBanner from '../FeedbackBanner'
 import { getApiErrorPresentation } from '../../utils/apiErrors'
 
 const ACTIVE_STATUSES = new Set(['QUEUED', 'RUNNING', 'VALIDATING'])
@@ -32,13 +33,6 @@ const TERMINAL_MESSAGES = {
   FAILED: 'Ocorreu um erro durante a geração. Tente novamente.',
 }
 
-function alertColor(status) {
-  if (status === 'SUCCEEDED') return 'success'
-  if (status === 'CANCELLED' || status === 'STALE') return 'warning'
-  if (TERMINAL_STATUSES.has(status)) return 'danger'
-  return 'info'
-}
-
 const GenerationStatusPanel = ({ jobId }) => {
   const { data: job, isLoading, isError, error, refetch } = useScheduleTaskStatus(jobId)
   const [now, setNow] = useState(() => Date.now())
@@ -50,10 +44,14 @@ const GenerationStatusPanel = ({ jobId }) => {
 
   if (isLoading || (!job && !isError)) {
     return (
-      <CAlert color="info" className="d-flex align-items-center gap-2 mb-4">
-        <CSpinner size="sm" />
-        A aguardar...
-      </CAlert>
+      <div className="mb-4">
+        <FeedbackBanner tone="info">
+          <span className="d-inline-flex align-items-center gap-2">
+            <CSpinner size="sm" />
+            A aguardar...
+          </span>
+        </FeedbackBanner>
+      </div>
     )
   }
 
@@ -74,25 +72,28 @@ const GenerationStatusPanel = ({ jobId }) => {
   const isActive = ACTIVE_STATUSES.has(status)
   if (status === 'SUCCEEDED') {
     return (
-      <CAlert color="success" className="mb-4">
-        <strong>{STATUS_LABELS.SUCCEEDED}</strong>
-      </CAlert>
+      <div className="mb-4">
+        <FeedbackBanner tone="success">
+          <strong>{STATUS_LABELS.SUCCEEDED}</strong>
+        </FeedbackBanner>
+      </div>
     )
   }
   if (TERMINAL_STATUSES.has(status)) {
     const roomBlocked = job.stop_reason === 'NO_ELIGIBLE_ROOM'
     return (
-      <CAlert color={alertColor(status)} className="mb-4" data-testid="generation-terminal">
-        <strong>{STATUS_LABELS[status] || 'Estado da geração indisponível'}</strong>
-        {roomBlocked ? (
-          <div className="small mt-1">
-            Existem turmas sem sala compatível com o tipo e a lotação.{' '}
-            <Link to="/rooms">Abrir Salas</Link> para corrigir e voltar a gerar.
-          </div>
-        ) : (
-          <div className="small mt-1">{TERMINAL_MESSAGES[status] || ''}</div>
-        )}
-      </CAlert>
+      <div className="mb-4" data-testid="generation-terminal">
+        <FeedbackBanner tone={status === 'CANCELLED' || status === 'STALE' ? 'warning' : 'danger'}>
+          <strong>{STATUS_LABELS[status] || 'Estado da geração indisponível'}</strong>
+          {' '}
+          {roomBlocked ? (
+            <>
+              Existem turmas sem sala compatível com o tipo e a lotação.{' '}
+              <Link to="/rooms">Abrir Salas</Link> para corrigir e voltar a gerar.
+            </>
+          ) : (TERMINAL_MESSAGES[status] || '')}
+        </FeedbackBanner>
+      </div>
     )
   }
   if (!isActive) {
@@ -102,20 +103,23 @@ const GenerationStatusPanel = ({ jobId }) => {
     && job.queued_at
     && now - new Date(job.queued_at).getTime() >= 60_000
   return (
-    <CAlert color={alertColor(status)} className="mb-4">
-      <div className="d-flex align-items-center gap-2">
-        {isActive && <CSpinner size="sm" />}
-        <strong>{STATUS_LABELS[status]}</strong>
-        {status === 'QUEUED' && job.queue_position > 1 && (
-          <span className="small">· {job.queue_position}.º pedido em espera</span>
+    <div className="mb-4">
+      <FeedbackBanner tone="info">
+        <span className="d-inline-flex align-items-center gap-2">
+          {isActive && <CSpinner size="sm" />}
+          <strong>{STATUS_LABELS[status]}</strong>
+          {status === 'QUEUED' && job.queue_position > 1 && (
+            <span className="small">· {job.queue_position}.º pedido em espera</span>
+          )}
+        </span>
+        {queuedTooLong && (
+          <>
+            <br />
+            A aguardar a conclusão de outro pedido. Pode sair desta página com segurança.
+          </>
         )}
-      </div>
-      {queuedTooLong && (
-        <div className="small mt-2">
-          A aguardar a conclusão de outro pedido. Pode sair desta página com segurança.
-        </div>
-      )}
-    </CAlert>
+      </FeedbackBanner>
+    </div>
   )
 }
 

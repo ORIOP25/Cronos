@@ -1,13 +1,12 @@
 import {
   CModal, CModalHeader, CModalTitle, CModalBody,
 } from '@coreui/react'
-import { getApiErrorMessage } from '../utils/apiErrors'
 import { useSlowRequest } from '../utils/useSlowRequest'
-import FeedbackBanner from './FeedbackBanner'
 
 /**
  * Componente Genérico para Criar/Editar Entidades via Modal.
  * Uma mutação em curso bloqueia o fecho e explica esperas longas.
+ * O resultado da tentativa é comunicado pelo dono da mutação.
  */
 const GenericModalForm = ({ 
   visible, 
@@ -17,7 +16,6 @@ const GenericModalForm = ({
   FormComponent,
   onSubmit, 
   isLoading,
-  error,
   size,
   tutorialTarget,
   readOnly = false,
@@ -29,7 +27,6 @@ const GenericModalForm = ({
   const modalTitle = `${prefix} ${title}`
   const isSlowRequest = useSlowRequest(Boolean(isLoading))
 
-  const errorMessage = error ? getApiErrorMessage(error) : null
   const handleClose = () => {
     if (!isLoading) onClose()
   }
@@ -52,9 +49,6 @@ const GenericModalForm = ({
       </CModalHeader>
       
       <CModalBody>
-        {errorMessage && (
-          <FeedbackBanner tone="danger" onDismiss={handleClose}>Erro: {errorMessage}</FeedbackBanner>
-        )}
         {isLoading && (
           <p className="small text-muted mb-2" role="status" aria-live="polite">
             {isSlowRequest

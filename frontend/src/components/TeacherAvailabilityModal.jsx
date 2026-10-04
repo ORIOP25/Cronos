@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
+import { toast } from 'react-hot-toast'
 import {
-  CAlert,
   CButton,
   CModal,
   CModalBody,
@@ -10,11 +10,13 @@ import {
   CSpinner,
 } from '@coreui/react'
 import AvailabilityGrid from './AvailabilityGrid'
+import FeedbackBanner from './FeedbackBanner'
 import StatePanel from './StatePanel'
 import { useTimeslots } from '../features/catalog/data'
 import { useSaveTeacherAvailability, useTeacherAvailability } from '../features/operations/data'
 import { DEFAULT_PREFERENCE, PREFERENCE_LEVELS } from '../constants'
-import { getApiErrorMessage } from '../utils/apiErrors'
+import { getApiErrorMessage, isApiErrorTransient } from '../utils/apiErrors'
+import { useAttemptScope } from '../hooks/useAttemptScope'
 
 function toMap(rows = [], validIds) {
   return Object.fromEntries(
@@ -30,10 +32,11 @@ function toMap(rows = [], validIds) {
 export default function TeacherAvailabilityModal({ teacher, onDate, onClose }) {
   const [draftEdits, setDraftEdits] = useState({})
   const [selectedScore, setSelectedScore] = useState(DEFAULT_PREFERENCE)
-  const [feedback, setFeedback] = useState(null)
+  const [blockMessage, setBlockMessage] = useState('')
   const timeslotsQuery = useTimeslots({ onDate })
   const availabilityQuery = useTeacherAvailability({ teacherId: teacher?.id, onDate })
   const saveMutation = useSaveTeacherAvailability()
+  const attemptScope = useAttemptScope()
   const timeslots = useMemo(() => timeslotsQuery.data ?? [], [timeslotsQuery.data])
   const validIds = useMemo(() => new Set(timeslots.map((slot) => slot.id)), [timeslots])
   const persistedMap = useMemo(
@@ -54,7 +57,6 @@ export default function TeacherAvailabilityModal({ teacher, onDate, onClose }) {
 
   const handleGridChange = (id, score) => {
     if (isSaving) return
-    setFeedback(null)
     setDraftEdits((current) => {
       const next = { ...current }
       if (score === (persistedMap[id] ?? DEFAULT_PREFERENCE)) delete next[id]
@@ -65,19 +67,21 @@ export default function TeacherAvailabilityModal({ teacher, onDate, onClose }) {
 
   const handleSave = async () => {
     if (!isDirty || isSaving) return
-    setFeedback(null)
+    setBlockMessage('')
+    const attempt = attemptScope.capture()
     const payload = Object.entries(draftMap)
       .filter(([id]) => validIds.has(Number(id)))
       .map(([id, score]) => ({ timeslot_id: Number(id), score }))
     try {
       await saveMutation.mutateAsync({ teacherId: teacher.id, payload, ...(onDate ? { onDate } : {}) })
+      if (!attemptScope.isCurrent(attempt)) return
       setDraftEdits({})
-      setFeedback({ tone: 'success', message: 'Disponibilidade guardada. Recomendações atualizadas.' })
+      toast.success('Disponibilidade guardada. Recomendações atualizadas.')
     } catch (error) {
-      setFeedback({
-        tone: 'danger',
-        message: getApiErrorMessage(error, 'Não foi possível guardar a disponibilidade.'),
-      })
+      if (!attemptScope.isCurrent(attempt)) return
+      const message = getApiErrorMessage(error, 'Não foi possível guardar a disponibilidade.')
+      if (isApiErrorTransient(error)) toast.error(message)
+      else setBlockMessage(message)
     }
   }
 
@@ -100,8 +104,8 @@ export default function TeacherAvailabilityModal({ teacher, onDate, onClose }) {
         <p className="small text-muted">
           Esta edição é administrativa. Não envia convite nem altera o acesso do professor.
         </p>
+        {blockMessage && <div className="mb-3"><FeedbackBanner tone="danger">{blockMessage}</FeedbackBanner></div>}
         {onDate && <p className="small">Grelha válida em {onDate.split('-').reverse().join('/')}.</p>}
-        {feedback && <CAlert color={feedback.tone}>{feedback.message}</CAlert>}
         {timeslotsQuery.isLoading || availabilityQuery.isLoading ? (
           <StatePanel state="loading" title="A carregar disponibilidade" compact />
         ) : queryError ? (

@@ -1,17 +1,19 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import {
-  CAlert,
   CButton,
   CCol,
   CForm,
+  CFormFeedback,
   CFormInput,
   CFormSelect,
   CModalFooter,
   CRow,
 } from '@coreui/react'
 import { EMPTY_MODULE, normalizeModule } from '../../utils/subjectModules'
-import { portugueseValidityProps } from '../../utils/formValidity'
 import { ROOM_TYPES } from '../../utils/presentation'
+
+const SUBJECT_FEEDBACK_ID = 'subjectNameFeedback'
+const MODULES_FEEDBACK_ID = 'subjectModulesFeedback'
 
 function createInitialSubject(initialData) {
   return {
@@ -25,24 +27,32 @@ const SubjectForm = ({ initialData, onSubmit, isLoading, onCancel, readOnly = fa
   const [subject, setSubject] = useState(() => createInitialSubject(initialData))
   const [moduleDraft, setModuleDraft] = useState(EMPTY_MODULE)
   const [editingIndex, setEditingIndex] = useState(null)
-  const [error, setError] = useState('')
+  const [validation, setValidation] = useState(null)
+  const subjectNameRef = useRef(null)
+  const firstModuleRef = useRef(null)
 
   const updateSubject = (field, value) => {
     if (readOnly) return
-    setSubject((current) => ({ ...current, [field]: value }))
-    setError('')
+    const next = { ...subject, [field]: value }
+    setSubject(next)
+    if (validation?.field === 'subject-name' && next.name.trim()) setValidation(null)
   }
 
   const updateModule = (field, value) => {
     if (readOnly) return
-    setModuleDraft((current) => ({ ...current, [field]: value }))
-    setError('')
+    const next = { ...moduleDraft, [field]: value }
+    setModuleDraft(next)
+    if (validation?.field === 'modules' && normalizeModule(next)) setValidation(null)
   }
 
   const saveModule = () => {
     if (readOnly) return
     const normalized = normalizeModule(moduleDraft)
-    if (!normalized) return setError('Indique o nome e um número de horas válido para o módulo.')
+    if (!normalized) {
+      setValidation({ message: 'Indique o nome e um número de horas válido para o módulo.', field: 'modules' })
+      firstModuleRef.current?.focus()
+      return
+    }
     setSubject((current) => ({
       ...current,
       modules: editingIndex == null
@@ -53,6 +63,7 @@ const SubjectForm = ({ initialData, onSubmit, isLoading, onCancel, readOnly = fa
     }))
     setModuleDraft(EMPTY_MODULE)
     setEditingIndex(null)
+    setValidation(null)
   }
 
   const startEditing = (index) => {
@@ -71,7 +82,11 @@ const SubjectForm = ({ initialData, onSubmit, isLoading, onCancel, readOnly = fa
     event.preventDefault()
     if (readOnly) return
     const name = subject.name.trim()
-    if (!name) return setError('Nome da disciplina é obrigatório.')
+    if (!name) {
+      setValidation({ message: 'Nome da disciplina é obrigatório.', field: 'subject-name' })
+      subjectNameRef.current?.focus()
+      return
+    }
     onSubmit({
       name,
       required_room_type: subject.required_room_type,
@@ -79,15 +94,34 @@ const SubjectForm = ({ initialData, onSubmit, isLoading, onCancel, readOnly = fa
     })
   }
 
-  return (
-    <CForm onSubmit={submit}>
-      {error && <CAlert color="danger" id="subject-form-error">{error}</CAlert>}
+  const modulesInvalid = validation?.field === 'modules'
+  const moduleInputProps = {
+    invalid: modulesInvalid || undefined,
+    'aria-invalid': modulesInvalid || undefined,
+    'aria-describedby': modulesInvalid ? MODULES_FEEDBACK_ID : undefined,
+  }
 
+  return (
+    <CForm onSubmit={submit} noValidate>
       <fieldset className="mb-4">
         <legend className="h6 mb-3">Dados gerais</legend>
         <CRow className="g-3">
           <CCol md={8}>
-            <CFormInput id="subject-name" label="Nome da Disciplina" value={subject.name} onChange={(event) => updateSubject('name', event.target.value)} disabled={readOnly} required invalid={Boolean(error)} aria-describedby={error ? 'subject-form-error' : undefined} {...portugueseValidityProps} />
+            <CFormInput
+              id="subject-name"
+              label="Nome da Disciplina"
+              value={subject.name}
+              onChange={(event) => updateSubject('name', event.target.value)}
+              disabled={readOnly}
+              required
+              invalid={validation?.field === 'subject-name' || undefined}
+              aria-invalid={validation?.field === 'subject-name' || undefined}
+              aria-describedby={validation?.field === 'subject-name' ? SUBJECT_FEEDBACK_ID : undefined}
+              ref={subjectNameRef}
+            />
+            {validation?.field === 'subject-name' && (
+              <CFormFeedback id={SUBJECT_FEEDBACK_ID} invalid className="d-block" role="alert">{validation.message}</CFormFeedback>
+            )}
           </CCol>
           <CCol md={4}>
             <CFormSelect id="subject-room-type" label="Sala Preferencial" value={subject.required_room_type} onChange={(event) => updateSubject('required_room_type', event.target.value)} disabled={readOnly}>
@@ -100,11 +134,14 @@ const SubjectForm = ({ initialData, onSubmit, isLoading, onCancel, readOnly = fa
       <fieldset>
         <legend className="h6 mb-3">Módulos</legend>
         {!readOnly && <CRow className="g-2 align-items-end">
-          <CCol md={4}><CFormInput id="subject-module-name" label="Nome do módulo" value={moduleDraft.name} onChange={(event) => updateModule('name', event.target.value)} /></CCol>
-          <CCol md={3}><CFormInput id="subject-module-code" label="Código UFCD" value={moduleDraft.code} onChange={(event) => updateModule('code', event.target.value)} /></CCol>
-          <CCol md={2}><CFormInput id="subject-module-hours" label="Horas" type="number" min={1} value={moduleDraft.hours_total} onChange={(event) => updateModule('hours_total', event.target.value)} /></CCol>
+          <CCol md={4}><CFormInput id="subject-module-name" label="Nome do módulo" value={moduleDraft.name} onChange={(event) => updateModule('name', event.target.value)} ref={firstModuleRef} {...moduleInputProps} /></CCol>
+          <CCol md={3}><CFormInput id="subject-module-code" label="Código UFCD" value={moduleDraft.code} onChange={(event) => updateModule('code', event.target.value)} {...moduleInputProps} /></CCol>
+          <CCol md={2}><CFormInput id="subject-module-hours" label="Horas" type="number" min={1} value={moduleDraft.hours_total} onChange={(event) => updateModule('hours_total', event.target.value)} {...moduleInputProps} /></CCol>
           <CCol md={3} className="d-grid"><CButton type="button" color="secondary" variant="outline" onClick={saveModule}>{editingIndex == null ? 'Adicionar' : 'Guardar'}</CButton></CCol>
         </CRow>}
+        {modulesInvalid && (
+          <CFormFeedback id={MODULES_FEEDBACK_ID} invalid className="d-block" role="alert">{validation.message}</CFormFeedback>
+        )}
         {editingIndex != null && <CButton type="button" color="secondary" variant="ghost" size="sm" onClick={cancelEditing}>Cancelar edição</CButton>}
 
         <div className="mt-3 d-grid gap-2">

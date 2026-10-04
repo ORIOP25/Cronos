@@ -2,6 +2,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { ClerkProvider } from '@clerk/react'
 import App from './App.jsx'
+import AppToaster from './components/AppToaster'
 import ErrorBoundary from './components/ErrorBoundary'
 import { UserQueryProvider } from './UserQueryProvider'
 import { CLERK_LOCALIZATION_PT } from './utils/authDesign'
@@ -39,6 +40,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
       <ErrorBoundary>
         <UserQueryProvider>
           <App />
+          <AppToaster />
         </UserQueryProvider>
       </ErrorBoundary>
     </ClerkProvider>

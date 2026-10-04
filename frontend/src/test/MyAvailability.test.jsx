@@ -1,7 +1,13 @@
-import { describe, expect, it, vi } from 'vitest'
-import { screen, within } from '@testing-library/react'
+import { act } from 'react'
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
+import { fireEvent, screen, within } from '@testing-library/react'
 import { renderWithProviders } from './testUtils'
+import { resetClerkState, setClerkState } from './setup'
 import MyAvailability from '../pages/MyAvailability'
+
+const toastHost = () => document.querySelector('[data-rht-toaster]')
+
+const operations = vi.hoisted(() => ({ save: vi.fn() }))
 
 vi.mock('../features/members/data', () => ({
   useCurrentMember: () => ({
@@ -29,11 +35,20 @@ vi.mock('../features/operations/data', () => ({
   }),
   useSaveAvailability: () => ({
     isPending: false,
-    mutateAsync: vi.fn(),
+    mutateAsync: operations.save,
   }),
 }))
 
 describe('MyAvailability', () => {
+  beforeEach(() => {
+    operations.save.mockReset()
+    resetClerkState()
+  })
+
+  afterEach(() => {
+    resetClerkState()
+  })
+
   it('renders teacher availability preferences without crashing', () => {
     renderWithProviders(<MyAvailability />)
 
@@ -54,5 +69,57 @@ describe('MyAvailability', () => {
 
     const firstSlot = screen.getByRole('button', { name: /segunda, 08:00/i })
     expect(firstSlot).not.toHaveClass('is-focused')
+  })
+
+  it('confirms a saved draft with a toast and clears the pending changes', async () => {
+    operations.save.mockResolvedValue(undefined)
+    renderWithProviders(<MyAvailability />, { withToaster: true })
+
+    fireEvent.keyDown(screen.getByRole('button', { name: /segunda, 08:00/i }), { key: 'Enter' })
+    expect(screen.getByText(/1 bloco alterado/i)).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /guardar preferências/i }))
+
+    expect(await within(toastHost()).findByText('Preferências guardadas.')).toBeInTheDocument()
+    expect(screen.getByText(/0 blocos alterados/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /guardar preferências/i })).toBeDisabled()
+  })
+
+  it('ignores a save that resolves after the organization changed and keeps the new draft', async () => {
+    let resolveSave
+    operations.save.mockImplementation(() => new Promise((resolve) => { resolveSave = resolve }))
+    setClerkState({ isSignedIn: true, userId: 'user_a', orgId: 1 })
+    const { rerender } = renderWithProviders(<MyAvailability />, { withToaster: true })
+
+    fireEvent.keyDown(screen.getByRole('button', { name: /segunda, 08:00/i }), { key: 'Enter' })
+    fireEvent.click(screen.getByRole('button', { name: /guardar preferências/i }))
+    expect(screen.getByText(/1 bloco alterado/i)).toBeInTheDocument()
+
+    act(() => { setClerkState({ orgId: 2 }) })
+    rerender(<MyAvailability />)
+
+    await act(async () => { resolveSave() })
+
+    expect(screen.queryByText('Preferências guardadas.')).not.toBeInTheDocument()
+    expect(screen.getByText(/1 bloco alterado/i)).toBeInTheDocument()
+
+    operations.save.mockImplementation(() => Promise.resolve())
+    fireEvent.click(screen.getByRole('button', { name: /guardar preferências/i }))
+
+    expect(await within(toastHost()).findByText('Preferências guardadas.')).toBeInTheDocument()
+    expect(screen.getByText(/0 blocos alterados/i)).toBeInTheDocument()
+  })
+
+  it('keeps the draft and a retry available when saving fails', async () => {
+    operations.save.mockRejectedValue({ response: { status: 500 } })
+    renderWithProviders(<MyAvailability />, { withToaster: true })
+
+    fireEvent.keyDown(screen.getByRole('button', { name: /segunda, 08:00/i }), { key: 'Enter' })
+    fireEvent.click(screen.getByRole('button', { name: /guardar preferências/i }))
+
+    expect(await within(toastHost()).findByText('Erro ao gravar disponibilidade. Tente novamente.')).toBeInTheDocument()
+    expect(screen.getByText(/1 bloco alterado/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /segunda, 08:00/i })).toHaveAccessibleName(/Neutro/)
+    expect(screen.getByRole('button', { name: /guardar preferências/i })).toBeEnabled()
   })
 })

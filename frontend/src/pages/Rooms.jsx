@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { toast } from 'react-hot-toast'
 import PageHeader from '../components/PageHeader'
-import { CButton, CAlert, CBadge } from '@coreui/react'
+import { CButton, CBadge } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import { cilPlus } from '@coreui/icons'
 
@@ -10,6 +11,7 @@ import GenericModalForm from '../components/GenericModalForm'
 import RoomForm from '../components/Forms/RoomForm'
 import RoomTypeBadge from '../components/RoomTypeBadge'
 import { getApiErrorMessage } from '../utils/apiErrors'
+import { useAttemptScope } from '../hooks/useAttemptScope'
 
 // Hooks (Factory)
 import { 
@@ -29,6 +31,7 @@ const Rooms = ({ readOnly = false, allowedActions }) => {
   const createMutation = useCreateRoom()
   const updateMutation = useUpdateRoom()
   const deleteMutation = useDeleteRoom()
+  const attemptScope = useAttemptScope()
   const isTutorial = Array.isArray(allowedActions)
   const canUpdate = !readOnly && (!isTutorial || allowedActions.includes('UPDATE_ROOM'))
   const canCreate = !isTutorial && !readOnly
@@ -58,12 +61,22 @@ const Rooms = ({ readOnly = false, allowedActions }) => {
   const handleDelete = (id) => canDelete ? deleteMutation.mutateAsync(id) : Promise.resolve()
 
   const handleFormSubmit = async (formData) => {
-    if (selectedItem) {
-      await updateMutation.mutateAsync({ id: selectedItem.id, ...formData })
-    } else {
-      await createMutation.mutateAsync(formData)
+    const attempt = attemptScope.capture()
+    try {
+      if (selectedItem) {
+        await updateMutation.mutateAsync({ id: selectedItem.id, ...formData })
+        if (!attemptScope.isCurrent(attempt)) return
+        toast.success('Sala atualizada.')
+      } else {
+        await createMutation.mutateAsync(formData)
+        if (!attemptScope.isCurrent(attempt)) return
+        toast.success('Sala criada.')
+      }
+      setModalVisible(false)
+    } catch (error) {
+      if (!attemptScope.isCurrent(attempt)) return
+      toast.error(getApiErrorMessage(error, 'Não foi possível guardar a sala. Tente novamente.'))
     }
-    setModalVisible(false)
   }
 
   const activeMutation = selectedItem ? updateMutation : createMutation
@@ -78,12 +91,6 @@ const Rooms = ({ readOnly = false, allowedActions }) => {
           Nova Sala
         </CButton>
       </div>}
-
-      {deleteMutation.isError && (
-        <CAlert color="danger" dismissible onClose={deleteMutation.reset}>
-          <strong>Erro ao remover:</strong> {getApiErrorMessage(deleteMutation.error, 'Não foi possível remover porque está a ser utilizado.')}
-        </CAlert>
-      )}
 
       <SmartTable
             columns={columns}
@@ -109,7 +116,6 @@ const Rooms = ({ readOnly = false, allowedActions }) => {
         FormComponent={RoomForm}
         onSubmit={handleFormSubmit}
         isLoading={activeMutation.isPending}
-        error={activeMutation.error}
         tutorialTarget="room-form"
       />
     </div>

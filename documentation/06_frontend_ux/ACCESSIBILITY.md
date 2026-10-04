@@ -29,6 +29,9 @@ The repository does not run an automated full-page WCAG audit in CI.
 | **Schedule Grid** | Native interactive controls | `WeekGrid.jsx` places actionable content in buttons |
 | **Keyboard rows** | Enter and Space activation | `SmartTable.jsx` handles keyboard activation for clickable rows |
 | **Live feedback** | Errors alert immediately. Other feedback announces politely. | `FeedbackBanner.jsx` uses `role="alert"` or `role="status"`. |
+| **Transient feedback** | Toasts announce errors as alerts and other results as status. Toasts never move focus. | `AppToaster.jsx` sets the error role and keeps the library reading pause. |
+| **Toasts with modals** | The toast host stays outside hidden regions and above the modal layer. | `FeedbackModal.test.jsx` renders a real CoreUI modal and checks announcements, focus, and Escape. |
+| **Field validation** | Errors stay next to the field or group with an accessible association. | Forms use `aria-invalid`, `aria-describedby`, and focus the first invalid field. |
 | **Availability grid** | Only one cell is in the normal tab order. Arrows move between available cells. | `AvailabilityGrid.jsx` uses roving `tabIndex`. |
 | **Scrollable grids** | Grid scrolling stays inside a labelled focusable region. | `WeekGrid.jsx` and `AvailabilityGrid.jsx` use contained scroll regions. |
 | **Landmarks** | Content sits in labelled semantic regions. | The layout uses `main`, `nav`, and labelled regions. |
@@ -43,6 +46,8 @@ The repository does not run an automated full-page WCAG audit in CI.
 Run frontend tests. Then use keyboard-only navigation and a browser accessibility audit on public, admin, and teacher routes.
 
 ## Source Map
+- Feedback: `frontend/src/components/AppToaster.jsx`, `frontend/src/components/FeedbackBanner.jsx`
+- Validation: `frontend/src/components/Forms/`, `frontend/src/components/TimeField.jsx`
 - Components: `frontend/src/components/SmartTable.jsx`, `frontend/src/components/GenericModalForm.jsx`, `frontend/src/components/WeekGrid.jsx`
 
 ## Related Documents

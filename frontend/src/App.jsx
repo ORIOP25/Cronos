@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useRef } from 'react'
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import { useAuth, useOrganization } from '@clerk/react'
+import { toast } from 'react-hot-toast'
 
 import { setClerkTokenGetter } from './apiClient'
 
@@ -49,12 +50,15 @@ function useStorageScopeCleanup(userId, isSignedIn, organizationId) {
   useEffect(() => {
     const previousUser = previousUserId.current
     const previousOrganization = previousOrganizationId.current
-    if (previousUser && (!isSignedIn || previousUser !== userId)) {
+    const userChanged = Boolean(previousUser) && (!isSignedIn || previousUser !== userId)
+    const organizationChanged = Boolean(previousOrganization) && previousOrganization !== organizationId
+    if (userChanged) {
       clearStorageKeys(localStorage, (key) => key.includes(`:user:${previousUser}:`))
     }
-    if (previousOrganization && previousOrganization !== organizationId) {
+    if (organizationChanged) {
       clearStorageKeys(localStorage, (key) => key.includes(`:org:${previousOrganization}`) || key.endsWith(`-org-${previousOrganization}`))
     }
+    if (userChanged || organizationChanged) toast.removeAll()
     previousUserId.current = userId
     previousOrganizationId.current = organizationId
   }, [isSignedIn, organizationId, userId])

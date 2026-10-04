@@ -47,7 +47,7 @@ describe('Members', () => {
 
   it('explains an unknown teacher link instead of opening an unidentified grid', () => {
     renderWithRouter(<Members />, { initialEntries: ['/members?teacher_id=684&panel=availability'] })
-    expect(screen.getByRole('alert')).toHaveTextContent('Professor não encontrado')
+    expect(screen.getByRole('status')).toHaveTextContent('Professor não encontrado')
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
   beforeEach(() => {

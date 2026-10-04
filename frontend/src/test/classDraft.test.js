@@ -13,13 +13,15 @@ describe('class drafts', () => {
   })
 
   it.each([
-    [{ name: ' ', size: 25, grade_level: 10, start_year: 2026, end_year: 2029 }, /nome/i],
-    [{ name: 'A', size: 0, grade_level: 10, start_year: 2026, end_year: 2029 }, /alunos/i],
-    [{ name: 'A', size: 25, grade_level: 9, start_year: 2026, end_year: 2029 }, /ano/i],
-    [{ name: 'A', size: 25, grade_level: 10, start_year: 1999, end_year: 2029 }, /início/i],
-    [{ name: 'A', size: 25, grade_level: 10, start_year: 2029, end_year: 2029 }, /posterior/i],
-  ])('rejects invalid domain values', (draft, message) => {
-    expect(validateClassDraft(draft).error).toMatch(message)
+    [{ name: ' ', size: 25, grade_level: 10, start_year: 2026, end_year: 2029 }, /nome/i, 'name'],
+    [{ name: 'A', size: 0, grade_level: 10, start_year: 2026, end_year: 2029 }, /alunos/i, 'size'],
+    [{ name: 'A', size: 25, grade_level: 9, start_year: 2026, end_year: 2029 }, /ano/i, 'grade_level'],
+    [{ name: 'A', size: 25, grade_level: 10, start_year: 1999, end_year: 2029 }, /início/i, 'start_year'],
+    [{ name: 'A', size: 25, grade_level: 10, start_year: 2029, end_year: 2029 }, /posterior/i, 'date_range'],
+  ])('rejects invalid domain values and names the affected field', (draft, message, field) => {
+    const result = validateClassDraft(draft)
+    expect(result.error).toMatch(message)
+    expect(result.field).toBe(field)
   })
 
   it('normalizes numbers and rejects duplicate names case-insensitively', () => {
@@ -27,6 +29,8 @@ describe('class drafts', () => {
     expect(validateClassDraft(draft).value).toEqual({
       name: '10 A', size: 28, grade_level: 10, start_year: 2026, end_year: 2029,
     })
-    expect(validateClassDraft(draft, [{ name: '10 a' }]).error).toMatch(/já foi adicionada/i)
+    const duplicate = validateClassDraft(draft, [{ name: '10 a' }])
+    expect(duplicate.error).toMatch(/já foi adicionada/i)
+    expect(duplicate.field).toBe('name')
   })
 })

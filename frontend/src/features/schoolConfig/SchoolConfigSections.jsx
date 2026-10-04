@@ -1,7 +1,8 @@
 import { useState } from 'react'
+import { toast } from 'react-hot-toast'
 import {
   CCard, CCardBody, CCardHeader, CCol, CRow, CForm, CFormInput,
-  CFormCheck, CFormLabel, CButton, CAlert, CBadge, CInputGroup, CInputGroupText,
+  CFormCheck, CFormLabel, CButton, CBadge, CInputGroup, CInputGroupText,
   CSpinner, CTable, CTableHead, CTableRow, CTableHeaderCell,
   CTableBody, CTableDataCell, CFormSelect,
   CModal, CModalHeader, CModalTitle, CModalBody, CModalFooter
@@ -20,7 +21,7 @@ import {
   toSchoolSettingsPayload,
 } from '../../utils/schoolConfigPayloads'
 import { timeOfDayToMinutes } from '../../utils/timeOfDay'
-import { useTransientMessage } from '../../hooks/useTransientMessage'
+import { useAttemptScope } from '../../hooks/useAttemptScope'
 import FeedbackBanner from '../../components/FeedbackBanner'
 import StatePanel from '../../components/StatePanel'
 import ConfirmationModal from '../../components/ConfirmationModal'
@@ -60,8 +61,8 @@ export const CalendarSection = () => {
   const [previewState, setPreviewState] = useState(null)
   const [lastFlowResult, setLastFlowResult] = useState(null)
   const [showGenerateConfirm, setShowGenerateConfirm] = useState(false)
-  const { message: successMsg, show: setSuccessMsg } = useTransientMessage()
-  const { message: feedbackMsg, show: setFeedbackMsg } = useTransientMessage()
+  const [stalePreviewMsg, setStalePreviewMsg] = useState('')
+  const attemptScope = useAttemptScope()
 
   const { data: events = [], isLoading } = useCalendarEvents()
   const { data: classes = [] } = useClasses()
@@ -104,10 +105,10 @@ export const CalendarSection = () => {
   const handleMutationError = (error) => {
     if (getApiErrorCode(error) === 'CALENDAR_EVENT_STALE') {
       setPreviewState(null)
-      setFeedbackMsg('As aulas afetadas mudaram. Repita a pré-visualização antes de guardar.')
+      setStalePreviewMsg('As aulas afetadas mudaram. Repita a pré-visualização antes de guardar.')
       return
     }
-    setFeedbackMsg(getApiErrorMessage(error, 'Erro ao guardar o fluxo de estágio.'))
+    toast.error(getApiErrorMessage(error, 'Erro ao guardar o fluxo de estágio.'))
   }
 
   const submitFlow = (fingerprint, removedCount = 0) => {
@@ -127,11 +128,10 @@ export const CalendarSection = () => {
         || sortedClassIds(editingFlowOriginal.class_ids) !== sortedClassIds(newEvent.class_ids)
       )
       : newEvent.class_ids.length > 0
-    const options = {
+    const options = attemptScope.guard({
       onSuccess: () => {
-        setSuccessMsg(editingFlowId
-          ? 'Fluxo de estágio atualizado com sucesso.'
-          : 'Fluxo de estágio criado com sucesso.')
+        toast.success(editingFlowId ? 'Fluxo de estágio atualizado.' : 'Fluxo de estágio criado.')
+        setStalePreviewMsg('')
         setLastFlowResult({
           name: payload.name,
           removedCount,
@@ -142,7 +142,7 @@ export const CalendarSection = () => {
         resetForm()
       },
       onError: handleMutationError,
-    }
+    })
     if (editingFlowId) {
       updateMutation.mutate({ id: editingFlowId, ...payload }, options)
     } else {
@@ -151,6 +151,7 @@ export const CalendarSection = () => {
   }
 
   const prepareFlowPreview = () => {
+    setStalePreviewMsg('')
     previewMutation.reset()
     previewMutation.mutate({
       operation: editingFlowId ? 'update' : 'create',
@@ -159,7 +160,7 @@ export const CalendarSection = () => {
       start_date: newEvent.start_date,
       end_date: newEvent.end_date,
       class_ids: newEvent.class_ids,
-    }, {
+    }, attemptScope.guard({
       onSuccess: (data) => {
         if (data.requires_confirmation) {
           setPreviewState(data)
@@ -168,7 +169,7 @@ export const CalendarSection = () => {
         }
       },
       onError: handleMutationError,
-    })
+    }))
   }
 
   const handleSubmit = () => {
@@ -184,12 +185,15 @@ export const CalendarSection = () => {
         end_date: newEvent.end_date,
         event_type: newEvent.event_type,
       },
-      {
+      attemptScope.guard({
         onSuccess: () => {
           resetForm()
-          setSuccessMsg('Evento adicionado com sucesso.')
+          toast.success('Evento adicionado.')
         },
-      },
+        onError: (error) => toast.error(
+          getApiErrorMessage(error, 'Erro ao adicionar evento. Verifique as datas e tente novamente.'),
+        ),
+      }),
     )
   }
 
@@ -214,12 +218,12 @@ export const CalendarSection = () => {
 
   const handleGenerate = () => {
     generateMutation.reset()
-    generateMutation.mutate({}, {
-      onSuccess: () => setFeedbackMsg('Regeneração pedida. Acompanhe a proposta em Horários.'),
-      onError: (error) => setFeedbackMsg(
+    generateMutation.mutate({}, attemptScope.guard({
+      onSuccess: () => toast.success('Regeneração pedida. Acompanhe a proposta em Horários.'),
+      onError: (error) => toast.error(
         getApiErrorMessage(error, 'Não foi possível regenerar o horário.', 'schedule.generate'),
       ),
-    })
+    }))
   }
 
   const appliesToLabel = (event) => {
@@ -305,8 +309,7 @@ export const CalendarSection = () => {
 
   return (
     <div>
-      {successMsg && <div className="mb-3"><FeedbackBanner tone="success">{successMsg}</FeedbackBanner></div>}
-      {feedbackMsg && <div className="mb-3"><FeedbackBanner tone="warning">{feedbackMsg}</FeedbackBanner></div>}
+      {stalePreviewMsg && <div className="mb-3"><FeedbackBanner tone="warning">{stalePreviewMsg}</FeedbackBanner></div>}
       {lastFlowResult && (
         <div className="mb-3">
           <FeedbackBanner
@@ -333,16 +336,7 @@ export const CalendarSection = () => {
           {getApiErrorMessage(settingsMutation.error, 'Erro ao guardar a preferência de feriados automáticos.')}
         </FeedbackBanner>
       )}
-      {createMutation.isError && !isFlow && (
-        <FeedbackBanner tone="danger">
-          {getApiErrorMessage(createMutation.error, 'Erro ao adicionar evento. Verifique as datas e tente novamente.')}
-        </FeedbackBanner>
-      )}
-      {updateMutation.isError && (
-        <FeedbackBanner tone="danger">
-          {getApiErrorMessage(updateMutation.error, 'Erro ao guardar o fluxo de estágio.')}
-        </FeedbackBanner>
-      )}
+
 
       <CCard className="border-0 shadow-sm mb-4 calendar-event-editor">
         <CCardHeader className="bg-white fw-bold py-2 calendar-event-editor__header">
@@ -478,17 +472,17 @@ export const CalendarSection = () => {
               setAutomaticHolidaysOverride(enabled)
               settingsMutation.mutate(
                 { automatic_holidays_enabled: enabled },
-                {
+                attemptScope.guard({
                   onSuccess: () => {
                     setAutomaticHolidaysOverride(null)
-                    setSuccessMsg(
+                    toast.success(
                       enabled
                         ? 'Feriados automáticos ativados.'
                         : 'Feriados automáticos desativados. Os eventos existentes foram preservados.',
                     )
                   },
                   onError: () => setAutomaticHolidaysOverride(null),
-                },
+                }),
               )
             }}
           />
@@ -510,7 +504,7 @@ export const CalendarSection = () => {
           <CModalTitle>Confirmar alteração do horário</CModalTitle>
         </CModalHeader>
         <CModalBody>
-          <CAlert color="warning">{previewState?.message}</CAlert>
+          <div className="mb-3"><FeedbackBanner tone="warning">{previewState?.message}</FeedbackBanner></div>
           <CTable small responsive>
             <CTableHead>
               <CTableRow>
@@ -569,7 +563,18 @@ export const CalendarSection = () => {
       <ConfirmationModal
         visible={Boolean(deleteTarget)}
         onClose={() => setDeleteTarget(null)}
-        onConfirm={() => { deleteMutation.mutate(deleteTarget.id, { onSuccess: () => setDeleteTarget(null) }) }}
+        onConfirm={() => {
+          deleteMutation.mutate(deleteTarget.id, attemptScope.guard({
+            onSuccess: () => {
+              setDeleteTarget(null)
+              toast.success('Evento eliminado.')
+            },
+            onError: (error) => {
+              setDeleteTarget(null)
+              toast.error(getApiErrorMessage(error, 'Não foi possível eliminar o evento. Tente novamente.'))
+            },
+          }))
+        }}
         title="Eliminar evento"
         message={deleteTarget
           ? (deleteTarget.event_type === 'internship_flow'
@@ -616,21 +621,13 @@ function validateSettingsForm(form) {
 
 export const SettingsSection = () => {
   const { data: settings, isLoading } = useSchoolSettings()
-  const { message: resetSuccessMsg, show: showResetSuccess } = useTransientMessage()
-  const { message: saveSuccessMsg, show: showSaveSuccess } = useTransientMessage()
   if (isLoading) return <div className="d-flex justify-content-center p-5"><CSpinner /></div>
 
   const editorKey = `${settings?.school_start_date ?? ''}:${settings?.school_hard_end_date ?? ''}:${settings?.preferred_end_date ?? ''}:${settings?.repair_stability_window_days ?? ''}:${settings?.automatic_holidays_enabled ?? ''}`
-  return (
-    <>
-      {resetSuccessMsg && <CAlert color="success" className="mb-3">{resetSuccessMsg}</CAlert>}
-      {saveSuccessMsg && <CAlert color="success" className="mb-3">{saveSuccessMsg}</CAlert>}
-      <SettingsEditor key={editorKey} settings={settings} onSoftResetSuccess={showResetSuccess} onSaveSuccess={showSaveSuccess} />
-    </>
-  )
+  return <SettingsEditor key={editorKey} settings={settings} />
 }
 
-const SettingsEditor = ({ settings, onSoftResetSuccess, onSaveSuccess }) => {
+const SettingsEditor = ({ settings }) => {
   const [savePromptMsg, setSavePromptMsg] = useState(null)
   const [showSaveModal, setShowSaveModal] = useState(false)
   const [form, setForm] = useState(() => toSettingsForm(settings))
@@ -642,13 +639,14 @@ const SettingsEditor = ({ settings, onSoftResetSuccess, onSaveSuccess }) => {
   const [resetError, setResetError] = useState('')
 
   const resetMutation = useSoftResetSchoolYear()
+  const attemptScope = useAttemptScope()
 
   const handleSoftReset = () => {
     setResetError('')
     if (resetConfirmText !== 'Confirmo' || !resetChecked) return
-    resetMutation.mutate({ confirm_phrase: resetConfirmText }, {
+    resetMutation.mutate({ confirm_phrase: resetConfirmText }, attemptScope.guard({
       onSuccess: () => {
-        onSoftResetSuccess('Ano letivo recomeçado com sucesso. Os horários deixam de estar ativos e o progresso volta a zero; o histórico auditável é conservado.', 10_000)
+        toast.success('Ano letivo recomeçado. Os horários deixaram de estar ativos.')
         setShowResetModal(false)
         setResetConfirmText('')
         setResetChecked(false)
@@ -657,7 +655,7 @@ const SettingsEditor = ({ settings, onSoftResetSuccess, onSaveSuccess }) => {
       onError: (err) => {
         setResetError(getApiErrorMessage(err, 'Erro ao recomeçar ano letivo.'))
       },
-    })
+    }))
   }
 
   const updateForm = (field, value) => {
@@ -677,14 +675,14 @@ const SettingsEditor = ({ settings, onSoftResetSuccess, onSaveSuccess }) => {
   }
 
   const confirmSave = () => {
-    upsertMutation.mutate(toSchoolSettingsPayload(form), {
+    upsertMutation.mutate(toSchoolSettingsPayload(form), attemptScope.guard({
       onSuccess: () => {
-        onSaveSuccess('Período letivo guardado com sucesso.')
+        toast.success('Período letivo guardado.')
         setSavePromptMsg(null)
         setShowSaveModal(false)
       },
       onError: () => setShowSaveModal(false),
-    })
+    }))
   }
 
   const canDisableAutomaticHolidays = getApiErrorCode(upsertMutation.error) === 'HOLIDAY_SYNC_FAILED'
@@ -698,24 +696,24 @@ const SettingsEditor = ({ settings, onSoftResetSuccess, onSaveSuccess }) => {
     }
     upsertMutation.mutate(
       { ...toSchoolSettingsPayload(form), automatic_holidays_enabled: false },
-      {
+      attemptScope.guard({
         onSuccess: () => {
           setForm((current) => ({ ...current, automatic_holidays_enabled: false }))
-          onSaveSuccess('Período letivo guardado com os feriados automáticos desativados.')
+          toast.success('Período letivo guardado com os feriados automáticos desativados.')
           setSavePromptMsg(null)
         },
-      },
+      }),
     )
   }
 
   return (
     <div>
-      {savePromptMsg && <CAlert color="warning" className="mb-3">{savePromptMsg}</CAlert>}
+      {savePromptMsg && <div className="mb-3"><FeedbackBanner tone="warning">{savePromptMsg}</FeedbackBanner></div>}
       {upsertMutation.isError && (
-        <CAlert color="danger">
-          <div className="d-flex flex-wrap align-items-center gap-2">
-            <span>{getApiErrorMessage(upsertMutation.error, 'Erro ao guardar configuração.')}</span>
-            {canDisableAutomaticHolidays && (
+        <div className="mb-3">
+          <FeedbackBanner
+            tone="danger"
+            action={canDisableAutomaticHolidays && (
               <CButton
                 color="link"
                 className="p-0"
@@ -725,8 +723,10 @@ const SettingsEditor = ({ settings, onSoftResetSuccess, onSaveSuccess }) => {
                 Desativar feriados automáticos e guardar
               </CButton>
             )}
-          </div>
-        </CAlert>
+          >
+            {getApiErrorMessage(upsertMutation.error, 'Erro ao guardar configuração.')}
+          </FeedbackBanner>
+        </div>
       )}
       
       <CRow className="g-3 mb-3 align-items-start">
@@ -805,11 +805,13 @@ const SettingsEditor = ({ settings, onSoftResetSuccess, onSaveSuccess }) => {
           <CModalTitle className="text-danger fw-bold">Recomeçar ano letivo</CModalTitle>
         </CModalHeader>
         <CModalBody>
-          <CAlert color="warning">
+          <div className="mb-3">
+            <FeedbackBanner tone="warning">
               Esta ação repõe o ano letivo no estado inicial: os horários publicados deixam de estar ativos, as propostas pendentes são invalidadas e o progresso da geração volta a zero. O histórico é conservado, mas deixa de influenciar novas gerações.
-            </CAlert>
-          
-          {resetError && <CAlert color="danger">{resetError}</CAlert>}
+            </FeedbackBanner>
+          </div>
+
+          {resetError && <div className="mb-3"><FeedbackBanner tone="danger">{resetError}</FeedbackBanner></div>}
 
           <div className="mb-3 mt-4">
             <CFormCheck 
@@ -866,7 +868,7 @@ export const GridSection = () => {
   }
   const queryError = configurationQuery.error || settingsQuery.error || timeslotsQuery.error
   if (queryError) {
-    return <CAlert color="danger">{getApiErrorMessage(queryError, 'Erro ao carregar a grelha.')}</CAlert>
+    return <FeedbackBanner tone="danger">{getApiErrorMessage(queryError, 'Erro ao carregar a grelha.')}</FeedbackBanner>
   }
 
   const storedConfiguration = configurationQuery.data?.source === 'VERSION'
@@ -882,7 +884,7 @@ export const GridSection = () => {
   } catch (error) {
     return (
       <div>
-        <CAlert color="danger">{error.message}</CAlert>
+        <div className="mb-3"><FeedbackBanner tone="danger">{error.message}</FeedbackBanner></div>
         <CButton color="primary" disabled>Guardar e Regenerar Grelha</CButton>
       </div>
     )
@@ -918,14 +920,14 @@ const PendingProposalBanner = ({ proposal }) => {
   if (!proposal?.grid_version_id) return null
   const statusLabel = GENERATION_STATUS_LABELS[proposal.job_status] ?? 'Em processamento'
   return (
-    <CAlert color="info" className="d-flex flex-wrap align-items-center justify-content-between gap-2">
-      <span>
-        <strong>Proposta de grelha pendente</strong>
-        {' — '}efetiva a {formatDate(proposal.effective_date)}
-        {statusLabel ? ` · ${statusLabel}` : ''}. O cancelamento da proposta é feito em Horários.
-      </span>
-      <a href="/schedules" className="alert-link">Ir para Horários</a>
-    </CAlert>
+    <FeedbackBanner
+      tone="info"
+      action={<a href="/schedules">Ir para Horários</a>}
+    >
+      <strong>Proposta de grelha pendente</strong>
+      {' — '}efetiva a {formatDate(proposal.effective_date)}
+      {statusLabel ? ` · ${statusLabel}` : ''}. O cancelamento da proposta é feito em Horários.
+    </FeedbackBanner>
   )
 }
 
@@ -954,12 +956,14 @@ const GridChangeImpactPanel = ({ preview, decisions, onDecision, onPropose, isPr
         </p>
 
         {!preview.can_propose && (
-          <CAlert color="warning">
-            <strong>Esta alteração não pode ser proposta:</strong>
-            <ul className="mb-0">
-              {preview.blockers.map((blocker) => <li key={blocker}>{blocker}</li>)}
-            </ul>
-          </CAlert>
+          <div className="mb-3">
+            <FeedbackBanner tone="warning">
+              <strong>Esta alteração não pode ser proposta:</strong>
+              <ul className="mb-0">
+                {preview.blockers.map((blocker) => <li key={blocker}>{blocker}</li>)}
+              </ul>
+            </FeedbackBanner>
+          </div>
         )}
 
         <h6 className="fw-bold text-secondary mb-2">Diferença de aulas por dia</h6>
@@ -1061,22 +1065,25 @@ const GridEditor = ({
   schoolYearPublished,
   pendingProposal,
 }) => {
-  const { message: feedback, show: showFeedback, clear: clearFeedback } = useTransientMessage()
   const [formData, setFormData] = useState(initialFormData)
   const [gridSettings, setGridSettings] = useState(initialGridSettings)
   const [preview, setPreview] = useState(null)
   const [decisions, setDecisions] = useState({})
   const [proposal, setProposal] = useState(null)
   const [breaksModalOpen, setBreaksModalOpen] = useState(false)
+  const [validationMessage, setValidationMessage] = useState('')
+  const [staleProposalMessage, setStaleProposalMessage] = useState('')
 
   const regenerateMutation = useRegenerateGrid()
   const previewMutation = useGridChangePreview()
   const proposeMutation = useGridChangePropose()
+  const attemptScope = useAttemptScope()
 
   const applyFormData = (updater) => {
     setFormData(updater)
     setPreview(null)
     setDecisions({})
+    setValidationMessage('')
   }
 
   const timeslotValues = {
@@ -1119,28 +1126,27 @@ const GridEditor = ({
   const handlePreview = () => {
     const validationError = validateForm()
     if (validationError) {
-      showFeedback({ color: 'danger', message: validationError }, 6000)
+      setValidationMessage(validationError)
       return
     }
+    setValidationMessage('')
+    setStaleProposalMessage('')
     previewMutation.reset()
     setProposal(null)
-    previewMutation.mutate({ timeslots: toGridTimeslotsPayload(formData) }, {
+    previewMutation.mutate({ timeslots: toGridTimeslotsPayload(formData) }, attemptScope.guard({
       onSuccess: (data) => {
         setPreview(data)
         setDecisions({})
+        setStaleProposalMessage('')
       },
       onError: (error) => {
-        showFeedback({
-          color: 'danger',
-          message: getApiErrorMessage(error, 'Erro ao pré-visualizar a alteração da grelha.'),
-        }, 6000)
+        toast.error(getApiErrorMessage(error, 'Erro ao pré-visualizar a alteração da grelha.'))
       },
-    })
+    }))
   }
 
   const handlePropose = () => {
     if (!preview) return
-    clearFeedback()
     proposeMutation.reset()
     const decisionsPayload = Object.entries(decisions).map(([timeslotId, action]) => ({
       current_timeslot_id: Number(timeslotId),
@@ -1150,33 +1156,27 @@ const GridEditor = ({
       timeslots: toGridTimeslotsPayload(formData),
       fingerprint: preview.fingerprint,
       decisions: decisionsPayload,
-    }, {
+    }, attemptScope.guard({
       onSuccess: (data) => {
         setProposal(data)
         setPreview(null)
         setDecisions({})
+        setStaleProposalMessage('')
       },
       onError: (error) => {
         if (getApiErrorCode(error) === 'GRID_CHANGE_STALE') {
           setPreview(null)
           setDecisions({})
-          showFeedback({
-            color: 'warning',
-            message: 'A análise mudou desde a pré-visualização. Repita a pré-visualização antes de propor a alteração.',
-          }, 8000)
+          setStaleProposalMessage('A análise mudou desde a pré-visualização. Repita a pré-visualização antes de propor a alteração.')
           return
         }
-        showFeedback({
-          color: 'danger',
-          message: getApiErrorMessage(error, 'Erro ao propor a alteração da grelha.'),
-        }, 6000)
+        toast.error(getApiErrorMessage(error, 'Erro ao propor a alteração da grelha.'))
       },
-    })
+    }))
   }
 
   const handleSubmit = (event) => {
     event.preventDefault()
-    clearFeedback()
     if (schoolYearPublished) {
       handlePreview()
       return
@@ -1184,20 +1184,18 @@ const GridEditor = ({
     regenerateMutation.reset()
     const validationError = validateForm()
     if (validationError) {
-      showFeedback({ color: 'danger', message: validationError }, 6000)
+      setValidationMessage(validationError)
       return
     }
-    regenerateMutation.mutate(toGridConfigurationPayload({ formData, gridSettings }), {
+    setValidationMessage('')
+    regenerateMutation.mutate(toGridConfigurationPayload({ formData, gridSettings }), attemptScope.guard({
       onSuccess: (payload) => {
-        showFeedback({ color: 'success', message: payload.message })
+        toast.success(payload.message)
       },
       onError: (error) => {
-        showFeedback({
-          color: 'danger',
-          message: getApiErrorMessage(error, 'Erro ao guardar configuração da grelha.'),
-        }, 6000)
+        toast.error(getApiErrorMessage(error, 'Erro ao guardar configuração da grelha.'))
       },
-    })
+    }))
   }
 
   const toggleDay = (idx) => {
@@ -1215,15 +1213,18 @@ const GridEditor = ({
 
   return (
     <div>
-      {feedback && <CAlert color={feedback.color}>{feedback.message}</CAlert>}
-      <PendingProposalBanner proposal={pendingProposal} />
+      {validationMessage && <div className="mb-3"><FeedbackBanner tone="danger">{validationMessage}</FeedbackBanner></div>}
+      {staleProposalMessage && <div className="mb-3"><FeedbackBanner tone="warning">{staleProposalMessage}</FeedbackBanner></div>}
+      <div className="mb-3"><PendingProposalBanner proposal={pendingProposal} /></div>
       {proposal && (
-        <CAlert color="success">
-          <strong>Proposta de grelha criada.</strong>
-          {' '}Fica efetiva a {formatDate(proposal.effective_date)}. Estado da geração:{' '}
-          {GENERATION_STATUS_LABELS[proposal.status] ?? 'Em processamento'}.
-          {' '}<a href="/schedules" className="alert-link">Ir para Horários</a> para acompanhar a proposta.
-        </CAlert>
+        <div className="mb-3">
+          <FeedbackBanner tone="success">
+            <strong>Proposta de grelha criada.</strong>
+            {' '}Fica efetiva a {formatDate(proposal.effective_date)}. Estado da geração:{' '}
+            {GENERATION_STATUS_LABELS[proposal.status] ?? 'Em processamento'}.
+            {' '}<a href="/schedules">Ir para Horários</a> para acompanhar a proposta.
+          </FeedbackBanner>
+        </div>
       )}
 
       <p className="text-muted mb-4">

@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react'
-import { CAlert, CBadge, CButton, CSpinner } from '@coreui/react'
+import { CBadge, CButton, CSpinner } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import { cilBan, cilCheckCircle, cilList, cilWarning } from '@coreui/icons'
 import { useScheduleDiff } from '../../features/scheduling/data'
+import FeedbackBanner from '../FeedbackBanner'
 
 const CHANGE_LABELS = {
   ADDED: 'Adicionado',
@@ -49,7 +50,7 @@ const DraftPanel = ({ draft, onApprove, onReject, isApproving, isRejecting, allo
   const canApprove = allowApprove && draft.can_approve && !stale
 
   return (
-    <CAlert color="warning" className="border border-warning mb-4">
+    <section className="draft-panel mb-4" aria-label="Proposta pendente">
       <div className="d-flex justify-content-between align-items-start flex-wrap gap-3">
         <div className="flex-grow-1">
           <div className="fw-bold mb-2">
@@ -86,9 +87,11 @@ const DraftPanel = ({ draft, onApprove, onReject, isApproving, isRejecting, allo
           )}
 
           {Number(metrics.excess_days || 0) > 0 && (
-            <CAlert color="danger" className="py-2 small" data-testid="deadline-excess-warning">
-              Algumas turmas terminam depois da data preferencial definida pela escola.
-            </CAlert>
+            <div className="mb-2" data-testid="deadline-excess-warning">
+              <FeedbackBanner tone="danger">
+                Algumas turmas terminam depois da data preferencial definida pela escola.
+              </FeedbackBanner>
+            </div>
           )}
 
           {(draft.warnings || []).map((warning) => (
@@ -174,7 +177,7 @@ const DraftPanel = ({ draft, onApprove, onReject, isApproving, isRejecting, allo
           </CButton>}
         </div>
       </div>
-    </CAlert>
+    </section>
   )
 }
 

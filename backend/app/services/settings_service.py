@@ -83,6 +83,7 @@ async def _sync_school_year_and_record_settings_changes(
     before_calendar: dict | None,
     before_policy: dict | None,
     changed_by_membership_id: int | None,
+    preferred_end_date: date | None,
 ) -> models.SchedulerSchoolYear | None:
     state_service = SchedulerStateService(db)
     school_year = None
@@ -94,6 +95,9 @@ async def _sync_school_year_and_record_settings_changes(
         )
         school_year.start_date = settings.school_start_date
         school_year.hard_end_date = settings.school_hard_end_date
+
+    with db.no_autoflush:
+        await _apply_preferred_end_date(db, organization_id, school_year, preferred_end_date)
 
     operation = (
         models.SchedulerStateChangeOperation.CREATE
@@ -227,15 +231,15 @@ async def upsert_settings(
         if data.automatic_holidays_enabled is not None:
             existing.automatic_holidays_enabled = data.automatic_holidays_enabled
         await db.flush()
-        school_year = await _sync_school_year_and_record_settings_changes(
+        await _sync_school_year_and_record_settings_changes(
             db,
             organization_id,
             existing,
             before_calendar=before_calendar,
             before_policy=before_policy,
             changed_by_membership_id=changed_by_membership_id,
+            preferred_end_date=data.preferred_end_date,
         )
-        await _apply_preferred_end_date(db, organization_id, school_year, data.preferred_end_date)
         if (
             next_automatic_holidays
             and (
@@ -269,15 +273,15 @@ async def upsert_settings(
     )
     db.add(new_settings)
     await db.flush()
-    school_year = await _sync_school_year_and_record_settings_changes(
+    await _sync_school_year_and_record_settings_changes(
         db,
         organization_id,
         new_settings,
         before_calendar=None,
         before_policy=None,
         changed_by_membership_id=changed_by_membership_id,
+        preferred_end_date=data.preferred_end_date,
     )
-    await _apply_preferred_end_date(db, organization_id, school_year, data.preferred_end_date)
     if (
         new_settings.automatic_holidays_enabled
         and new_settings.school_start_date is not None

@@ -6,6 +6,7 @@ import {
   CModalFooter,
   CButton,
 } from '@coreui/react'
+import FeedbackBanner from '../../../components/FeedbackBanner'
 
 export function ConflictResolutionModal({
   isOpen,
@@ -24,7 +25,7 @@ export function ConflictResolutionModal({
         <p>
           Outra pessoa alterou estes dados entretanto. Recarregue para continuar com a versão mais recente.
         </p>
-        {reloadError && <div className="alert alert-danger mt-3 mb-0" role="alert">{reloadError}</div>}
+        {reloadError && <div className="mt-3"><FeedbackBanner tone="danger">{reloadError}</FeedbackBanner></div>}
       </CModalBody>
       <CModalFooter className="d-flex justify-content-end">
         <CButton color="primary" onClick={onReload} disabled={isReloading}>

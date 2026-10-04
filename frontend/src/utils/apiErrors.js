@@ -57,6 +57,18 @@ export function getApiErrorCode(error) {
   return detail && typeof detail === 'object' && !Array.isArray(detail) ? detail.code || null : null
 }
 
+const CONTEXTUAL_BLOCK_CODES = new Set(['resource_in_use', 'course_has_classes'])
+
+export function isApiErrorBlock(error) {
+  return CONTEXTUAL_BLOCK_CODES.has(getApiErrorCode(error))
+}
+
+export function isApiErrorTransient(error) {
+  const status = error?.response?.status
+  if (status === undefined) return true
+  return status >= 500 || status === 429
+}
+
 const isNetworkError = (error) => error?.code === 'ERR_NETWORK'
   || (!error?.response && /network error/i.test(error?.message || ''))
 

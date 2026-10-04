@@ -1,4 +1,5 @@
 import { forwardRef } from 'react'
+import FeedbackBanner from '../../components/FeedbackBanner'
 import {
   TUTORIAL_CHAPTERS,
   TUTORIAL_COPY,
@@ -46,7 +47,7 @@ export const TutorialInstructionPanel = forwardRef(function TutorialInstructionP
           </div>
         )}
         {reviewMode && <div className="tutorial-instruction-panel__instruction"><span>Consulta</span><strong>Este passo apresenta um exemplo preparado.</strong></div>}
-        {persistenceError && <div className="alert alert-warning mt-3" role="alert">{TUTORIAL_COPY.persistenceFailure}</div>}
+        {persistenceError && <div className="mt-3"><FeedbackBanner tone="warning">{TUTORIAL_COPY.persistenceFailure}</FeedbackBanner></div>}
       </div>
       <div className="tutorial-instruction-panel__controls">
         {reviewMode ? (

@@ -8,7 +8,7 @@
 | :--- | :--- | :--- |
 | F02 | O horário aprovado inclui seis turmas arquivadas; o catálogo apresenta 48 turmas ativas. | O dashboard explica as populações. A API expõe `classes_archived`; o teste preserva o denominador e a média anual. |
 | F06 | A coluna da ação tinha largura insuficiente. | A ação ocupa uma linha própria no tablet e usa largura automática no desktop. |
-| F08 | O aviso global ficava longe do botão usado. | Cada modelo apresenta feedback junto ao botão, incluindo falhas. A transferência mantém o helper existente. |
+| F08 | O aviso global ficava longe do botão usado. | Cada modelo indica preparação. O toast de sucesso ou falha permanece visível no viewport. A transferência mantém o helper existente. |
 | F09 | A decisão futura continuava selecionável. O crédito histórico não aparecia nas ocorrências. | A UI bloqueia `GIVEN` antes do fim. O histórico expõe créditos antecipados e permite reversão auditada. |
 | F15 | A projeção semanal enviava `REVOKED` para um campo que só aceita `PENDING`, `COMPLETED` e `OCCURRENCE`. | A grelha projeta `PENDING`, preserva o estado de ocorrência `REVOKED` e permite um novo ciclo. |
 | F17 | O link QA usava o ID do membro como ID do professor. | A equipa abre o perfil correto. A edição usa a grelha válida na data da ocorrência e preserva outras versões. |

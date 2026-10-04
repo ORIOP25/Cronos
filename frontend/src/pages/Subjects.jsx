@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { toast } from 'react-hot-toast'
 import PageHeader from '../components/PageHeader'
-import { CButton, CAlert } from '@coreui/react'
+import { CButton } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import { cilPlus } from '@coreui/icons'
 
@@ -10,6 +11,7 @@ import GenericModalForm from '../components/GenericModalForm'
 import SubjectForm from '../components/Forms/SubjectForm'
 import RoomTypeBadge from '../components/RoomTypeBadge'
 import { getApiErrorMessage } from '../utils/apiErrors'
+import { useAttemptScope } from '../hooks/useAttemptScope'
 
 // Hooks de Dados
 import {
@@ -29,6 +31,7 @@ const Subjects = ({ readOnly = false, allowedActions }) => {
   const createMutation = useCreateSubject()
   const updateMutation = useUpdateSubject()
   const deleteMutation = useDeleteSubject()
+  const attemptScope = useAttemptScope()
   const isTutorial = Array.isArray(allowedActions)
   const canUpdate = !readOnly && (!isTutorial || allowedActions.includes('UPDATE_SUBJECT'))
   const canOpenDetails = canUpdate || readOnly
@@ -61,16 +64,21 @@ const Subjects = ({ readOnly = false, allowedActions }) => {
   const handleDelete = (id) => canDelete ? deleteMutation.mutateAsync(id) : Promise.resolve()
 
   const handleFormSubmit = async (formData) => {
+    const attempt = attemptScope.capture()
     try {
       if (selectedItem) {
         await updateMutation.mutateAsync({ id: selectedItem.id, ...formData })
+        if (!attemptScope.isCurrent(attempt)) return
+        toast.success('Disciplina atualizada.')
       } else {
         await createMutation.mutateAsync(formData)
+        if (!attemptScope.isCurrent(attempt)) return
+        toast.success('Disciplina criada.')
       }
       setModalVisible(false)
-      // Invalidar cache de cursos (incluem dados de disciplinas/módulos)
-    } catch {
-      // Erro é tratado pelo mutation (mostrado no GenericModalForm)
+    } catch (error) {
+      if (!attemptScope.isCurrent(attempt)) return
+      toast.error(getApiErrorMessage(error, 'Não foi possível guardar a disciplina. Tente novamente.'))
     }
   }
 
@@ -86,19 +94,6 @@ const Subjects = ({ readOnly = false, allowedActions }) => {
           Nova Disciplina
         </CButton>
       </div>}
-
-      {/* Tratamento de Erros de Criação/Eliminação */}
-      {createMutation.isError && (
-        <CAlert color="danger" dismissible onClose={createMutation.reset}>
-          <strong>Erro ao criar:</strong> {getApiErrorMessage(createMutation.error, 'Erro desconhecido.')}
-        </CAlert>
-      )}
-
-      {deleteMutation.isError && (
-        <CAlert color="danger" dismissible onClose={deleteMutation.reset}>
-          <strong>Erro ao remover:</strong> {getApiErrorMessage(deleteMutation.error, 'Não foi possível remover porque está a ser utilizado.')}
-        </CAlert>
-      )}
 
       <SmartTable
             columns={columns}
@@ -126,7 +121,6 @@ const Subjects = ({ readOnly = false, allowedActions }) => {
         FormComponent={SubjectForm}
         onSubmit={handleFormSubmit}
         isLoading={activeMutation.isPending}
-        error={activeMutation.error}
         tutorialTarget="subject-form"
         readOnly={readOnly}
       />

@@ -5,13 +5,14 @@
 Este documento especifica a modernização do feedback visual do Cronos.
 Define comportamento, arquitetura, migração, TDD e critérios de aceitação.
 
-**Estado:** especificação de implementação. As decisões de produto estão fechadas. A implementação está pendente.
+**Estado:** implementado na branch `feat/feedback-ux-modernization`, incluindo o trabalho restante da revisão R01–R06.
 **Data:** 3 de outubro de 2026.
 **Base observada:** código local da branch `main`, consultado nesta data.
 
-Os guias existentes descrevem o comportamento atual.
-Os requisitos deste documento descrevem o comportamento proposto.
-Atualize os guias quando implementar cada mudança.
+A secção "Comportamento atual observado" descreve a base `main` antes da migração.
+Os guias de arquitetura, design system e acessibilidade descrevem o comportamento implementado.
+A matriz de mensagens registra o canal e o dono de cada fluxo.
+A secção de riscos regista as limitações ainda dependentes de integração.
 
 ## Intended Reader
 
@@ -37,6 +38,9 @@ Consulte o código e os testes antes de editar cada fluxo.
 
 ### Comportamento atual observado
 
+Esta subsecção é histórica e descreve a base `main` antes da migração.
+O código implementado usa `react-hot-toast` e está descrito nos guias.
+
 O frontend usa React, CoreUI e TanStack React Query.
 Não existe uma dependência de toasts no `package.json` consultado.
 
@@ -50,7 +54,7 @@ O feedback atual combina quatro mecanismos:
 | `StatePanel`, `FailureState` e feedback de campo | Estados de página e explicações associadas ao contexto. |
 
 `index.css` contém estilos `.zen-toast` sem referências de produção encontradas.
-Confirme novamente os consumidores antes de remover esses estilos.
+A migração removeu esses estilos depois de confirmar a ausência de consumidores.
 
 O anexo inicial mistura inventário, alternativas e um plano de conversão integral.
 Esta especificação substitui esse plano integral pelas decisões seguintes.
@@ -156,10 +160,10 @@ flowchart LR
 As setas representam dependências.
 O diagrama não propõe camadas ou interfaces adicionais.
 
-| Responsabilidade | Local proposto | Regra |
+| Responsabilidade | Local | Regra |
 | :--- | :--- | :--- |
 | Montar o host global. | `main.jsx` | Montar exatamente uma instância dentro de `ErrorBoundary`. |
-| Configurar posição, tema e durações. | Novo `components/AppToaster.jsx` | Manter um componente pequeno de composição. |
+| Configurar posição, tema e durações. | `components/AppToaster.jsx` | Manter um componente pequeno de composição. |
 | Emitir feedback de uma ação. | Página ou componente que controla a ação. | Emitir no resultado da tentativa, nunca durante o render. |
 | Executar pedidos e invalidar cache. | Feature data hooks existentes. | Não importar a biblioteca de toasts. |
 | Interpretar erros da API. | `utils/apiErrors.js` | Reutilizar as funções e mensagens existentes. |
@@ -435,7 +439,7 @@ Os caminhos abaixo são relativos a `frontend/src/`.
 | Recuperação de acesso | `pages/ForgotPasswordPage.jsx` | Distinguir erros de campo, estado de recuperação e falha pontual. |
 | Contacto | `features/contact/components/ContactDetailsStep.jsx`, `QuestionnaireOptionStep.jsx`, `ContactMessageStep.jsx`, `TurnstileWidget.jsx` | Preservar feedback local e alternativa por email; manter isolamento de estilos. |
 | Guia | `features/tutorial/TutorialInstructionPanel.jsx`, `TutorialShell.jsx`, `TutorialWorkspace.jsx` | Modernizar falhas próprias; preservar instruções e indicadores de simulação. |
-| Limpeza | `hooks/useTransientMessage.js`, `index.css`, `styles/app-components.css` | Eliminar código sem consumidores e estilos antigos substituídos. |
+| Limpeza | `hooks/useTransientMessage.js` (removido), `index.css` (`.zen-toast` removido), `styles/app-components.css` | Eliminar código sem consumidores e estilos antigos substituídos. |
 | Dependências | `frontend/package.json`, `frontend/package-lock.json` | Adicionar apenas a biblioteca escolhida. |
 
 ### Casos que exigem tratamento explícito
@@ -482,7 +486,7 @@ Não teste detalhes internos de animação da biblioteca.
 | Comportamento | Evidência exigida | Base existente |
 | :--- | :--- | :--- |
 | Host global | Uma confirmação fica disponível após fechar um modal ou navegar por sucesso. | `main.test.jsx`, `AppRoutes.test.jsx` e teste de integração do host. |
-| Duração | Sucesso sai após 4000 ms; erro sai após 6000 ms, incluindo pausa e saída. | Novo teste focado de `AppToaster`. |
+| Duração | Sucesso sai após 4000 ms; erro sai após 6000 ms, incluindo pausa e saída. | `AppToaster.test.jsx` cobre os limites e a saída. |
 | Posição | 767 px usa topo ao centro; 768 px usa superior direito; resize atualiza. | Teste do host e verificação no browser. |
 | Repetição | Render, Strict Mode e polling não repetem feedback de uma tentativa. | Testes do consumidor e painéis de geração. |
 | Gravação manual falhada | Dados permanecem; estado por guardar permanece; nova tentativa funciona. | `MyAvailability.test.jsx`. |
@@ -581,8 +585,8 @@ Set-Location frontend
 npm test -- src/test/SmartTable.test.jsx src/test/MyAvailability.test.jsx
 ```
 
-Acrescente o teste do host quando esse arquivo existir.
-Não execute comandos sobre caminhos de testes ainda propostos.
+O teste do host existe em `src/test/AppToaster.test.jsx`.
+Execute apenas comandos sobre caminhos de testes existentes.
 
 ### Gates do frontend
 
@@ -703,7 +707,10 @@ Registe testes executados e limitações reais.
 - [Validação de turma](../../frontend/src/utils/classDraft.js).
 - [Normalização de módulos](../../frontend/src/utils/subjectModules.js).
 - [Apresentação de erros](../../frontend/src/utils/apiErrors.js).
-- [Mensagens temporárias atuais](../../frontend/src/hooks/useTransientMessage.js).
+- [Host global](../../frontend/src/components/AppToaster.jsx).
+- [Testes do host](../../frontend/src/test/AppToaster.test.jsx).
+- [Testes de contexto](../../frontend/src/test/FeedbackContext.test.jsx).
+- [Guarda de tentativas](../../frontend/src/hooks/useAttemptScope.js).
 - [Tokens](../../frontend/src/styles/brand.tokens.css).
 - [Estilos partilhados](../../frontend/src/styles/app-components.css).
 - [Vitest](../../frontend/vitest.config.js).
@@ -712,8 +719,8 @@ Registe testes executados e limitações reais.
 - [Compose](../../docker-compose.yml).
 - [Override de desenvolvimento](../../docker-compose.dev.yml).
 
-`components/AppToaster.jsx` e o seu teste são arquivos propostos.
-Não existem na base consultada e não têm links de arquivo nesta versão.
+`components/AppToaster.jsx` e os seus testes existem na branch implementada.
+Os links acima apontam para os ficheiros reais.
 
 ### Referências externas
 
