@@ -777,13 +777,17 @@ async def lesson_lineage_ids(
     context: LessonContext,
 ) -> set[int]:
     # Publication moves the log while ledger entries retain their original lesson ID.
+    # Older copies lost source links. Match only the same stable and physical
+    # identity within this tenant, school year and curricular assignment.
     lineage = (
         select(SchedulerLessonV1.id, SchedulerLessonV1.source_lesson_id)
         .where(
             SchedulerLessonV1.organization_id == organization_id,
             SchedulerLessonV1.school_year_id == context.year.id,
             SchedulerLessonV1.assignment_id == context.assignment.id,
-            SchedulerLessonV1.id == context.lesson.id,
+            SchedulerLessonV1.stable_key == context.lesson.stable_key,
+            SchedulerLessonV1.starts_at == context.lesson.starts_at,
+            SchedulerLessonV1.ends_at == context.lesson.ends_at,
         )
         .cte("lesson_lineage", recursive=True)
     )

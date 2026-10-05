@@ -147,6 +147,14 @@ The corrected dashboard reads the v1 ledger. Debt aggregation counts remaining m
 Cancellation now reverses execution before cancelling reopened debt, following the published lesson lineage.
 For an already revoked log, repeat its cancellation in an open week with the normal administrative endpoint.
 This operation preserves revocation metadata and appends only the missing debt revision.
+Older publications can lack source links. Reconciliation also matches the same stable identity and exact UTC interval.
+The match stays within the organization, school year and curricular assignment. It excludes other physical lessons.
+Publication maps stable identities to database identifiers when it writes each source reference.
+The post-correction read-only inventory found log `1` on lesson `279339`, without a source reference.
+Debt `1` still references lesson `230239` and contains 50 open minutes.
+Both lessons belong to organization `27`, school year `27`, and assignment `6649`.
+They share stable key `6649000001` and the interval `2026-10-12 08:00–08:50 UTC`.
+Their QA summary and debt reason also match. This evidence identifies the residual claim without using its balance alone.
 Verify zero remaining debt for this QA occurrence and preserve unrelated claims.
 Do not classify future debt as invalid solely from its date. An explicit gap decision can create future debt.
 

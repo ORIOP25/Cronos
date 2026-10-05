@@ -112,7 +112,7 @@ class SnapshotBundle:
     snapshot: PlanningSnapshot
     periods: tuple[Period, ...]
     base_version_id: int | None
-    base_lesson_ids: Mapping[int, int]
+    base_lesson_ids: Mapping[int, int]  # Stable domain identity -> database lesson ID.
     input_revision: int
     planning_revision: int
     digest: str
@@ -297,7 +297,7 @@ async def load_snapshot(
             claim_assignments=claim_assignments,
             active_version_id=active_version.id if active_version is not None else None,
             lunch_rule=lunch_rule,
-            reserved_lesson_ids=frozenset(base_lesson_ids.values()).difference(
+            reserved_lesson_ids=frozenset(base_lesson_ids).difference(
                 lesson.lesson_id for lesson in baseline_lessons
             ),
         )
@@ -1045,7 +1045,7 @@ async def _load_baseline(
         tuple(baseline),
         tuple(protected),
         allocations,
-        MappingProxyType(dict(identity_by_db_id)),
+        MappingProxyType({identity: db_id for db_id, identity in identity_by_db_id.items()}),
         tuple(history_unavailable),
     )
 

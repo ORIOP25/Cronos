@@ -43,10 +43,17 @@ pytestmark = pytest.mark.postgresql
 
 
 @pytest.mark.parametrize(
-    "provisional_debt,already_revoked", [(False, False), (True, False), (True, True)]
+    "provisional_debt,already_revoked,broken_lineage",
+    [
+        (False, False, False),
+        (True, False, False),
+        (True, True, False),
+        (True, False, True),
+        (True, True, True),
+    ],
 )
 async def test_premature_historical_credit_is_visible_and_reversible(
-    db_session, monkeypatch, provisional_debt, already_revoked
+    db_session, monkeypatch, provisional_debt, already_revoked, broken_lineage
 ):
     seed = await _school(db_session, suffix="_historical")
     await db_session.commit()
@@ -124,6 +131,36 @@ async def test_premature_historical_credit_is_visible_and_reversible(
         log.revoked_by_membership_id = seed.membership.id
         log.revoked_reason = "Reversão histórica QA com saldo residual"
         await db_session.commit()
+    unrelated_debt_id = None
+    if broken_lineage:
+        lesson.source_lesson_id = None
+        unrelated_version = await add_version(db_session, seed, status="SUPERSEDED")
+        unrelated = await add_lesson(
+            db_session,
+            seed,
+            unrelated_version,
+            stable_key=lesson.stable_key,
+            school_date=lesson.school_date + timedelta(days=7),
+            start=lesson.starts_at + timedelta(days=7),
+            end=lesson.ends_at + timedelta(days=7),
+            credit_minutes=lesson.credit_minutes,
+        )
+        unrelated_debt_id = await record_debt(
+            db_session,
+            seed.organization.id,
+            seed.year.id,
+            seed.assignment.id,
+            DebtOrigin(
+                origin=f"lesson-occurrence:{unrelated.id}",
+                revision=1,
+                origin_date=unrelated.school_date,
+                minutes=50,
+                author_id=seed.membership.id,
+                reason="Separate physical lesson",
+                recorded_at=MOMENT,
+            ),
+        )
+        await db_session.commit()
     for _ in range(2):
         await occurrences_v1.cancel_occurrence(
             db_session,
@@ -142,8 +179,11 @@ async def test_premature_historical_credit_is_visible_and_reversible(
     if already_revoked:
         assert log.revoked_reason == "Reversão histórica QA com saldo residual"
     debt, _ = await load_open_debt(db_session, seed.organization.id, [seed.assignment.id])
-    assert sum(debt.values()) == 0, "Revoking the lesson must also cancel reopened settlements."
-    assert (await occurrences_v1.get_debts(db_session, seed.organization.id))["total_gaps"] == 0
+    expected_debt = {unrelated_debt_id: 50} if broken_lineage else {}
+    assert debt == expected_debt, "Cancel only the original physical lesson's reopened debt."
+    assert (await occurrences_v1.get_debts(db_session, seed.organization.id))["total_gaps"] == int(
+        broken_lineage
+    )
 
 
 async def _school(db_session, *, suffix: str = "", minutes: int = 100) -> V1Seed:
@@ -274,6 +314,7 @@ async def test_future_gap_history_does_not_overlap_repaired_lessons(db_session, 
     await db_session.commit()
     await publish_schedule(db_session, monkeypatch, seed)
     missed = (await _lessons(db_session, seed))[0]
+    previous_by_key = {row.stable_key: row.id for row in await _lessons(db_session, seed)}
     now = missed.starts_at - timedelta(days=1)
     await _occurrence(db_session, seed, missed)
     item = (await occurrences_v1.list_occurrences(db_session, seed.organization.id))["items"][0]
@@ -293,6 +334,10 @@ async def test_future_gap_history_does_not_overlap_repaired_lessons(db_session, 
         assert len(rows) == 3 - cycle, "Preserve gap history until its audited reversal."
         assert any(row.stable_key == missed.stable_key for row in rows)
         assert all(left.ends_at <= right.starts_at for left, right in pairwise(rows))
+        for row in rows:
+            if row.stable_key in previous_by_key:
+                assert row.source_lesson_id == previous_by_key[row.stable_key]
+        previous_by_key = {row.stable_key: row.id for row in rows}
         if cycle == 0:
             current = (await occurrences_v1.list_occurrences(db_session, seed.organization.id))[
                 "items"
