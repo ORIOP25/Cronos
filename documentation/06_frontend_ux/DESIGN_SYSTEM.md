@@ -58,6 +58,7 @@ The repository maintains visual snapshot baselines under `documentation/06_front
 - Marketing-specific tokens live in `frontend/src/features/marketing/styles/`.
 - The implementation contains semantic state tokens for given, gap, substituted, and open states.
 - JSX can use inline layout styles, but colors should reference CSS variables.
+- Date fields keep help text outside the calendar control and associate it through `aria-describedby`.
 
 ## Verification Procedure
 Run CSS coverage audit script: `node frontend/scripts/capture-css-coverage.mjs`.

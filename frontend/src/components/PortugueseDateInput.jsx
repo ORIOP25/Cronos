@@ -1,11 +1,13 @@
-import { useRef } from 'react'
-import { CFormInput } from '@coreui/react'
+import { useId, useRef } from 'react'
+import { CFormInput, CFormText } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import { cilCalendar } from '@coreui/icons'
 import { formatDateInput, parseDateInput } from '../utils/formatUtils'
 
-export default function PortugueseDateInput({ value = '', onChange, min, max, disabled, readOnly, ...props }) {
+export default function PortugueseDateInput({ value = '', onChange, min, max, disabled, readOnly, text, ...props }) {
   const calendarRef = useRef(null)
+  const helpId = useId()
+  const describedBy = [props['aria-describedby'], text ? helpId : null].filter(Boolean).join(' ') || undefined
 
   const openCalendar = () => {
     if (disabled || readOnly) return
@@ -34,42 +36,46 @@ export default function PortugueseDateInput({ value = '', onChange, min, max, di
   }
 
   return (
-    <div className="portuguese-date-input">
-      <CFormInput
-        {...props}
-        key={value || 'empty-date'}
-        type="text"
-        inputMode="numeric"
-        autoComplete="off"
-        placeholder="dd/mm/aaaa"
-        defaultValue={formatDateInput(value)}
-        disabled={disabled}
-        readOnly={readOnly}
-        onChange={handleChange}
-        onBlur={handleBlur}
-        onClick={openCalendar}
-      />
-      <button
-        type="button"
-        className="portuguese-date-input__button"
-        aria-label="Abrir calendário"
-        title="Abrir calendário"
-        disabled={disabled || readOnly}
-        onClick={openCalendar}
-      >
-        <CIcon icon={cilCalendar} aria-hidden="true" />
-      </button>
-      <input
-        ref={calendarRef}
-        className="portuguese-date-input__calendar"
-        type="date"
-        value={value}
-        min={min}
-        max={max}
-        tabIndex={-1}
-        aria-hidden="true"
-        onChange={(event) => onChange(event.target.value)}
-      />
-    </div>
+    <>
+      <div className="portuguese-date-input">
+        <CFormInput
+          {...props}
+          aria-describedby={describedBy}
+          key={value || 'empty-date'}
+          type="text"
+          inputMode="numeric"
+          autoComplete="off"
+          placeholder="dd/mm/aaaa"
+          defaultValue={formatDateInput(value)}
+          disabled={disabled}
+          readOnly={readOnly}
+          onChange={handleChange}
+          onBlur={handleBlur}
+          onClick={openCalendar}
+        />
+        <button
+          type="button"
+          className="portuguese-date-input__button"
+          aria-label="Abrir calendário"
+          title="Abrir calendário"
+          disabled={disabled || readOnly}
+          onClick={openCalendar}
+        >
+          <CIcon icon={cilCalendar} aria-hidden="true" />
+        </button>
+        <input
+          ref={calendarRef}
+          className="portuguese-date-input__calendar"
+          type="date"
+          value={value}
+          min={min}
+          max={max}
+          tabIndex={-1}
+          aria-hidden="true"
+          onChange={(event) => onChange(event.target.value)}
+        />
+      </div>
+      {text && <CFormText id={helpId}>{text}</CFormText>}
+    </>
   )
 }
