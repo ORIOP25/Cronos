@@ -98,6 +98,9 @@ def validate_foundation_snapshot(data: schemas.FoundationDraftData) -> None:
             raise ValueError("Os fluxos de estágio devem estar dentro do período letivo.")
     if data.school_hard_end_date <= data.school_start_date:
         raise ValueError("A data-limite deve ser posterior à data de início")
+    schemas.OrganizationSettingsUpsert._validate_school_dates(
+        data.school_start_date, data.school_hard_end_date, data.preferred_end_date
+    )
     if not 0 <= data.repair_stability_window_days <= 60:
         raise ValueError("A janela de estabilidade deve estar entre 0 e 60 dias")
     if (
@@ -315,6 +318,7 @@ class FoundationService:
             schemas.OrganizationSettingsUpsert(
                 school_start_date=data.school_start_date,
                 school_hard_end_date=data.school_hard_end_date,
+                preferred_end_date=data.preferred_end_date,
                 repair_stability_window_days=data.repair_stability_window_days,
                 automatic_holidays_enabled=data.automatic_holidays_enabled,
             ),

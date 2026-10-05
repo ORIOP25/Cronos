@@ -214,6 +214,7 @@ async def test_foundation_complete_transactional_generates_grid(db_session):
     full_data = schemas.FoundationDraftData(
         school_start_date=date(2025, 9, 15),
         school_hard_end_date=date(2026, 7, 31),
+        preferred_end_date=date(2026, 6, 30),
         repair_stability_window_days=14,
         days_of_week=[0, 1, 2, 3, 4],
         opening_time=time(8, 30),
@@ -236,6 +237,8 @@ async def test_foundation_complete_transactional_generates_grid(db_session):
     assert res.foundation_status == "COMPLETED"
     assert res.foundation_completed_at is not None
     assert res.generated_timeslot_count > 0
+    assert saved.data.preferred_end_date == date(2026, 6, 30)
+    assert await settings_service.get_preferred_end_date(db_session, org.id) == date(2026, 6, 30)
 
     # Org is now COMPLETED
     refreshed_org = await db_session.get(models.Organization, org.id)

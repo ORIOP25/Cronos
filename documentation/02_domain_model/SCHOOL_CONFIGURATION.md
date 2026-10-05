@@ -93,6 +93,9 @@ Foundation moves from `NOT_STARTED` to `IN_PROGRESS` on the first draft write an
 
 Foundation is the first configuration boundary for a new organization.
 It collects the calendar period, active weekdays, opening and closing times, slot duration, breaks, and lunch interval.
+The first step includes the optional `Data preferencial de fim` beside the school start and hard end dates.
+When provided, the preferred date must fall within the school period.
+Drafts preserve this date. The confirmation summary displays it, and completion persists it in the scheduler school year.
 Completion validates the complete snapshot and generates the initial timeslot grid.
 
 The `/config` pages manage later operational configuration, such as school years, curriculum, staff, rooms, and other resources.

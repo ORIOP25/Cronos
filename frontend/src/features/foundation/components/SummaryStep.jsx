@@ -31,6 +31,10 @@ export function SummaryStep({ values, organizationName, confirmed, onConfirmedCh
                 <strong>{values.school_start_date || '—'}</strong>
               </div>
               <div className="small mb-2">
+                <span className="text-muted d-block">Data preferencial de fim:</span>
+                <strong>{values.preferred_end_date || '—'}</strong>
+              </div>
+              <div className="small mb-2">
                 <span className="text-muted d-block">Fim do ano letivo:</span>
                 <strong>{values.school_hard_end_date || '—'}</strong>
               </div>

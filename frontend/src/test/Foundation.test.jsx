@@ -188,6 +188,10 @@ describe('Foundation', () => {
 
     expect(await screen.findByText(/1. Período do Ano Letivo/i)).toBeInTheDocument()
     expect(await screen.findByDisplayValue('15/09/2025')).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Data preferencial de fim'), { target: { value: '30/06/2026' } })
+    await waitFor(() => expect(apiClient.put).toHaveBeenCalledWith('/foundation/draft', expect.objectContaining({
+      data: expect.objectContaining({ preferred_end_date: '2026-06-30' }),
+    })))
 
     for (const step of [
       /2. Dias de Funcionamento Letivo/i,
@@ -204,6 +208,8 @@ describe('Foundation', () => {
       expect(await screen.findByText(step)).toBeInTheDocument()
     }
 
+    expect(screen.getByText('Data preferencial de fim:')).toBeInTheDocument()
+    expect(screen.getByText('2026-06-30')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('checkbox', { name: /confirmo que revi/i }))
     fireEvent.click(screen.getByRole('button', { name: /^ativar escola$/i }))
     await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/foundation/complete', {

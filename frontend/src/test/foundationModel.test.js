@@ -19,6 +19,24 @@ import {
 } from '../features/foundation/foundationModel'
 
 describe('foundationModel', () => {
+  it.each(['2025-09-14', '2026-08-01'])('rejects preferred end %s outside the school period', (preferredEnd) => {
+    expect(validateFoundationStep(STEP_PERIOD, {
+      ...initialFoundationDraftValues,
+      school_start_date: '2025-09-15',
+      school_hard_end_date: '2026-07-31',
+      preferred_end_date: preferredEnd,
+    })).toHaveProperty('preferred_end_date')
+  })
+
+  it.each(['', '2025-09-15', '2026-06-30', '2026-07-31'])('accepts optional preferred end %s within the school period', (preferredEnd) => {
+    expect(validateFoundationStep(STEP_PERIOD, {
+      ...initialFoundationDraftValues,
+      school_start_date: '2025-09-15',
+      school_hard_end_date: '2026-07-31',
+      preferred_end_date: preferredEnd,
+    })).toEqual({})
+  })
+
   it('serializes empty draft fields as nullable values for the partial backend contract', () => {
     expect(serializeFoundationDraftValues({ school_start_date: '2025-09-15', school_hard_end_date: '' })).toEqual({
       school_start_date: '2025-09-15',

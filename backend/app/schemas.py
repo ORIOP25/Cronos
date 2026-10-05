@@ -358,6 +358,7 @@ class FoundationDraftData(BaseModel):
 
     school_start_date: date | None = None
     school_hard_end_date: date | None = None
+    preferred_end_date: date | None = None
     repair_stability_window_days: int = Field(default=14, ge=0, le=60)
     days_of_week: list[int] | None = None
     opening_time: time | None = None

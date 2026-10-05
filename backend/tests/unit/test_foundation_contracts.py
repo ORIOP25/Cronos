@@ -33,6 +33,23 @@ def test_foundation_snapshot_accepts_zero_break():
     validate_foundation_snapshot(valid_snapshot())
 
 
+@pytest.mark.parametrize("preferred_end", [date(2025, 9, 15), date(2026, 6, 30), date(2026, 7, 31)])
+def test_foundation_draft_roundtrips_preferred_end(preferred_end):
+    draft = FoundationDraftData.model_validate(
+        {**valid_snapshot().model_dump(), "preferred_end_date": preferred_end}
+    )
+    assert draft.model_dump()["preferred_end_date"] == preferred_end
+    validate_foundation_snapshot(draft)
+
+
+@pytest.mark.parametrize("preferred_end", [date(2025, 9, 14), date(2026, 8, 1)])
+def test_foundation_snapshot_rejects_preferred_end_outside_period(preferred_end):
+    with pytest.raises(ValueError, match="data-alvo"):
+        validate_foundation_snapshot(
+            valid_snapshot().model_copy(update={"preferred_end_date": preferred_end})
+        )
+
+
 def test_foundation_snapshot_accepts_zero_stability_window():
     validate_foundation_snapshot(
         valid_snapshot().model_copy(update={"repair_stability_window_days": 0})

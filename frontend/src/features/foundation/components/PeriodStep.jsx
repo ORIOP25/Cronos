@@ -6,11 +6,11 @@ export function PeriodStep({ values, fieldErrors, onChange }) {
     <div className="foundation-step-period">
       <h4 tabIndex="-1" className="h5 mb-3 text-dark fw-bold">1. Período do Ano Letivo</h4>
       <p className="text-muted small mb-4">
-        Defina o horizonte temporal da sua escola. O Cronos calculará se a totalidade das horas curriculares pode ser ministrada até à data de fim do ano letivo.
+        Defina o início das aulas, a data preferencial de fim e o limite final do ano letivo.
       </p>
 
       <CRow className="g-3">
-        <CCol md={6}>
+        <CCol md={4}>
           <CFormLabel htmlFor="school_start_date">Data de Início do Ano Letivo *</CFormLabel>
           <PortugueseDateInput
             id="school_start_date"
@@ -24,7 +24,27 @@ export function PeriodStep({ values, fieldErrors, onChange }) {
           )}
         </CCol>
 
-        <CCol md={6}>
+        <CCol md={4}>
+          <CFormLabel htmlFor="preferred_end_date">Data preferencial de fim</CFormLabel>
+          <PortugueseDateInput
+            id="preferred_end_date"
+            name="preferred_end_date"
+            value={values.preferred_end_date || ''}
+            min={values.school_start_date || undefined}
+            max={values.school_hard_end_date || undefined}
+            invalid={Boolean(fieldErrors.preferred_end_date)}
+            aria-describedby="preferred_end_date-help preferred_end_date-feedback"
+            onChange={(value) => onChange('preferred_end_date', value)}
+          />
+          <small id="preferred_end_date-help" className="text-muted d-block mt-1">
+            Data até à qual o Cronos deve concluir as aulas na geração inicial do horário.
+          </small>
+          {fieldErrors.preferred_end_date && (
+            <CFormFeedback id="preferred_end_date-feedback" className="d-block" invalid>{fieldErrors.preferred_end_date}</CFormFeedback>
+          )}
+        </CCol>
+
+        <CCol md={4}>
           <CFormLabel htmlFor="school_hard_end_date">Data de Fim do Ano Letivo *</CFormLabel>
           <PortugueseDateInput
             id="school_hard_end_date"

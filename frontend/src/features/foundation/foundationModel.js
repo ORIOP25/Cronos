@@ -30,6 +30,7 @@ export const STEP_CONFIRMATION = 10
 export const initialFoundationDraftValues = {
   school_start_date: '',
   school_hard_end_date: '',
+  preferred_end_date: '',
   repair_stability_window_days: 14,
   days_of_week: [0, 1, 2, 3, 4],
   opening_time: '08:30',
@@ -100,6 +101,12 @@ export function validateFoundationStep(step, values) {
       errors.school_hard_end_date = 'A data de fim do ano letivo deve ser posterior à data de início.'
     }
     const rawWindowDays = values.repair_stability_window_days
+    if (values.preferred_end_date && (
+      (values.school_start_date && values.preferred_end_date < values.school_start_date)
+      || (values.school_hard_end_date && values.preferred_end_date > values.school_hard_end_date)
+    )) {
+      errors.preferred_end_date = 'A data preferencial deve ficar entre o início das aulas e a data-limite.'
+    }
     const windowDays = rawWindowDays === '' || rawWindowDays == null ? 0 : Number(rawWindowDays)
     if (!Number.isInteger(windowDays) || windowDays < 0 || windowDays > 60) {
       errors.repair_stability_window_days = 'Os dias em que o horário não muda devem estar entre 0 e 60.'
