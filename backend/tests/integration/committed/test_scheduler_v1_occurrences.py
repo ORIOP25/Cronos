@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date, timedelta
+from itertools import pairwise
 
 import pytest
 from sqlalchemy import select
@@ -266,6 +267,49 @@ async def _decide(db_session, seed: V1Seed, item, status, *, now, **extra):
     )
     await db_session.commit()
     return decided
+
+
+async def test_future_gap_history_does_not_overlap_repaired_lessons(db_session, monkeypatch):
+    seed = await _school(db_session, suffix="_future_history")
+    await db_session.commit()
+    await publish_schedule(db_session, monkeypatch, seed)
+    missed = (await _lessons(db_session, seed))[0]
+    now = missed.starts_at - timedelta(days=1)
+    await _occurrence(db_session, seed, missed)
+    item = (await occurrences_v1.list_occurrences(db_session, seed.organization.id))["items"][0]
+    await _decide(db_session, seed, item, models.LessonOccurrenceStatus.GAP, now=now)
+
+    for cycle in range(2):
+        await run_generation(db_session, monkeypatch, seed, key=f"future-history:{cycle}", now=now)
+        published = await db_session.scalars(
+            select(SchedulerLessonV1)
+            .where(
+                SchedulerLessonV1.organization_id == seed.organization.id,
+                SchedulerLessonV1.version_id == int(seed.state.active_schedule_version_id),
+            )
+            .order_by(SchedulerLessonV1.starts_at)
+        )
+        rows = list(published)
+        assert len(rows) == 3 - cycle, "Preserve gap history until its audited reversal."
+        assert any(row.stable_key == missed.stable_key for row in rows)
+        assert all(left.ends_at <= right.starts_at for left, right in pairwise(rows))
+        if cycle == 0:
+            current = (await occurrences_v1.list_occurrences(db_session, seed.organization.id))[
+                "items"
+            ][0]
+            await occurrences_v1.cancel_occurrence(
+                db_session,
+                seed.organization.id,
+                current["id"],
+                version=current["version"],
+                reason="Reversão QA da ocorrência futura",
+                cancelled_by_membership_id=seed.membership.id,
+                now_utc=now,
+            )
+            await db_session.commit()
+            assert (await occurrences_v1.get_debts(db_session, seed.organization.id))[
+                "total_gaps"
+            ] == 0
 
 
 @pytest.mark.parametrize("stability_days", [0, 2])

@@ -38,6 +38,9 @@ Integration runs with `-n 4 --dist=loadscope`. Contracts run serially with rate 
 
 ## Frontend suites
 
+The 48-class correctness test uses the production 900-second safety budget and stops at the first complete candidate.
+It validates curricular coverage and completion dates. Short optimization deadlines must not make correctness depend on host load.
+
 Vitest is configured in `frontend/vitest.config.js` with isolated `node` and `dom` projects, thread pooling, MSW server setup and strict unhandled-request failures. Coverage uses V8 and enforces thresholds of 45 percent statements, 40 percent branches, 35 percent functions, and 45 percent lines. React interactions that cross async boundaries use Testing Library `user-event`.
 
 Playwright is configured in `frontend/playwright.config.js`. The `setup` project feeds `public`, `auth`, and `auth-state`. The `app` project depends on `auth-state`, the `provider` project depends on `app`, and the `faults` project depends on `app` and `provider`. The `capacity` project runs only when `CAPACITY_ENABLED=1`. The `app`, `provider`, and `faults` projects use one worker because they mutate shared E2E state. Retries are disabled; traces are retained on failure and screenshots are captured on failure.

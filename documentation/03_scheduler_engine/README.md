@@ -45,6 +45,9 @@ Manual ledger corrections never turn hypothetical future lessons into executed h
 New debt reservations use editable future lessons after the stability window.
 Previously approved recovery reservations entering that window remain attached to their frozen lessons.
 Planning a recovery never settles debt; actual execution does.
+Future logged history reserves its class, teacher and room intervals during search and independent validation.
+History remains outside planned credit. Approval cannot add a lesson over those reserved intervals.
+Snapshots exclude recovery reservations for closed debt claims. Persisted versions retain their original reservation history.
 
 Compact resource exclusivity. `infrastructure/placement_model.py` `_add_resource_exclusivity` adds at most one option per resource and period with `AddAtMostOne`, grouped by equal interval. It merges only partially overlapping groups and never groups that overlap only through transitivity, so the ends of an overlap chain stay available. It is used for class, teacher and room exclusivity and during room optimization. This replaced pairwise constraints to avoid `OOM`.
 

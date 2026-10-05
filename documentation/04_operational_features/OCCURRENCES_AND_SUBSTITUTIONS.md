@@ -106,6 +106,8 @@ snapshot must not count them twice.
 5. Conclude the substitute lesson after its end instant.
 6. Verify the substitute credit and the original debt.
 7. Revert the occurrence and verify the compensation entries.
+8. Use `Reconciliar dívida` on a reverted occurrence with historical residue.
+9. Verify that debt closes while revocation metadata and history remain unchanged.
 
 ## Source Map
 

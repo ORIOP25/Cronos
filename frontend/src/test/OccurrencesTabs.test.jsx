@@ -6,10 +6,11 @@ import { renderWithRouter } from './testUtils'
 const hooks = vi.hoisted(() => ({
   debts: vi.fn(),
   occurrences: vi.fn(),
+  cancel: vi.fn(),
 }))
 
 vi.mock('../features/operations/data', () => ({
-  useCancelOccurrence: () => ({ isPending: false, mutate: vi.fn() }),
+  useCancelOccurrence: () => ({ isPending: false, mutate: hooks.cancel }),
   useDebts: (filters) => hooks.debts(filters),
   useOccurrences: (filters) => hooks.occurrences(filters),
   useSubstituteDiagnostics: () => ({ data: { candidates: [], setup_actions: [] } }),
@@ -30,8 +31,27 @@ vi.mock('../features/members/data', () => ({
 
 describe('Occurrences active tab ownership', () => {
   beforeEach(() => {
+    hooks.cancel.mockReset()
     hooks.debts.mockReset().mockReturnValue({ data: { items: [] }, isLoading: false, isError: false })
     hooks.occurrences.mockReset().mockReturnValue({ data: { items: [] }, isLoading: false, isError: false })
+  })
+
+  it.each(['scheduler_v1', 'admin'])('reconciles only supported revoked occurrences (%s)', async (creationSource) => {
+    hooks.occurrences.mockReturnValue({
+      data: { items: [{ id: 1, date: '2026-10-12', status: 'REVOKED',
+        operational_state: 'REVOKED', version: 5, class_name: 'TAS 10', creation_source: creationSource }] },
+      isLoading: false, isError: false,
+    })
+    renderWithRouter(<Occurrences />, { initialEntries: ['/absences?tab=historical'] })
+    if (creationSource !== 'scheduler_v1') {
+      expect(screen.queryByRole('button', { name: 'Reconciliar dívida' })).not.toBeInTheDocument()
+      return
+    }
+    fireEvent.click(await screen.findByRole('button', { name: 'Reconciliar dívida' }))
+    expect(screen.getByText(/preserva.*histórico.*corrige.*dívida residual/i)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Reconciliar', exact: true }))
+    expect(hooks.cancel).toHaveBeenCalledWith({ id: 1, version: 5,
+      cancelCompletedSubstituteLog: false }, expect.any(Object))
   })
 
   it('disables Given for a future occurrence without blocking other decisions', async () => {

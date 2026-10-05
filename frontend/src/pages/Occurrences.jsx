@@ -538,6 +538,7 @@ const OccurrenceHistoryCards = ({
       const executionSummary = buildExecutionSummary(occ, teacherById, subjectById)
       const isUndecided = operationalState === 'OPEN_PENDING'
       const isDecided = ['DECIDED_GIVEN', 'DECIDED_GAP', 'DECIDED_SUBSTITUTED'].includes(operationalState)
+      const isRevokedV1 = operationalState === 'REVOKED' && occ.creation_source === 'scheduler_v1'
       const hasDetail = Boolean(occ.lesson_log_summary || occ.lesson_log_notes)
       const isExpanded = expandedId === occ.id
       const timeRange = occ.timeslot_start_time && occ.timeslot_end_time
@@ -589,7 +590,7 @@ const OccurrenceHistoryCards = ({
                 Decidir
               </CButton>
             )}
-            {isDecided && canRevert && (
+            {(isDecided || isRevokedV1) && canRevert && (
               <CButton
                 color="secondary"
                 size="sm"
@@ -598,7 +599,7 @@ const OccurrenceHistoryCards = ({
                 onClick={() => onRevert(occ)}
               >
                 {revertingId === occ.id ? <CSpinner size="sm" className="me-1" /> : null}
-                Reverter
+                {operationalState === 'REVOKED' ? 'Reconciliar dívida' : 'Reverter'}
               </CButton>
             )}
           </div>
@@ -727,7 +728,7 @@ const OccurrencesPanel = ({
         setRevertingId(null)
         setRevertConfirmation(null)
         closeEditModal()
-        toast.success('Ocorrência revertida.')
+        toast.success(occurrence.status === 'REVOKED' ? 'Dívida reconciliada.' : 'Ocorrência revertida.')
       },
       onError: (error) => {
         setRevertingId(null)
@@ -799,13 +800,15 @@ const OccurrencesPanel = ({
         visible={Boolean(revertConfirmation)}
         onClose={() => setRevertConfirmation(null)}
         onConfirm={confirmRevert}
-        title="Confirmar reversão"
+        title={revertConfirmation?.status === 'REVOKED' ? 'Reconciliar dívida' : 'Confirmar reversão'}
         message={
-          revertConfirmation?.status === 'SUBSTITUTED'
+          revertConfirmation?.status === 'REVOKED'
+            ? 'Esta operação preserva o histórico e corrige apenas a dívida residual desta ocorrência revertida.'
+            : revertConfirmation?.status === 'SUBSTITUTED'
             ? 'Reverter esta ocorrência? O histórico será preservado e poderá criar uma nova revisão para o mesmo bloco. O registo do substituto será revertido se a semana estiver aberta.'
             : 'Reverter esta ocorrência? O histórico será preservado e poderá criar uma nova revisão para o mesmo bloco.'
         }
-        confirmText="Reverter"
+        confirmText={revertConfirmation?.status === 'REVOKED' ? 'Reconciliar' : 'Reverter'}
         isLoading={cancelMutation.isPending}
         variant="warning"
       />
@@ -851,6 +854,7 @@ const OccurrencesPanel = ({
               : '—'
             const isUndecided = operationalState === 'OPEN_PENDING'
             const isDecided = ['DECIDED_GIVEN', 'DECIDED_GAP', 'DECIDED_SUBSTITUTED'].includes(operationalState)
+            const isRevokedV1 = operationalState === 'REVOKED' && occ.creation_source === 'scheduler_v1'
             const isExpanded = expandedId === occ.id
             const hasDetail = occ.lesson_log_summary || occ.lesson_log_notes
             return (
@@ -890,7 +894,7 @@ const OccurrencesPanel = ({
                       Decidir
                     </CButton>
                   )}
-                  {isDecided && canRevert && (
+                  {(isDecided || isRevokedV1) && canRevert && (
                     <CButton
                       color="secondary"
                       size="sm"
@@ -899,10 +903,10 @@ const OccurrencesPanel = ({
                       onClick={() => handleRevert(occ)}
                     >
                       {revertingId === occ.id ? <CSpinner size="sm" className="me-1" /> : null}
-                      Reverter
+                      {operationalState === 'REVOKED' ? 'Reconciliar dívida' : 'Reverter'}
                     </CButton>
                   )}
-                  {!isUndecided && !isDecided && (
+                  {!isUndecided && !isDecided && !isRevokedV1 && (
                     <span className="text-muted small">—</span>
                   )}
                 </div>

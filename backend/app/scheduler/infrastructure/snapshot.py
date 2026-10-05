@@ -257,7 +257,13 @@ async def load_snapshot(
         if active_version is not None
         else frozenset()
     )
-    baseline_lessons, protected_lessons, reservations, base_lesson_ids = await _load_baseline(
+    (
+        baseline_lessons,
+        protected_lessons,
+        reservations,
+        base_lesson_ids,
+        history_unavailable,
+    ) = await _load_baseline(
         db,
         organization_id,
         year.id,
@@ -280,13 +286,13 @@ async def load_snapshot(
             executed_minutes=executed,
             blocked_dates=calendar.blocked_dates,
             class_blocked_dates=calendar.class_blocked_dates,
-            unavailable=unavailable,
+            unavailable=(*unavailable, *history_unavailable),
             soft_unavailable=soft_unavailable,
             protected_lessons=protected_lessons,
             baseline_lessons=baseline_lessons,
             protected_dates=protected_dates,
             now_utc=now_utc,
-            reservations=reservations,
+            reservations=tuple(row for row in reservations if row.claim_id in open_debt),
             open_debt_minutes=open_debt,
             claim_assignments=claim_assignments,
             active_version_id=active_version.id if active_version is not None else None,
@@ -972,15 +978,17 @@ async def _load_baseline(
     tuple[ScheduledLesson, ...],
     tuple[RecoveryAllocation, ...],
     Mapping[int, int],
+    tuple[Unavailability, ...],
 ]:
     if active_version is None:
-        return (), (), (), MappingProxyType({})
+        return (), (), (), MappingProxyType({}), ()
     baseline, identity_by_db_id, _ = await load_version_lessons(
         db, organization_id, school_year_id, active_version, zone
     )
+    history_unavailable: list[Unavailability] = []
     if assignments is not None and executed is not None:
         try:
-            _, baseline = await split_version_history(
+            history, baseline = await split_version_history(
                 db,
                 organization_id,
                 school_year_id,
@@ -995,6 +1003,20 @@ async def _load_baseline(
                 "EXECUTION_OVERLAPS_PROTECTED",
                 "O progresso registado sobrepõe-se a meio de uma aula publicada.",
             ) from exc
+        # History is copied into the proposal after search. Its future physical
+        # intervals must remain unavailable even though it earns no planned credit.
+        for lesson in history:
+            if lesson.period.end_utc <= now_utc:
+                continue
+            assignment = assignments[lesson.assignment_id]
+            for resource_type, resource_id in (
+                (UnavailableResource.CLASS, assignment.class_id),
+                (UnavailableResource.TEACHER, lesson.teacher_id or assignment.teacher_id),
+                (UnavailableResource.ROOM, lesson.room_id),
+            ):
+                history_unavailable.append(
+                    Unavailability(resource_type, resource_id, lesson.period)
+                )
         baseline = _reproject_baseline(baseline, assignments, executed)
     protected = [
         lesson
@@ -1024,6 +1046,7 @@ async def _load_baseline(
         tuple(protected),
         allocations,
         MappingProxyType(dict(identity_by_db_id)),
+        tuple(history_unavailable),
     )
 
 

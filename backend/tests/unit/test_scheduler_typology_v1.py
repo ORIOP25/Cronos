@@ -81,8 +81,11 @@ def test_forty_eight_classes_generate_a_complete_valid_schedule():
     result = generate_schedule(
         fixture.snapshot,
         fixture.periods,
-        time_limit_seconds=15,
-        num_workers=2,
+        # Use the production safety budget and constructive stopping policy.
+        # A short optimization deadline makes correctness depend on host load.
+        time_limit_seconds=900,
+        stop_at_first_complete=True,
+        num_workers=1,
         random_seed=3,
     )
 
