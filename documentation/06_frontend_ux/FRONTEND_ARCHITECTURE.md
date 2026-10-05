@@ -87,6 +87,8 @@ Unknown teacher links show an explicit error instead of an unidentified grid.
 Course creation includes a filled initial class draft. Incomplete edited drafts block submission and retain their values.
 Import downloads show preparation on the selected model and success or failure through a visible toast.
 Mobile debt cards show the class, subject, teacher, gaps, and duration without a wide table.
+Dashboard debt values use the same duration formatter and debt tab as the occurrence page.
+Published schedule conflicts require attention. Schedule health identifies the affected blocks and links to each teacher week.
 
 ## Failure Modes
 

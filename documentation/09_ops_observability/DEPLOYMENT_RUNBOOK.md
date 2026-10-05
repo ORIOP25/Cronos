@@ -81,6 +81,8 @@ Publish `dist`.
 Set `VITE_API_BASE_URL`, `VITE_CLERK_PUBLISHABLE_KEY`, and `VITE_TURNSTILE_SITE_KEY` as public build variables.
 Nginx serves public routes with `try_files $uri $uri.html =404` and application routes with `app-shell.html`.
 Cloudflare Pages uses `public/_worker.js` to route public, application, and static paths.
+Unknown HTML routes fetch the canonical `/404` asset and preserve the HTTP `404` status.
+Fetching `/404.html` can return an empty canonical redirect. Never re-label that redirect as a `404` response.
 Test every client route on the hosting provider before domain cutover.
 
 ### Secrets and environment

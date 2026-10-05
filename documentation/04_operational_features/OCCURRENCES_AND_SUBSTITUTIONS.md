@@ -66,6 +66,9 @@ Planning a substitution must not anticipate curricular execution.
 - Premature historical `COMPLETED` logs appear as `GIVEN` when `logged_at` precedes the lesson end.
 - This projection does not invent a historical decision or change the ledger.
 - A reversal follows source lessons across published versions and compensates the original execution origin.
+- A reversal cancels debt after reversing execution, including reopened settlements from historical provisional claims.
+- Debt claims follow source lessons across published versions. Each claim contributes only its remaining balance to debt totals.
+- Repeating cancellation can reconcile residual historical debt in an open week. It preserves revocation metadata and adds only needed debt revisions.
 - Valid completed lessons without an occurrence decision stay outside occurrence history.
 - The diagnostics endpoint explains each excluded candidate with a structured reason and a setup path.
 

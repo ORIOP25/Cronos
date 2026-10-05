@@ -141,6 +141,15 @@ The six archived approved classes are `743` through `748`. Their presence explai
 The active catalog contains 48 classes. Do not delete approved history to equalize these populations.
 Production data was inspected inside `READ ONLY` transactions. Applying a correction requires separate operator authorization.
 
+The 5 October report records that log `1` was reversed through the administrative interface.
+The debt page still included 50 minutes for TAS 10, while the dashboard showed zero debt.
+The corrected dashboard reads the v1 ledger. Debt aggregation counts remaining minutes per claim.
+Cancellation now reverses execution before cancelling reopened debt, following the published lesson lineage.
+For an already revoked log, repeat its cancellation in an open week with the normal administrative endpoint.
+This operation preserves revocation metadata and appends only the missing debt revision.
+Verify zero remaining debt for this QA occurrence and preserve unrelated claims.
+Do not classify future debt as invalid solely from its date. An explicit gap decision can create future debt.
+
 ## Source Map
 
 - Migration: `backend/alembic/versions/0018_occurrence_decisions.py`

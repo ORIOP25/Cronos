@@ -152,6 +152,7 @@ def reconcile_debt(
     open_by_claim = {claim.claim_id: claim.created_minutes for claim in claims}
     if len(open_by_claim) != len(claims):
         raise ValueError("Debt claim IDs must be unique.")
+    settlement_capacity = dict(open_by_claim)
     seen_revisions = set()
     for revision in revisions:
         key = revision.claim_id, revision.origin, revision.revision
@@ -159,6 +160,7 @@ def reconcile_debt(
             raise ValueError("Debt revision has an unknown claim or duplicate origin.")
         seen_revisions.add(key)
         open_by_claim[revision.claim_id] += revision.delta_minutes
+        settlement_capacity[revision.claim_id] += max(0, revision.delta_minutes)
         if open_by_claim[revision.claim_id] < 0:
             raise ValueError("Debt revision exceeds the open claim.")
 
@@ -189,10 +191,14 @@ def reconcile_debt(
         if abs(settled_by_event[settlement.execution_key]) > abs(executed_credit):
             raise ValueError("Debt settlement exceeds executed curricular credit.")
         open_by_claim[settlement.claim_id] -= settlement.minutes
-        if open_by_claim[settlement.claim_id] < 0:
+        settlement_capacity[settlement.claim_id] -= settlement.minutes
+        if settlement_capacity[settlement.claim_id] < 0:
             raise ValueError("Debt settlement exceeds the open claim.")
         settlement_by_key[key] = settlement
 
+    # A later cancellation can reduce a claim whose historical settlement was reversed.
+    if any(minutes < 0 for minutes in open_by_claim.values()):
+        raise ValueError("Debt settlement exceeds the open claim.")
     if sum(open_by_claim.values()) > residual_minutes:
         raise ValueError("Open debt exceeds residual curricular demand.")
 

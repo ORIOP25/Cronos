@@ -66,6 +66,8 @@ An administrator can reopen `SUBMITTED` or `APPROVED` records to `OPEN`.
 - Missing logs return a validation error.
 - A non-admin cannot approve or reopen a timesheet.
 - A duplicate ledger source does not apply its delta twice.
+- The operational dashboard and debt page use the same v1 occurrence ledger when a v1 schedule is active.
+- Reversed settlements retain their history. Debt cancellation validates the remaining balance after all settlement reversals.
 
 ## Verification Procedure
 

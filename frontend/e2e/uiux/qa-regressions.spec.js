@@ -50,7 +50,11 @@ test('calendar action fits tablet and desktop; mobile debt cards stay inside the
   const occurrences = await apiRequest(page, 'GET', '/occurrences/')
   const occurrence = occurrences.items.find((item) => item.class_id === classroom.id && item.date === lesson.date)
   expect(occurrence).toBeTruthy()
-  await apiRequest(page, 'PATCH', `/occurrences/${occurrence.id}`, { status: 'GAP', version: occurrence.version })
+  const decision = await apiRequest(page, 'PATCH', `/occurrences/${occurrence.id}`, { status: 'GAP', version: occurrence.version })
+  const debts = await apiRequest(page, 'GET', '/occurrences/debts')
+  const dashboard = await apiRequest(page, 'GET', '/dashboard')
+  expect(dashboard.debts.total_gaps).toBe(debts.total_gaps)
+  expect(dashboard.debts.total_hours_owed).toBe(debts.total_hours_owed)
   await page.setViewportSize({ width: 451, height: 900 })
   await goTo(page, '/absences?tab=debts')
   const cards = page.getByRole('region', { name: 'Dívidas por turma' })
@@ -59,6 +63,10 @@ test('calendar action fits tablet and desktop; mobile debt cards stay inside the
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   const accessibility = await new AxeBuilder({ page }).include('[aria-label="Dívidas por turma"]').withTags(['wcag2a', 'wcag2aa']).analyze()
   expect(accessibility.violations).toEqual([])
+  await apiRequest(page, 'POST', `/occurrences/${occurrence.id}/cancel`, { version: decision.version })
+  const revertedDebts = await apiRequest(page, 'GET', `/occurrences/debts?class_id=${classroom.id}`)
+  expect(revertedDebts.total_gaps).toBe(0)
+  expect(revertedDebts.total_hours_owed).toBe(0)
 })
 
 test('creating a course preserves the filled initial class without Add class', async ({ page }) => {

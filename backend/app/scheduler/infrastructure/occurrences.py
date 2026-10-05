@@ -42,6 +42,7 @@ from app.scheduler.infrastructure.operations import (
     OperationsError,
     assert_week_open,
     lesson_context,
+    lesson_lineage_ids,
     record_lesson_log,
     reverse_lesson_execution,
 )
@@ -706,7 +707,7 @@ async def get_debts(db: AsyncSession, organization_id: int, *, class_id: int | N
             )
         )
     ).all()
-    open_by_origin = await _open_debt_by_origin(db, organization_id, [row.origin for row in claims])
+    open_by_claim = await _open_minutes_by_claim(db, claims)
     assignments = {
         row.id: row
         for row in (
@@ -720,7 +721,7 @@ async def get_debts(db: AsyncSession, organization_id: int, *, class_id: int | N
     }
     grouped: dict[tuple[int, int, int], dict] = {}
     for claim in claims:
-        minutes = open_by_origin.get(claim.origin, 0)
+        minutes = open_by_claim.get(claim.id, 0)
         assignment = assignments.get(claim.assignment_id)
         if minutes <= 0 or assignment is None:
             continue
@@ -1081,21 +1082,22 @@ def _lesson_not_finished_error() -> AppError:
     )
 
 
-def _claim_origins(log: SchedulerLessonLogV1) -> tuple[str, str]:
-    return (
-        DEBT_ORIGIN.format(occurrence_id=log.id),
-        LESSON_OCCURRENCE_ORIGIN.format(lesson_id=log.lesson_id),
-    )
-
-
 async def _claims_for_log(
     db: AsyncSession, organization_id: int, log: SchedulerLessonLogV1
 ) -> list[CurricularDebt]:
+    context = await lesson_context(db, organization_id, log.lesson_id)
+    origins = {
+        DEBT_ORIGIN.format(occurrence_id=log.id),
+        *(
+            LESSON_OCCURRENCE_ORIGIN.format(lesson_id=lesson_id)
+            for lesson_id in await lesson_lineage_ids(db, organization_id, context)
+        ),
+    }
     rows = (
         await db.scalars(
             select(CurricularDebt).where(
                 CurricularDebt.organization_id == organization_id,
-                CurricularDebt.origin.in_(_claim_origins(log)),
+                CurricularDebt.origin.in_(origins),
             )
         )
     ).all()
@@ -1468,6 +1470,21 @@ async def cancel_occurrence(
     if log is None:
         raise _error(404, "Ocorrência não encontrada")
     if log.status == "REVOKED":
+        await _require_open_week(
+            db,
+            organization_id,
+            teacher_id=item["planned_teacher_id"],
+            lesson_date=item["date"],
+        )
+        await _cancel_debt_claim(
+            db,
+            organization_id,
+            year.id,
+            log,
+            membership_id=cancelled_by_membership_id or log.logged_by_membership_id,
+            reason="Reconciliação de dívida de ocorrência revertida",
+            now_utc=moment,
+        )
         return {"cancelled": True, "active_schedule_block_id": None, "revision": log.revision}
     if version != log.revision:
         raise _error(409, "OCCURRENCE_STALE_VERSION")
@@ -1510,15 +1527,6 @@ async def cancel_occurrence(
             membership_id=membership_id,
             now_utc=moment,
         )
-    await _cancel_debt_claim(
-        db,
-        organization_id,
-        year.id,
-        log,
-        membership_id=membership_id,
-        reason="Ocorrência revertida",
-        now_utc=moment,
-    )
     if log.decision == "GIVEN" or log.status == "COMPLETED":
         context = await lesson_context(db, organization_id, log.lesson_id)
         await reverse_lesson_execution(
@@ -1528,6 +1536,16 @@ async def cancel_occurrence(
             membership_id=membership_id,
             now_utc=moment,
         )
+    # Reversing execution can reopen settlements. Cancel the resulting balance last.
+    await _cancel_debt_claim(
+        db,
+        organization_id,
+        year.id,
+        log,
+        membership_id=membership_id,
+        reason="Ocorrência revertida",
+        now_utc=moment,
+    )
     log.status = "REVOKED"
     log.revoked_at = moment
     log.revoked_by_membership_id = membership_id

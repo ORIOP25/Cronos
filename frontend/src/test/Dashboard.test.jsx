@@ -1,4 +1,6 @@
-import { screen } from '@testing-library/react'
+import { screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import Dashboard from '../pages/Dashboard'
@@ -23,6 +25,11 @@ vi.mock('../features/dashboard/PreparationDashboard', () => ({
     return <div data-testid="preparation-dashboard" />
   },
 }))
+
+function LocationDisplay() {
+  const location = useLocation()
+  return <output data-testid="location-display">{location.pathname}{location.search}</output>
+}
 
 describe('Dashboard', () => {
   beforeEach(() => {
@@ -112,5 +119,40 @@ describe('Dashboard', () => {
     expect(PreparationDashboard).toHaveBeenCalledWith(
       expect.objectContaining({ autoStartGuide: false }),
     )
+  })
+
+  it('requires attention when the approved schedule has conflicts', () => {
+    const state = useDashboard()
+    state.data.schedule_health.duplicate_teacher_slots = 1
+    state.data.schedule_health.duplicate_class_slots = 1
+    renderWithRouter(<Dashboard />)
+    const attention = within(screen.getByTestId('alert-bar'))
+    expect(attention.queryByText('Tudo controlado')).not.toBeInTheDocument()
+    expect(attention.getByText('conflitos no horário')).toBeInTheDocument()
+  })
+
+  it('identifies conflicting blocks and opens the affected teacher week', async () => {
+    useDashboard().data.schedule_health.conflicting_lessons = [{
+      lesson_id: 42, teacher_id: 7, teacher_name: 'Nuno Ramos', class_name: 'TAS 10',
+      subject_name: 'Matemática', school_date: '2026-10-14',
+      starts_at: '2026-10-14T08:00:00Z', ends_at: '2026-10-14T08:50:00Z',
+    }]
+    renderWithRouter(<><Dashboard /><LocationDisplay /></>)
+    expect(screen.getByText(/TAS 10.*Matemática.*Nuno Ramos.*42/)).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('link', { name: /Abrir semana.*42/ }))
+    expect(screen.getByTestId('location-display')).toHaveTextContent('/schedules?teacherId=7&weekStart=2026-10-12')
+  })
+
+  it('uses the debt page duration and links to its tab', async () => {
+    useDashboard().data.debts = {
+      total_gaps: 1, total_hours_owed: 50 / 60, total_hours_owed_overdue: 50 / 60,
+      affected_classes_count: 1,
+    }
+    renderWithRouter(<><Dashboard /><LocationDisplay /></>)
+    const debts = within(screen.getByTestId('debt-summary'))
+    expect(debts.getByText('50 min')).toBeInTheDocument()
+    expect(debts.getByText(/50 min vencidas/)).toBeInTheDocument()
+    await userEvent.click(debts.getByRole('button', { name: /Ver detalhes/ }))
+    expect(screen.getByTestId('location-display')).toHaveTextContent('/absences?tab=debts')
   })
 })

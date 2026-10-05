@@ -771,15 +771,11 @@ async def record_lesson_log(
     }
 
 
-async def reverse_lesson_execution(
+async def lesson_lineage_ids(
     db: AsyncSession,
     organization_id: int,
     context: LessonContext,
-    *,
-    membership_id: int,
-    now_utc: datetime,
-) -> None:
-    entries = await load_execution_entries(db, organization_id, context.assignment.id)
+) -> set[int]:
     # Publication moves the log while ledger entries retain their original lesson ID.
     lineage = (
         select(SchedulerLessonV1.id, SchedulerLessonV1.source_lesson_id)
@@ -800,9 +796,21 @@ async def reverse_lesson_execution(
             SchedulerLessonV1.assignment_id == context.assignment.id,
         )
     )
+    return set(await db.scalars(select(lineage.c.id)))
+
+
+async def reverse_lesson_execution(
+    db: AsyncSession,
+    organization_id: int,
+    context: LessonContext,
+    *,
+    membership_id: int,
+    now_utc: datetime,
+) -> None:
+    entries = await load_execution_entries(db, organization_id, context.assignment.id)
     origins = {
         LESSON_LOG_ORIGIN.format(lesson_id=lesson_id)
-        for lesson_id in await db.scalars(select(lineage.c.id))
+        for lesson_id in await lesson_lineage_ids(db, organization_id, context)
     }
     source = next(
         (

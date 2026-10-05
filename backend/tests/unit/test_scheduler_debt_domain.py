@@ -110,6 +110,23 @@ def test_reversing_recorded_execution_reopens_its_settled_debt():
     assert balances == (DebtBalance(1, open_minutes=30, reserved_minutes=0),)
 
 
+def test_cancelled_debt_reconciles_reversed_settlements_without_erasing_history():
+    settlements = (
+        DebtSettlement(1, ("lesson:20", 1), 50),
+        DebtSettlement(1, ("lesson:20", 2), -50, reversal_of=("lesson:20", 1)),
+    )
+    arguments = dict(
+        revisions=(DebtRevision(1, "revoke:20", 1, -50),),
+        executed_credit_by_event={("lesson:20", 1): 50, ("lesson:20", 2): -50},
+        residual_minutes=50,
+    )
+    assert reconcile_debt((claim(1, 50),), settlements=settlements, **arguments) == (
+        DebtBalance(1, open_minutes=0, reserved_minutes=0),
+    )
+    with pytest.raises(ValueError, match="exceeds the open claim"):
+        reconcile_debt((claim(1, 50),), settlements=settlements[:1], **arguments)
+
+
 def test_reservations_and_settlements_cannot_exceed_real_credit_or_open_debt():
     with pytest.raises(ValueError):
         reconcile_debt((claim(1, 50),), residual_minutes=49)

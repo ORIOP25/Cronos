@@ -7,7 +7,7 @@ const assets = new Map([
   ['/', { body: '<html><div class="cronos-hero">home</div></html>', contentType: 'text/html; charset=utf-8' }],
   ['/app-shell', { body: '<html><div id="root"></div></html>', contentType: 'text/html; charset=utf-8' }],
   ['/llms.txt', { body: '# Cronos', contentType: 'text/plain; charset=utf-8' }],
-  ['/404.html', { body: '<h1>404</h1>', contentType: 'text/html; charset=utf-8' }],
+  ['/404', { body: '<h1>404</h1><a href="/">Voltar ao início</a>', contentType: 'text/html; charset=utf-8' }],
   ['/404.md', { body: '# 404 — Página não encontrada', contentType: 'text/plain; charset=utf-8' }],
   ['/sobre', { body: '<h1>Sobre</h1>', contentType: 'text/html; charset=utf-8' }],
   ['/about', { body: '<h1>Sobre</h1>', contentType: 'text/html; charset=utf-8' }],
@@ -26,6 +26,9 @@ function createEnvironment() {
         fetch(request) {
           const url = new URL(request.url)
           calls.push({ method: request.method, pathname: url.pathname })
+          if (url.pathname === '/404.html') {
+            return Promise.resolve(new Response(null, { status: 308, headers: { Location: '/404' } }))
+          }
           const asset = assets.get(url.pathname)
           if (!asset) return Promise.resolve(new Response('missing', { status: 404 }))
           return Promise.resolve(new Response(asset.body, { headers: { 'Content-Type': asset.contentType, ...(url.pathname === '/' ? { Vary: 'Accept-Encoding' } : {}) } }))
@@ -104,7 +107,8 @@ test('returns negotiated 404 bodies for unknown paths', async () => {
   assert.equal(html.response.status, 404)
   assert.equal(html.response.headers.get('Content-Type'), 'text/html; charset=utf-8')
   assert.equal(html.response.headers.get('Cache-Control'), 'no-store')
-  assert.equal(await html.response.text(), '<h1>404</h1>')
+  assert.equal(html.response.headers.get('Location'), null)
+  assert.match(await html.response.text(), /Voltar ao início/)
   const markdown = await request('/missing-page', { headers: { Accept: 'text/markdown' } })
   assert.equal(markdown.response.status, 404)
   assert.equal(markdown.response.headers.get('Content-Type'), 'text/markdown; charset=utf-8')
@@ -124,5 +128,5 @@ test('removes response bodies for HEAD and never shells unknown unsafe methods',
   assert.equal(await head.response.text(), '')
   const post = await request('/unknown-page', { method: 'POST' })
   assert.equal(post.response.status, 404)
-  assert.equal(await post.response.text(), '<h1>404</h1>')
+  assert.match(await post.response.text(), /Voltar ao início/)
 })

@@ -2309,6 +2309,17 @@ class ResourceCounts(BaseModel):
     rooms_by_type: dict[str, int] = Field(default_factory=dict)
 
 
+class ScheduleConflictLesson(BaseModel):
+    lesson_id: int
+    class_name: str
+    teacher_id: int
+    teacher_name: str
+    subject_name: str
+    school_date: date
+    starts_at: datetime
+    ends_at: datetime
+
+
 class ScheduleHealthWidget(BaseModel):
     generation_id: str | None = Field(None, description="None se não houver geração ativa")
     blocks_count: int = 0
@@ -2318,6 +2329,7 @@ class ScheduleHealthWidget(BaseModel):
     week_slots_avg: float = 0.0
     duplicate_teacher_slots: int = 0
     duplicate_class_slots: int = 0
+    conflicting_lessons: list[ScheduleConflictLesson] = Field(default_factory=list)
     weekly_fairness_spread: float = 0.0
     teacher_week_slots_avg: float = 0.0
     annual_class_average: float = 0.0

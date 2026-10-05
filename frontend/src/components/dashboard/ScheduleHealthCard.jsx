@@ -1,6 +1,6 @@
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { CButton } from '@coreui/react'
-import { formatDate } from '../../utils/formatUtils'
+import { formatDate, toWeekMonday } from '../../utils/formatUtils'
 
 const MetricSkeleton = () => <div className="col-6 col-md-4 mb-3"><div className="dashboard-metric-skeleton mx-auto" /></div>
 
@@ -19,7 +19,7 @@ export default function ScheduleHealthCard({ health, isLoading }) {
     : null
 
   return (
-    <div data-testid="schedule-health" className="zen-card">
+    <div id="schedule-health" data-testid="schedule-health" className="zen-card" tabIndex={-1}>
       <div className="zen-card-header"><h3 className="mb-0 dashboard-card-title">Saúde do Horário</h3></div>
       <div className="zen-card-body">
         {isLoading ? (
@@ -59,6 +59,23 @@ export default function ScheduleHealthCard({ health, isLoading }) {
               ))}
             </div>
             <div className="small text-muted text-center">{health.blocks_count} blocos no total</div>
+            {health.conflicting_lessons?.length > 0 && (
+              <section className="mt-3" aria-labelledby="conflicting-lessons-heading">
+                <h4 id="conflicting-lessons-heading">Blocos em conflito</h4>
+                <ul>
+                  {health.conflicting_lessons.map((lesson) => (
+                    <li key={lesson.lesson_id} className="mb-2">
+                      <span>{lesson.class_name} · {lesson.subject_name} · {lesson.teacher_name} · Bloco {lesson.lesson_id}</span>
+                      <div>
+                        {formatDate(lesson.school_date)} · {new Date(lesson.starts_at).toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Lisbon' })}
+                        {'–'}{new Date(lesson.ends_at).toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Lisbon' })}
+                        {' · '}<Link to={`/schedules?teacherId=${lesson.teacher_id}&weekStart=${toWeekMonday(lesson.school_date)}`} aria-label={`Abrir semana do bloco ${lesson.lesson_id}`}>Abrir semana</Link>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
           </>
         )}
       </div>

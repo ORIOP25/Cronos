@@ -129,7 +129,7 @@ async function fetchAsset(env, request, pathname) {
 }
 
 async function notFoundResponse(env, request, markdown) {
-  const assetPath = markdown ? '/404.md' : '/404.html'
+  const assetPath = markdown ? '/404.md' : '/404'
   const response = await fetchAsset(env, request, assetPath)
   return withWorkerHeaders(response, {
     contentType: markdown ? 'text/markdown; charset=utf-8' : 'text/html; charset=utf-8',

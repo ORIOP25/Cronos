@@ -8,6 +8,7 @@ import pytest
 from sqlalchemy import select
 
 from app import models, schemas
+from app.scheduler.domain.debt import DebtOrigin
 from app.scheduler.infrastructure import occurrences as occurrences_v1
 from app.scheduler.infrastructure.models import (
     CurricularAssignment,
@@ -17,9 +18,15 @@ from app.scheduler.infrastructure.models import (
     SchedulerRecoveryReservationV1,
     SchedulerVersionV1,
 )
-from app.scheduler.infrastructure.operations import record_lesson_log, week_schedule
-from app.scheduler.infrastructure.progress import load_executed_minutes, load_open_debt
+from app.scheduler.infrastructure.operations import (
+    lesson_context,
+    record_lesson_log,
+    reverse_lesson_execution,
+    week_schedule,
+)
+from app.scheduler.infrastructure.progress import load_executed_minutes, load_open_debt, record_debt
 from app.scheduler.infrastructure.snapshot import load_snapshot
+from app.services.dashboard_service import get_dashboard_summary
 from tests._support.db_fixtures import create_teacher_profile
 from tests._support.scheduler_v1 import (
     MOMENT,
@@ -34,11 +41,32 @@ from tests._support.scheduler_v1 import (
 pytestmark = pytest.mark.postgresql
 
 
-async def test_premature_historical_credit_is_visible_and_reversible(db_session, monkeypatch):
+@pytest.mark.parametrize(
+    "provisional_debt,already_revoked", [(False, False), (True, False), (True, True)]
+)
+async def test_premature_historical_credit_is_visible_and_reversible(
+    db_session, monkeypatch, provisional_debt, already_revoked
+):
     seed = await _school(db_session, suffix="_historical")
     await db_session.commit()
     await publish_schedule(db_session, monkeypatch, seed)
     lesson = (await _lessons(db_session, seed))[0]
+    if provisional_debt:
+        await record_debt(
+            db_session,
+            seed.organization.id,
+            seed.year.id,
+            seed.assignment.id,
+            DebtOrigin(
+                origin=f"lesson-occurrence:{lesson.id}",
+                revision=1,
+                origin_date=lesson.school_date,
+                minutes=lesson.credit_minutes,
+                author_id=seed.membership.id,
+                reason="Dívida provisória histórica QA",
+                recorded_at=MOMENT,
+            ),
+        )
     await record_lesson_log(
         db_session,
         seed.organization.id,
@@ -82,6 +110,19 @@ async def test_premature_historical_credit_is_visible_and_reversible(db_session,
     item = page["items"][0]
     assert item["status"] == "GIVEN"
     assert item["decided_at"] is None
+    if already_revoked:
+        await reverse_lesson_execution(
+            db_session,
+            seed.organization.id,
+            await lesson_context(db_session, seed.organization.id, log.lesson_id),
+            membership_id=seed.membership.id,
+            now_utc=lesson.ends_at,
+        )
+        log.status = "REVOKED"
+        log.revoked_at = lesson.ends_at
+        log.revoked_by_membership_id = seed.membership.id
+        log.revoked_reason = "Reversão histórica QA com saldo residual"
+        await db_session.commit()
     for _ in range(2):
         await occurrences_v1.cancel_occurrence(
             db_session,
@@ -90,12 +131,18 @@ async def test_premature_historical_credit_is_visible_and_reversible(db_session,
             version=item["version"],
             reason="Reversão de crédito QA antecipado",
             cancelled_by_membership_id=seed.membership.id,
+            now_utc=MOMENT,
         )
         await db_session.commit()
     executed = await load_executed_minutes(db_session, seed.organization.id, [seed.assignment.id])
     assert sum(executed.get(seed.assignment.id, {}).values()) == 0
     assert log.status == "REVOKED"
     assert log.decision is None, "Reversal must not fabricate a historical decision."
+    if already_revoked:
+        assert log.revoked_reason == "Reversão histórica QA com saldo residual"
+    debt, _ = await load_open_debt(db_session, seed.organization.id, [seed.assignment.id])
+    assert sum(debt.values()) == 0, "Revoking the lesson must also cancel reopened settlements."
+    assert (await occurrences_v1.get_debts(db_session, seed.organization.id))["total_gaps"] == 0
 
 
 async def _school(db_session, *, suffix: str = "", minutes: int = 100) -> V1Seed:
@@ -105,6 +152,42 @@ async def _school(db_session, *, suffix: str = "", minutes: int = 100) -> V1Seed
         clerk_org_id=f"w09_occ_org{suffix}",
         module_minutes=minutes,
     )
+
+
+async def test_dashboard_identifies_conflicting_published_lessons(db_session):
+    seed = await _school(db_session, suffix="_conflicts")
+    version = await add_version(db_session, seed)
+    seed.organization.first_real_schedule_approved_at = MOMENT
+    lessons = [
+        await add_lesson(
+            db_session,
+            seed,
+            version,
+            stable_key=f"conflict-{index}",
+            school_date=MOMENT.date(),
+            start=MOMENT,
+            end=MOMENT + timedelta(minutes=50),
+        )
+        for index in range(2)
+    ]
+    await db_session.commit()
+    dashboard = await get_dashboard_summary(db_session, seed.organization.id)
+    health = dashboard.schedule_health
+    assert health.duplicate_teacher_slots == 1
+    assert health.duplicate_class_slots == 1
+    assert {row.lesson_id for row in health.conflicting_lessons} == {row.id for row in lessons}
+    for row in health.conflicting_lessons:
+        assert row.class_name == seed.class_.name
+        assert row.teacher_id == seed.assignment.teacher_id
+        assert row.subject_name == seed.subject.name
+        assert row.school_date == MOMENT.date()
+
+    lessons[1].starts_at = lessons[0].ends_at
+    lessons[1].ends_at = lessons[1].starts_at + timedelta(minutes=50)
+    await db_session.commit()
+    health = (await get_dashboard_summary(db_session, seed.organization.id)).schedule_health
+    assert health.duplicate_teacher_slots == health.duplicate_class_slots == 0
+    assert health.conflicting_lessons == []
 
 
 async def _lessons(db_session, seed: V1Seed) -> list[SchedulerLessonV1]:
@@ -719,6 +802,12 @@ async def test_the_given_gap_cycle_compensates_and_recreates_the_debt(db_session
     assert sum(executed.get(seed.assignment.id, {}).values()) == 0
     debt, _ = await load_open_debt(db_session, seed.organization.id, [seed.assignment.id])
     assert sum(debt.values()) == lesson.credit_minutes
+    debts = await occurrences_v1.get_debts(db_session, seed.organization.id)
+    assert debts["total_gaps"] == 1
+    assert debts["total_hours_owed"] == lesson.credit_minutes / 60
+    dashboard = await get_dashboard_summary(db_session, seed.organization.id)
+    assert dashboard.debts.total_gaps == debts["total_gaps"]
+    assert dashboard.debts.total_hours_owed == debts["total_hours_owed"]
     log = await db_session.scalar(
         select(SchedulerLessonLogV1).where(SchedulerLessonLogV1.id == item["id"])
     )
@@ -737,6 +826,9 @@ async def test_the_given_gap_cycle_compensates_and_recreates_the_debt(db_session
     )
     debt, _ = await load_open_debt(db_session, seed.organization.id, [seed.assignment.id])
     assert sum(debt.values()) == lesson.credit_minutes
+    debts = await occurrences_v1.get_debts(db_session, seed.organization.id)
+    assert debts["total_gaps"] == 1, "Prior decision cycles must not multiply the open claim."
+    assert debts["total_hours_owed"] == lesson.credit_minutes / 60
     executed = await load_executed_minutes(db_session, seed.organization.id, [seed.assignment.id])
     assert sum(executed.get(seed.assignment.id, {}).values()) == 0
 

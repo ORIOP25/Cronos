@@ -82,7 +82,7 @@ export default function Dashboard() {
     <div>
       {header}
       <div className="mb-4">
-        <AlertBar alerts={data?.alerts} isLoading={isLoading} />
+        <AlertBar alerts={data?.alerts} health={data?.schedule_health} isLoading={isLoading} />
       </div>
       <div className="mb-4">
         <ScheduleHealthCard health={data?.schedule_health} isLoading={isLoading} />

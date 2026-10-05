@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 from app import models, schemas
+from app.scheduler.infrastructure import occurrences as occurrences_v1
 from app.scheduler.infrastructure.models import (
     CurricularAssignment,
     SchedulerLessonV1,
@@ -30,6 +31,7 @@ async def get_dashboard_summary(
 
     bases = None
     prevalidation = None
+    debt_summary = None
     if organization.first_real_schedule_approved_at is None:
         bases = await SchoolReadinessService(db).evaluate_bases(
             organization_id,
@@ -38,6 +40,12 @@ async def get_dashboard_summary(
         prevalidation = await PreflightService(db).evaluate(
             organization_id=organization_id,
             resolve_fingerprint=False,
+        )
+    elif await occurrences_v1.is_active(db, organization_id):
+        debt_list = await occurrences_v1.get_debts(db, organization_id)
+        debt_summary = schemas.DebtSummary(
+            **{key: value for key, value in debt_list.items() if key != "items"},
+            affected_classes_count=len({item["class_id"] for item in debt_list["items"]}),
         )
 
     def _run(sync_db):
@@ -53,6 +61,7 @@ async def get_dashboard_summary(
             bases=bases,
             prevalidation=prevalidation,
             organization_snapshot=snapshot,
+            debt_summary=debt_summary,
         )
 
     return await db.run_sync(_run)
@@ -64,6 +73,7 @@ def get_dashboard_summary_sync(
     *,
     bases: schemas.BasesReadinessResponse | None = None,
     prevalidation: schemas.PreflightReport | None = None,
+    debt_summary: schemas.DebtSummary | None = None,
     organization_snapshot: tuple[
         str,
         models.OrganizationFoundationStatus,
@@ -107,7 +117,9 @@ def get_dashboard_summary_sync(
     alerts, resources, _, _ = _get_overview(db, organization_id, today)
     schedule_health = _get_schedule_health(db, organization_id, today)
     class_progress = _get_class_progress(db, organization_id)
-    debts = _get_debt_summary(db, organization_id, today)
+    debts = (
+        debt_summary if debt_summary is not None else _get_debt_summary(db, organization_id, today)
+    )
 
     return schemas.OperationalDashboardResponse(
         mode="OPERATIONAL",
@@ -338,12 +350,16 @@ def _get_v1_schedule_health(
     version_id, school_year_id = version
     rows = db.execute(
         select(
+            SchedulerLessonV1.id.label("lesson_id"),
             CurricularAssignment.class_id,
             CurricularAssignment.teacher_id,
             SchedulerLessonV1.school_date,
             SchedulerLessonV1.starts_at,
             SchedulerLessonV1.ends_at,
             models.Class.is_archived,
+            models.Class.name.label("class_name"),
+            models.Teacher.name.label("teacher_name"),
+            models.Subject.name.label("subject_name"),
         )
         .join(
             SchedulerLessonV1,
@@ -360,10 +376,25 @@ def _get_v1_schedule_health(
                 models.Class.id == CurricularAssignment.class_id,
             ),
         )
+        .join(
+            models.Teacher,
+            and_(
+                models.Teacher.organization_id == CurricularAssignment.organization_id,
+                models.Teacher.id == CurricularAssignment.teacher_id,
+            ),
+        )
+        .join(
+            models.Subject,
+            and_(
+                models.Subject.organization_id == CurricularAssignment.organization_id,
+                models.Subject.id == CurricularAssignment.subject_id,
+            ),
+        )
         .where(
             SchedulerLessonV1.organization_id == organization_id,
             SchedulerLessonV1.version_id == version_id,
         )
+        .order_by(SchedulerLessonV1.school_date, SchedulerLessonV1.starts_at, SchedulerLessonV1.id)
     ).all()
     if not rows:
         return None
@@ -390,8 +421,24 @@ def _get_v1_schedule_health(
     )
     period_start = min(row.school_date for row in rows)
     period_end = max(row.school_date for row in rows)
+    conflicting_lessons = [
+        schemas.ScheduleConflictLesson(
+            lesson_id=row.lesson_id,
+            class_name=row.class_name,
+            teacher_id=row.teacher_id,
+            teacher_name=row.teacher_name,
+            subject_name=row.subject_name,
+            school_date=row.school_date,
+            starts_at=row.starts_at,
+            ends_at=row.ends_at,
+        )
+        for row in rows
+        if teacher_slots[(row.teacher_id, row.school_date, row.starts_at, row.ends_at)] > 1
+        or class_slots[(row.class_id, row.school_date, row.starts_at, row.ends_at)] > 1
+    ]
     return schemas.ScheduleHealthWidget(
         generation_id=f"v1-{version_id}",
+        conflicting_lessons=conflicting_lessons,
         blocks_count=len(rows),
         classes_total=classes_total,
         classes_archived=len({row.class_id for row in rows if row.is_archived}),
