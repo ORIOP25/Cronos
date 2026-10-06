@@ -58,6 +58,7 @@ Routes use `<RequireAuth>`, `<RequireAdmin>`, `<RequireTeacher>`, and `<RequireF
 - `MemberGate` checks the session, organization activation, legal gate, Foundation gate, and capability in that order.
 
 ## Contracts and Invariants
+- `/courses` offers `Importar CSV` and `Novo Curso`. Assignment imports remain available through `/imports`.
 - Signed-out users accessing protected routes are redirected to `/login`.
 - A signed-in user without an active organization sees the organization selector.
 - A pending Clerk organization task uses `/login/tasks/choose-organization` for organization selection only.
