@@ -81,6 +81,7 @@ The result document is `.test-artifacts/<run>/acceptance-result.json`; only `val
 
 The campaign is fail-closed: a failed or missing reporter, an unprotected artifact, a revision mismatch, an unfinished cleanup or a retried case cannot produce green.
 Cleanup is supplied by the administrative wrapper (`backend/scripts/cleanup_e2e_run.py`) through `E2E_CLEANUP_RESULT`; while it is absent the campaign is `failed`.
+Because the wrapper consumes the signed envelope, completion is a two-phase operation: run the campaign, extract the signed `run` document, execute the administrative cleanup, and evaluate the campaign again with the cleanup result recorded as `completed` against the same protected artifacts.
 The legacy local `e2e` command remains a diagnostic until each substituted group has real proof.
 
 `.github/workflows/acceptance.yml` runs the same command on the `main` SHA, serialized without automatic cancellation, and uploads sanitized artifacts on success and failure.

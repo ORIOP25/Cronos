@@ -154,6 +154,10 @@ O supervisor Railway tinha uma revisão anterior à API, ao worker e ao Beat.
 O utilizador autorizou explicitamente a configuração e o deploy desse serviço.
 O deployment `688a5d29-feb7-4468-b1c4-34be0c527101` terminou em `SUCCESS`, na revisão baseline.
 A versão anterior terminou em `REMOVED`, com `deploymentStopped=true`.
+A consulta de leitura de 2026-10-07 confirmou os quatro serviços ativos em `91a9d28bcb9c9a829a8578872156a6b90fa04bcf`, todos `SUCCESS` e `deploymentStopped=false`:
+`api` (`6bd62644-1d3b-4631-af46-3a275a6dd484`), `worker` (`bc9b44db-927a-4540-ab6b-2d0d61e09fae`), `scheduler-supervisor` (`65d601ed-1833-448b-8f50-74ec743898df`) e `beat` (`edb4e714-690c-471d-86f1-616f12ace288`).
+O ambiente é `d6e36451-87ee-4e83-a7be-94738366c6fb`; a `main` remota coincidia com essa revisão.
+A verificação da revisão frontend continua bloqueada: o token Cloudflare disponível está expirado e `/revision.json` ainda responde 404 porque as alterações do frontend desta branch não foram publicadas.
 
 O Railway recusou associar `/backend/railway/supervisor.json`, indicando que Config as Code foi descontinuado.
 A associação não foi alterada.
