@@ -78,7 +78,7 @@ function assemble(overrides = {}) {
     before: preflightSnapshot('before', startedAt),
     after: preflightSnapshot('after', finishedAt),
     playwrightReport: playwrightReport(),
-    cleanup: { status: 'completed' },
+    cleanup: { status: 'completed', run_id: 'run-1', pending: [], pending_actors: [] },
     ...overrides,
   })
 }

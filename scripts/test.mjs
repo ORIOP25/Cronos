@@ -9,6 +9,7 @@ import { performance } from 'node:perf_hooks'
 import { acceptanceExitCode, acceptancePlan, acceptanceSecrets, assembleCampaign } from './acceptance-run.mjs'
 import { preflight } from './real-browser-preflight.mjs'
 import { finalizeRun } from './finalize-real-browser-run.mjs'
+import { createUiRegistryFile } from './e2e-run-registry.mjs'
 
 export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 export const BACKEND = join(ROOT, 'backend')
@@ -948,6 +949,8 @@ async function runAcceptance(context) {
   }
   const startedAt = new Date().toISOString()
   const before = await preflight(process.env, { phase: 'before' })
+  const registryPath = join(context.artifactDir, 'ui-run-registry.json')
+  await createUiRegistryFile(registryPath, Buffer.from(process.env.E2E_REGISTRY_HMAC_KEY, 'base64'), context.runId, startedAt)
   let playwrightError = null
   try {
     await runFrontendTests(
@@ -960,6 +963,8 @@ async function runAcceptance(context) {
         PLAYWRIGHT_OUTPUT_DIR: plan.artifactRoot,
         PLAYWRIGHT_JUNIT_OUTPUT_FILE: join(context.artifactDir, 'acceptance.xml'),
         E2E_ACCEPTANCE_REPORT: plan.reportPath,
+        E2E_RUN_ID: context.runId,
+        E2E_RUN_REGISTRY: registryPath,
       },
       context,
       'acceptance',

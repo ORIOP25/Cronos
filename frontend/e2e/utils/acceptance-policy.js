@@ -67,6 +67,10 @@ export function evaluateAcceptance(run) {
   if (run.data_verified !== true) incomplete.push('Original data not verified')
   if (run.evidence_protected !== true) failures.push('Evidence protection not confirmed')
   if (run.cleanup?.status !== 'completed') failures.push('Cleanup not completed')
+  if (run.cleanup?.run_id !== run.run_id) failures.push('Cleanup run identity does not match the campaign')
+  for (const name of ['pending', 'pending_actors']) {
+    if (!Array.isArray(run.cleanup?.[name]) || run.cleanup[name].length) failures.push(`Cleanup targets remain pending or unknown: ${name}`)
+  }
   for (const item of cases) {
     const caseStarted = utcTimestamp(item.started_at)
     const caseFinished = utcTimestamp(item.finished_at)

@@ -96,6 +96,22 @@ Os restantes 66 casos concretos ainda precisam de implementação ou adaptação
 Credenciais configuradas não substituem esses percursos.
 Os quatro planos permanecem incompletos.
 
+## Continuação: registo UI e identidade da limpeza
+
+O runner inicializa um registo UI assinado depois do preflight e antes de abrir Chrome.
+A fixture observa a identidade Clerk atual, sem criar utilizadores ou alterar autenticação.
+Regista apenas aliases descartáveis criados dentro da execução.
+Escreve atualizações assinadas por substituição atómica e recusa registos adulterados, identidades alteradas e diretórios redirecionados.
+O registo permanece fora do upload de artefactos.
+Os futuros percursos devem chamar `provenance.recordCurrentActor()` depois da criação e antes de logout.
+A observação no teardown não recupera uma identidade depois do fim da sessão.
+
+A revisão reproduziu aceitação indevida de uma limpeza de outra execução.
+A política agora exige o mesmo `run_id` e listas conhecidas, vazias, de escolas e contas pendentes.
+Os 62 testes de infraestrutura passaram, incluindo RED/GREEN da proveniência e da vinculação da limpeza.
+Não foram criadas contas ou escolas reais nesta etapa.
+As observações de escolas, os percursos de identidade e a composição remota da limpeza continuam pendentes.
+
 ## Componentes e estado das tarefas
 
 | Tarefas | Implementação observada | Prova restante |

@@ -25,7 +25,7 @@ function campaign() {
     schema_version: 1, run_id: 'run-1', mode: 'acceptance', tests_revision: revision, expected_revision: revision,
     started_at: '2026-10-07T08:00:00.000Z', finished_at: '2026-10-07T09:00:00.000Z',
     deployments: ['before', 'after'].map(phase => ({ phase, checked_at: phase === 'before' ? '2026-10-07T08:00:00.000Z' : '2026-10-07T09:00:00.000Z', components: Object.fromEntries(['frontend', 'api', 'worker', 'supervisor', 'beat'].map(name => [name, revision])) })),
-    data_verified: true, evidence_protected: true, cleanup: { status: 'completed' }, failures: [],
+    data_verified: true, evidence_protected: true, cleanup: { status: 'completed', run_id: 'run-1', pending: [], pending_actors: [] }, failures: [],
     cases: REQUIRED_CASES.map(item => ({ ...item, started_at: '2026-10-07T08:10:00.000Z', finished_at: '2026-10-07T08:20:00.000Z', status: 'passed', attempts: 1, evidence: ['proof.json'], eligible: true, ui_provenance: true })),
   }
 }
@@ -40,6 +40,16 @@ test('only a complete campaign can validate production', () => {
     const run = campaign(); mutate(run)
     assert.equal(evaluateAcceptance(run).status, 'incomplete')
   }
+})
+
+test('cleanup from another campaign or with unknown remaining targets cannot certify production', () => {
+  for (const cleanup of [
+    { status: 'completed', run_id: 'other', pending: [], pending_actors: [] },
+    { status: 'completed', pending: [], pending_actors: [] },
+    { status: 'completed', run_id: 'run-1' },
+    { status: 'completed', run_id: 'run-1', pending: [17], pending_actors: [] },
+    { status: 'completed', run_id: 'run-1', pending: [], pending_actors: ['user_owned'] },
+  ]) assert.equal(evaluateAcceptance({ ...campaign(), cleanup }).status, 'failed')
 })
 
 test('revision, retry, duplicates and auxiliary failures never produce green', () => {

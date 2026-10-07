@@ -81,7 +81,9 @@ The result document is `.test-artifacts/<run>/acceptance-result.json`; only `val
 
 The campaign is fail-closed: a failed or missing reporter, an unprotected artifact, a revision mismatch, an unfinished cleanup or a retried case cannot produce green.
 Cleanup is supplied by the administrative wrapper (`backend/scripts/cleanup_e2e_run.py`) through `E2E_CLEANUP_RESULT`; while it is absent the campaign is `failed`.
-Because the wrapper consumes the signed envelope, completion is a two-phase operation: run the campaign, extract the signed `run` document, execute the administrative cleanup, and evaluate the campaign again with the cleanup result recorded as `completed` against the same protected artifacts.
+The wrapper consumes the dedicated `ui-run-registry.json` envelope, not the signed result manifest.
+Automatic remote cleanup and re-evaluation remain pending; the current runner accepts an explicit administrative result through `E2E_CLEANUP_RESULT`.
+Acceptance rejects cleanup from another `run_id` and requires empty `pending` and `pending_actors` arrays.
 The legacy local `e2e` command remains a diagnostic until each substituted group has real proof.
 
 `.github/workflows/acceptance.yml` runs the same command on the `main` SHA, serialized without automatic cancellation.
@@ -103,6 +105,13 @@ Do not duplicate the administrative SSH private key in that JSON registry.
 `E2E_PERSISTENT_REGISTRY_JSON` contains the signed campaign school inventory.
 An empty signed inventory permits initial preparation; it does not prove eligible historical schools.
 Historical cases require observed UI provenance, ended lessons and the required consecutive campaigns.
+
+After preflight, the runner creates `.test-artifacts/<run>/ui-run-registry.json` with an authenticated empty actor inventory.
+Acceptance fixtures can record the current Clerk identity through `provenance.recordCurrentActor()` and also observe it during teardown.
+Identity observation reads the session; it does not create users or alter authentication.
+The journal accepts only fresh dedicated aliases and preserves previous data when validation fails.
+Call the recorder immediately after account creation and before logout; teardown alone cannot recover an identity after its session ends.
+The journal stays outside the artifact upload list. School observations and automatic cleanup are still pending.
 
 The `acceptance` project currently implements three public cases.
 They use Chrome, semantic locators and the runtime observer without programmatic authentication or business seeds.
