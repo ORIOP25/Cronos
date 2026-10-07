@@ -1,0 +1,25 @@
+{
+  "files": {
+    "Folha de cálculo sem nome - Cronos_Salas_Template_Maior.csv": {
+      "bytes": 916,
+      "sha256": "a86c825a433f0712b2a53fe18f569611c3904e7b1e999ff3f1b182f2a3ea98eb"
+    },
+    "Cronos_CursosETurmas_Template_Maior.csv": {
+      "bytes": 2917,
+      "sha256": "98f8a59ae618461e7a58381c2a0743584b6c2e1e436b848cd42b21712c861838"
+    },
+    "Cronos_ProfessoresECompetencias_Template_Maior.csv": {
+      "bytes": 4466,
+      "sha256": "b26723597c0a8412b5cd74612af5c150c4aa79b48efa67895d82ce280fd71863"
+    },
+    "Cronos_Atribuicoes_Template_Maior.csv": {
+      "bytes": 19843,
+      "sha256": "8205874436e312c95015a5971a2323504af135d3af35ac9d9ed5fa335445bb93"
+    },
+    "Cronos_DisciplinasEModulos_Template_Maior.csv": {
+      "bytes": 10465,
+      "sha256": "05fc8e7715c2293aa9d025192a0466c0f73883e394351eb5c45b79f00911142a"
+    }
+  },
+  "schema_version": 1
+}

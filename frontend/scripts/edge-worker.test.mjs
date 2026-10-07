@@ -29,7 +29,7 @@ function createEnvironment() {
           if (url.pathname === '/404.html') {
             return Promise.resolve(new Response(null, { status: 308, headers: { Location: '/404' } }))
           }
-          const asset = assets.get(url.pathname)
+          const asset = assets.get(url.pathname + url.search)
           if (!asset) return Promise.resolve(new Response('missing', { status: 404 }))
           return Promise.resolve(new Response(asset.body, { headers: { 'Content-Type': asset.contentType, ...(url.pathname === '/' ? { Vary: 'Accept-Encoding' } : {}) } }))
         },
@@ -91,6 +91,20 @@ test('passes static assets and known public pages through unchanged', async () =
   assert.equal(page.response.status, 200)
   assert.equal(await page.response.text(), '<h1>Sobre</h1>')
   assert.equal(page.response.headers.get('Cache-Control'), 'no-store')
+})
+
+test('cache-busting queries resolve the same physical public assets', async () => {
+  for (const [path, contentType, content] of [
+    ['/logo.png?v=20260921', 'image/png', 'png'],
+    ['/favicon.png?v=20260921', 'image/png', 'png'],
+    ['/marketing/hero.webp?v=20260921', 'image/webp', 'webp'],
+  ]) {
+    const { response } = await request(path)
+    assert.equal(response.status, 200, path)
+    assert.equal(response.headers.get('Content-Type'), contentType, path)
+    assert.equal(await response.text(), content, path)
+    assert.equal(response.headers.get('Cache-Control'), 'no-cache, max-age=0, must-revalidate')
+  }
 })
 
 test('rewrites every application route family to the application shell', async () => {

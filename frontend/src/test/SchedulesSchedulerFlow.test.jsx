@@ -1,8 +1,11 @@
-import { fireEvent, screen, waitFor } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, fireEvent, screen, waitFor } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { toast } from 'react-hot-toast'
+import { MemoryRouter } from 'react-router-dom'
 import Schedules from '../pages/Schedules'
 import { renderWithRouter } from './testUtils'
 import { writeExpiringValue } from '../utils/expiringStorage'
+import { resetClerkState, setClerkState } from './setup'
 
 const mocks = vi.hoisted(() => ({
   status: null,
@@ -11,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   classes: [],
   generate: vi.fn(),
   approve: vi.fn(),
+  reject: vi.fn(),
   schedulerStatusRefetch: vi.fn(),
   currentDraftRefetch: vi.fn(),
   weekRefetch: vi.fn(),
@@ -30,7 +34,7 @@ vi.mock('../features/scheduling/data', () => ({
   useSchedulerStatus: () => ({ data: mocks.status, refetch: mocks.schedulerStatusRefetch }),
   useCurrentDraftSummary: () => ({ data: mocks.currentDraft, refetch: mocks.currentDraftRefetch }),
   useApproveDraft: () => ({ mutateAsync: mocks.approve, isPending: false }),
-  useRejectDraft: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useRejectDraft: () => ({ mutateAsync: mocks.reject, isPending: false }),
   useGenerateSchedule: () => ({ mutateAsync: mocks.generate, isPending: false }),
   useScheduleTaskStatus: () => ({ data: mocks.jobData }),
   useCancelScheduleTask: () => ({ mutate: vi.fn(), isPending: false }),
@@ -55,10 +59,11 @@ vi.mock('../features/catalog/data', () => ({
 }))
 
 vi.mock('../components/schedules/DraftPanel', () => ({
-  default: ({ draft, onApprove }) => (
+  default: ({ draft, onApprove, onReject }) => (
     <div>
       Rever proposta {draft.proposal_id}
       <button type="button" onClick={() => onApprove(draft.proposal_id)}>Aprovar teste</button>
+      <button type="button" onClick={() => onReject(draft.proposal_id)}>Rejeitar teste</button>
     </div>
   ),
 }))
@@ -87,10 +92,15 @@ function proposalStatus(overrides = {}) {
 }
 
 describe('Schedules scheduler flow', () => {
+  afterEach(() => {
+    resetClerkState()
+    vi.restoreAllMocks()
+  })
   beforeEach(() => {
     localStorage.clear()
     mocks.generate.mockReset()
     mocks.approve.mockReset()
+    mocks.reject.mockReset()
     mocks.schedulerStatusRefetch.mockReset()
     mocks.currentDraftRefetch.mockReset()
     mocks.weekRefetch.mockReset()
@@ -104,6 +114,33 @@ describe('Schedules scheduler flow', () => {
       refetch: vi.fn(),
     }
   })
+
+  it.each(['approve', 'reject'].flatMap(action => ['school', 'logout', 'unmount'].flatMap(change => ['transient', 'stale'].map(error => [action, change, error]))))(
+    'suppresses late %s feedback after %s invalidation for %s errors',
+    async (action, change, errorKind) => {
+      setClerkState({ userId: 'user_a', orgId: 'org_a' })
+      mocks.status = proposalStatus()
+      mocks.currentDraft = { proposal_id: 77 }
+      let rejectRequest
+      mocks[action].mockImplementation(() => new Promise((_resolve, reject) => { rejectRequest = reject }))
+      const feedback = vi.spyOn(toast, 'error')
+      const page = renderPage()
+      fireEvent.click(screen.getByRole('button', { name: action === 'approve' ? 'Aprovar teste' : 'Rejeitar teste' }))
+      await waitFor(() => expect(mocks[action]).toHaveBeenCalledTimes(1))
+      if (change === 'unmount') page.unmount()
+      else {
+        act(() => setClerkState(change === 'school' ? { orgId: 'org_b' } : { isSignedIn: false, userId: null, orgId: null }))
+        page.rerender(<MemoryRouter initialEntries={['/']}><Schedules /></MemoryRouter>)
+      }
+      await act(async () => {
+        rejectRequest(errorKind === 'stale'
+          ? { response: { data: { detail: { code: 'proposal_stale' } } } }
+          : new Error('late transport failure'))
+      })
+      expect(feedback).not.toHaveBeenCalled()
+      expect(screen.queryByText(/Existem alterações mais recentes/i)).not.toBeInTheDocument()
+    },
+  )
 
   it('shows the pending proposal and an update action that requires confirmation', async () => {
     mocks.status = proposalStatus({

@@ -1,0 +1,18 @@
+import assert from 'node:assert/strict'
+import test from 'node:test'
+import { preflight, productionDependencies } from './real-browser-preflight.mjs'
+
+const environment = { BASE_URL: 'https://cronos.pt', E2E_EXPECTED_REVISION: 'a'.repeat(40), E2E_ADMIN_EMAIL: 'admincronos100@gmail.com', E2E_TEACHER_EMAIL: 'professorcronos100@gmail.com' }
+
+test('missing live credentials are dependencies and never start external effects', async () => {
+  let effects = 0
+  const result = await preflight(environment, { fetchImpl: () => { effects++; throw new Error('network should not start') }, inspect: () => { effects++; throw new Error('inspection should not start') } })
+  assert.equal(result.status, 'dependency_unavailable')
+  assert.ok(result.missing.includes('E2E_GMAIL_ADMIN_REFRESH_TOKEN'))
+  assert.equal(effects, 0)
+})
+
+test('preflight requires administrative cleanup identity separately from browser access', () => {
+  assert.ok(productionDependencies(environment).includes('E2E_ADMIN_SSH_KEY'))
+  assert.ok(productionDependencies(environment).includes('E2E_REGISTRY_HMAC_KEY'))
+})

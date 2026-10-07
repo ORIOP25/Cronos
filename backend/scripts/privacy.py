@@ -25,6 +25,7 @@ from app import models
 from app.config import settings
 from app.db.database import Base, SessionLocal
 from app.db.tenant import set_async_tenant_context
+from app.scheduler.infrastructure.models import JOB_ACTIVE_STATUSES, SchedulerJobV1
 
 _admin_engine = None
 
@@ -162,39 +163,42 @@ def _tenant_tables(policy: str = "delete"):
 async def _load_export(organization_id: int) -> dict[str, list[dict[str, Any]]]:
     async with SessionLocal() as db:
         await set_async_tenant_context(db, organization_id)
-        result: dict[str, list[dict[str, Any]]] = {}
-        organization = await db.execute(
-            select(models.Organization.__table__).where(models.Organization.id == organization_id)
-        )
-        result["organization"] = [
-            _row_to_json(row, models.Organization.__table__.columns) for row in organization
-        ]
-        for table in _tenant_tables():
-            rows = await db.execute(select(table).where(table.c.organization_id == organization_id))
-            result[table.name] = [_row_to_json(row, table.columns) for row in rows]
+        return await _load_export_from_session(db, organization_id)
 
-        membership_table = models.OrganizationMembership.__table__
-        memberships = await db.execute(
-            select(membership_table).where(membership_table.c.organization_id == organization_id)
+
+async def _load_export_from_session(db, organization_id: int) -> dict[str, list[dict[str, Any]]]:
+    """Export the same classified data within an existing administrative lock."""
+    result: dict[str, list[dict[str, Any]]] = {}
+    organization = await db.execute(
+        select(models.Organization.__table__).where(models.Organization.id == organization_id)
+    )
+    result["organization"] = [
+        _row_to_json(row, models.Organization.__table__.columns) for row in organization
+    ]
+    for table in _tenant_tables():
+        rows = await db.execute(select(table).where(table.c.organization_id == organization_id))
+        result[table.name] = [_row_to_json(row, table.columns) for row in rows]
+
+    membership_table = models.OrganizationMembership.__table__
+    memberships = await db.execute(
+        select(membership_table).where(membership_table.c.organization_id == organization_id)
+    )
+    membership_rows = [_row_to_json(row, membership_table.columns) for row in memberships]
+    result[membership_table.name] = membership_rows
+    legal_table = models.OrganizationLegalAcceptance.__table__
+    legal_acceptances = await db.execute(
+        select(legal_table).where(legal_table.c.organization_id == organization_id)
+    )
+    result[legal_table.name] = [_row_to_json(row, legal_table.columns) for row in legal_acceptances]
+    account_ids = [row["account_id"] for row in membership_rows if row.get("account_id")]
+    if account_ids:
+        users = await db.execute(
+            select(models.User.__table__).where(models.User.id.in_(account_ids))
         )
-        membership_rows = [_row_to_json(row, membership_table.columns) for row in memberships]
-        result[membership_table.name] = membership_rows
-        legal_table = models.OrganizationLegalAcceptance.__table__
-        legal_acceptances = await db.execute(
-            select(legal_table).where(legal_table.c.organization_id == organization_id)
-        )
-        result[legal_table.name] = [
-            _row_to_json(row, legal_table.columns) for row in legal_acceptances
+        result[models.User.__tablename__] = [
+            _row_to_json(row, models.User.__table__.columns) for row in users
         ]
-        account_ids = [row["account_id"] for row in membership_rows if row.get("account_id")]
-        if account_ids:
-            users = await db.execute(
-                select(models.User.__table__).where(models.User.id.in_(account_ids))
-            )
-            result[models.User.__tablename__] = [
-                _row_to_json(row, models.User.__table__.columns) for row in users
-            ]
-        return result
+    return result
 
 
 def _write_export(output: Path, data: dict[str, list[dict[str, Any]]]) -> dict[str, Any]:
@@ -243,6 +247,29 @@ async def _counts(db, organization_id: int) -> dict[str, int]:
     return counts
 
 
+async def active_jobs(db, organization_id: int) -> list[str]:
+    """Read both scheduler generations; callers hold the organization row lock."""
+    legacy = await db.scalars(
+        select(models.ScheduleGenerationJob.id).where(
+            models.ScheduleGenerationJob.organization_id == organization_id,
+            models.ScheduleGenerationJob.job_status.in_(
+                [
+                    models.ScheduleGenerationJobStatus.QUEUED,
+                    models.ScheduleGenerationJobStatus.RUNNING,
+                    models.ScheduleGenerationJobStatus.CANCEL_REQUESTED,
+                ]
+            ),
+        )
+    )
+    current = await db.scalars(
+        select(SchedulerJobV1.id).where(
+            SchedulerJobV1.organization_id == organization_id,
+            SchedulerJobV1.status.in_(JOB_ACTIVE_STATUSES),
+        )
+    )
+    return [*(f"legacy:{value}" for value in legacy), *(f"v1:{value}" for value in current)]
+
+
 async def _erase(
     organization_id: int,
     confirm_clerk_org_id: str,
@@ -251,49 +278,61 @@ async def _erase(
 ) -> dict[str, Any]:
     if execute and not provider_deleted:
         raise ValueError("--execute exige --provider-deleted após confirmação no fornecedor")
-
     async with _administrative_sessions().begin() as db:
         await db.execute(text("SET LOCAL row_security = off"))
-        organization = await db.scalar(
-            select(models.Organization)
-            .where(models.Organization.id == organization_id)
-            .with_for_update()
+        return await _erase_locked(
+            db, organization_id, confirm_clerk_org_id, execute, provider_deleted
         )
-        if organization is None:
-            raise ValueError("Organização não encontrada")
-        if organization.clerk_org_id != confirm_clerk_org_id:
-            raise ValueError("--confirm-clerk-org-id não corresponde à organização")
-        counts = await _counts(db, organization_id)
-        if not execute:
-            return {"dry_run": True, "organization_id": organization_id, "counts": counts}
 
-        membership_account_ids = list(
-            await db.scalars(
-                select(models.OrganizationMembership.account_id).where(
-                    models.OrganizationMembership.organization_id == organization_id
-                )
+
+async def _erase_locked(
+    db, organization_id: int, confirm_clerk_org_id: str, execute: bool, provider_deleted: bool
+) -> dict[str, Any]:
+    """Reuse the caller transaction, retaining the parent lock until commit."""
+    if execute and not provider_deleted:
+        raise ValueError("--execute exige --provider-deleted após confirmação no fornecedor")
+    organization = await db.scalar(
+        select(models.Organization)
+        .where(models.Organization.id == organization_id)
+        .with_for_update()
+    )
+    if organization is None:
+        raise ValueError("Organização não encontrada")
+    if organization.clerk_org_id != confirm_clerk_org_id:
+        raise ValueError("--confirm-clerk-org-id não corresponde à organização")
+    if execute and await active_jobs(db, organization_id):
+        raise ValueError("Erasure refused while active jobs exist")
+    counts = await _counts(db, organization_id)
+    if not execute:
+        return {"dry_run": True, "organization_id": organization_id, "counts": counts}
+
+    membership_account_ids = list(
+        await db.scalars(
+            select(models.OrganizationMembership.account_id).where(
+                models.OrganizationMembership.organization_id == organization_id
             )
         )
-        organization.plan_status = models.OrganizationPlanStatus.inactive
-        organization.clerk_org_id = None
-        for table in reversed(_tenant_tables()):
-            await db.execute(delete(table).where(table.c.organization_id == organization_id))
-        if membership_account_ids:
-            await db.execute(
-                delete(models.User).where(
-                    models.User.id.in_(membership_account_ids),
-                    ~models.User.memberships.any(),
-                )
+    )
+    organization.plan_status = models.OrganizationPlanStatus.inactive
+    organization.clerk_org_id = None
+    for table in reversed(_tenant_tables()):
+        await db.execute(delete(table).where(table.c.organization_id == organization_id))
+    if membership_account_ids:
+        await db.execute(
+            delete(models.User).where(
+                models.User.id.in_(membership_account_ids),
+                ~models.User.memberships.any(),
             )
-        # The monotonic foundation trigger forbids regressing the status, so the
-        # erasure leaves a de-identified tombstone instead of resetting it.
-        organization.name = "Organização eliminada"
-        return {
-            "dry_run": False,
-            "organization_id": organization_id,
-            "counts": counts,
-            "tombstone": True,
-        }
+        )
+    # The monotonic foundation trigger forbids regressing the status, so the
+    # erasure leaves a de-identified tombstone instead of resetting it.
+    organization.name = "Organização eliminada"
+    return {
+        "dry_run": False,
+        "organization_id": organization_id,
+        "counts": counts,
+        "tombstone": True,
+    }
 
 
 def _parser() -> argparse.ArgumentParser:

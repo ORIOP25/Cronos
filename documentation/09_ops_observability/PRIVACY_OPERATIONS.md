@@ -48,7 +48,8 @@ python -m scripts.privacy export --organization-id <id> --output <explicit-file.
 ```
 
 The command writes one UTF-8 JSON member per relevant table, a manifest, and SHA-256 hashes. It excludes secrets, tokens, passwords, and other tenants.
-The command reads the administrative connection from `MIGRATION_DATABASE_URL`.
+The standalone export reads through `DATABASE_URL` with the tenant context.
+The campaign wrapper reuses the same classified export within its administrative transaction.
 
 ## Erasure
 
@@ -71,6 +72,34 @@ tables are `organization`, `organization_legal_acceptance`, and `alembic_version
 The required sequence is export first, confirmed provider deletion second, and
 the local transaction last. Execution requires both `--execute` and
 `--provider-deleted`; the command is otherwise a dry-run.
+Execution also refuses active jobs in both scheduler generations while holding
+the organization row lock until commit.
+
+## Disposable browser campaign cleanup
+
+From `backend/`, pass the signed UI ownership registry on stdin:
+
+```text
+python -m scripts.cleanup_e2e_run --run-id <run-id> --output-dir <private-export-directory>
+```
+
+The default is dry-run. Add `--execute` for the authorized campaign cleanup.
+The wrapper requires `MIGRATION_DATABASE_URL`, `E2E_CLEANUP_CLERK_SECRET_KEY`,
+`E2E_REGISTRY_HMAC_KEY`, and `E2E_ARTIFACT_KEY` in the administrative environment.
+Protection keys contain 32 bytes encoded as canonical base64.
+Keep these credentials out of the browser job.
+
+The wrapper authenticates the registry before reading its IDs, preserves
+persistent schools, and verifies live local/provider identities, creation,
+creator and exact run aliases. It validates the whole plan before effects and
+rechecks each disposable school under its row lock. It encrypts the export
+before requesting provider deletion, requires the returned ID and `deleted=true`,
+then reuses local erasure within the same transaction.
+Only accounts created during the campaign without any remaining local or
+provider memberships can be removed. Shared accounts remain intact.
+The JSON result identifies completed and pending targets without printing
+provider error bodies or credentials. A failed result requires reconciliation
+of pending targets before the campaign can be considered clean.
 
 ## Incident and breach checklist
 

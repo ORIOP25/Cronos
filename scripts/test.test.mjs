@@ -3,6 +3,8 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import test from 'node:test'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { randomBytes } from 'node:crypto'
+import { recoverEvidence } from './protect-test-evidence.mjs'
 import {
   childSpec,
   displayArgs,
@@ -94,6 +96,35 @@ test('redacts fake secrets from text artifacts', () => {
     redactSecrets('token=fake-clerk-secret; keep this', ['fake-clerk-secret']),
     'token=[REDACTED]; keep this',
   )
+  assert.equal(redactSecrets('verification code 123456', ['123456']), 'verification code [REDACTED]')
+})
+
+test('production artifacts preserve encrypted traces and screenshots, without raw copies', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'cronos-protected-artifacts-'))
+  const key = randomBytes(32)
+  try {
+    const trace = join(root, 'trace.zip')
+    const screenshot = join(root, 'screenshot.png')
+    writeFileSync(trace, 'opaque sensitive trace')
+    writeFileSync(screenshot, Buffer.from([0, 1, 2, 3]))
+    await sanitizeDirectory(root, [], { key, runId: 'run-1' })
+    assert.equal(existsSync(trace), false)
+    assert.equal(existsSync(screenshot), false)
+    assert.equal(recoverEvidence(readFileSync(`${trace}.enc`), key, { run_id: 'run-1', path: 'trace.zip' }).toString(), 'opaque sensitive trace')
+    assert.deepEqual(recoverEvidence(readFileSync(`${screenshot}.enc`), key, { run_id: 'run-1', path: 'screenshot.png' }), Buffer.from([0, 1, 2, 3]))
+  } finally {
+    rmSync(root, { force: true, recursive: true })
+  }
+})
+
+test('a raw binary renamed to enc is not accepted as protected evidence', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'cronos-invalid-envelope-'))
+  try {
+    writeFileSync(join(root, 'trace.zip.enc'), 'unprotected session data')
+    await assert.rejects(sanitizeDirectory(root, [], { key: randomBytes(32), runId: 'run-1' }))
+  } finally {
+    rmSync(root, { force: true, recursive: true })
+  }
 })
 
 test('removes nested Playwright auth-state directories', async () => {

@@ -1,0 +1,337 @@
+﻿Sigla do curso;Nome da turma;Nome da disciplina;Email do professor
+TGPSI;TGPSI 10;Português;t001.ana.costa@example.com
+TGPSI;TGPSI 11;Português;t001.ana.costa@example.com
+TGPSI;TGPSI 12;Português;t001.ana.costa@example.com
+TMM;TMM 10;Português;t001.ana.costa@example.com
+TMM;TMM 11;Português;t001.ana.costa@example.com
+TMM;TMM 12;Português;t001.ana.costa@example.com
+TDES;TDES 10;Português;t001.ana.costa@example.com
+TDES;TDES 11;Português;t001.ana.costa@example.com
+TDES;TDES 12;Português;t002.ana.teixeira@example.com
+TMKT;TMKT 10;Português;t002.ana.teixeira@example.com
+TMKT;TMKT 11;Português;t002.ana.teixeira@example.com
+TMKT;TMKT 12;Português;t002.ana.teixeira@example.com
+TGE;TGE 10;Português;t002.ana.teixeira@example.com
+TGE;TGE 11;Português;t002.ana.teixeira@example.com
+TGE;TGE 12;Português;t002.ana.teixeira@example.com
+TCONT;TCONT 10;Português;t002.ana.teixeira@example.com
+TCONT;TCONT 11;Português;t003.bruno.gomes@example.com
+TCONT;TCONT 12;Português;t003.bruno.gomes@example.com
+TAS;TAS 10;Português;t003.bruno.gomes@example.com
+TAS;TAS 11;Português;t003.bruno.gomes@example.com
+TAS;TAS 12;Português;t003.bruno.gomes@example.com
+TFAR;TFAR 10;Português;t003.bruno.gomes@example.com
+TFAR;TFAR 11;Português;t003.bruno.gomes@example.com
+TFAR;TFAR 12;Português;t003.bruno.gomes@example.com
+TCO;TCO 10;Português;t004.carla.marques@example.com
+TCO;TCO 11;Português;t004.carla.marques@example.com
+TCO;TCO 12;Português;t004.carla.marques@example.com
+TRES;TRES 10;Português;t004.carla.marques@example.com
+TRES;TRES 11;Português;t004.carla.marques@example.com
+TRES;TRES 12;Português;t004.carla.marques@example.com
+TTUR;TTUR 10;Português;t004.carla.marques@example.com
+TTUR;TTUR 11;Português;t004.carla.marques@example.com
+TTUR;TTUR 12;Português;t005.diogo.rodrigues@example.com
+TEE;TEE 10;Português;t005.diogo.rodrigues@example.com
+TEE;TEE 11;Português;t005.diogo.rodrigues@example.com
+TEE;TEE 12;Português;t005.diogo.rodrigues@example.com
+TMEC;TMEC 10;Português;t005.diogo.rodrigues@example.com
+TMEC;TMEC 11;Português;t005.diogo.rodrigues@example.com
+TMEC;TMEC 12;Português;t005.diogo.rodrigues@example.com
+TER;TER 10;Português;t005.diogo.rodrigues@example.com
+TER;TER 11;Português;t006.eduardo.ferreira@example.com
+TER;TER 12;Português;t006.eduardo.ferreira@example.com
+TDESP;TDESP 10;Português;t006.eduardo.ferreira@example.com
+TDESP;TDESP 11;Português;t006.eduardo.ferreira@example.com
+TDESP;TDESP 12;Português;t006.eduardo.ferreira@example.com
+TLOG;TLOG 10;Português;t006.eduardo.ferreira@example.com
+TLOG;TLOG 11;Português;t006.eduardo.ferreira@example.com
+TLOG;TLOG 12;Português;t006.eduardo.ferreira@example.com
+TGPSI;TGPSI 10;Inglês;t007.filipa.amaral@example.com
+TGPSI;TGPSI 11;Inglês;t007.filipa.amaral@example.com
+TGPSI;TGPSI 12;Inglês;t007.filipa.amaral@example.com
+TMM;TMM 10;Inglês;t007.filipa.amaral@example.com
+TMM;TMM 11;Inglês;t007.filipa.amaral@example.com
+TMM;TMM 12;Inglês;t007.filipa.amaral@example.com
+TDES;TDES 10;Inglês;t007.filipa.amaral@example.com
+TDES;TDES 11;Inglês;t007.filipa.amaral@example.com
+TDES;TDES 12;Inglês;t008.goncalo.mendes@example.com
+TMKT;TMKT 10;Inglês;t008.goncalo.mendes@example.com
+TMKT;TMKT 11;Inglês;t008.goncalo.mendes@example.com
+TMKT;TMKT 12;Inglês;t008.goncalo.mendes@example.com
+TGE;TGE 10;Inglês;t008.goncalo.mendes@example.com
+TGE;TGE 11;Inglês;t008.goncalo.mendes@example.com
+TGE;TGE 12;Inglês;t008.goncalo.mendes@example.com
+TCONT;TCONT 10;Inglês;t008.goncalo.mendes@example.com
+TCONT;TCONT 11;Inglês;t009.helena.matos@example.com
+TCONT;TCONT 12;Inglês;t009.helena.matos@example.com
+TAS;TAS 10;Inglês;t009.helena.matos@example.com
+TAS;TAS 11;Inglês;t009.helena.matos@example.com
+TAS;TAS 12;Inglês;t009.helena.matos@example.com
+TFAR;TFAR 10;Inglês;t009.helena.matos@example.com
+TFAR;TFAR 11;Inglês;t009.helena.matos@example.com
+TFAR;TFAR 12;Inglês;t009.helena.matos@example.com
+TCO;TCO 10;Inglês;t010.ines.faria@example.com
+TCO;TCO 11;Inglês;t010.ines.faria@example.com
+TCO;TCO 12;Inglês;t010.ines.faria@example.com
+TRES;TRES 10;Inglês;t010.ines.faria@example.com
+TRES;TRES 11;Inglês;t010.ines.faria@example.com
+TRES;TRES 12;Inglês;t010.ines.faria@example.com
+TTUR;TTUR 10;Inglês;t010.ines.faria@example.com
+TTUR;TTUR 11;Inglês;t010.ines.faria@example.com
+TTUR;TTUR 12;Inglês;t011.joao.vale@example.com
+TEE;TEE 10;Inglês;t011.joao.vale@example.com
+TEE;TEE 11;Inglês;t011.joao.vale@example.com
+TEE;TEE 12;Inglês;t011.joao.vale@example.com
+TMEC;TMEC 10;Inglês;t011.joao.vale@example.com
+TMEC;TMEC 11;Inglês;t011.joao.vale@example.com
+TMEC;TMEC 12;Inglês;t011.joao.vale@example.com
+TER;TER 10;Inglês;t011.joao.vale@example.com
+TER;TER 11;Inglês;t012.leonor.leal@example.com
+TER;TER 12;Inglês;t012.leonor.leal@example.com
+TDESP;TDESP 10;Inglês;t012.leonor.leal@example.com
+TDESP;TDESP 11;Inglês;t012.leonor.leal@example.com
+TDESP;TDESP 12;Inglês;t012.leonor.leal@example.com
+TLOG;TLOG 10;Inglês;t012.leonor.leal@example.com
+TLOG;TLOG 11;Inglês;t012.leonor.leal@example.com
+TLOG;TLOG 12;Inglês;t012.leonor.leal@example.com
+TGPSI;TGPSI 10;Matemática;t013.mario.monteiro@example.com
+TGPSI;TGPSI 11;Matemática;t013.mario.monteiro@example.com
+TGPSI;TGPSI 12;Matemática;t013.mario.monteiro@example.com
+TMM;TMM 10;Matemática;t013.mario.monteiro@example.com
+TMM;TMM 11;Matemática;t013.mario.monteiro@example.com
+TMM;TMM 12;Matemática;t013.mario.monteiro@example.com
+TDES;TDES 10;Matemática;t013.mario.monteiro@example.com
+TDES;TDES 11;Matemática;t013.mario.monteiro@example.com
+TDES;TDES 12;Matemática;t014.nuno.correia@example.com
+TMKT;TMKT 10;Matemática;t014.nuno.correia@example.com
+TMKT;TMKT 11;Matemática;t014.nuno.correia@example.com
+TMKT;TMKT 12;Matemática;t014.nuno.correia@example.com
+TGE;TGE 10;Matemática;t014.nuno.correia@example.com
+TGE;TGE 11;Matemática;t014.nuno.correia@example.com
+TGE;TGE 12;Matemática;t014.nuno.correia@example.com
+TCONT;TCONT 10;Matemática;t014.nuno.correia@example.com
+TCONT;TCONT 11;Matemática;t015.nuno.ramos@example.com
+TCONT;TCONT 12;Matemática;t015.nuno.ramos@example.com
+TAS;TAS 10;Matemática;t015.nuno.ramos@example.com
+TAS;TAS 11;Matemática;t015.nuno.ramos@example.com
+TAS;TAS 12;Matemática;t015.nuno.ramos@example.com
+TFAR;TFAR 10;Matemática;t015.nuno.ramos@example.com
+TFAR;TFAR 11;Matemática;t015.nuno.ramos@example.com
+TFAR;TFAR 12;Matemática;t015.nuno.ramos@example.com
+TCO;TCO 10;Matemática;t016.olivia.moreira@example.com
+TCO;TCO 11;Matemática;t016.olivia.moreira@example.com
+TCO;TCO 12;Matemática;t016.olivia.moreira@example.com
+TRES;TRES 10;Matemática;t016.olivia.moreira@example.com
+TRES;TRES 11;Matemática;t016.olivia.moreira@example.com
+TRES;TRES 12;Matemática;t016.olivia.moreira@example.com
+TTUR;TTUR 10;Matemática;t016.olivia.moreira@example.com
+TTUR;TTUR 11;Matemática;t016.olivia.moreira@example.com
+TTUR;TTUR 12;Matemática;t017.paulo.alves@example.com
+TEE;TEE 10;Matemática;t017.paulo.alves@example.com
+TEE;TEE 11;Matemática;t017.paulo.alves@example.com
+TEE;TEE 12;Matemática;t017.paulo.alves@example.com
+TMEC;TMEC 10;Matemática;t017.paulo.alves@example.com
+TMEC;TMEC 11;Matemática;t017.paulo.alves@example.com
+TMEC;TMEC 12;Matemática;t017.paulo.alves@example.com
+TER;TER 10;Matemática;t017.paulo.alves@example.com
+TER;TER 11;Matemática;t018.rita.almeida@example.com
+TER;TER 12;Matemática;t018.rita.almeida@example.com
+TDESP;TDESP 10;Matemática;t018.rita.almeida@example.com
+TDESP;TDESP 11;Matemática;t018.rita.almeida@example.com
+TDESP;TDESP 12;Matemática;t018.rita.almeida@example.com
+TLOG;TLOG 10;Matemática;t018.rita.almeida@example.com
+TLOG;TLOG 11;Matemática;t018.rita.almeida@example.com
+TLOG;TLOG 12;Matemática;t018.rita.almeida@example.com
+TGPSI;TGPSI 10;Área de Integração;t019.sandro.pereira@example.com
+TGPSI;TGPSI 11;Área de Integração;t019.sandro.pereira@example.com
+TGPSI;TGPSI 12;Área de Integração;t019.sandro.pereira@example.com
+TMM;TMM 10;Área de Integração;t019.sandro.pereira@example.com
+TMM;TMM 11;Área de Integração;t019.sandro.pereira@example.com
+TMM;TMM 12;Área de Integração;t019.sandro.pereira@example.com
+TDES;TDES 10;Área de Integração;t019.sandro.pereira@example.com
+TDES;TDES 11;Área de Integração;t019.sandro.pereira@example.com
+TDES;TDES 12;Área de Integração;t020.teresa.silva@example.com
+TMKT;TMKT 10;Área de Integração;t020.teresa.silva@example.com
+TMKT;TMKT 11;Área de Integração;t020.teresa.silva@example.com
+TMKT;TMKT 12;Área de Integração;t020.teresa.silva@example.com
+TGE;TGE 10;Área de Integração;t020.teresa.silva@example.com
+TGE;TGE 11;Área de Integração;t020.teresa.silva@example.com
+TGE;TGE 12;Área de Integração;t020.teresa.silva@example.com
+TCONT;TCONT 10;Área de Integração;t020.teresa.silva@example.com
+TCONT;TCONT 11;Área de Integração;t021.vitor.batista@example.com
+TCONT;TCONT 12;Área de Integração;t021.vitor.batista@example.com
+TAS;TAS 10;Área de Integração;t021.vitor.batista@example.com
+TAS;TAS 11;Área de Integração;t021.vitor.batista@example.com
+TAS;TAS 12;Área de Integração;t021.vitor.batista@example.com
+TFAR;TFAR 10;Área de Integração;t021.vitor.batista@example.com
+TFAR;TFAR 11;Área de Integração;t021.vitor.batista@example.com
+TFAR;TFAR 12;Área de Integração;t021.vitor.batista@example.com
+TCO;TCO 10;Área de Integração;t022.xavier.coelho@example.com
+TCO;TCO 11;Área de Integração;t022.xavier.coelho@example.com
+TCO;TCO 12;Área de Integração;t022.xavier.coelho@example.com
+TRES;TRES 10;Área de Integração;t022.xavier.coelho@example.com
+TRES;TRES 11;Área de Integração;t022.xavier.coelho@example.com
+TRES;TRES 12;Área de Integração;t022.xavier.coelho@example.com
+TTUR;TTUR 10;Área de Integração;t022.xavier.coelho@example.com
+TTUR;TTUR 11;Área de Integração;t022.xavier.coelho@example.com
+TTUR;TTUR 12;Área de Integração;t023.barbara.neves@example.com
+TEE;TEE 10;Área de Integração;t023.barbara.neves@example.com
+TEE;TEE 11;Área de Integração;t023.barbara.neves@example.com
+TEE;TEE 12;Área de Integração;t023.barbara.neves@example.com
+TMEC;TMEC 10;Área de Integração;t023.barbara.neves@example.com
+TMEC;TMEC 11;Área de Integração;t023.barbara.neves@example.com
+TMEC;TMEC 12;Área de Integração;t023.barbara.neves@example.com
+TER;TER 10;Área de Integração;t023.barbara.neves@example.com
+TER;TER 11;Área de Integração;t024.carlos.loureiro@example.com
+TER;TER 12;Área de Integração;t024.carlos.loureiro@example.com
+TDESP;TDESP 10;Área de Integração;t024.carlos.loureiro@example.com
+TDESP;TDESP 11;Área de Integração;t024.carlos.loureiro@example.com
+TDESP;TDESP 12;Área de Integração;t024.carlos.loureiro@example.com
+TLOG;TLOG 10;Área de Integração;t024.carlos.loureiro@example.com
+TLOG;TLOG 11;Área de Integração;t024.carlos.loureiro@example.com
+TLOG;TLOG 12;Área de Integração;t024.carlos.loureiro@example.com
+TGPSI;TGPSI 10;Programação;t025.diana.figueiredo@example.com
+TGPSI;TGPSI 10;Redes;t025.diana.figueiredo@example.com
+TGPSI;TGPSI 10;Bases de Dados;t025.diana.figueiredo@example.com
+TGPSI;TGPSI 11;Programação;t025.diana.figueiredo@example.com
+TGPSI;TGPSI 11;Redes;t025.diana.figueiredo@example.com
+TGPSI;TGPSI 11;Bases de Dados;t025.diana.figueiredo@example.com
+TGPSI;TGPSI 12;Programação;t025.diana.figueiredo@example.com
+TGPSI;TGPSI 12;Redes;t025.diana.figueiredo@example.com
+TGPSI;TGPSI 12;Bases de Dados;t025.diana.figueiredo@example.com
+TMM;TMM 10;Design Multimédia;t026.emanuel.pires@example.com
+TMM;TMM 10;Vídeo;t026.emanuel.pires@example.com
+TMM;TMM 10;Animação;t026.emanuel.pires@example.com
+TMM;TMM 11;Design Multimédia;t026.emanuel.pires@example.com
+TMM;TMM 11;Vídeo;t026.emanuel.pires@example.com
+TMM;TMM 11;Animação;t026.emanuel.pires@example.com
+TMM;TMM 12;Design Multimédia;t026.emanuel.pires@example.com
+TMM;TMM 12;Vídeo;t026.emanuel.pires@example.com
+TMM;TMM 12;Animação;t026.emanuel.pires@example.com
+TDES;TDES 10;Design Gráfico;t027.fatima.sousa@example.com
+TDES;TDES 10;Fotografia;t027.fatima.sousa@example.com
+TDES;TDES 10;Tipografia;t027.fatima.sousa@example.com
+TDES;TDES 11;Design Gráfico;t027.fatima.sousa@example.com
+TDES;TDES 11;Fotografia;t027.fatima.sousa@example.com
+TDES;TDES 11;Tipografia;t027.fatima.sousa@example.com
+TDES;TDES 12;Design Gráfico;t027.fatima.sousa@example.com
+TDES;TDES 12;Fotografia;t027.fatima.sousa@example.com
+TDES;TDES 12;Tipografia;t027.fatima.sousa@example.com
+TMKT;TMKT 10;Marketing Digital;t028.fatima.carvalho@example.com
+TMKT;TMKT 10;Comportamento do Consumidor;t028.fatima.carvalho@example.com
+TMKT;TMKT 10;Vendas;t028.fatima.carvalho@example.com
+TMKT;TMKT 11;Marketing Digital;t028.fatima.carvalho@example.com
+TMKT;TMKT 11;Comportamento do Consumidor;t028.fatima.carvalho@example.com
+TMKT;TMKT 11;Vendas;t028.fatima.carvalho@example.com
+TMKT;TMKT 12;Marketing Digital;t028.fatima.carvalho@example.com
+TMKT;TMKT 12;Comportamento do Consumidor;t028.fatima.carvalho@example.com
+TMKT;TMKT 12;Vendas;t028.fatima.carvalho@example.com
+TGE;TGE 10;Contabilidade;t029.gabriel.cardoso@example.com
+TGE;TGE 10;Gestão de Recursos Humanos;t029.gabriel.cardoso@example.com
+TGE;TGE 10;Economia;t029.gabriel.cardoso@example.com
+TGE;TGE 11;Contabilidade;t029.gabriel.cardoso@example.com
+TGE;TGE 11;Gestão de Recursos Humanos;t029.gabriel.cardoso@example.com
+TGE;TGE 11;Economia;t029.gabriel.cardoso@example.com
+TGE;TGE 12;Contabilidade;t029.gabriel.cardoso@example.com
+TGE;TGE 12;Gestão de Recursos Humanos;t029.gabriel.cardoso@example.com
+TGE;TGE 12;Economia;t029.gabriel.cardoso@example.com
+TCONT;TCONT 10;Contabilidade Financeira;t030.hugo.fernandes@example.com
+TCONT;TCONT 10;Fiscalidade;t030.hugo.fernandes@example.com
+TCONT;TCONT 10;Análise Financeira;t030.hugo.fernandes@example.com
+TCONT;TCONT 11;Contabilidade Financeira;t030.hugo.fernandes@example.com
+TCONT;TCONT 11;Fiscalidade;t030.hugo.fernandes@example.com
+TCONT;TCONT 11;Análise Financeira;t030.hugo.fernandes@example.com
+TCONT;TCONT 12;Contabilidade Financeira;t030.hugo.fernandes@example.com
+TCONT;TCONT 12;Fiscalidade;t030.hugo.fernandes@example.com
+TCONT;TCONT 12;Análise Financeira;t030.hugo.fernandes@example.com
+TAS;TAS 10;Saúde e Higiene;t031.iris.nunes@example.com
+TAS;TAS 10;Cuidados Básicos;t031.iris.nunes@example.com
+TAS;TAS 10;Anatomia e Fisiologia;t031.iris.nunes@example.com
+TAS;TAS 11;Saúde e Higiene;t031.iris.nunes@example.com
+TAS;TAS 11;Cuidados Básicos;t031.iris.nunes@example.com
+TAS;TAS 11;Anatomia e Fisiologia;t031.iris.nunes@example.com
+TAS;TAS 12;Saúde e Higiene;t031.iris.nunes@example.com
+TAS;TAS 12;Cuidados Básicos;t031.iris.nunes@example.com
+TAS;TAS 12;Anatomia e Fisiologia;t031.iris.nunes@example.com
+TFAR;TFAR 10;Farmacologia;t032.julia.oliveira@example.com
+TFAR;TFAR 10;Dermofarmácia;t032.julia.oliveira@example.com
+TFAR;TFAR 10;Dispensa de Medicamentos;t032.julia.oliveira@example.com
+TFAR;TFAR 11;Farmacologia;t032.julia.oliveira@example.com
+TFAR;TFAR 11;Dermofarmácia;t032.julia.oliveira@example.com
+TFAR;TFAR 11;Dispensa de Medicamentos;t032.julia.oliveira@example.com
+TFAR;TFAR 12;Farmacologia;t032.julia.oliveira@example.com
+TFAR;TFAR 12;Dermofarmácia;t032.julia.oliveira@example.com
+TFAR;TFAR 12;Dispensa de Medicamentos;t032.julia.oliveira@example.com
+TCO;TCO 10;Cozinha;t033.luis.santos@example.com
+TCO;TCO 10;Pastelaria;t033.luis.santos@example.com
+TCO;TCO 10;Nutrição;t033.luis.santos@example.com
+TCO;TCO 11;Cozinha;t033.luis.santos@example.com
+TCO;TCO 11;Pastelaria;t033.luis.santos@example.com
+TCO;TCO 11;Nutrição;t033.luis.santos@example.com
+TCO;TCO 12;Cozinha;t033.luis.santos@example.com
+TCO;TCO 12;Pastelaria;t033.luis.santos@example.com
+TCO;TCO 12;Nutrição;t033.luis.santos@example.com
+TRES;TRES 10;Serviço de Mesa;t034.marta.pacheco@example.com
+TRES;TRES 10;Bar e Cocktails;t034.marta.pacheco@example.com
+TRES;TRES 10;Enologia;t034.marta.pacheco@example.com
+TRES;TRES 11;Serviço de Mesa;t034.marta.pacheco@example.com
+TRES;TRES 11;Bar e Cocktails;t034.marta.pacheco@example.com
+TRES;TRES 11;Enologia;t034.marta.pacheco@example.com
+TRES;TRES 12;Serviço de Mesa;t034.marta.pacheco@example.com
+TRES;TRES 12;Bar e Cocktails;t034.marta.pacheco@example.com
+TRES;TRES 12;Enologia;t034.marta.pacheco@example.com
+TTUR;TTUR 10;Turismo e Lazer;t035.nelson.rocha@example.com
+TTUR;TTUR 10;Informação Turística;t035.nelson.rocha@example.com
+TTUR;TTUR 10;Geografia de Destinos;t035.nelson.rocha@example.com
+TTUR;TTUR 11;Turismo e Lazer;t035.nelson.rocha@example.com
+TTUR;TTUR 11;Informação Turística;t035.nelson.rocha@example.com
+TTUR;TTUR 11;Geografia de Destinos;t035.nelson.rocha@example.com
+TTUR;TTUR 12;Turismo e Lazer;t035.nelson.rocha@example.com
+TTUR;TTUR 12;Informação Turística;t035.nelson.rocha@example.com
+TTUR;TTUR 12;Geografia de Destinos;t035.nelson.rocha@example.com
+TEE;TEE 10;Eletrónica;t036.olga.lopes@example.com
+TEE;TEE 10;Telecomunicações;t036.olga.lopes@example.com
+TEE;TEE 10;Sistemas Digitais;t036.olga.lopes@example.com
+TEE;TEE 11;Eletrónica;t036.olga.lopes@example.com
+TEE;TEE 11;Telecomunicações;t036.olga.lopes@example.com
+TEE;TEE 11;Sistemas Digitais;t036.olga.lopes@example.com
+TEE;TEE 12;Eletrónica;t036.olga.lopes@example.com
+TEE;TEE 12;Telecomunicações;t036.olga.lopes@example.com
+TEE;TEE 12;Sistemas Digitais;t036.olga.lopes@example.com
+TMEC;TMEC 10;Automação e Robótica;t037.pedro.martins@example.com
+TMEC;TMEC 10;Mecânica;t037.pedro.martins@example.com
+TMEC;TMEC 10;Eletricidade;t037.pedro.martins@example.com
+TMEC;TMEC 11;Automação e Robótica;t037.pedro.martins@example.com
+TMEC;TMEC 11;Mecânica;t037.pedro.martins@example.com
+TMEC;TMEC 11;Eletricidade;t037.pedro.martins@example.com
+TMEC;TMEC 12;Automação e Robótica;t037.pedro.martins@example.com
+TMEC;TMEC 12;Mecânica;t037.pedro.martins@example.com
+TMEC;TMEC 12;Eletricidade;t037.pedro.martins@example.com
+TER;TER 10;Painéis Solares;t038.raquel.cruz@example.com
+TER;TER 10;Armazenamento de Energia;t038.raquel.cruz@example.com
+TER;TER 10;Eficiência Energética;t038.raquel.cruz@example.com
+TER;TER 11;Painéis Solares;t038.raquel.cruz@example.com
+TER;TER 11;Armazenamento de Energia;t038.raquel.cruz@example.com
+TER;TER 11;Eficiência Energética;t038.raquel.cruz@example.com
+TER;TER 12;Painéis Solares;t038.raquel.cruz@example.com
+TER;TER 12;Armazenamento de Energia;t038.raquel.cruz@example.com
+TER;TER 12;Eficiência Energética;t038.raquel.cruz@example.com
+TDESP;TDESP 10;Treino Desportivo;t039.sergio.albuquerque@example.com
+TDESP;TDESP 10;Anatomia Desportiva;t039.sergio.albuquerque@example.com
+TDESP;TDESP 10;Fisiologia do Exercício;t039.sergio.albuquerque@example.com
+TDESP;TDESP 11;Treino Desportivo;t039.sergio.albuquerque@example.com
+TDESP;TDESP 11;Anatomia Desportiva;t039.sergio.albuquerque@example.com
+TDESP;TDESP 11;Fisiologia do Exercício;t039.sergio.albuquerque@example.com
+TDESP;TDESP 12;Treino Desportivo;t039.sergio.albuquerque@example.com
+TDESP;TDESP 12;Anatomia Desportiva;t039.sergio.albuquerque@example.com
+TDESP;TDESP 12;Fisiologia do Exercício;t039.sergio.albuquerque@example.com
+TLOG;TLOG 10;Gestão de Armazém;t040.tania.sa@example.com
+TLOG;TLOG 10;Transportes;t040.tania.sa@example.com
+TLOG;TLOG 10;Logística Digital;t040.tania.sa@example.com
+TLOG;TLOG 11;Gestão de Armazém;t040.tania.sa@example.com
+TLOG;TLOG 11;Transportes;t040.tania.sa@example.com
+TLOG;TLOG 11;Logística Digital;t040.tania.sa@example.com
+TLOG;TLOG 12;Gestão de Armazém;t040.tania.sa@example.com
+TLOG;TLOG 12;Transportes;t040.tania.sa@example.com
+TLOG;TLOG 12;Logística Digital;t040.tania.sa@example.com

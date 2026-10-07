@@ -536,8 +536,8 @@ const Schedules = ({ initialClassId = '', initialWeekStart, persistView = true, 
             <DraftPanel
               draft={currentDraft || schedulerStatus.pending_proposal}
               onApprove={async (proposalId) => {
+                const attempt = attemptScope.capture()
                 try {
-                  const attempt = attemptScope.capture()
                   await approveMutation.mutateAsync({
                     proposalId,
                     expectedInputRevision: schedulerStatus?.revisions?.input ?? null,
@@ -546,19 +546,21 @@ const Schedules = ({ initialClassId = '', initialWeekStart, persistView = true, 
                   toast.success('Proposta aprovada.')
                 }
                 catch (err) {
+                  if (!attemptScope.isCurrent(attempt)) return
                   const message = getDraftMutationErrorMessage(err, 'Erro ao aprovar proposta.')
                   if (message === STALE_DRAFT_MESSAGE) setGenerationActionError(message)
                   else toast.error(message)
                 }
               }}
               onReject={async (proposalId) => {
+                const attempt = attemptScope.capture()
                 try {
-                  const attempt = attemptScope.capture()
                   await rejectMutation.mutateAsync(proposalId)
                   if (!attemptScope.isCurrent(attempt)) return
                   toast.success('Proposta rejeitada.')
                 }
                 catch (err) {
+                  if (!attemptScope.isCurrent(attempt)) return
                   const message = getDraftMutationErrorMessage(err, 'Erro ao rejeitar proposta.')
                   if (message === STALE_DRAFT_MESSAGE) setGenerationActionError(message)
                   else toast.error(message)
