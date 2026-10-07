@@ -22,7 +22,7 @@ from sqlalchemy.pool import NullPool
 
 from app import models
 from scripts import privacy
-from scripts.e2e_cleanup_policy import cleanup_targets, verify_registry
+from scripts.e2e_cleanup_policy import cleanup_actor_targets, cleanup_targets, verify_registry
 
 
 def _key(value):
@@ -143,11 +143,10 @@ async def _observe(db, sdk, organization):
         raise ValueError("Local and provider memberships do not match")
     actors = []
     for account in accounts:
-        user = await sdk.users.get_async(user_id=account.clerk_user_id, timeout_ms=30000)
-        email = _primary_email(user)
-        if email != account.email:
+        actor = await _observe_actor(sdk, account.clerk_user_id)
+        if actor["id"] != account.clerk_user_id or actor["email"] != account.email:
             raise ValueError("Local and provider actor emails do not match")
-        actors.append({"id": account.clerk_user_id, "email": email})
+        actors.append(actor)
     return {
         "local_id": local_id,
         "clerk_id": provider.id,
@@ -158,19 +157,34 @@ async def _observe(db, sdk, organization):
     }
 
 
-async def _export(db, local_id, destination, key, run_id):
+async def _observe_actor(sdk, user_id):
+    user = await sdk.users.get_async(user_id=user_id, timeout_ms=30000)
+    return {
+        "id": user.id,
+        "email": _primary_email(user),
+        "created_at": datetime.fromtimestamp(user.created_at / 1000, UTC).isoformat(),
+    }
+
+
+def _protect_export_data(data, destination, key, run_id):
     # Reuse the classified privacy export. Plaintext stays in a private temporary
     # directory and is removed before any provider deletion.
     with tempfile.TemporaryDirectory(prefix="cronos-private-export-") as directory:
         os.chmod(directory, 0o700)
         output = Path(directory) / "export.zip"
-        privacy._write_export(output, await privacy._load_export_from_session(db, local_id))
+        privacy._write_export(output, data)
         protect_export(destination, output.read_bytes(), key, run_id)
 
 
-async def _remove_unshared_actor(db, sdk, actor, registry):
-    user = await sdk.users.get_async(user_id=actor["id"], timeout_ms=30000)
-    created = datetime.fromtimestamp(user.created_at / 1000, UTC)
+async def _export(db, local_id, destination, key, run_id):
+    _protect_export_data(
+        await privacy._load_export_from_session(db, local_id), destination, key, run_id
+    )
+
+
+async def _remove_unshared_actor(db, sdk, actor, registry, before_delete=None):
+    current = await _observe_actor(sdk, actor["id"])
+    created = datetime.fromisoformat(current["created_at"])
     started = datetime.fromisoformat(registry["started_at"].replace("Z", "+00:00"))
     finished = datetime.fromisoformat(registry["finished_at"].replace("Z", "+00:00"))
     memberships = await sdk.users.get_organization_memberships_async(
@@ -182,12 +196,27 @@ async def _remove_unshared_actor(db, sdk, actor, registry):
         .where(models.User.clerk_user_id == actor["id"])
         .limit(1)
     )
-    if _primary_email(user) != actor["email"] or not started <= created <= finished:
+    if (
+        current["id"] != actor["id"]
+        or current["email"] != actor["email"]
+        or not started <= created <= finished
+        or (
+            actor.get("created_at")
+            and created != datetime.fromisoformat(actor["created_at"].replace("Z", "+00:00"))
+        )
+    ):
         raise ValueError("Actor creation does not belong to this run")
     if memberships.total_count is None:
         raise ValueError("Actor membership inventory is incomplete")
     if memberships.total_count or memberships.data or local_membership is not None:
         return False
+    local_actor = await db.scalar(
+        select(models.User.id).where(models.User.clerk_user_id == actor["id"]).limit(1)
+    )
+    if local_actor is not None:
+        raise ValueError("Local actor data must be exported and erased before provider deletion")
+    if before_delete is not None:
+        before_delete(current)
     deleted = await sdk.users.delete_async(user_id=actor["id"], timeout_ms=30000)
     if deleted.id != actor["id"] or deleted.deleted is not True:
         raise ValueError("Provider actor deletion is unconfirmed")
@@ -203,10 +232,21 @@ async def cleanup(envelope, run_id, output_dir, *, execute=False, env=None, sdk=
         registry,
         run_id,
         {
-            organization["local_id"]: {**organization, "active_jobs": []}
+            # This first pass validates signed input only. Every timestamp is
+            # replaced with the provider observation before any deletion.
+            organization["local_id"]: {
+                **organization,
+                "actors": [
+                    {**actor, "created_at": organization.get("created_at")}
+                    for actor in organization.get("actors", [])
+                ],
+                "active_jobs": [],
+            }
             for organization in registry.get("organizations", [])
         },
     )
+    root_actors = {actor["id"]: actor for actor in registry.get("actors", [])}
+    cleanup_actor_targets(registry, run_id, root_actors)
     sdk = sdk or Clerk(bearer_auth=env["E2E_CLEANUP_CLERK_SECRET_KEY"])
     records = {organization["local_id"]: organization for organization in registry["organizations"]}
     completed = []
@@ -214,6 +254,11 @@ async def cleanup(envelope, run_id, output_dir, *, execute=False, env=None, sdk=
     actors = {
         actor["id"]: actor for local_id, _ in candidates for actor in records[local_id]["actors"]
     }
+    orphan_actors = set(root_actors) - set(actors)
+    for actor_id, actor in root_actors.items():
+        if actor_id in actors and actors[actor_id]["email"] != actor["email"]:
+            raise ValueError("Conflicting actor identities in registry")
+        actors[actor_id] = actor
     result = {
         "run_id": run_id,
         "status": "dry_run",
@@ -234,6 +279,11 @@ async def cleanup(envelope, run_id, output_dir, *, execute=False, env=None, sdk=
                 local_id: await _observe(db, sdk, records[local_id]) for local_id, _ in candidates
             }
             targets = cleanup_targets(registry, run_id, observed)
+            cleanup_actor_targets(
+                registry,
+                run_id,
+                {actor_id: await _observe_actor(sdk, actor_id) for actor_id in root_actors},
+            )
         if not execute:
             return result
         for local_id, clerk_id in targets:
@@ -270,7 +320,22 @@ async def cleanup(envelope, run_id, output_dir, *, execute=False, env=None, sdk=
         async with sessions.begin() as db:
             await db.execute(text("SET LOCAL row_security = off"))
             for actor in actors.values():
-                if await _remove_unshared_actor(db, sdk, actor, registry):
+
+                def export_actor(current):
+                    _protect_export_data(
+                        {"clerk_actor": [current]},
+                        Path(output_dir) / f"actor-{current['id']}.zip.enc",
+                        artifact_key,
+                        run_id,
+                    )
+
+                if await _remove_unshared_actor(
+                    db,
+                    sdk,
+                    actor,
+                    registry,
+                    before_delete=export_actor if actor["id"] in orphan_actors else None,
+                ):
                     removed_actors.append(actor["id"])
                 result["pending_actors"].remove(actor["id"])
         result["status"] = "completed"

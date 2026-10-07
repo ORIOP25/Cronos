@@ -1,6 +1,6 @@
 # Implementação dos testes reais — registo de execução
 
-Revisão: 2026-10-07. Estado: infraestrutura de aceitação implementada; aceitação de produção pendente de dependências externas.
+Revisão: 2026-10-07. Estado: implementação parcial; percursos, integração final e aceitação de produção pendentes.
 
 ## Objetivo
 
@@ -17,7 +17,7 @@ Ler o [PRD](REAL_BROWSER_TESTING_PLAN.md) e o [guia de privacidade](../09_ops_ob
 O baseline é `91a9d28bcb9c9a829a8578872156a6b90fa04bcf`.
 A branch de implementação é `codex/real-browser-testing`, num checkout isolado.
 As alterações externas do checkout original permanecem preservadas.
-A implementação foi publicada na branch; a CI passou em `4cc0a2d51069dc06f19cc689e4d8d68663ba0319`.
+A implementação foi publicada na branch; os três jobs da CI passaram em `e37716623b0c72da3927b7bcb52c2e4822ea4080`.
 Não ocorreu uma campanha completa de aceitação.
 Um diagnóstico público no Chrome real passou contra `https://cronos.pt`.
 Conferiu os canonicals de `/about`, `/contact` e `/privacy`, e uma página inexistente com resposta 404.
@@ -84,7 +84,9 @@ O observador acumula falhas de runtime sem lançar exceções dos callbacks.
 As exceções HTTP usam a ação, método, origem, caminho e estado do pedido observado.
 Um pedido novo invalida a exceção anterior para a mesma URL.
 Os quatro testes do observador e o teste da censura em memória passaram após RED.
-Os 55 testes de infraestrutura passaram; `npm run verify` passou antes da última alteração do runner.
+Os 56 testes de infraestrutura passaram; a CI confirmou também a verificação frontend.
+O projeto de aceitação só entra na configuração quando o runner fornece `E2E_ACCEPTANCE_REPORT`.
+O comando E2E local continua a selecionar apenas os projetos locais.
 O contexto Docker exclui `.auth/`, que contém as credenciais locais.
 Uma verificação da imagem real confirmou a ausência dessa pasta no estágio de build.
 A imagem local foi reconstruída e o serviço frontend atualizado.
@@ -142,6 +144,14 @@ Só executa erasure local após uma resposta de eliminação com o ID confirmado
 Mantém o bloqueio até ao commit e recusa jobs ativos nas duas gerações do scheduler.
 As contas sem identidade Clerk pertencentes ao domínio também constam do export; não são atores de login.
 Remove contas Clerk apenas quando foram criadas durante a campanha e não têm memberships locais nem no fornecedor.
+O registo pode incluir `actors` na raiz para contas criadas pela UI antes de existir uma escola.
+Exige alias da execução, proveniência UI e identidade/data de criação iguais à observação real do fornecedor.
+Confere também a data de criação de todos os membros das escolas antes da primeira eliminação.
+Uma conta sem escola recebe um export de identidade cifrado antes da eliminação Clerk confirmada.
+Se existir um registo local dessa conta, recusa a eliminação externa até os dados serem exportados e apagados pelo fluxo administrativo adequado.
+Os novos testes foram observados em RED antes da implementação; passaram 17 testes focados e 15 testes PostgreSQL de limpeza administrativa, além dos 61 contratos.
+Após esta correção, `node scripts/test.mjs all --scope backend` passou com 1 403 casos, 82% de cobertura global e 100% na política crítica do scheduler.
+Estas provas de infraestrutura usam respostas Clerk controladas; não comprovam uma eliminação de conta em produção.
 Uma falha conserva os alvos pendentes e não publica o texto da resposta do fornecedor.
 
 O finalizador confere que cada referência de evidência existe depois da proteção.

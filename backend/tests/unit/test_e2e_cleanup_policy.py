@@ -5,7 +5,7 @@ import hmac
 import json
 import unittest
 
-from scripts.e2e_cleanup_policy import cleanup_targets, verify_registry
+from scripts.e2e_cleanup_policy import cleanup_actor_targets, cleanup_targets, verify_registry
 
 
 class CleanupOwnershipTests(unittest.TestCase):
@@ -35,7 +35,13 @@ class CleanupOwnershipTests(unittest.TestCase):
                 "created_at": "2026-10-07T08:10:00+00:00",
                 "creator_id": "user_founder",
                 "actor_ids": ["user_founder"],
-                "actors": [{"id": "user_founder", "email": "admincronos100+run-1@gmail.com"}],
+                "actors": [
+                    {
+                        "id": "user_founder",
+                        "email": "admincronos100+run-1@gmail.com",
+                        "created_at": "2026-10-07T08:05:00Z",
+                    }
+                ],
                 "active_jobs": [],
             }
         }
@@ -122,6 +128,74 @@ class CleanupOwnershipTests(unittest.TestCase):
         self.record["organizations"].append(copy.deepcopy(self.record["organizations"][0]))
         with self.assertRaises(ValueError):
             cleanup_targets(self.record, "run-1", self.observed)
+
+    def test_ui_actor_created_before_a_school_is_a_verified_cleanup_target(self):
+        actor = {
+            "id": "user_orphan",
+            "email": "admincronos100+run-1@gmail.com",
+            "created_at": "2026-10-07T08:05:00Z",
+            "creation_run_id": "run-1",
+            "provenance": "ui",
+            "type": "disposable",
+        }
+        registry = {**self.record, "organizations": [], "actors": [actor]}
+        live = {
+            actor["id"]: {
+                "id": actor["id"],
+                "email": actor["email"],
+                "created_at": actor["created_at"],
+            }
+        }
+        self.assertEqual(cleanup_actor_targets(registry, "run-1", live), [actor["id"]])
+        self.assertEqual(cleanup_actor_targets(self.record, "run-1", {}), [])
+
+    def test_root_actor_provenance_and_live_identity_are_required_before_cleanup(self):
+        actor = {
+            "id": "user_orphan",
+            "email": "admincronos100+run-1@gmail.com",
+            "created_at": "2026-10-07T08:05:00Z",
+            "creation_run_id": "run-1",
+            "provenance": "ui",
+            "type": "disposable",
+        }
+        registry = {**self.record, "organizations": [], "actors": [actor]}
+        live = {
+            actor["id"]: {
+                "id": actor["id"],
+                "email": actor["email"],
+                "created_at": actor["created_at"],
+            }
+        }
+        for field, value in [
+            ("id", "user_customer"),
+            ("email", "admincronos100@gmail.com"),
+            ("created_at", "2026-10-06T08:05:00Z"),
+            ("creation_run_id", "other"),
+            ("provenance", "api"),
+            ("type", "persistent"),
+        ]:
+            with self.subTest(field=field, source="registry"), self.assertRaises(ValueError):
+                cleanup_actor_targets(
+                    {**registry, "actors": [{**actor, field: value}]}, "run-1", live
+                )
+        for field, value in [
+            ("id", "user_customer"),
+            ("email", "customer@example.com"),
+            ("created_at", "2026-10-07T08:06:00Z"),
+        ]:
+            with self.subTest(field=field, source="provider"), self.assertRaises(ValueError):
+                cleanup_actor_targets(
+                    registry, "run-1", {actor["id"]: {**live[actor["id"]], field: value}}
+                )
+        with self.assertRaises(ValueError):
+            cleanup_actor_targets({**registry, "actors": [actor, actor]}, "run-1", live)
+
+    def test_all_school_actors_must_be_fresh_before_any_school_erasure(self):
+        for created in [None, "2026-10-06T08:05:00Z", "2026-10-07T09:01:00Z"]:
+            with self.subTest(created=created), self.assertRaises(ValueError):
+                observed = copy.deepcopy(self.observed)
+                observed[17]["actors"][0]["created_at"] = created
+                cleanup_targets(self.record, "run-1", observed)
 
 
 if __name__ == "__main__":

@@ -1,4 +1,6 @@
 import base64
+import hashlib
+import hmac
 import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -58,6 +60,7 @@ async def test_cleanup_preserves_shared_accounts_and_refuses_unknown_memberships
         users=SimpleNamespace(
             get_async=AsyncMock(
                 return_value=SimpleNamespace(
+                    id=actor["id"],
                     created_at=1791360600000,
                     primary_email_address_id="email_1",
                     email_addresses=[SimpleNamespace(id="email_1", email_address=actor["email"])],
@@ -75,4 +78,74 @@ async def test_cleanup_preserves_shared_accounts_and_refuses_unknown_memberships
             await cleanup_e2e_run._remove_unshared_actor(db, sdk, actor, registry)
     else:
         assert await cleanup_e2e_run._remove_unshared_actor(db, sdk, actor, registry) is False
+    sdk.users.delete_async.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_invalid_root_actor_is_rejected_before_database_connection(monkeypatch, tmp_path):
+    key = bytes(range(32))
+    registry = {
+        "schema_version": 1,
+        "run_id": "run-1",
+        "started_at": "2026-10-07T08:00:00Z",
+        "finished_at": "2026-10-07T09:00:00Z",
+        "organizations": [],
+        "actors": [
+            {
+                "id": "user_customer",
+                "email": "customer@example.com",
+                "created_at": "2026-10-07T08:05:00Z",
+                "creation_run_id": "run-1",
+                "provenance": "ui",
+                "type": "disposable",
+            }
+        ],
+    }
+    payload = json.dumps(registry).encode()
+    envelope = {
+        "version": 1,
+        "payload": base64.b64encode(payload).decode(),
+        "signature": hmac.new(key, payload, hashlib.sha256).hexdigest(),
+    }
+    environment = {
+        "MIGRATION_DATABASE_URL": "postgresql://owner:test@localhost/test",
+        "E2E_CLEANUP_CLERK_SECRET_KEY": "test-administrative-key",
+        "E2E_REGISTRY_HMAC_KEY": base64.b64encode(key).decode(),
+        "E2E_ARTIFACT_KEY": base64.b64encode(key).decode(),
+    }
+
+    def forbidden_connection(*args, **kwargs):
+        raise AssertionError("An invalid actor reached the database")
+
+    monkeypatch.setattr(cleanup_e2e_run, "create_async_engine", forbidden_connection)
+    with pytest.raises(ValueError, match="aliases"):
+        await cleanup_e2e_run.cleanup(
+            envelope, "run-1", tmp_path, execute=True, env=environment, sdk=SimpleNamespace()
+        )
+
+
+@pytest.mark.asyncio
+async def test_unexported_local_actor_data_prevents_provider_account_deletion():
+    actor = {"id": "user_orphan", "email": "admincronos100+run-1@gmail.com"}
+    db = AsyncMock()
+    db.scalar.side_effect = [None, 42]
+    sdk = SimpleNamespace(
+        users=SimpleNamespace(
+            get_async=AsyncMock(
+                return_value=SimpleNamespace(
+                    id=actor["id"],
+                    created_at=1791360600000,
+                    primary_email_address_id="email_1",
+                    email_addresses=[SimpleNamespace(id="email_1", email_address=actor["email"])],
+                )
+            ),
+            get_organization_memberships_async=AsyncMock(
+                return_value=SimpleNamespace(total_count=0, data=[])
+            ),
+            delete_async=AsyncMock(return_value=SimpleNamespace(id=actor["id"], deleted=True)),
+        )
+    )
+    registry = {"started_at": "2026-10-07T08:00:00Z", "finished_at": "2026-10-07T09:00:00Z"}
+    with pytest.raises(ValueError, match="Local actor"):
+        await cleanup_e2e_run._remove_unshared_actor(db, sdk, actor, registry)
     sdk.users.delete_async.assert_not_awaited()

@@ -67,10 +67,11 @@ def _actor_emails(actors):
     return identities
 
 
-def cleanup_targets(registry, expected_run_id, observed):
+def _run_window(registry, expected_run_id):
     if (
         type(registry.get("schema_version")) is not int
         or registry.get("schema_version") != 1
+        or not isinstance(expected_run_id, str)
         or not expected_run_id
         or registry.get("run_id") != expected_run_id
     ):
@@ -79,6 +80,51 @@ def cleanup_targets(registry, expected_run_id, observed):
     finished = _timestamp(registry.get("finished_at"))
     if finished < started or not isinstance(registry.get("organizations"), list):
         raise ValueError("Invalid cleanup registry")
+    return started, finished
+
+
+def _run_alias(actor, expected_run_id):
+    if not re.fullmatch(
+        r"(admincronos100|professorcronos100)\+" + re.escape(expected_run_id) + r"@gmail\.com",
+        actor.get("email", ""),
+    ):
+        raise ValueError("Cleanup actors must use aliases belonging to this run")
+
+
+def cleanup_actor_targets(registry, expected_run_id, observed):
+    """Verify actors observed during registration, including runs with no school."""
+    started, finished = _run_window(registry, expected_run_id)
+    actors = registry.get("actors", [])
+    if not isinstance(actors, list):
+        raise ValueError("Invalid root actor registry")
+    if not actors:
+        return []
+    _actor_emails(actors)
+    targets = []
+    for actor in actors:
+        _run_alias(actor, expected_run_id)
+        created = _timestamp(actor.get("created_at"))
+        if (
+            actor.get("type") != "disposable"
+            or actor.get("provenance") != "ui"
+            or actor.get("creation_run_id") != expected_run_id
+            or not started <= created <= finished
+        ):
+            raise ValueError("Actor does not belong to this disposable UI run")
+        current = observed.get(actor["id"])
+        if (
+            not isinstance(current, dict)
+            or current.get("id") != actor["id"]
+            or current.get("email") != actor["email"]
+            or _timestamp(current.get("created_at")) != created
+        ):
+            raise ValueError("Live actor ownership does not match the run registry")
+        targets.append(actor["id"])
+    return targets
+
+
+def cleanup_targets(registry, expected_run_id, observed):
+    started, finished = _run_window(registry, expected_run_id)
     targets = []
     seen_local = set()
     seen_clerk = set()
@@ -110,13 +156,7 @@ def cleanup_targets(registry, expected_run_id, observed):
         actors = organization.get("actors")
         actor_emails = _actor_emails(actors)
         for actor in actors:
-            if not re.fullmatch(
-                r"(admincronos100|professorcronos100)\+"
-                + re.escape(expected_run_id)
-                + r"@gmail\.com",
-                actor.get("email", ""),
-            ):
-                raise ValueError("Cleanup actors must use aliases belonging to this run")
+            _run_alias(actor, expected_run_id)
         current = observed.get(local_id)
         if (
             not current
@@ -130,5 +170,8 @@ def cleanup_targets(registry, expected_run_id, observed):
             raise ValueError("Live ownership does not match the run registry")
         if current.get("active_jobs") != []:
             raise ValueError("Cleanup refused while jobs are active or unknown")
+        for actor in current["actors"]:
+            if not started <= _timestamp(actor.get("created_at")) <= finished:
+                raise ValueError("Live actor creation is outside the run")
         targets.append((local_id, clerk_id))
     return targets
