@@ -4,6 +4,7 @@ import test from 'node:test'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
+import { spawnSync } from 'node:child_process'
 import { recoverEvidence } from './protect-test-evidence.mjs'
 import {
   childSpec,
@@ -112,6 +113,21 @@ test('redacts fake secrets from text artifacts', () => {
     'token=[REDACTED]; keep this',
   )
   assert.equal(redactSecrets('verification code 123456', ['123456']), 'verification code [REDACTED]')
+})
+
+test('production acceptance is excluded from default local E2E and explicitly enabled by its reporter', () => {
+  const source = "import config from './playwright.config.js'; console.log(JSON.stringify(config.projects.map(({name,use,workers,retries})=>({name,channel:use?.channel,workers,retries}))))"
+  function projects(baseUrl, report) {
+    const result = spawnSync(process.execPath, ['--input-type=module', '-e', source], {
+      cwd: join(ROOT, 'frontend'), windowsHide: true, encoding: 'utf8',
+      env: { ...process.env, BASE_URL: baseUrl, E2E_ACCEPTANCE_REPORT: report },
+    })
+    assert.equal(result.status, 0, result.stderr)
+    return JSON.parse(result.stdout)
+  }
+  assert.equal(projects('http://localhost:5173', '').some(project => project.name === 'acceptance'), false)
+  const acceptance = projects('https://cronos.pt', 'acceptance-report.json').find(project => project.name === 'acceptance')
+  assert.deepEqual(acceptance, { name: 'acceptance', channel: 'chrome', workers: 1, retries: 0 })
 })
 
 test('production artifacts preserve encrypted traces and screenshots, without raw copies', async () => {

@@ -99,14 +99,14 @@ export default defineConfig({
       workers: 1,
       dependencies: ['app', 'provider'],
     },
-    {
+    ...(acceptanceReport ? [{
       name: 'acceptance',
       testMatch: acceptanceMatch,
       fullyParallel: false,
       workers: 1,
       retries: 0,
       use: { ...devices['Desktop Chrome'], channel: 'chrome' },
-    },
+    }] : []),
     ...(process.env.CAPACITY_ENABLED === '1' ? [{
       name: 'capacity',
       testMatch: capacityMatch,
