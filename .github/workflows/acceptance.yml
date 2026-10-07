@@ -82,16 +82,28 @@ jobs:
           E2E_ADMIN_SSH_KEY: ${{ secrets.E2E_ADMIN_SSH_KEY }}
 
       - name: Sanitize acceptance artifacts after any outcome
+        id: sanitize
         if: always()
         run: node scripts/sanitize-test-artifacts.mjs ".test-artifacts/${E2E_RUN_ID}/acceptance-artifacts"
         env:
           E2E_ARTIFACT_KEY: ${{ secrets.E2E_ARTIFACT_KEY }}
+          E2E_REGISTRY_HMAC_KEY: ${{ secrets.E2E_REGISTRY_HMAC_KEY }}
+          E2E_ADMIN_SSH_KEY: ${{ secrets.E2E_ADMIN_SSH_KEY }}
+          E2E_GMAIL_CLIENT_ID: ${{ secrets.E2E_GMAIL_CLIENT_ID }}
+          E2E_GMAIL_CLIENT_SECRET: ${{ secrets.E2E_GMAIL_CLIENT_SECRET }}
+          E2E_GMAIL_ADMIN_REFRESH_TOKEN: ${{ secrets.E2E_GMAIL_ADMIN_REFRESH_TOKEN }}
+          E2E_GMAIL_TEACHER_REFRESH_TOKEN: ${{ secrets.E2E_GMAIL_TEACHER_REFRESH_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.E2E_CLOUDFLARE_API_TOKEN }}
+          E2E_RAILWAY_TOKEN: ${{ secrets.E2E_RAILWAY_TOKEN }}
 
       - name: Upload protected acceptance artifacts
-        if: always()
+        if: always() && steps.sanitize.outcome == 'success'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: acceptance-artifacts-${{ env.E2E_RUN_ID }}
-          path: .test-artifacts
+          path: |
+            .test-artifacts/${{ env.E2E_RUN_ID }}/acceptance-artifacts
+            .test-artifacts/${{ env.E2E_RUN_ID }}/acceptance-result.json
+            .test-artifacts/${{ env.E2E_RUN_ID }}/acceptance-plan.json
           if-no-files-found: warn
           retention-days: 14

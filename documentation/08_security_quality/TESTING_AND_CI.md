@@ -84,7 +84,10 @@ Cleanup is supplied by the administrative wrapper (`backend/scripts/cleanup_e2e_
 Because the wrapper consumes the signed envelope, completion is a two-phase operation: run the campaign, extract the signed `run` document, execute the administrative cleanup, and evaluate the campaign again with the cleanup result recorded as `completed` against the same protected artifacts.
 The legacy local `e2e` command remains a diagnostic until each substituted group has real proof.
 
-`.github/workflows/acceptance.yml` runs the same command on the `main` SHA, serialized without automatic cancellation, and uploads sanitized artifacts on success and failure.
+`.github/workflows/acceptance.yml` runs the same command on the `main` SHA, serialized without automatic cancellation.
+After success or failure, it uploads only the protected evidence directory, final result and dependency plan, provided sanitization succeeds.
+Raw Playwright reports, JUnit output and other files outside this upload list remain excluded.
+The sanitizer reads separated environment credentials and the private dynamic registry; an invalid registry prevents artifact changes and upload.
 It activates only when the `E2E_ACCEPTANCE_ENABLED` repository variable is `true` and the documented `E2E_*` secrets and variables exist; PRs never receive them.
 The real campaign still requires the two Gmail OAuth consents, the Cloudflare and Railway read tokens, the browser/admin credentials, the signed persistent registry and the protected secret registry.
 Isolated worker recovery is verified with real PostgreSQL, Redis, a real broker message and an owned Celery worker process in `backend/tests/integration/committed/test_worker_process_recovery.py`.

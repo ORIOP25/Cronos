@@ -84,7 +84,7 @@ O observador acumula falhas de runtime sem lançar exceções dos callbacks.
 As exceções HTTP usam a ação, método, origem, caminho e estado do pedido observado.
 Um pedido novo invalida a exceção anterior para a mesma URL.
 Os quatro testes do observador e o teste da censura em memória passaram após RED.
-Os 56 testes de infraestrutura passaram; a CI confirmou também a verificação frontend.
+Os 58 testes de infraestrutura passaram após corrigir também a censura CLI; a CI confirmou a verificação frontend da revisão anterior.
 O projeto de aceitação só entra na configuração quando o runner fornece `E2E_ACCEPTANCE_REPORT`.
 O comando E2E local continua a selecionar apenas os projetos locais.
 O contexto Docker exclui `.auth/`, que contém as credenciais locais.
@@ -155,6 +155,9 @@ Estas provas de infraestrutura usam respostas Clerk controladas; não comprovam 
 Uma falha conserva os alvos pendentes e não publica o texto da resposta do fornecedor.
 
 O finalizador confere que cada referência de evidência existe depois da proteção.
+O sanitizador CLI reutiliza a lista de credenciais separadas e lê o registo dinâmico privado antes de alterar artefactos.
+O workflow só faz upload depois de sanitização bem-sucedida.
+Inclui a pasta protegida, o resultado final e o plano de dependências; exclui relatórios Playwright e JUnit não protegidos.
 Autentica os envelopes, calcula bytes e SHA-256 e assina o resultado com HMAC.
 A verificação posterior recusa alterações, ficheiros extra e ficheiros removidos.
 Uma falha de proteção preserva a falha primária e impede `validated`.

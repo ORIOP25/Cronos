@@ -15,8 +15,9 @@ test('acceptance redacts dedicated environment credentials and dynamic values wi
     E2E_ADMIN_SSH_KEY: 'private-key', E2E_ARTIFACT_KEY: 'encryption-key', E2E_REGISTRY_HMAC_KEY: 'signing-key',
     E2E_RAILWAY_TOKEN: 'provider-token', E2E_GMAIL_CLIENT_ID: 'oauth-client', E2E_GMAIL_CLIENT_SECRET: 'oauth-secret',
     E2E_RAILWAY_PROJECT_ID: 'public-project', E2E_ADMIN_EMAIL: 'public-email', EMPTY_TOKEN: '',
+    MIGRATION_DATABASE_URL: 'postgresql://owner:private@database/db',
   }, ['123456', 'provider-token'])
-  assert.deepEqual(new Set(result), new Set(['private-key', 'encryption-key', 'signing-key', 'provider-token', 'oauth-client', 'oauth-secret', '123456']))
+  assert.deepEqual(new Set(result), new Set(['private-key', 'encryption-key', 'signing-key', 'provider-token', 'oauth-client', 'oauth-secret', '123456', 'postgresql://owner:private@database/db']))
   assert.throws(() => acceptanceSecrets({}, { secret: '123456' }), /array/)
   assert.throws(() => acceptanceSecrets({}, [null]), /strings/)
 })

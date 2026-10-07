@@ -20,6 +20,44 @@ import {
 import { redactSecrets, sanitizeDirectory } from './sanitize-test-artifacts.mjs'
 import { classifyPath, collectFiles, countNonBlankLines, measureFiles } from './loc-report.mjs'
 
+test('sanitizer CLI redacts separate campaign keys, OAuth identity and dynamic codes', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'cronos-cli-sanitize-'))
+  try {
+    const artifacts = join(directory, 'artifacts')
+    mkdirSync(artifacts)
+    const registry = join(directory, 'private-secrets.json')
+    writeFileSync(registry, JSON.stringify(['452391']))
+    const log = join(artifacts, 'failure.log')
+    const signingKey = randomBytes(32).toString('base64')
+    writeFileSync(log, `OAuth desktop-client-id signing ${signingKey} SSH dedicated-private-key code 452391`)
+    const result = spawnSync(process.execPath, [join(ROOT, 'scripts/sanitize-test-artifacts.mjs'), artifacts], {
+      encoding: 'utf8',
+      env: { ...process.env, E2E_ARTIFACT_KEY: randomBytes(32).toString('base64'), E2E_RUN_ID: 'run-1', E2E_REGISTRY_HMAC_KEY: signingKey, E2E_ADMIN_SSH_KEY: 'dedicated-private-key', E2E_GMAIL_CLIENT_ID: 'desktop-client-id', E2E_SECRET_REGISTRY: registry },
+    })
+    assert.equal(result.status, 0, result.stderr)
+    assert.equal(readFileSync(log, 'utf8'), 'OAuth [REDACTED] signing [REDACTED] SSH [REDACTED] code [REDACTED]')
+  } finally { rmSync(directory, { recursive: true, force: true }) }
+})
+
+test('sanitizer CLI rejects an invalid secret registry before touching evidence', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'cronos-cli-sanitize-'))
+  try {
+    const artifacts = join(directory, 'artifacts')
+    mkdirSync(artifacts)
+    const registry = join(directory, 'private-secrets.json')
+    writeFileSync(registry, JSON.stringify({ code: '452391' }))
+    const source = join(artifacts, 'trace.zip')
+    writeFileSync(source, 'private trace')
+    const result = spawnSync(process.execPath, [join(ROOT, 'scripts/sanitize-test-artifacts.mjs'), artifacts], {
+      encoding: 'utf8',
+      env: { ...process.env, E2E_ARTIFACT_KEY: randomBytes(32).toString('base64'), E2E_RUN_ID: 'run-1', E2E_SECRET_REGISTRY: registry },
+    })
+    assert.notEqual(result.status, 0)
+    assert.equal(readFileSync(source, 'utf8'), 'private trace')
+    assert.equal(existsSync(`${source}.enc`), false)
+  } finally { rmSync(directory, { recursive: true, force: true }) }
+})
+
 test('the isolated E2E frontend uses the Clerk test browser policy', () => {
   const compose = readFileSync(join(ROOT, 'docker-compose.test.yml'), 'utf8')
   assert.match(compose, /frontend:\s+build:\s+context: \.\/frontend\s+target: ci/)

@@ -2,9 +2,9 @@ import { readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { extname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { protectEvidence, recoverEvidence } from './protect-test-evidence.mjs'
+import { acceptanceSecrets } from './acceptance-run.mjs'
 
 export const TEXT_EXTENSIONS = new Set(['.json', '.xml', '.txt', '.log', '.html', '.trace'])
-const SECRET_NAME = /(?:SECRET|TOKEN|PASSWORD|API_KEY|AUTHORIZATION|COOKIE|DATABASE_URL)/i
 const AUTH_STATE_NAME = /(?:storage[-_]?state|auth[-_]?state|\.auth)/i
 const PLAYWRIGHT_TRACE_NAME = /^trace\.zip$/i
 
@@ -12,12 +12,6 @@ export function redactSecrets(content, secrets) {
   return [...new Set(secrets.filter((value) => typeof value === 'string' && value.length > 0))]
     .sort((left, right) => right.length - left.length)
     .reduce((result, secret) => result.split(secret).join('[REDACTED]'), content)
-}
-
-function environmentSecrets() {
-  return Object.entries(process.env)
-    .filter(([name, value]) => SECRET_NAME.test(name) && value)
-    .map(([, value]) => value)
 }
 
 export async function sanitizeDirectory(directory, secrets, protection, root = directory) {
@@ -59,7 +53,9 @@ export async function sanitizeDirectory(directory, secrets, protection, root = d
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const secrets = environmentSecrets()
+  const dynamic = process.env.E2E_SECRET_REGISTRY
+    ? JSON.parse(await readFile(process.env.E2E_SECRET_REGISTRY, 'utf8')) : []
+  const secrets = acceptanceSecrets(process.env, dynamic)
   const protection = process.env.E2E_ARTIFACT_KEY
     ? { key: Buffer.from(process.env.E2E_ARTIFACT_KEY, 'base64'), runId: process.env.E2E_RUN_ID }
     : undefined
