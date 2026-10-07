@@ -16,3 +16,12 @@ test('preflight requires administrative cleanup identity separately from browser
   assert.ok(productionDependencies(environment).includes('E2E_ADMIN_SSH_KEY'))
   assert.ok(productionDependencies(environment).includes('E2E_REGISTRY_HMAC_KEY'))
 })
+
+test('missing production code sender blocks the campaign before any account is created', async () => {
+  const configured = { ...environment }
+  for (const name of productionDependencies({})) configured[name] = 'configured'
+  delete configured.E2E_GMAIL_CODE_SENDER
+  const result = await preflight(configured, { fetchImpl: () => { throw new Error('Unexpected external request') } })
+  assert.equal(result.status, 'dependency_unavailable')
+  assert.deepEqual(result.missing, ['E2E_GMAIL_CODE_SENDER'])
+})

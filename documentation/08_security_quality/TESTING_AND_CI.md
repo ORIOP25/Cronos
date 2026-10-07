@@ -100,6 +100,12 @@ Keep credentials in separate GitHub secrets.
 The runner collects sensitive environment values in memory for artifact redaction.
 `E2E_SECRET_REGISTRY_JSON` stores additional values observed during UI journeys, including verification codes.
 It can start as `[]`; it must grow when the campaign observes new secrets.
+The identity journey persists generated passwords and delivered codes before using them in the browser.
+`E2E_GMAIL_CODE_SENDER` identifies the observed production verification/recovery sender; configure it as a repository variable.
+Preflight requires this value before account creation. Do not derive it from the development Clerk instance.
+The current identity spec covers registration, verification, fresh-context login and delivered recovery through visible controls.
+Its real execution remains pending Gmail OAuth and production deployment alignment; no new identity is certified by these code changes.
+Logout, old-password rejection, teacher invitation and school setup remain separate pending cases.
 Do not duplicate the administrative SSH private key in that JSON registry.
 
 `E2E_PERSISTENT_REGISTRY_JSON` contains the signed campaign school inventory.

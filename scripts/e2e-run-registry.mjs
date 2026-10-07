@@ -73,9 +73,24 @@ export async function recordUiActorFile(path, key, runId, actor, observedAt) {
   const registry = verifyRegistry(JSON.parse(await readFile(path, 'utf8')), key)
   if (registry.run_id !== runId) throw new Error('UI registry run identity does not match')
   const envelope = signRegistry(recordUiActor(registry, actor, observedAt), key)
+  await writePrivateJson(path, envelope)
+}
+
+async function writePrivateJson(path, value) {
   const temporary = `${path}.${randomUUID()}.tmp`
   try {
-    await writeFile(temporary, JSON.stringify(envelope), { flag: 'wx', mode: 0o600 })
+    await writeFile(temporary, JSON.stringify(value), { flag: 'wx', mode: 0o600 })
     await rename(temporary, path)
   } finally { await rm(temporary, { force: true }) }
+}
+
+// Acceptance runs with one worker; persist before a value can enter browser evidence.
+export async function recordSecretFile(path, secret) {
+  if (typeof secret !== 'string' || !secret) throw new Error('Dynamic secret must be a nonempty string')
+  await realParents(path)
+  const info = await lstat(path)
+  if (!info.isFile() || info.isSymbolicLink()) throw new Error('Secret registry must be a regular file')
+  const secrets = JSON.parse(await readFile(path, 'utf8'))
+  if (!Array.isArray(secrets) || secrets.some(value => typeof value !== 'string')) throw new Error('Invalid secret registry')
+  if (!secrets.includes(secret)) await writePrivateJson(path, [...secrets, secret])
 }

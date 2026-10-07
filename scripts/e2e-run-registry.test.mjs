@@ -4,7 +4,31 @@ import { randomBytes } from 'node:crypto'
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createUiRegistry, createUiRegistryFile, recordUiActor, recordUiActorFile, signRegistry, verifyRegistry } from './e2e-run-registry.mjs'
+import { createUiRegistry, createUiRegistryFile, recordUiActor, recordUiActorFile, recordSecretFile, signRegistry, verifyRegistry } from './e2e-run-registry.mjs'
+
+test('dynamic credentials are durably registered before browser use and invalid registries remain untouched', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'cronos-dynamic-secrets-'))
+  try {
+    const path = join(directory, 'private.json')
+    await writeFile(path, '[]', { mode: 0o600 })
+    await recordSecretFile(path, 'generated-password')
+    await recordSecretFile(path, '123456')
+    await recordSecretFile(path, '123456')
+    assert.deepEqual(JSON.parse(await readFile(path, 'utf8')), ['generated-password', '123456'])
+    for (const secret of ['', null, 123456]) await assert.rejects(recordSecretFile(path, secret), /secret/i)
+    await writeFile(path, '[17]')
+    await assert.rejects(recordSecretFile(path, 'another'), /registry/i)
+    assert.equal(await readFile(path, 'utf8'), '[17]')
+    await assert.rejects(recordSecretFile(join(directory, 'missing.json'), 'another'), { code: 'ENOENT' })
+    const outside = join(directory, 'outside')
+    await mkdir(outside)
+    await writeFile(join(outside, 'private.json'), '[]')
+    const linked = join(directory, 'linked')
+    await symlink(outside, linked, process.platform === 'win32' ? 'junction' : 'dir')
+    await assert.rejects(recordSecretFile(join(linked, 'private.json'), 'another'), /confined/)
+    assert.equal(await readFile(join(outside, 'private.json'), 'utf8'), '[]')
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})
 
 test('UI journal refuses a redirected directory before writing ownership records', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'cronos-ui-journal-link-'))

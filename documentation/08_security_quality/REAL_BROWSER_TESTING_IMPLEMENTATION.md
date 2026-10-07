@@ -286,6 +286,18 @@ node scripts/protect-test-evidence.mjs recover <source.enc> <output-directory> <
 Use o caminho original relativo à raiz de artefactos, sem o sufixo `.enc`.
 A recuperação autentica antes de escrever e recusa sobrescrita, caminhos indevidos e junctions dentro da saída.
 
+## Continuação — percursos de identidade
+
+Acrescentado `identity.spec.js` com cinco IDs concretos, além dos três percursos públicos existentes.
+O fluxo usa registo, consentimento, códigos entregues, recuperação e entradas em contextos novos pela interface.
+Os rótulos iniciais de registo/login foram observados num Chrome próprio headless em produção, sem submissão.
+As palavras-passe e os códigos entram no registo privado antes de serem utilizados no browser.
+O teste do registo dinâmico passou de RED para GREEN; inclui corrupção, duplicados e uma junction real.
+O preflight exige o remetente de código observado antes de criar contas.
+Nenhum destes cinco casos recebeu prova de execução real: Gmail OAuth e o remetente dos códigos continuam pendentes.
+O remetente dos convites foi confirmado por metadados de mensagens reais como `invitations@cronos.pt`.
+A consulta da instância Clerk confirmou produção e o domínio `clerk.cronos.pt`, distintos da configuração local de desenvolvimento.
+
 ## Fontes e documentos relacionados
 
 - [Política de aceitação](../../frontend/e2e/utils/acceptance-policy.js)

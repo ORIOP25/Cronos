@@ -1,8 +1,29 @@
 import { test as base, expect } from '@playwright/test'
 import { observeAcceptanceRuntime } from '../utils/acceptance-runtime.js'
-import { recordUiActorFile } from '../../../scripts/e2e-run-registry.mjs'
+import { recordSecretFile, recordUiActorFile } from '../../../scripts/e2e-run-registry.mjs'
+import { createGmailReader } from '../utils/gmail.js'
 
 export const test = base.extend({
+  deliveredMail: async ({ baseURL }, runFixture) => {
+    if (baseURL !== 'https://cronos.pt') throw new Error('Delivered mail requires production acceptance')
+    const readers = new Map()
+    await runFixture(async (actor, criteria) => {
+      if (!['admin', 'teacher'].includes(actor)) throw new Error('Unknown dedicated mailbox')
+      if (!readers.has(actor)) readers.set(actor, await createGmailReader({
+        clientId: process.env.E2E_GMAIL_CLIENT_ID,
+        clientSecret: process.env.E2E_GMAIL_CLIENT_SECRET,
+        refreshToken: process.env[`E2E_GMAIL_${actor.toUpperCase()}_REFRESH_TOKEN`],
+        mailbox: process.env[`E2E_${actor.toUpperCase()}_EMAIL`],
+      }))
+      const message = await readers.get(actor).poll(criteria)
+      await recordSecretFile(process.env.E2E_SECRET_REGISTRY, message.code ?? message.link)
+      return message
+    })
+  },
+  registerSecret: async ({ baseURL }, runFixture) => {
+    if (baseURL !== 'https://cronos.pt') throw new Error('Dynamic credentials require production acceptance')
+    await runFixture(value => recordSecretFile(process.env.E2E_SECRET_REGISTRY, value))
+  },
   provenance: async ({ page }, runFixture) => {
     await runFixture({
       async recordCurrentActor() {
