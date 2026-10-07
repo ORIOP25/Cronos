@@ -60,9 +60,24 @@ async function authenticatedState(browser, login) {
   return { organizationId, storageState }
 }
 
-async function prepareClient(page, route) {
-  await page.goto(`${E2E_BASE_URL}${route}`, { waitUntil: 'domcontentloaded' })
-  await page.waitForFunction(() => window.Clerk?.session?.getToken && window.Clerk?.organization?.id)
+async function prepareClient(page, routes) {
+  for (const route of routes) {
+    await page.goto(`${E2E_BASE_URL}${route}`, { waitUntil: 'domcontentloaded' })
+    await page.waitForFunction(() => window.Clerk?.session?.getToken && window.Clerk?.organization?.id)
+  }
+}
+
+function measurePage(page, metrics) {
+  const requestStarts = new Map()
+  page.on('request', (requestEvent) => requestStarts.set(requestEvent, Date.now()))
+  page.on('response', (response) => {
+    const request = response.request()
+    const requestStartedAt = requestStarts.get(request) || Date.now()
+    requestStarts.delete(request)
+    addRequest(metrics, response, requestStartedAt)
+  })
+  page.on('pageerror', (error) => metrics.browserErrors.push(error.name))
+  page.on('console', (message) => { if (message.type() === 'error') metrics.browserErrors.push('console.error') })
 }
 
 async function schedulerStatus(page) {
@@ -191,23 +206,14 @@ test('mede clientes autenticados com um único job do scheduler', async ({ brows
       const state = index < teacherClientCount ? teacherState : adminState
       const context = await browser.newContext({ storageState: state.storageState })
       const page = await context.newPage()
-      const requestStarts = new Map()
-      page.on('request', (requestEvent) => requestStarts.set(requestEvent, Date.now()))
-      page.on('response', (response) => {
-        const request = response.request()
-        const requestStartedAt = requestStarts.get(request) || Date.now()
-        requestStarts.delete(request)
-        addRequest(metrics, response, requestStartedAt)
-      })
-      page.on('pageerror', (error) => metrics.browserErrors.push(error.name))
-      page.on('console', (message) => { if (message.type() === 'error') metrics.browserErrors.push('console.error') })
       attachRuntimeGuards(page)
       contexts.push(context)
       pages.push({ page, routes: index < teacherClientCount ? teacherRoutes : adminRoutes })
     }
 
-    await Promise.all(pages.map(({ page, routes }) => prepareClient(page, routes[0])))
+    await Promise.all(pages.map(({ page, routes }) => prepareClient(page, routes)))
     startedAt = Date.now()
+    for (const { page } of pages) measurePage(page, metrics)
     const generationPage = pages[teacherClientCount]?.page
     if (!generationPage) throw new Error('Capacity profile has no administrator generation page.')
     const loadPages = pages.filter(({ page }) => page !== generationPage)
