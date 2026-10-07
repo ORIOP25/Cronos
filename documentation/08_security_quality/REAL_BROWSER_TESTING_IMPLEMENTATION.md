@@ -1,6 +1,6 @@
 # Implementação dos testes reais — registo de execução
 
-Revisão: 2026-10-07. Estado: implementação parcial; aceitação de produção pendente.
+Revisão: 2026-10-07. Estado: infraestrutura de aceitação implementada; aceitação de produção pendente de dependências externas.
 
 ## Objetivo
 
@@ -33,6 +33,15 @@ Os cinco CSV originais têm um manifesto de nomes, bytes e SHA-256.
 O inspetor independente usa `csv` e `Decimal`, sem importar o parser do produto.
 Confirma 48 salas, 40 professores, 52 disciplinas, 208 módulos, 48 turmas, 16 cursos e 336 atribuições.
 A procura expandida contém 1 209 600 minutos.
+O `.gitattributes` marca os originais como `-text`; os blobs preservam CRLF exatamente como os ficheiros do proprietário.
+Sem essa marca, a normalização de line endings falhava a integridade na CI.
+
+O comando `node scripts/test.mjs acceptance` compõe o preflight, o projeto Playwright `acceptance` em Chrome, o finalizador de artefactos e a avaliação da matriz.
+Com dependências em falta termina com código `3` e registra os nomes em `acceptance-plan.json`, sem abrir o browser.
+A assembleia da campanha (identidade, snapshots anterior/posterior, casos, limpeza) é uma função pura coberta por testes; só `validated` da matriz completa certifica produção.
+`.github/workflows/acceptance.yml` executa o comando no SHA da `main`, serializado e sem cancelamento automático, com upload sanitizado em sucesso e falha, ativado pela variável `E2E_ACCEPTANCE_ENABLED`.
+
+A recuperação de um worker perdido é agora provada com infraestrutura real: uma mensagem real no broker Redis é consumida por um processo Celery próprio que reconcilia a tentativa abandonada para `FAILED/WORKER_STALLED`, e uma entrega duplicada não cria proposta adicional.
 
 A aprovação e rejeição de propostas ignoram erros tardios após troca de escola, logout ou desmontagem.
 Os testes demonstraram a falha antes da correção.
@@ -54,8 +63,10 @@ O container frontend local foi reconstruído e atualizado com essa correção.
 | W06.1–2 | Verificador independente de procura, crédito modular e recursos, com oito testes junto do inspetor. | Ligar às leituras autenticadas e aos resultados da geração real; conferir o horário completo. |
 | W05 e W06.3–W08 | Percursos do plano permanecem pendentes. | Execução pela UI, persistência, scheduler e história real elegível. |
 | W09 | Regressão do chamador corrigida com testes determinísticos. | Inventário e redução após provas substitutas; manter regressões únicas. |
+| W10.1–3, W10.7 | Comando `acceptance` fail-closed, projeto Playwright em Chrome, workflow manual/`main` serializado, upload sanitizado em falha. | Executar a campanha real com os segredos e a matriz de percursos. |
 | W10.4–6 | Registo HMAC, wrapper administrativo, exportação cifrada e erasure com bloqueio de jobs; canal SSH remoto respondeu. | Executar o wrapper remoto sobre o registo real produzido pela UI e comprovar eliminação real no fornecedor. |
-| W10 restante, W11 e W12 | Cutover e aceitação final permanecem pendentes. | CI, recuperação isolada, matriz completa e documentação final. |
+| W11.1–3 | Recuperação com broker real e processo Celery próprio; entrega duplicada sem proposta adicional. | W11.4: repetir num ambiente Railway isolado quando a prova exigir o fornecedor. |
+| W12 | Documentação e comandos reconciliados com o comportamento comprovado. | Campanha completa no SHA publicado e limpeza por execução. |
 
 O sanitizador preserva o modo legado enquanto não ocorre o cutover.
 Nesse modo, a expectativa antiga de eliminar traces permanece ativa.
@@ -98,9 +109,11 @@ O último `npm run verify` passou 587 casos Vitest em 87 ficheiros e os checks f
 O inventário do baseline contém 571 casos nos mesmos 87 ficheiros.
 Os 16 casos adicionais cobrem a regressão de tentativas e os guards de produção.
 Ainda não ocorreu redução dos testes de aplicação.
-Os 43 testes Node da infraestrutura de aceitação passaram após as últimas alterações.
+Os 49 testes Node da infraestrutura de aceitação passaram após as últimas alterações, incluindo a composição pura do comando de aceitação.
 Ruff passou nos ficheiros Python alterados.
 Os testes focados de política, wrapper e contratos de privacidade passaram: 21 casos e 19 subtests.
+
+O teste de recuperação de worker passou com PostgreSQL e Redis reais, um processo Celery próprio e uma mensagem real no broker: 1 caso em 29,6 segundos, sem proposta duplicada.
 
 O runner isolado executou 10 testes PostgreSQL de privacidade e 61 contratos de infraestrutura, todos com sucesso.
 Após acrescentar o wrapper, passaram mais três variantes PostgreSQL e os mesmos 61 contratos.
@@ -150,6 +163,9 @@ A API respondeu com a revisão baseline e PostgreSQL/Redis ligados.
 O endpoint frontend `/revision.json` ainda respondeu 404 em produção.
 O token Cloudflare disponível respondeu com estado `expired`.
 Não foram encontrados os quatro valores OAuth Gmail exigidos pelo preflight.
+A lista de segredos do repositório contém apenas `CLERK_SECRET_KEY`, `POSTGRES_TEST_PASSWORD` e `SONAR_TOKEN`; a variável pública é `VITE_CLERK_PUBLISHABLE_KEY`.
+O comando `acceptance` devolveu `dependency_unavailable` (código 3) com os 19 nomes em falta, sem abrir browser.
+O workflow `.github/workflows/acceptance.yml` permanece inativo até `E2E_ACCEPTANCE_ENABLED` ser `true` e os segredos documentados existirem.
 O controlo manual do navegador falhou na inicialização com `setup refresh had errors`.
 O utilizador autorizou o login Cloudflare com `account:read`, `user:read` e `pages:write`, guardado no keychain.
 O módulo nativo do keychain foi instalado, e o login abriu o consentimento.

@@ -75,6 +75,12 @@ test('parses scheduler lab campaign options and rejects them elsewhere', () => {
   assert.throws(() => parseArgs(['campaign', '--workers', '0']), /Invalid worker count/)
 })
 
+test('exposes production acceptance as its own command', () => {
+  assert.equal(parseArgs(['acceptance']).command, 'acceptance')
+  assert.throws(() => parseArgs(['acceptance', '--project', 'acceptance']), /only valid for e2e/)
+  assert.throws(() => parseArgs(['acceptance', '--', 'extra']), /not supported/)
+})
+
 test('preserves paths and arguments containing spaces as separate child arguments', () => {
   const spec = childSpec('node', [ROOT, 'tests/with spaces/example.test.mjs'])
   assert.deepEqual(spec.args, [ROOT, 'tests/with spaces/example.test.mjs'])
