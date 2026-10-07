@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { join } from 'node:path'
 import test from 'node:test'
-import { acceptanceExitCode, acceptancePlan, assembleCampaign } from './acceptance-run.mjs'
+import { acceptanceExitCode, acceptancePlan, acceptanceSecrets, assembleCampaign } from './acceptance-run.mjs'
 import { productionDependencies } from './real-browser-preflight.mjs'
 import { COMPONENTS, evaluateAcceptance, REQUIRED_CASES } from '../frontend/e2e/utils/acceptance-policy.js'
 
@@ -9,6 +9,17 @@ const revision = 'c'.repeat(40)
 const artifactDir = join('artifacts', 'run-1')
 const startedAt = '2026-10-07T08:00:00.000Z'
 const finishedAt = '2026-10-07T09:00:00.000Z'
+
+test('acceptance redacts dedicated environment credentials and dynamic values without exporting an aggregate', () => {
+  const result = acceptanceSecrets({
+    E2E_ADMIN_SSH_KEY: 'private-key', E2E_ARTIFACT_KEY: 'encryption-key', E2E_REGISTRY_HMAC_KEY: 'signing-key',
+    E2E_RAILWAY_TOKEN: 'provider-token', E2E_GMAIL_CLIENT_ID: 'oauth-client', E2E_GMAIL_CLIENT_SECRET: 'oauth-secret',
+    E2E_RAILWAY_PROJECT_ID: 'public-project', E2E_ADMIN_EMAIL: 'public-email', EMPTY_TOKEN: '',
+  }, ['123456', 'provider-token'])
+  assert.deepEqual(new Set(result), new Set(['private-key', 'encryption-key', 'signing-key', 'provider-token', 'oauth-client', 'oauth-secret', '123456']))
+  assert.throws(() => acceptanceSecrets({}, { secret: '123456' }), /array/)
+  assert.throws(() => acceptanceSecrets({}, [null]), /strings/)
+})
 
 function readyEnvironment() {
   const environment = {

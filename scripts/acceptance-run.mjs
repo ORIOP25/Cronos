@@ -5,6 +5,15 @@ import { productionDependencies } from './real-browser-preflight.mjs'
 export const ACCEPTANCE_PROJECT = 'acceptance'
 export const ACCEPTANCE_WORKERS = 1
 
+export function acceptanceSecrets(environment, dynamic) {
+  if (!Array.isArray(dynamic)) throw new Error('Dynamic secret registry must be an array')
+  if (dynamic.some(value => typeof value !== 'string')) throw new Error('Dynamic secrets must be strings')
+  const configured = Object.entries(environment)
+    .filter(([name, value]) => value && (/(?:SECRET|TOKEN|PASSWORD|KEY|AUTHORIZATION|COOKIE)/i.test(name) || name === 'E2E_GMAIL_CLIENT_ID'))
+    .map(([, value]) => value)
+  return [...new Set([...configured, ...dynamic].filter(Boolean))]
+}
+
 export function acceptancePlan(environment, artifactDir) {
   const config = validateProductionConfig(environment)
   const missing = productionDependencies(environment)

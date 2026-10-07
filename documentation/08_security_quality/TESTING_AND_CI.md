@@ -89,6 +89,23 @@ It activates only when the `E2E_ACCEPTANCE_ENABLED` repository variable is `true
 The real campaign still requires the two Gmail OAuth consents, the Cloudflare and Railway read tokens, the browser/admin credentials, the signed persistent registry and the protected secret registry.
 Isolated worker recovery is verified with real PostgreSQL, Redis, a real broker message and an owned Celery worker process in `backend/tests/integration/committed/test_worker_process_recovery.py`.
 
+### Credential and provenance registries
+
+Keep credentials in separate GitHub secrets.
+The runner collects sensitive environment values in memory for artifact redaction.
+`E2E_SECRET_REGISTRY_JSON` stores additional values observed during UI journeys, including verification codes.
+It can start as `[]`; it must grow when the campaign observes new secrets.
+Do not duplicate the administrative SSH private key in that JSON registry.
+
+`E2E_PERSISTENT_REGISTRY_JSON` contains the signed campaign school inventory.
+An empty signed inventory permits initial preparation; it does not prove eligible historical schools.
+Historical cases require observed UI provenance, ended lessons and the required consecutive campaigns.
+
+The `acceptance` project currently implements three public cases.
+They use Chrome, semantic locators and the runtime observer without programmatic authentication or business seeds.
+The remaining case matrix still requires implementation and real execution.
+A green legacy CI run does not certify this production matrix.
+
 ## References
 
 - [Contributing Guidelines](../00_getting_started/CONTRIBUTING.md)

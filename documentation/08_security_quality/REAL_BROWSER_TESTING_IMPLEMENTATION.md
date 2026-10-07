@@ -17,7 +17,8 @@ Ler o [PRD](REAL_BROWSER_TESTING_PLAN.md) e o [guia de privacidade](../09_ops_ob
 O baseline é `91a9d28bcb9c9a829a8578872156a6b90fa04bcf`.
 A branch de implementação é `codex/real-browser-testing`, num checkout isolado.
 As alterações externas do checkout original permanecem preservadas.
-Não ocorreu push desta implementação nem campanha completa de aceitação.
+A implementação foi publicada na branch; a CI passou em `4cc0a2d51069dc06f19cc689e4d8d68663ba0319`.
+Não ocorreu uma campanha completa de aceitação.
 Um diagnóstico público no Chrome real passou contra `https://cronos.pt`.
 Conferiu os canonicals de `/about`, `/contact` e `/privacy`, e uma página inexistente com resposta 404.
 O trace e a screenshot foram cifrados; a recuperação autenticada dos dois ficheiros passou.
@@ -46,6 +47,52 @@ A recuperação de um worker perdido é agora provada com infraestrutura real: u
 A aprovação e rejeição de propostas ignoram erros tardios após troca de escola, logout ou desmontagem.
 Os testes demonstraram a falha antes da correção.
 O container frontend local foi reconstruído e atualizado com essa correção.
+
+## Continuação: acessos e percursos públicos
+
+Foram geradas duas chaves aleatórias de 32 bytes.
+Os secrets GitHub `E2E_ARTIFACT_KEY` e `E2E_REGISTRY_HMAC_KEY` estão configurados.
+Os seis IDs Railway estão configurados nos secrets correspondentes.
+A chave SSH administrativa dedicada foi registada pela API nativa.
+Uma ligação real ao serviço API confirmou o canal sem alterar dados.
+O secret `E2E_ADMIN_SSH_KEY` contém essa chave dedicada.
+
+O registo persistente foi inicializado com assinatura válida e zero escolas.
+Esse registo declara `history_verified=false`; não comprova histórico nem elegibilidade operacional.
+O registo dinâmico de segredos começa vazio.
+O runner junta os secrets separados do ambiente em memória antes da censura.
+Não agrega a chave SSH com outros segredos num secret adicional.
+
+O Railway recusou criar tokens de projeto e de conta com `Not Authorized`.
+Um token de projeto existente apresentou apenas uma representação que não autentica.
+Não foi exportado como credencial válida.
+O refresh OAuth Cloudflare respondeu `invalid_grant`.
+O browser isolado da ferramenta falhou antes de arrancar.
+O Chrome headless isolado chegou à verificação de segurança Cloudflare, sem sessão autenticada.
+A pesquisa Gmail direcionada não encontrou anexos com as configurações OAuth exigidas.
+
+O projeto `acceptance` agora contém três percursos públicos concretos.
+Cobrem rotas e canonicals, documentos legais e a resposta pública 404 com regresso ao início.
+O diagnóstico Chrome de rotas e documentos falhou nos assets versionados ainda não publicados.
+Após corrigir o locator, um diagnóstico 404 passou antes da carga completa da página de destino.
+A revisão acrescentou a espera pelo evento `load`; o diagnóstico final falhou nos assets 404.
+Esse caso permanece sem prova de aceitação válida.
+As imagens, traces e restantes binários dos diagnósticos foram cifrados.
+Estes diagnósticos não passam G1 nem certificam a matriz completa.
+
+O observador acumula falhas de runtime sem lançar exceções dos callbacks.
+As exceções HTTP usam a ação, método, origem, caminho e estado do pedido observado.
+Um pedido novo invalida a exceção anterior para a mesma URL.
+Os quatro testes do observador e o teste da censura em memória passaram após RED.
+Os 55 testes de infraestrutura passaram; `npm run verify` passou antes da última alteração do runner.
+O contexto Docker exclui `.auth/`, que contém as credenciais locais.
+Uma verificação da imagem real confirmou a ausência dessa pasta no estágio de build.
+A imagem local foi reconstruída e o serviço frontend atualizado.
+O comando de aceitação confirmou nove dependências em falta e terminou com código `3`, sem browser.
+
+Os restantes 66 casos concretos ainda precisam de implementação ou adaptação e execução real.
+Credenciais configuradas não substituem esses percursos.
+Os quatro planos permanecem incompletos.
 
 ## Componentes e estado das tarefas
 

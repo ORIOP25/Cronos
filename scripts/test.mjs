@@ -6,7 +6,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawn } from 'node:child_process'
 import { performance } from 'node:perf_hooks'
-import { acceptanceExitCode, acceptancePlan, assembleCampaign } from './acceptance-run.mjs'
+import { acceptanceExitCode, acceptancePlan, acceptanceSecrets, assembleCampaign } from './acceptance-run.mjs'
 import { preflight } from './real-browser-preflight.mjs'
 import { finalizeRun } from './finalize-real-browser-run.mjs'
 
@@ -988,7 +988,7 @@ async function runAcceptance(context) {
     playwrightReport,
     cleanup,
   })
-  const secrets = JSON.parse(await readFile(process.env.E2E_SECRET_REGISTRY, 'utf8'))
+  const secrets = acceptanceSecrets(process.env, JSON.parse(await readFile(process.env.E2E_SECRET_REGISTRY, 'utf8')))
   const result = await finalizeRun(run, plan.artifactRoot, {
     key: Buffer.from(process.env.E2E_ARTIFACT_KEY, 'base64'),
     signingKey: Buffer.from(process.env.E2E_REGISTRY_HMAC_KEY, 'base64'),
