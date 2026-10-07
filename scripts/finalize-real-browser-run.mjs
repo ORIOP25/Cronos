@@ -31,7 +31,7 @@ async function inventory(directory, protection, prefix = '') {
     else if (!TEXT_EXTENSIONS.has(extname(path).toLowerCase())) throw new Error('Unprotected binary artifact')
     artifacts.push({ path, bytes: content.length, sha256: createHash('sha256').update(content).digest('hex') })
   }
-  return artifacts.sort((left, right) => left.path.localeCompare(right.path))
+  return artifacts.sort((left, right) => left.path < right.path ? -1 : left.path > right.path ? 1 : 0)
 }
 
 export async function finalizeRun(input, artifactRoot, { key, signingKey, secrets }) {

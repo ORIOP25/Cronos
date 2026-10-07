@@ -30,6 +30,8 @@ class OriginalDataTests(unittest.TestCase):
             },
         )
         self.assertEqual(len(result["demand"]), 336)
+        self.assertEqual(len(result["rooms"]), 48)
+        self.assertEqual(len(result["classes"]), 48)
         self.assertGreater(result["required_minutes"], 0)
         self.assertEqual(
             sum(item["minutes"] for item in result["demand"]),

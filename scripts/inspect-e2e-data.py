@@ -155,6 +155,17 @@ def inspect(directory):
         "files": manifest["files"],
         "counts": counts,
         "subjects": subjects,
+        "rooms": {
+            row["Nome da sala"]: {
+                "type": row["Tipo de sala"],
+                "capacity": int(row["Capacidade"]),
+            }
+            for row in resources["rooms"]
+        },
+        "classes": [
+            {"course": course, "class": name, "size": int(row["Número de alunos"])}
+            for (course, name), row in classes.items()
+        ],
         "teachers": teachers,
         "demand": demand,
         "required_minutes": sum(item["minutes"] for item in demand),

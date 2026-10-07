@@ -51,7 +51,8 @@ O container frontend local foi reconstruído e atualizado com essa correção.
 | W03.3–5 | Redação de segredos curtos, AES-256-GCM, recuperação confinada e manifesto assinado dos ficheiros reais. | Registo dinâmico dos segredos durante os percursos e upload real protegido. |
 | W03.6–7 | Guards observam erros da API e Clerk; verificações locais passaram. | Composição das falhas auxiliares e exceções por ação, método e caminho. |
 | W04 | Adaptadores de revisão e writer da revisão frontend. | Publicar frontend e obter snapshot completo dos dois fornecedores. |
-| W05–8 | Percursos do plano permanecem pendentes. | Execução pela UI, persistência, scheduler e história real elegível. |
+| W06.1–2 | Verificador independente de procura, crédito modular e recursos, com oito testes junto do inspetor. | Ligar às leituras autenticadas e aos resultados da geração real; conferir o horário completo. |
+| W05 e W06.3–W08 | Percursos do plano permanecem pendentes. | Execução pela UI, persistência, scheduler e história real elegível. |
 | W09 | Regressão do chamador corrigida com testes determinísticos. | Inventário e redução após provas substitutas; manter regressões únicas. |
 | W10.4–6 | Registo HMAC, wrapper administrativo, exportação cifrada e erasure com bloqueio de jobs; canal SSH remoto respondeu. | Executar o wrapper remoto sobre o registo real produzido pela UI e comprovar eliminação real no fornecedor. |
 | W10 restante, W11 e W12 | Cutover e aceitação final permanecem pendentes. | CI, recuperação isolada, matriz completa e documentação final. |
@@ -113,6 +114,17 @@ Ruff verificou os 353 ficheiros Python do backend.
 A cobertura global foi 82%; a política crítica de constraints manteve 100%.
 O runner removeu apenas os recursos de teste que criou.
 
+O verificador `validate-e2e-schedule.py` não importa o domínio, o solver nem o validador do produto.
+O comando lê sempre os cinco originais completos, com a verificação dos bytes e hashes.
+Confere procura residual, offsets e sequência dos módulos, crédito parcial final, referências, capacidades, competências, datas, grelha e indisponibilidades.
+Confere sobreposições para turma, professor e sala; períodos adjacentes permanecem válidos.
+O almoço exige um intervalo contínuo por turma e professor nos dias com atividade.
+
+Os oito testes independentes passaram, incluindo os quatro testes do inspetor CSV.
+A CI tem um passo explícito para executar estes testes com a biblioteca standard.
+A entrada materializada usa nomes dos CSV e ainda exige um adaptador das leituras autenticadas.
+O verificador atual abrange horários futuros editáveis; a recuperação com posições protegidas permanece por ligar à baseline histórica.
+
 ## Contratos e invariantes
 
 - Usar apenas `https://cronos.pt` na aceitação.
@@ -162,6 +174,13 @@ cd backend
 python -m unittest discover -s tests/unit -p test_e2e_cleanup_policy.py
 ```
 
+Execute o verificador independente sobre a representação materializada da campanha:
+
+```powershell
+python scripts/validate-e2e-schedule.py <materialized-snapshot.json>
+python -m unittest discover -s scripts -p "test_*e2e*.py"
+```
+
 Recupere uma evidência com a chave separada em `E2E_ARTIFACT_KEY`:
 
 ```powershell
@@ -178,6 +197,7 @@ A recuperação autentica antes de escrever e recusa sobrescrita, caminhos indev
 - [Preflight](../../scripts/real-browser-preflight.mjs)
 - [Proteção e recuperação](../../scripts/protect-test-evidence.mjs)
 - [Finalização e verificação dos artefactos](../../scripts/finalize-real-browser-run.mjs)
+- [Verificação independente do horário](../../scripts/validate-e2e-schedule.py)
 - [Política de limpeza](../../backend/scripts/e2e_cleanup_policy.py)
 - [Wrapper administrativo](../../backend/scripts/cleanup_e2e_run.py)
 - [Guia de testes](TESTING_AND_CI.md)

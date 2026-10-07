@@ -26,10 +26,12 @@ test('finalization protects actual files, rewrites evidence paths and signs thei
   try {
     await writeFile(join(directory, 'trace.zip'), 'private OTP 123456')
     await writeFile(join(directory, 'output.log'), 'OTP 123456')
+    for (const name of ['Z.log', 'a.log', 'ä.log']) await writeFile(join(directory, name), 'safe')
     const result = await finalizeRun(campaign(), directory, { key, signingKey, secrets: ['123456'] })
     assert.equal(result.assessment.status, 'validated')
     assert.deepEqual(result.run.cases[0].evidence, ['trace.zip.enc'])
     const signed = verifyRegistry(result.envelope, signingKey)
+    assert.deepEqual(signed.artifacts.map(item => item.path), ['Z.log', 'a.log', 'output.log', 'trace.zip.enc', 'ä.log'])
     assert.equal(signed.run.run_id, 'run-1')
     assert.match(signed.artifacts.find(item => item.path === 'trace.zip.enc').sha256, /^[a-f0-9]{64}$/)
     assert.equal(await readFile(join(directory, 'output.log'), 'utf8'), 'OTP [REDACTED]')
