@@ -83,7 +83,7 @@ jobs:
 
       - name: Sanitize acceptance artifacts after any outcome
         if: always()
-        run: node scripts/sanitize-test-artifacts.mjs .test-artifacts
+        run: node scripts/sanitize-test-artifacts.mjs ".test-artifacts/${E2E_RUN_ID}/acceptance-artifacts"
         env:
           E2E_ARTIFACT_KEY: ${{ secrets.E2E_ARTIFACT_KEY }}
 

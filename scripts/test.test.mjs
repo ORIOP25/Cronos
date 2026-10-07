@@ -75,6 +75,15 @@ test('parses scheduler lab campaign options and rejects them elsewhere', () => {
   assert.throws(() => parseArgs(['campaign', '--workers', '0']), /Invalid worker count/)
 })
 
+test('production acceptance stays serialized and sanitizes its own artifact root', () => {
+  const workflow = readFileSync(join(ROOT, '.github/workflows/acceptance.yml'), 'utf8')
+  assert.match(workflow, /group: cronos-production-acceptance/)
+  assert.match(workflow, /cancel-in-progress: false/)
+  assert.match(workflow, /E2E_RUN_ID: \$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}/)
+  assert.match(workflow, /sanitize-test-artifacts\.mjs "\.test-artifacts\/\$\{E2E_RUN_ID\}\/acceptance-artifacts"/)
+  assert.match(workflow, /E2E_EXPECTED_REVISION: \$\{\{ github\.sha \}\}/)
+})
+
 test('exposes production acceptance as its own command', () => {
   assert.equal(parseArgs(['acceptance']).command, 'acceptance')
   assert.throws(() => parseArgs(['acceptance', '--project', 'acceptance']), /only valid for e2e/)
