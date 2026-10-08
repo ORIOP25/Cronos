@@ -632,6 +632,29 @@ Uma verificação em Linux confirmou diretórios `0700` e ficheiros `0600`.
 Os 26 testes dos contratos do runner passaram após essa alteração.
 Estes resultados locais não certificam produção.
 
+### Revisão de qualidade após publicação da branch
+
+A [PR 55](https://github.com/ORIOP25/Cronos/pull/55) permanece em draft.
+Os três jobs de CI passaram no commit `9a0821d4cc76fb8158c3c629d2a0bfb7167d2f70`, no push e na PR.
+O Sonar rejeitou as classificações de segurança e fiabilidade do código novo.
+A entrega permanece pendente até corrigir ou justificar os problemas com provas.
+
+O parser Gmail agora exige um endereço completo por token.
+O teste reproduziu a aceitação incorreta de um destinatário com sufixo inválido antes da correção.
+Também confere um endereço válido após um cabeçalho longo, sem limiares de tempo.
+Os nove testes Gmail e o lint passaram.
+O preflight escreve detalhes no relatório; stdout contém apenas estado controlado e localização.
+
+A CI de aceitação instala o binário Railway oficial `5.62.1` após verificar o SHA-256 fixado.
+Uma verificação Linux confirmou o digest do arquivo e a versão do executável.
+Os 101 testes de infraestrutura de aceitação passaram neste lote local.
+Um passo temporário da PR consulta o diagnóstico Sonar privado com o secret existente, sem exportar o token.
+Esse passo será removido após recolher os problemas e as classificações.
+
+O check nativo Cloudflare revelou os IDs reais da conta e do projeto.
+Os dois secrets correspondentes estão configurados; o token Cloudflare continua expirado.
+A revisão do preview coincide com o commit publicado; a resposta de produção não comprova essa revisão.
+Gmail OAuth, campanha real, história operacional e gates finais continuam pendentes.
 ## Fontes e documentos relacionados
 
 - [Política de aceitação](../../frontend/e2e/utils/acceptance-policy.js)

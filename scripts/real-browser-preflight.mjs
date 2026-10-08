@@ -62,6 +62,6 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   try { result = await preflight(process.env) } catch (error) { result = { status: 'failed', reason: error.message, checked_at: new Date().toISOString() } }
   await mkdir(dirname(output), { recursive: true })
   await writeFile(output, `${JSON.stringify(result, null, 2)}\n`)
-  console.log(JSON.stringify(result))
+  console.log(JSON.stringify({ status: result.status === 'ready' ? 'ready' : result.status === 'dependency_unavailable' ? 'dependency_unavailable' : 'failed', report: '.test-artifacts/production-preflight.json' }))
   if (result.status !== 'ready') process.exitCode = 1
 }

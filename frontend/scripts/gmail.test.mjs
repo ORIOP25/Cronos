@@ -10,6 +10,15 @@ function message(body = 'Your verification code is 123456') {
   ], parts: [{ mimeType: 'multipart/alternative', parts: [{ mimeType: 'text/plain', body: { data: Buffer.from(body).toString('base64url') } }] }] } }
 }
 
+test('mail headers reject an address with a trailing path instead of accepting a matching substring', () => {
+  const malformed = message()
+  malformed.payload.headers[0].value = `<${criteria.recipient}/not-an-email>`
+  assert.equal(extractMessage(malformed, criteria), null)
+  const longHeader = message()
+  longHeader.payload.headers[0].value = `${'x'.repeat(50_000)} <${criteria.recipient}>`
+  assert.equal(extractMessage(longHeader, criteria).code, '123456')
+})
+
 const contactCriteria = { ...criteria, recipient: 'contacto@cronos.pt', purpose: 'contact',
   forwardedMailbox: 'admincronos100@gmail.com', replyTo: criteria.recipient, marker: 'e2e-contact-run1',
   senders: ['website@forms.cronos.pt'], subject: /^\[Cronos\] Novo contacto — Criar horários do zero sem conflitos$/,

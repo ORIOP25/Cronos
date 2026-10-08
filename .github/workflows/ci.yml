@@ -82,6 +82,34 @@ jobs:
         run: >-
           python -m pip install --require-hashes --only-binary=:all:
           --no-binary=standardwebhooks -r requirements-dev.txt
+      - name: Inspect private Sonar findings for PR 55
+        if: github.event_name == 'pull_request' && github.event.pull_request.number == 55 && github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import httpx
+
+          token = os.environ.get("SONAR_TOKEN")
+          if not token:
+              raise SystemExit("SONAR_TOKEN is unavailable for private project diagnostics")
+          with httpx.Client(base_url="https://sonarcloud.io/api/", headers={"Authorization": "Bearer " + token}, timeout=30, follow_redirects=False) as client:
+              gate = client.get("qualitygates/project_status", params={"projectKey": "ORIOP25_horario-zen", "pullRequest": 55})
+              gate.raise_for_status()
+              print(json.dumps({"gate": gate.json().get("projectStatus")}))
+              page = 1
+              while True:
+                  response = client.get("issues/search", params={"componentKeys": "ORIOP25_horario-zen", "pullRequest": 55, "resolved": "false", "ps": 500, "p": page})
+                  response.raise_for_status()
+                  data = response.json()
+                  for issue in data.get("issues", []):
+                      print(json.dumps({key: issue.get(key) for key in ("key", "rule", "type", "severity", "impacts", "component", "line", "message")}))
+                  if page * 500 >= data["paging"]["total"]:
+                      break
+                  page += 1
+          PY
       - name: Verify locked dependencies
         working-directory: backend
         run: |

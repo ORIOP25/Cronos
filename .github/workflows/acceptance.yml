@@ -39,7 +39,18 @@ jobs:
         run: npx --no-install playwright install --with-deps chrome
 
       - name: Install administrative Railway client
-        run: npm install --global @railway/cli@5.62.1
+        shell: bash
+        run: |
+          railway_dir="${RUNNER_TEMP}/railway-cli"
+          archive="${RUNNER_TEMP}/railway-cli.tar.gz"
+          mkdir -p "$railway_dir"
+          curl --fail --location --proto '=https' --tlsv1.2 --output "$archive" \
+            https://github.com/railwayapp/cli/releases/download/v5.62.1/railway-v5.62.1-x86_64-unknown-linux-musl.tar.gz
+          printf '%s  %s\n' 2d04f08360b4c55f52b9e458e04987ec988261f16d2fb4fc4e7b2d43ad4a6cb2 "$archive" | sha256sum --check
+          tar -xzf "$archive" -C "$railway_dir" railway
+          chmod 700 "$railway_dir/railway"
+          echo "$railway_dir" >> "$GITHUB_PATH"
+          "$railway_dir/railway" --version
 
       - name: Materialize protected campaign registries
         shell: bash

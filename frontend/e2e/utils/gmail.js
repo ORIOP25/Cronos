@@ -5,7 +5,9 @@ const DEDICATED_MAILBOXES = new Set(['admincronos100@gmail.com', 'professorcrono
 const DEDICATED_ALIAS = /^(?:admincronos100|professorcronos100)\+[a-z0-9-]+@gmail\.com$/
 
 function addresses(value) {
-  return String(value || '').match(/[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi)?.map(item => item.toLowerCase()) || []
+  return String(value || '').split(/[\s<>(),;:"]+/)
+    .filter(item => /^[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i.test(item))
+    .map(item => item.toLowerCase())
 }
 
 function textParts(payload) {
