@@ -122,21 +122,19 @@ As observações de escolas, os percursos de identidade e a composição remota 
 | Tarefas | Implementação observada | Prova restante |
 | :--- | :--- | :--- |
 | W00.1 | Baseline, branch isolada e preservação das alterações externas. | Nenhuma para esta preparação. |
-| W00.2–4 | Inspeção dos consumidores e de parte dos acessos externos. | Inventário completo de regressões, contas, email e contacto. |
-| W01.1–3 | Originais completos, manifesto e inspetor independente. | Conferir os resultados depois da importação pela UI. |
-| W01.4–5 | Política pura exige produção, SHA completo e caixas dedicadas. | Ligar ao runner definitivo antes de qualquer efeito. |
-| W02.1–6 | Helper OAuth com PKCE e leitor Gmail com testes focados. | Consentimentos reais, tokens e mensagens das duas caixas. |
-| W03.1–2 | Matriz por caso concreto, avaliação pura e reporter estruturado. | Composição do runner e percursos reais com provas. |
-| W03.3–5 | Redação de segredos curtos, AES-256-GCM, recuperação confinada e manifesto assinado dos ficheiros reais. | Registo dinâmico dos segredos durante os percursos e upload real protegido. |
-| W03.6–7 | Guards observam erros da API e Clerk; verificações locais passaram. | Composição das falhas auxiliares e exceções por ação, método e caminho. |
-| W04 | Adaptadores de revisão e writer da revisão frontend. | Publicar frontend e obter snapshot completo dos dois fornecedores. |
-| W06.1–2 | Verificador independente de procura, crédito modular e recursos, com oito testes junto do inspetor. | Ligar às leituras autenticadas e aos resultados da geração real; conferir o horário completo. |
-| W05 e W06.3–W08 | Percursos do plano permanecem pendentes. | Execução pela UI, persistência, scheduler e história real elegível. |
-| W09 | Regressão do chamador corrigida com testes determinísticos. | Inventário e redução após provas substitutas; manter regressões únicas. |
-| W10.1–3, W10.7 | Comando `acceptance` fail-closed, projeto Playwright em Chrome, workflow manual/`main` serializado, upload sanitizado em falha. | Executar a campanha real com os segredos e a matriz de percursos. |
-| W10.4–6 | Registo HMAC, wrapper administrativo, exportação cifrada e erasure com bloqueio de jobs; canal SSH remoto respondeu. | Executar o wrapper remoto sobre o registo real produzido pela UI e comprovar eliminação real no fornecedor. |
+| W00.2–4 | Consumidores mapeados; acessos externos configurados e confirmados por leitura. | Manter a conferência durante a campanha real. |
+| W01.1–3 | Originais completos, manifesto, inspetor independente e preservação de bytes na CI. | Conferir os resultados depois da importação pela UI. |
+| W01.4–5 | Política pura exige produção, SHA completo e caixas dedicadas; runner ligado ao preflight. | Confirmar em execução real. |
+| W02.1–6 | Helpers OAuth/Gmail com PKCE readonly; perfis das duas caixas confirmados. | Mensagens reais entregues durante os percursos (bloqueadas pelo desafio Cloudflare no registo). |
+| W03.1–7 | Matriz de 69 casos, avaliação pura, reporter, cifragem, recuperação confinada, guards e composição fail-closed. | Execução real com registo dinâmico de segredos e upload protegido. |
+| W04 | Writer da revisão frontend e adaptadores de deployments; Cloudflare e Railway confirmados por leitura. | Alinhar produção com a branch publicada e obter `/revision.json` verificável. |
+| W05 e W06.3–W08 | Três specs de aceitação anotam os 69 casos concretos com helpers de UI reais. | Execução real pela UI: contas, escola, geração, operação e história elegível. |
+| W06.1–2 | Verificador independente de procura, crédito modular e recursos. | Ligar às leituras autenticadas e ao horário real. |
+| W09 | Regressão do chamador corrigida com testes determinísticos. | Inventário e redução após provas substitutas executadas. |
+| W10.1–3, W10.7 | Comandos `acceptance` e `prepare-history` fail-closed, workflow serializado, upload sanitizado em falha. | Executar a campanha real com os segredos e a matriz de percursos. |
+| W10.4–6 | Registo HMAC, wrapper administrativo, exportação cifrada, erasure com bloqueio de jobs e transporte SSH separado. | Executar o wrapper remoto sobre o registo real produzido pela UI e comprovar eliminação no fornecedor. |
 | W11.1–3 | Recuperação com broker real e processo Celery próprio; entrega duplicada sem proposta adicional. | W11.4: repetir num ambiente Railway isolado quando a prova exigir o fornecedor. |
-| W12 | Documentação e comandos reconciliados com o comportamento comprovado. | Campanha completa no SHA publicado e limpeza por execução. |
+| W12 | Documentação e comandos reconciliados com o comportamento comprovado; 69 casos anotados sem faltas. | Campanha completa no SHA publicado, limpeza por execução e gate Sonar resolvido. |
 
 O sanitizador preserva o modo legado enquanto não ocorre o cutover.
 Nesse modo, a expectativa antiga de eliminar traces permanece ativa.
