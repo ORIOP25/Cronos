@@ -81,6 +81,8 @@ def protect_export(destination, content, key, run_id):
 
 def _write_protected_export(destination, content):
     destination = Path(destination)
+    if ".." in destination.parts:
+        raise ValueError("Export path must not contain parent traversal")
     for parent in [destination.parent, *destination.parents]:
         if parent.is_symlink():
             raise ValueError("Export directory must not be a symbolic link")

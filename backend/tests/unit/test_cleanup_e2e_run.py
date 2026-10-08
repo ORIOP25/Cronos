@@ -92,6 +92,13 @@ def test_export_encryption_uses_the_same_authenticated_envelope_as_browser_evide
         cleanup_e2e_run.protect_export(destination, b"overwrite", key, "run-1")
 
 
+def test_export_refuses_parent_traversal_before_creating_files(tmp_path):
+    destination = tmp_path / "nested" / ".." / "outside.zip.enc"
+    with pytest.raises(ValueError, match="parent traversal"):
+        cleanup_e2e_run.protect_export(destination, b"private", bytes(range(32)), "run-1")
+    assert list(tmp_path.iterdir()) == []
+
+
 def test_export_refuses_invalid_key_before_creating_files(tmp_path):
     with pytest.raises(ValueError):
         cleanup_e2e_run.protect_export(tmp_path / "absent.enc", b"private", b"short", "run-1")

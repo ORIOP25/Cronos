@@ -648,8 +648,15 @@ O preflight escreve detalhes no relatório; stdout contém apenas estado control
 A CI de aceitação instala o binário Railway oficial `5.62.1` após verificar o SHA-256 fixado.
 Uma verificação Linux confirmou o digest do arquivo e a versão do executável.
 Os 101 testes de infraestrutura de aceitação passaram neste lote local.
-Um passo temporário da PR consulta o diagnóstico Sonar privado com o secret existente, sem exportar o token.
-Esse passo será removido após recolher os problemas e as classificações.
+O diagnóstico Sonar privado respondeu HTTP 401 ao secret existente no runner.
+O passo temporário falhou nessa consulta e foi removido; os gates originais permanecem obrigatórios.
+A revisão continua pelas anotações nativas disponíveis, sem declarar resolvidas as classificações C e E.
+
+O exportador administrativo agora rejeita componentes `..` antes de criar diretórios ou ficheiros.
+O novo teste falhou antes da correção; os 22 testes do wrapper passaram depois.
+O transporte SSH continua a criar o destino num diretório temporário próprio.
+As identidades assinadas continuam limitadas a IDs de organização numéricos e IDs Clerk sem separadores.
+A CI censura as passwords aleatórias antes de as publicar no ambiente dos passos seguintes.
 
 O check nativo Cloudflare revelou os IDs reais da conta e do projeto.
 Os dois secrets correspondentes estão configurados; o token Cloudflare continua expirado.
