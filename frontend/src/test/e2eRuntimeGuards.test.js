@@ -36,12 +36,37 @@ describe('E2E runtime guard classifiers', () => {
     }, { baseUrl })).toBeNull()
   })
 
-  it('ignores an aborted Clerk write request during navigation', () => {
+  it('fails an aborted Clerk organization write because its outcome is unknown', () => {
     expect(getRequestFailureError({
       method: 'POST',
       url: 'https://welcomed-cat-83.accounts.dev/v1/organizations',
       errorText: 'net::ERR_ABORTED',
-    }, { baseUrl })).toBeNull()
+    }, { baseUrl })).toContain('Network request failed')
+  })
+
+  it.each(['https://api.cronos.pt/api/v1/members', 'https://clerk.cronos.pt/v1/client'])('observes production API and authentication outside the frontend origin: %s', url => {
+    expect(getApiResponseError({ status: 500, url }, [], { baseUrl: 'https://cronos.pt' })).toContain('500')
+    expect(getConsoleError({ type: 'error', text: 'Failed to load resource: status of 500', locationUrl: url }, [], { baseUrl: 'https://cronos.pt' })).toContain('500')
+  })
+
+  it('only ignores explicitly classified telemetry, not an unknown external console failure', () => {
+    expect(getConsoleError({ type: 'error', text: 'Failed to load resource: status of 500', locationUrl: 'https://unknown.test/api/a' }, [], { baseUrl })).toContain('500')
+  })
+
+  it('production exceptions require exact origin, method, path, status and current action', () => {
+    const response = { status: 403, method: 'GET', url: 'https://api.cronos.pt/api/v1/members' }
+    const allowed = [{ status: 403, method: 'GET', origin: 'https://api.cronos.pt', pathname: '/api/v1/members', action: 'teacher-denied' }]
+    const options = { baseUrl: 'https://cronos.pt', action: 'teacher-denied' }
+    expect(getApiResponseError(response, allowed, options)).toBeNull()
+    for (const changed of [
+      { ...response, method: 'DELETE' }, { ...response, status: 500 },
+      { ...response, url: 'https://api.cronos.pt/api/v1/members/17' },
+      { ...response, url: 'https://clerk.cronos.pt/api/v1/members' },
+    ]) expect(getApiResponseError(changed, allowed, options)).not.toBeNull()
+    expect(getApiResponseError(response, allowed, { ...options, action: 'import' })).not.toBeNull()
+    expect(getApiResponseError(response, [{ status: 403, url: '/api/v1/members' }], options)).not.toBeNull()
+    expect(getConsoleError({ type: 'error', text: 'Failed to load resource: status of 403', locationUrl: response.url }, allowed, options)).not.toBeNull()
+    expect(getConsoleError({ type: 'error', text: 'Failed to load resource: status of 403', locationUrl: response.url, method: 'GET' }, allowed, options)).toBeNull()
   })
 
   it.each([

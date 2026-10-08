@@ -1,0 +1,141 @@
+name: Production acceptance
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Run the acceptance campaign or prepare a persistent school through the production UI
+        type: choice
+        required: true
+        default: acceptance
+        options:
+          - acceptance
+          - prepare-history
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cronos-production-acceptance
+  cancel-in-progress: false
+
+jobs:
+  acceptance:
+    if: github.ref == 'refs/heads/main' && (vars.E2E_ACCEPTANCE_ENABLED == 'true' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'prepare-history'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    env:
+      E2E_RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+      CAMPAIGN_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || 'acceptance' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci --ignore-scripts
+
+      - name: Install Chrome for production acceptance
+        working-directory: frontend
+        run: npx --no-install playwright install --with-deps chrome
+
+      - name: Install administrative Railway client
+        shell: bash
+        run: |
+          railway_dir="${RUNNER_TEMP}/railway-cli"
+          archive="${RUNNER_TEMP}/railway-cli.tar.gz"
+          mkdir -p "$railway_dir"
+          curl --fail --location --proto '=https' --tlsv1.2 --output "$archive" \
+            https://github.com/railwayapp/cli/releases/download/v5.62.1/railway-v5.62.1-x86_64-unknown-linux-musl.tar.gz
+          printf '%s  %s\n' 2d04f08360b4c55f52b9e458e04987ec988261f16d2fb4fc4e7b2d43ad4a6cb2 "$archive" | sha256sum --check
+          tar -xzf "$archive" -C "$railway_dir" railway
+          chmod 700 "$railway_dir/railway"
+          echo "$railway_dir" >> "$GITHUB_PATH"
+          "$railway_dir/railway" --version
+
+      - name: Materialize protected campaign registries
+        shell: bash
+        env:
+          PERSISTENT_REGISTRY_JSON: ${{ secrets.E2E_PERSISTENT_REGISTRY_JSON }}
+          SECRET_REGISTRY_JSON: ${{ secrets.E2E_SECRET_REGISTRY_JSON }}
+        run: |
+          umask 077
+          registry_dir="${RUNNER_TEMP}/acceptance-registries"
+          mkdir -p "$registry_dir"
+          if [ -n "$PERSISTENT_REGISTRY_JSON" ]; then
+            printf '%s' "$PERSISTENT_REGISTRY_JSON" > "$registry_dir/persistent-registry.json"
+            echo "E2E_PERSISTENT_REGISTRY=${registry_dir}/persistent-registry.json" >> "$GITHUB_ENV"
+          fi
+          if [ -n "$SECRET_REGISTRY_JSON" ]; then
+            printf '%s' "$SECRET_REGISTRY_JSON" > "$registry_dir/private-secret-registry.json"
+            echo "E2E_SECRET_REGISTRY=${registry_dir}/private-secret-registry.json" >> "$GITHUB_ENV"
+          fi
+
+      - name: Run production campaign
+        run: node scripts/test.mjs "$CAMPAIGN_MODE"
+        env:
+          BASE_URL: https://cronos.pt
+          E2E_EXPECTED_REVISION: ${{ github.sha }}
+          E2E_ADMIN_EMAIL: admincronos100@gmail.com
+          E2E_TEACHER_EMAIL: professorcronos100@gmail.com
+          E2E_GMAIL_CLIENT_ID: ${{ secrets.E2E_GMAIL_CLIENT_ID }}
+          E2E_GMAIL_CLIENT_SECRET: ${{ secrets.E2E_GMAIL_CLIENT_SECRET }}
+          E2E_GMAIL_ADMIN_REFRESH_TOKEN: ${{ secrets.E2E_GMAIL_ADMIN_REFRESH_TOKEN }}
+          E2E_GMAIL_TEACHER_REFRESH_TOKEN: ${{ secrets.E2E_GMAIL_TEACHER_REFRESH_TOKEN }}
+          E2E_GMAIL_CODE_SENDER: ${{ vars.E2E_GMAIL_CODE_SENDER }}
+          E2E_CONTACT_SENDER: ${{ vars.E2E_CONTACT_SENDER }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.E2E_CLOUDFLARE_API_TOKEN }}
+          E2E_CLOUDFLARE_ACCOUNT_ID: ${{ secrets.E2E_CLOUDFLARE_ACCOUNT_ID }}
+          E2E_CLOUDFLARE_PROJECT: ${{ secrets.E2E_CLOUDFLARE_PROJECT }}
+          E2E_RAILWAY_TOKEN: ${{ secrets.E2E_RAILWAY_TOKEN }}
+          E2E_RAILWAY_TOKEN_TYPE: ${{ secrets.E2E_RAILWAY_TOKEN_TYPE }}
+          E2E_RAILWAY_PROJECT_ID: ${{ secrets.E2E_RAILWAY_PROJECT_ID }}
+          E2E_RAILWAY_ENVIRONMENT_ID: ${{ secrets.E2E_RAILWAY_ENVIRONMENT_ID }}
+          E2E_RAILWAY_API_SERVICE_ID: ${{ secrets.E2E_RAILWAY_API_SERVICE_ID }}
+          E2E_RAILWAY_WORKER_SERVICE_ID: ${{ secrets.E2E_RAILWAY_WORKER_SERVICE_ID }}
+          E2E_RAILWAY_SUPERVISOR_SERVICE_ID: ${{ secrets.E2E_RAILWAY_SUPERVISOR_SERVICE_ID }}
+          E2E_RAILWAY_BEAT_SERVICE_ID: ${{ secrets.E2E_RAILWAY_BEAT_SERVICE_ID }}
+          E2E_ARTIFACT_KEY: ${{ secrets.E2E_ARTIFACT_KEY }}
+          E2E_REGISTRY_HMAC_KEY: ${{ secrets.E2E_REGISTRY_HMAC_KEY }}
+          E2E_ADMIN_SSH_KEY: ${{ secrets.E2E_ADMIN_SSH_KEY }}
+          E2E_HISTORY_TEACHER_PASSWORD: ${{ secrets.E2E_HISTORY_TEACHER_PASSWORD }}
+          E2E_HISTORY_ADMIN_PASSWORD: ${{ secrets.E2E_HISTORY_ADMIN_PASSWORD }}
+
+      - name: Sanitize acceptance artifacts after any outcome
+        id: sanitize
+        if: always()
+        run: node scripts/sanitize-test-artifacts.mjs ".test-artifacts/${E2E_RUN_ID}/acceptance-artifacts"
+        env:
+          E2E_ARTIFACT_KEY: ${{ secrets.E2E_ARTIFACT_KEY }}
+          E2E_REGISTRY_HMAC_KEY: ${{ secrets.E2E_REGISTRY_HMAC_KEY }}
+          E2E_ADMIN_SSH_KEY: ${{ secrets.E2E_ADMIN_SSH_KEY }}
+          E2E_HISTORY_TEACHER_PASSWORD: ${{ secrets.E2E_HISTORY_TEACHER_PASSWORD }}
+          E2E_HISTORY_ADMIN_PASSWORD: ${{ secrets.E2E_HISTORY_ADMIN_PASSWORD }}
+          E2E_GMAIL_CLIENT_ID: ${{ secrets.E2E_GMAIL_CLIENT_ID }}
+          E2E_GMAIL_CLIENT_SECRET: ${{ secrets.E2E_GMAIL_CLIENT_SECRET }}
+          E2E_GMAIL_ADMIN_REFRESH_TOKEN: ${{ secrets.E2E_GMAIL_ADMIN_REFRESH_TOKEN }}
+          E2E_GMAIL_TEACHER_REFRESH_TOKEN: ${{ secrets.E2E_GMAIL_TEACHER_REFRESH_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.E2E_CLOUDFLARE_API_TOKEN }}
+          E2E_RAILWAY_TOKEN: ${{ secrets.E2E_RAILWAY_TOKEN }}
+
+      - name: Upload protected acceptance artifacts
+        if: always() && steps.sanitize.outcome == 'success'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: acceptance-artifacts-${{ env.E2E_RUN_ID }}
+          path: |
+            .test-artifacts/${{ env.E2E_RUN_ID }}/acceptance-artifacts
+            .test-artifacts/${{ env.E2E_RUN_ID }}/acceptance-result.json
+            .test-artifacts/${{ env.E2E_RUN_ID }}/acceptance-plan.json
+            .test-artifacts/${{ env.E2E_RUN_ID }}/acceptance-cleanup.json
+          if-no-files-found: warn
+          retention-days: 14

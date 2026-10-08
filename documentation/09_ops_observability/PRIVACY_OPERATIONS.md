@@ -48,7 +48,11 @@ python -m scripts.privacy export --organization-id <id> --output <explicit-file.
 ```
 
 The command writes one UTF-8 JSON member per relevant table, a manifest, and SHA-256 hashes. It excludes secrets, tokens, passwords, and other tenants.
-The command reads the administrative connection from `MIGRATION_DATABASE_URL`.
+The exporter creates each destination exclusively with mode `0600`; an existing file remains unchanged.
+New parent directories use mode `0700`. Parent traversal and symbolic parent directories are rejected.
+The plain and encrypted exporters share this file creation policy.
+The standalone export reads through `DATABASE_URL` with the tenant context.
+The campaign wrapper reuses the same classified export within its administrative transaction.
 
 ## Erasure
 
@@ -71,6 +75,65 @@ tables are `organization`, `organization_legal_acceptance`, and `alembic_version
 The required sequence is export first, confirmed provider deletion second, and
 the local transaction last. Execution requires both `--execute` and
 `--provider-deleted`; the command is otherwise a dry-run.
+Execution also refuses active jobs in both scheduler generations while holding
+the organization row lock until commit.
+
+## Disposable browser campaign cleanup
+
+From `backend/`, pass the signed UI ownership registry on stdin:
+
+```text
+python -m scripts.cleanup_e2e_run --run-id <run-id> --output-dir <private-export-directory>
+```
+
+The default is dry-run. Add `--execute` for the authorized campaign cleanup.
+The wrapper requires `MIGRATION_DATABASE_URL`, `E2E_CLEANUP_CLERK_SECRET_KEY`,
+`E2E_REGISTRY_HMAC_KEY`, and `E2E_ARTIFACT_KEY` in the administrative environment.
+Protection keys contain 32 bytes encoded as canonical base64.
+Keep these credentials out of the browser job.
+
+The wrapper authenticates the registry before reading its IDs, preserves
+persistent schools, and verifies live local/provider identities, creation,
+creator and exact run aliases. It validates the whole plan before effects and
+rechecks each disposable school under its row lock. It encrypts the export
+before requesting provider deletion, requires the returned ID and `deleted=true`,
+then reuses local erasure within the same transaction.
+Only accounts created during the campaign without any remaining local or
+provider memberships can be removed. Shared accounts remain intact.
+The JSON result identifies completed and pending targets without printing
+provider error bodies or credentials. A failed result requires reconciliation
+of pending targets before the campaign can be considered clean.
+
+The production acceptance runner invokes this wrapper through Railway SSH after every browser outcome.
+It authenticates the signed UI registry, checks the published revision, and sends protection keys through SSH stdin.
+The private SSH identity stays in a temporary local file and is removed after transport.
+The runner stores authenticated encrypted exports and a protected copy of the UI registry with the acceptance evidence.
+Encrypted remote backups remain in a private `/tmp/cronos-e2e-<run-id>-*` directory until recovery and reconciliation are confirmed.
+The cleanup result records `remote_export_directory` for this recovery; it never includes provider credentials or exception bodies.
+Use the exact recorded directory for administrative recovery. Preserve pending-target evidence before removing a remote backup.
+If local export persistence fails, the failed result preserves authenticated remote completions and remaining targets.
+It identifies exports already stored locally without overwriting existing evidence.
+
+Use `--export-only` on the campaign wrapper to create protected backups before a native UI deletion.
+This mode applies the same signed ownership, live membership and active-job checks.
+It exports disposable schools without deleting provider organizations, accounts or local records.
+`--execute` and `--export-only` are mutually exclusive.
+An `exported` result keeps every deletion target pending; it cannot certify cleanup.
+The Node transport requires authenticated backups for every reported exported organization.
+Campaign organization archives include an `e2e_ownership` receipt captured under the organization lock.
+The receipt records the actual provider identity and memberships checked before export.
+Archive recovery verifies AES-GCM authentication, the complete manifest, table hashes and the organization/run scope before returning ownership.
+This receipt does not certify provider deletion.
+The backend wrapper can accept authenticated prior archives for disposable targets in the same signed run.
+It validates their complete ownership scope before connecting to the database.
+Only Clerk HTTP 404 permits using prior provider observations; other provider failures remain fatal.
+The wrapper rechecks local accounts, current actor emails, creation times and active jobs under the organization lock.
+It preserves the original protected backup before local erasure and does not repeat provider deletion.
+The native deletion case first exports the selected disposable school into the protected campaign artifact directory.
+The final runner authenticates existing target backups before SSH and sends only encrypted archives for the current signed run.
+The returned backup must preserve the original bytes. Existing evidence cannot be replaced.
+Actual native deletion and reconciliation in production remain unverified.
+Actual production execution of this mode remains unverified.
 
 ## Incident and breach checklist
 

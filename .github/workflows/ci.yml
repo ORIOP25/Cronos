@@ -52,8 +52,10 @@ jobs:
       - name: Generate ephemeral backend credentials
         shell: bash
         run: |
-          CI_MIGRATOR_PASSWORD="$(openssl rand -hex 24)"
-          CI_APP_PASSWORD="$(openssl rand -hex 24)"
+          CI_MIGRATOR_PASSWORD="$(openssl rand -hex 24)" # NOSONAR - ephemeral credential generated at execution time, never stored
+          CI_APP_PASSWORD="$(openssl rand -hex 24)" # NOSONAR - ephemeral credential generated at execution time, never stored
+          echo "::add-mask::${CI_MIGRATOR_PASSWORD}"
+          echo "::add-mask::${CI_APP_PASSWORD}"
           echo "CI_MIGRATOR_PASSWORD=${CI_MIGRATOR_PASSWORD}" >> "$GITHUB_ENV"
           echo "CI_APP_PASSWORD=${CI_APP_PASSWORD}" >> "$GITHUB_ENV"
           echo "TEST_DATABASE_URL=postgresql+asyncpg://cronos_app:${CI_APP_PASSWORD}@localhost:5432/cronos_test_db" >> "$GITHUB_ENV"
@@ -106,6 +108,8 @@ jobs:
         run: |
           python -m scripts.audit_triggers
           python -m scripts.audit_database_integrity
+      - name: Verify independent browser campaign expectations
+        run: python -m unittest discover -s scripts -p 'test_*e2e*.py'
       - name: Test backend units
         working-directory: backend
         env:
@@ -263,9 +267,11 @@ jobs:
       - name: Generate ephemeral CI database credentials
         shell: bash
         run: |
-          echo "POSTGRES_PASSWORD=$(openssl rand -hex 24)" >> "$GITHUB_ENV"
-          echo "CI_MIGRATOR_PASSWORD=$(openssl rand -hex 24)" >> "$GITHUB_ENV"
-          echo "CI_APP_PASSWORD=$(openssl rand -hex 24)" >> "$GITHUB_ENV"
+          for credential_name in POSTGRES_PASSWORD CI_MIGRATOR_PASSWORD CI_APP_PASSWORD; do
+            credential_value="$(openssl rand -hex 24)"
+            echo "::add-mask::${credential_value}"
+            echo "${credential_name}=${credential_value}" >> "$GITHUB_ENV"
+          done
 
       - name: Build CI backend image
         run: docker compose -f docker-compose.ci.yml build backend

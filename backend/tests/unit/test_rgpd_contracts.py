@@ -1,3 +1,4 @@
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -23,6 +24,24 @@ def test_privacy_registry_classifies_every_tenant_table():
 async def test_privacy_erase_requires_provider_confirmation_before_database_access():
     with pytest.raises(ValueError, match="provider-deleted"):
         await privacy._erase(1, "org", execute=True, provider_deleted=False)
+
+
+@pytest.mark.asyncio
+async def test_privacy_locked_erasure_refuses_active_jobs_before_deleting(monkeypatch):
+    db = AsyncMock()
+    db.scalar.return_value = SimpleNamespace(clerk_org_id="org_owned")
+    monkeypatch.setattr(privacy, "active_jobs", AsyncMock(return_value=["v1:17"]))
+    with pytest.raises(ValueError, match="active jobs"):
+        await privacy._erase_locked(db, 1, "org_owned", execute=True, provider_deleted=True)
+    db.execute.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_privacy_locked_erasure_requires_provider_confirmation(monkeypatch):
+    db = AsyncMock()
+    with pytest.raises(ValueError, match="provider-deleted"):
+        await privacy._erase_locked(db, 1, "org_owned", execute=True, provider_deleted=False)
+    db.execute.assert_not_awaited()
 
 
 def test_occurrence_commands_reject_free_text_reasons():

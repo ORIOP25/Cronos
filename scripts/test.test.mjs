@@ -3,6 +3,9 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import test from 'node:test'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { randomBytes } from 'node:crypto'
+import { spawnSync } from 'node:child_process'
+import { recoverEvidence } from './protect-test-evidence.mjs'
 import {
   childSpec,
   displayArgs,
@@ -16,6 +19,44 @@ import {
 } from './test.mjs'
 import { redactSecrets, sanitizeDirectory } from './sanitize-test-artifacts.mjs'
 import { classifyPath, collectFiles, countNonBlankLines, measureFiles } from './loc-report.mjs'
+
+test('sanitizer CLI redacts separate campaign keys, OAuth identity and dynamic codes', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'cronos-cli-sanitize-'))
+  try {
+    const artifacts = join(directory, 'artifacts')
+    mkdirSync(artifacts)
+    const registry = join(directory, 'private-secrets.json')
+    writeFileSync(registry, JSON.stringify(['452391']))
+    const log = join(artifacts, 'failure.log')
+    const signingKey = randomBytes(32).toString('base64')
+    writeFileSync(log, `OAuth desktop-client-id signing ${signingKey} SSH dedicated-private-key code 452391`)
+    const result = spawnSync(process.execPath, [join(ROOT, 'scripts/sanitize-test-artifacts.mjs'), artifacts], {
+      encoding: 'utf8',
+      env: { ...process.env, E2E_ARTIFACT_KEY: randomBytes(32).toString('base64'), E2E_RUN_ID: 'run-1', E2E_REGISTRY_HMAC_KEY: signingKey, E2E_ADMIN_SSH_KEY: 'dedicated-private-key', E2E_GMAIL_CLIENT_ID: 'desktop-client-id', E2E_SECRET_REGISTRY: registry },
+    })
+    assert.equal(result.status, 0, result.stderr)
+    assert.equal(readFileSync(log, 'utf8'), 'OAuth [REDACTED] signing [REDACTED] SSH [REDACTED] code [REDACTED]')
+  } finally { rmSync(directory, { recursive: true, force: true }) }
+})
+
+test('sanitizer CLI rejects an invalid secret registry before touching evidence', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'cronos-cli-sanitize-'))
+  try {
+    const artifacts = join(directory, 'artifacts')
+    mkdirSync(artifacts)
+    const registry = join(directory, 'private-secrets.json')
+    writeFileSync(registry, JSON.stringify({ code: '452391' }))
+    const source = join(artifacts, 'trace.zip')
+    writeFileSync(source, 'private trace')
+    const result = spawnSync(process.execPath, [join(ROOT, 'scripts/sanitize-test-artifacts.mjs'), artifacts], {
+      encoding: 'utf8',
+      env: { ...process.env, E2E_ARTIFACT_KEY: randomBytes(32).toString('base64'), E2E_RUN_ID: 'run-1', E2E_SECRET_REGISTRY: registry },
+    })
+    assert.notEqual(result.status, 0)
+    assert.equal(readFileSync(source, 'utf8'), 'private trace')
+    assert.equal(existsSync(`${source}.enc`), false)
+  } finally { rmSync(directory, { recursive: true, force: true }) }
+})
 
 test('the isolated E2E frontend uses the Clerk test browser policy', () => {
   const compose = readFileSync(join(ROOT, 'docker-compose.test.yml'), 'utf8')
@@ -73,6 +114,22 @@ test('parses scheduler lab campaign options and rejects them elsewhere', () => {
   assert.throws(() => parseArgs(['campaign', '--workers', '0']), /Invalid worker count/)
 })
 
+test('production acceptance stays serialized and sanitizes its own artifact root', () => {
+  const workflow = readFileSync(join(ROOT, '.github/workflows/acceptance.yml'), 'utf8')
+  assert.match(workflow, /if: github\.ref == 'refs\/heads\/main' && \(/)
+  assert.match(workflow, /group: cronos-production-acceptance/)
+  assert.match(workflow, /cancel-in-progress: false/)
+  assert.match(workflow, /E2E_RUN_ID: \$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}/)
+  assert.match(workflow, /sanitize-test-artifacts\.mjs "\.test-artifacts\/\$\{E2E_RUN_ID\}\/acceptance-artifacts"/)
+  assert.match(workflow, /E2E_EXPECTED_REVISION: \$\{\{ github\.sha \}\}/)
+})
+
+test('exposes production acceptance as its own command', () => {
+  assert.equal(parseArgs(['acceptance']).command, 'acceptance')
+  assert.throws(() => parseArgs(['acceptance', '--project', 'acceptance']), /only valid for e2e/)
+  assert.throws(() => parseArgs(['acceptance', '--', 'extra']), /not supported/)
+})
+
 test('preserves paths and arguments containing spaces as separate child arguments', () => {
   const spec = childSpec('node', [ROOT, 'tests/with spaces/example.test.mjs'])
   assert.deepEqual(spec.args, [ROOT, 'tests/with spaces/example.test.mjs'])
@@ -94,6 +151,59 @@ test('redacts fake secrets from text artifacts', () => {
     redactSecrets('token=fake-clerk-secret; keep this', ['fake-clerk-secret']),
     'token=[REDACTED]; keep this',
   )
+  assert.equal(redactSecrets('verification code 123456', ['123456']), 'verification code [REDACTED]')
+})
+
+test('persistent preparation is an explicit command with no diagnostic selection flags', () => {
+  assert.equal(parseArgs(['prepare-history']).command, 'prepare-history')
+  assert.throws(() => parseArgs(['prepare-history', '--', 'identity.spec.js']), /not supported/)
+})
+
+test('production acceptance is excluded from default local E2E and explicitly enabled by its reporter', () => {
+  const source = "import config from './playwright.config.js'; console.log(JSON.stringify(config.projects.map(({name,use,workers,retries})=>({name,channel:use?.channel,workers,retries}))))"
+  function projects(baseUrl, report, preparationReport = '') {
+    const result = spawnSync(process.execPath, ['--input-type=module', '-e', source], {
+      cwd: join(ROOT, 'frontend'), windowsHide: true, encoding: 'utf8',
+      env: { ...process.env, BASE_URL: baseUrl, E2E_ACCEPTANCE_REPORT: report, E2E_PREPARATION_REPORT: preparationReport },
+    })
+    assert.equal(result.status, 0, result.stderr)
+    return JSON.parse(result.stdout)
+  }
+  assert.equal(projects('http://localhost:5173', '').some(project => project.name === 'acceptance'), false)
+  assert.equal(projects('http://localhost:5173', '').some(project => project.name === 'preparation'), false)
+  const acceptance = projects('https://cronos.pt', 'acceptance-report.json').find(project => project.name === 'acceptance')
+  assert.deepEqual(acceptance, { name: 'acceptance', channel: 'chrome', workers: 1, retries: 0 })
+  const preparation = projects('https://cronos.pt', '', 'preparation-report.json')
+  assert.equal(preparation.some(project => project.name === 'acceptance'), false)
+  assert.deepEqual(preparation.find(project => project.name === 'preparation'), { name: 'preparation', channel: 'chrome', workers: 1, retries: 0 })
+})
+
+test('production artifacts preserve encrypted traces and screenshots, without raw copies', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'cronos-protected-artifacts-'))
+  const key = randomBytes(32)
+  try {
+    const trace = join(root, 'trace.zip')
+    const screenshot = join(root, 'screenshot.png')
+    writeFileSync(trace, 'opaque sensitive trace')
+    writeFileSync(screenshot, Buffer.from([0, 1, 2, 3]))
+    await sanitizeDirectory(root, [], { key, runId: 'run-1' })
+    assert.equal(existsSync(trace), false)
+    assert.equal(existsSync(screenshot), false)
+    assert.equal(recoverEvidence(readFileSync(`${trace}.enc`), key, { run_id: 'run-1', path: 'trace.zip' }).toString(), 'opaque sensitive trace')
+    assert.deepEqual(recoverEvidence(readFileSync(`${screenshot}.enc`), key, { run_id: 'run-1', path: 'screenshot.png' }), Buffer.from([0, 1, 2, 3]))
+  } finally {
+    rmSync(root, { force: true, recursive: true })
+  }
+})
+
+test('a raw binary renamed to enc is not accepted as protected evidence', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'cronos-invalid-envelope-'))
+  try {
+    writeFileSync(join(root, 'trace.zip.enc'), 'unprotected session data')
+    await assert.rejects(sanitizeDirectory(root, [], { key: randomBytes(32), runId: 'run-1' }))
+  } finally {
+    rmSync(root, { force: true, recursive: true })
+  }
 })
 
 test('removes nested Playwright auth-state directories', async () => {

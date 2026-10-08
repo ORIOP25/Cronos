@@ -9,6 +9,7 @@ import pytest
 from sqlalchemy import select
 
 from app import models, schemas
+from app.core.exceptions import AppError
 from app.scheduler.domain.debt import DebtOrigin
 from app.scheduler.infrastructure import occurrences as occurrences_v1
 from app.scheduler.infrastructure.models import (
@@ -28,6 +29,7 @@ from app.scheduler.infrastructure.operations import (
 from app.scheduler.infrastructure.progress import load_executed_minutes, load_open_debt, record_debt
 from app.scheduler.infrastructure.snapshot import load_snapshot
 from app.services.dashboard_service import get_dashboard_summary
+from app.services.teacher_service import get_teacher_progress
 from tests._support.db_fixtures import create_teacher_profile
 from tests._support.scheduler_v1 import (
     MOMENT,
@@ -724,6 +726,102 @@ async def test_open_debts_aggregate_occurrence_claims(db_session, monkeypatch):
     assert debts["items"][0]["hours_owed"] == 2 * lessons[0].credit_minutes / 60
     overdue = await occurrences_v1.get_debts(db_session, seed.organization.id)
     assert overdue["total_gaps_overdue"] == 2
+
+
+async def test_teacher_progress_reads_v1_execution_and_open_debt(db_session, monkeypatch):
+    seed = await _school(db_session, suffix="_teacher_progress")
+    await db_session.commit()
+    await publish_schedule(db_session, monkeypatch, seed)
+    lessons = await _lessons(db_session, seed)
+    missed, completed = lessons[:2]
+    await _occurrence(db_session, seed, missed)
+    pending = (await occurrences_v1.list_occurrences(db_session, seed.organization.id))["items"][0]
+    before = await get_teacher_progress(
+        db_session, seed.assignment.teacher_id, seed.organization.id
+    )
+    assert before[0]["subjects"][0]["modules"][0]["hours_debt"] == 0
+    await _decide(db_session, seed, pending, models.LessonOccurrenceStatus.GAP, now=missed.ends_at)
+    gap = await get_teacher_progress(db_session, seed.assignment.teacher_id, seed.organization.id)
+    assert gap[0]["subjects"][0]["modules"][0]["hours_debt"] == round(missed.credit_minutes / 60, 1)
+    assert gap[0]["subjects"][0]["completed_hours"] == 0
+    await record_lesson_log(
+        db_session,
+        seed.organization.id,
+        membership_id=seed.membership.id,
+        lesson_id=completed.id,
+        status="COMPLETED",
+        summary="Aula concluída.",
+        notes=None,
+        now_utc=completed.ends_at + timedelta(minutes=1),
+        planning_relevant=True,
+    )
+    await db_session.commit()
+    result = await get_teacher_progress(
+        db_session, seed.assignment.teacher_id, seed.organization.id
+    )
+    module = result[0]["subjects"][0]["modules"][0]
+    assert module["hours_completed"] == round(completed.credit_minutes / 60, 1)
+    # Completing the remaining minutes also settles the open claim in this assignment.
+    assert module["hours_debt"] == 0
+    assert (await occurrences_v1.get_debts(db_session, seed.organization.id))[
+        "total_hours_owed"
+    ] == 0
+    assert result[0]["subjects"][0]["completed_hours"] == round(completed.credit_minutes / 60, 1)
+    assert (
+        await get_teacher_progress(
+            db_session, seed.assignment.teacher_id, seed.organization.id + 100000
+        )
+        == []
+    )
+
+
+async def test_v1_stale_decision_has_no_effects_and_matching_retry_is_idempotent(
+    db_session, monkeypatch
+):
+    seed = await _school(db_session, suffix="_stale_decision")
+    await db_session.commit()
+    await publish_schedule(db_session, monkeypatch, seed)
+    lesson = (await _lessons(db_session, seed))[0]
+    subject, _module, teacher, _assignment = await _second_assignment(db_session, seed)
+    await _occurrence(db_session, seed, lesson)
+    pending = (await occurrences_v1.list_occurrences(db_session, seed.organization.id))["items"][0]
+    gap = await _decide(db_session, seed, pending, models.LessonOccurrenceStatus.GAP, now=MOMENT)
+    debt = await occurrences_v1.get_debts(db_session, seed.organization.id)
+    assert debt["total_hours_owed"] == lesson.credit_minutes / 60
+    with pytest.raises(AppError) as conflict:
+        await occurrences_v1.update_occurrence(
+            db_session,
+            seed.organization.id,
+            pending["id"],
+            schemas.LessonOccurrenceUpdate(
+                status=models.LessonOccurrenceStatus.SUBSTITUTED,
+                version=pending["version"],
+                substitute_teacher_id=teacher.id,
+                substitute_subject_id=subject.id,
+            ),
+            decided_by_membership_id=seed.membership.id,
+            now_utc=MOMENT,
+        )
+    assert conflict.value.kind == "conflict"
+    assert conflict.value.detail == "OCCURRENCE_STALE_VERSION"
+    assert (
+        await occurrences_v1.get_occurrence(db_session, seed.organization.id, gap["id"], MOMENT)
+        == gap
+    )
+    assert await occurrences_v1.get_debts(db_session, seed.organization.id) == debt
+    blocks = list(
+        await db_session.scalars(
+            select(models.OperationalScheduleBlock).where(
+                models.OperationalScheduleBlock.organization_id == seed.organization.id,
+            )
+        )
+    )
+    assert blocks == []
+    repeated = await _decide(
+        db_session, seed, pending, models.LessonOccurrenceStatus.GAP, now=MOMENT
+    )
+    assert repeated == gap
+    assert await occurrences_v1.get_debts(db_session, seed.organization.id) == debt
 
 
 async def test_recommendations_exclude_the_planned_teacher_and_subject(db_session, monkeypatch):

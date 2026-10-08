@@ -6,6 +6,13 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawn } from 'node:child_process'
 import { performance } from 'node:perf_hooks'
+import { acceptanceExitCode, acceptancePlan, acceptanceSecrets, assembleCampaign } from './acceptance-run.mjs'
+import { preflight } from './real-browser-preflight.mjs'
+import { finalizeRun } from './finalize-real-browser-run.mjs'
+import { createUiRegistryFile, retainPersistentSchoolFile, verifyRegistry } from './e2e-run-registry.mjs'
+import { evaluatePreparation } from './prepare-history.mjs'
+import { cleanupProductionCampaign } from './cleanup-production-campaign.mjs'
+import { protectEvidence } from './protect-test-evidence.mjs'
 
 export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 export const BACKEND = join(ROOT, 'backend')
@@ -36,6 +43,8 @@ Commands:
   e2e [--project public|auth|app|provider|faults|capacity]
   capacity
   capacity-smoke
+  acceptance
+  prepare-history
   all --scope backend|frontend|all
   benchmark --profile fast|integration|e2e|all [--scope backend|frontend|all]
   campaign [--manifest <path>] [--out <dir>] [--case <id>]... [--mode witness|generator|repair|trajectory|longitudinal] [--time-limit <s>] [--workers <n>] [--resume]
@@ -67,7 +76,7 @@ export function parseArgs(argv) {
   let scopeWasProvided = false
   let profileWasProvided = false
 
-  if (!['setup', 'doctor', 'fast', 'integration', 'e2e', 'capacity', 'capacity-smoke', 'all', 'benchmark', 'campaign'].includes(command)) {
+  if (!['setup', 'doctor', 'fast', 'integration', 'e2e', 'capacity', 'capacity-smoke', 'acceptance', 'prepare-history', 'all', 'benchmark', 'campaign'].includes(command)) {
     throw usageError(`Unknown command: ${command}`)
   }
   if (forwarded.length && !['fast', 'integration'].includes(command)) {
@@ -936,6 +945,108 @@ async function runE2e(project, context, extraEnv = {}) {
   context.e2e = project || 'all'
 }
 
+async function runAcceptance(context, { preparation = false } = {}) {
+  const plan = acceptancePlan(process.env, context.artifactDir, { preparation, testsRevision: context.revision })
+  if (plan.status !== 'ready') {
+    await writeFile(join(context.artifactDir, 'acceptance-plan.json'), `${JSON.stringify(plan, null, 2)}\n`)
+    throw Object.assign(new Error(`Acceptance dependencies unavailable: ${plan.missing.join(', ')}`), { runnerCode: 3 })
+  }
+  const startedAt = new Date().toISOString()
+  const before = await preflight(process.env, { phase: 'before', preparation })
+  const registryPath = join(context.artifactDir, 'ui-run-registry.json')
+  await createUiRegistryFile(registryPath, Buffer.from(process.env.E2E_REGISTRY_HMAC_KEY, 'base64'), context.runId, startedAt)
+  let playwrightError = null
+  try {
+    await runFrontendTests(
+      ['run', 'test:e2e', '--', '--project', plan.project],
+      'Playwright production acceptance',
+      {
+        BASE_URL: plan.config.baseUrl,
+        PLAYWRIGHT_SKIP_WEB_SERVER: '1',
+        PLAYWRIGHT_WORKERS: String(plan.workers),
+        PLAYWRIGHT_OUTPUT_DIR: plan.artifactRoot,
+        PLAYWRIGHT_JUNIT_OUTPUT_FILE: join(context.artifactDir, 'acceptance.xml'),
+        E2E_ACCEPTANCE_REPORT: preparation ? '' : plan.reportPath,
+        E2E_PREPARATION_REPORT: preparation ? plan.reportPath : '',
+        E2E_RUN_ID: context.runId,
+        E2E_RUN_REGISTRY: registryPath,
+      },
+      context,
+      'acceptance',
+    )
+  } catch (error) {
+    playwrightError = error
+  }
+  let registryEvidenceError = false
+  try {
+    await mkdir(plan.artifactRoot, { recursive: true })
+    await writeFile(join(plan.artifactRoot, 'ui-run-registry.json.enc'), protectEvidence(
+      await readFile(registryPath), Buffer.from(process.env.E2E_ARTIFACT_KEY, 'base64'),
+      { run_id: context.runId, path: 'ui-run-registry.json' },
+    ), { mode: 0o600, flag: 'wx' })
+  } catch { registryEvidenceError = true }
+  const cleanup = await cleanupProductionCampaign({
+    registryPath,
+    runId: context.runId,
+    expectedRevision: plan.config.expectedRevision,
+    artifactRoot: plan.artifactRoot,
+  }, process.env, { usePriorExports: true })
+  await writeFile(join(context.artifactDir, 'acceptance-cleanup.json'), `${JSON.stringify(cleanup, null, 2)}\n`)
+  let after
+  try {
+    after = await preflight(process.env, { phase: 'after', preparation })
+  } catch (error) {
+    after = { status: 'failed', reason: error.message }
+  }
+  const observedReport = await readFile(plan.reportPath, 'utf8').then(JSON.parse).catch(() => null)
+  const playwrightReport = preparation
+    ? { cases: [], failures: playwrightError ? ['Playwright preparation did not pass'] : [] }
+    : observedReport
+  const run = assembleCampaign({
+    runId: context.runId,
+    testsRevision: context.revision,
+    expectedRevision: plan.config.expectedRevision,
+    startedAt,
+    finishedAt: new Date().toISOString(),
+    before,
+    after,
+    playwrightReport,
+    cleanup,
+  })
+  if (preparation) {
+    run.mode = 'preparation'
+    run.data = before.data
+    run.preparation = observedReport
+  }
+  if (registryEvidenceError) run.failures.push('Protected UI ownership registry unavailable')
+  const secrets = acceptanceSecrets(process.env, JSON.parse(await readFile(process.env.E2E_SECRET_REGISTRY, 'utf8')))
+  const result = await finalizeRun(run, plan.artifactRoot, {
+    key: Buffer.from(process.env.E2E_ARTIFACT_KEY, 'base64'),
+    signingKey: Buffer.from(process.env.E2E_REGISTRY_HMAC_KEY, 'base64'),
+    secrets,
+  })
+  await writeFile(plan.resultPath, `${JSON.stringify(result, null, 2)}\n`)
+  if (preparation) {
+    const registry = await readFile(registryPath, 'utf8').then(value => verifyRegistry(JSON.parse(value), Buffer.from(process.env.E2E_REGISTRY_HMAC_KEY, 'base64')))
+    const assessment = evaluatePreparation(result.run, registry, result.artifacts)
+    context.preparation = 'failed'
+    await writeFile(join(context.artifactDir, 'preparation-assessment.json'), `${JSON.stringify(assessment, null, 2)}\n`)
+    if (assessment.status === 'prepared') {
+      await retainPersistentSchoolFile(process.env.E2E_PERSISTENT_REGISTRY, Buffer.from(process.env.E2E_REGISTRY_HMAC_KEY, 'base64'), observedReport, registry)
+      context.preparation = 'prepared'
+      return
+    }
+    throw Object.assign(new Error(`Preparation failed: ${assessment.failures.slice(0, 5).join('; ')}`), { runnerCode: 1 })
+  }
+  context.acceptance = result.assessment.status
+  const code = acceptanceExitCode(result.assessment.status)
+  if (code === 0) return
+  const reasons = [...result.assessment.failures, ...result.assessment.incomplete, ...result.assessment.dependencies].slice(0, 5).join('; ')
+  throw Object.assign(new Error(`Acceptance ${result.assessment.status}: ${reasons}`), {
+    runnerCode: playwrightError ? (playwrightError.runnerCode === 3 ? 3 : code) : code,
+  })
+}
+
 async function runAllBackend(context) {
   await runChecked(backendPythonSpec(['-m', 'ruff', 'format', '--check', BACKEND], baseTestEnvironment(), context), {
     cwd: ROOT, env: baseTestEnvironment(), label: 'Ruff format check',
@@ -1058,6 +1169,8 @@ async function writeRunReport(context, parsed, exitCode, cleanupCode) {
     scope: parsed.scope,
     profile: parsed.profile,
     project: parsed.project ?? null,
+    acceptance: context.acceptance ?? null,
+    preparation: context.preparation ?? null,
     workers: {
       integration: INTEGRATION_WORKERS,
       e2e: context.e2eWorkers ?? null,
@@ -1174,7 +1287,7 @@ export async function main(argv = process.argv.slice(2)) {
     console.error(error.message)
     return error.usage ? 2 : 1
   }
-  const runId = `${Date.now()}-${process.pid}`
+  const runId = process.env.E2E_RUN_ID || `${Date.now()}-${process.pid}`
   const artifactDir = process.env.TEST_ARTIFACT_DIR
     ? resolve(process.env.TEST_ARTIFACT_DIR)
     : join(ARTIFACTS, runId)
@@ -1202,6 +1315,8 @@ export async function main(argv = process.argv.slice(2)) {
     else if (parsed.command === 'fast') await runFast(parsed.scope, parsed.forwarded, context)
     else if (parsed.command === 'integration') await runIntegration(parsed.forwarded, context)
     else if (parsed.command === 'e2e') await runE2e(parsed.project, context)
+    else if (parsed.command === 'acceptance') await runAcceptance(context)
+    else if (parsed.command === 'prepare-history') await runAcceptance(context, { preparation: true })
     else if (parsed.command === 'capacity') await runE2e('capacity', context)
     else if (parsed.command === 'capacity-smoke') {
       await runE2e('capacity', context, {

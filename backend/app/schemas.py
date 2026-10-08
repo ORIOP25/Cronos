@@ -2477,11 +2477,51 @@ class SchedulerV1StatusRead(BaseModel):
     school_year: SchedulerV1SchoolYearRead | None = None
     publication_state: str = "UNPUBLISHED"
     active_version_id: int | None = None
+    active_proposal_id: int | None = None
     revisions: SchedulerV1RevisionsRead
     eligibility: SchedulerV1EligibilityRead
     default_strategy: str
     active_job: SchedulerV1JobRead | None = None
     pending_proposal: SchedulerV1ProposalRead | None = None
+
+
+class SchedulerV1LessonSliceRead(BaseModel):
+    module_id: int
+    offset_minutes: int
+    minutes: int
+
+
+class SchedulerV1ProposalLessonRead(BaseModel):
+    id: int
+    assignment_id: int
+    class_id: int
+    subject_id: int
+    teacher_id: int
+    room_id: int
+    school_date: date
+    starts_at: datetime
+    ends_at: datetime
+    physical_minutes: int
+    credit_minutes: int
+    source_lesson_id: int | None
+    lesson_log_status: str | None
+    slices: list[SchedulerV1LessonSliceRead]
+
+
+class SchedulerV1ExecutedModuleRead(BaseModel):
+    assignment_id: int
+    module_id: int
+    minutes: int
+
+
+class SchedulerV1ProposalLessonsRead(BaseModel):
+    proposal_id: int
+    organization_id: int
+    school_year_id: int
+    version_id: int | None
+    total: int
+    executed: list[SchedulerV1ExecutedModuleRead]
+    lessons: list[SchedulerV1ProposalLessonRead]
 
 
 class SchedulerV1GenerateRequest(BaseModel):

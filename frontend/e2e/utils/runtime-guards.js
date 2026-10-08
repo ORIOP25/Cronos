@@ -57,7 +57,19 @@ function hasAbortablePath(url, baseUrl) {
 }
 
 function isClerkHostedUrl(parsedUrl) {
-  return parsedUrl.hostname.endsWith('.accounts.dev')
+  return parsedUrl.hostname.endsWith('.accounts.dev') || parsedUrl.hostname === 'clerk.cronos.pt'
+}
+
+function isRuntimeOrigin(url, baseUrl) {
+  const parsed = parseUrl(url, baseUrl)
+  return isSameOrigin(url, baseUrl) || parsed?.origin === 'https://api.cronos.pt'
+    || (parsed?.protocol === 'https:' && isClerkHostedUrl(parsed))
+}
+
+function isTelemetry(url, baseUrl) {
+  const parsed = parseUrl(url, baseUrl)
+  return parsed?.protocol === 'https:' && /^o\d+\.ingest\.(?:us\.)?sentry\.io$/.test(parsed.hostname)
+    && /^\/api\/\d+\/envelope\/$/.test(parsed.pathname)
 }
 
 function isClerkImageUrl(parsedUrl) {
@@ -84,7 +96,10 @@ function isBenignAbortedRequest({ method, url }, { baseUrl }) {
   // Clerk can cancel maintenance POSTs (for example sessions/*/touch) when
   // a test navigates or closes a context. This is the same benign abort as
   // its cancelled GETs; real Clerk network errors still surface below.
-  return isClerkHostedUrl(parsedUrl)
+  return isClerkHostedUrl(parsedUrl) && (
+    method.toUpperCase() === 'GET'
+    || (method.toUpperCase() === 'POST' && /^\/v1\/client\/sessions\/[^/]+\/touch$/.test(parsedUrl.pathname))
+  )
 }
 
 function normalizedText(value) {
@@ -99,7 +114,14 @@ function allowedUrlMatches(allowedUrl, url) {
   return url.includes(String(allowedUrl))
 }
 
-function isAllowedApiFailure(allowedFailures, { status, url = '' }) {
+function isAllowedApiFailure(allowedFailures, { status, url = '', method }, { baseUrl, action } = {}) {
+  if (baseUrl === 'https://cronos.pt') {
+    const parsed = parseUrl(url, baseUrl)
+    return status < 500 && Boolean(method && action && parsed) && allowedFailures.some(allowed => (
+      allowed.status === status && allowed.origin === parsed.origin && allowed.pathname === parsed.pathname
+      && allowed.method === method && allowed.action === action
+    ))
+  }
   return allowedFailures.some((allowed) => (
     allowed.status === status && allowedUrlMatches(allowed.url, url)
   ))
@@ -127,7 +149,7 @@ function failedResourceStatus(text) {
   return match ? Number.parseInt(match[1], 10) : null
 }
 
-export function getConsoleError(consoleMessage, allowedFailures, { baseUrl } = {}) {
+export function getConsoleError(consoleMessage, allowedFailures, { baseUrl, action } = {}) {
   if (consoleMessage.type !== 'error') return null
 
   const text = normalizedText(consoleMessage.text)
@@ -136,9 +158,8 @@ export function getConsoleError(consoleMessage, allowedFailures, { baseUrl } = {
   const status = failedResourceStatus(text)
   if (status !== null) {
     const locationUrl = normalizedText(consoleMessage.locationUrl)
-    // External telemetry may rate-limit; only same-origin API failures matter.
-    if (baseUrl && !isSameOrigin(locationUrl, baseUrl)) return null
-    if (isAllowedApiFailure(allowedFailures, { status, url: locationUrl })) {
+    if (baseUrl && isTelemetry(locationUrl, baseUrl)) return null
+    if (isAllowedApiFailure(allowedFailures, { status, url: locationUrl, method: consoleMessage.method }, { baseUrl, action })) {
       return null
     }
   }
@@ -146,14 +167,14 @@ export function getConsoleError(consoleMessage, allowedFailures, { baseUrl } = {
   return `Browser console error: ${text} at ${normalizedText(consoleMessage.locationUrl)}`
 }
 
-export function getApiResponseError(response, allowedFailures, { baseUrl } = {}) {
+export function getApiResponseError(response, allowedFailures, { baseUrl, action } = {}) {
   const url = normalizedText(response.url)
   const status = Number(response.status)
-  if (baseUrl && !isSameOrigin(url, baseUrl)) return null
+  if (baseUrl && !isRuntimeOrigin(url, baseUrl)) return null
   if (
-    url.includes('/api/')
+    (url.includes('/api/') || isClerkHostedUrl(parseUrl(url, baseUrl) || { hostname: '' }))
     && status >= 400
-    && !isAllowedApiFailure(allowedFailures, { status, url })
+    && !isAllowedApiFailure(allowedFailures, { status, url, method: response.method }, { baseUrl, action })
   ) {
     return `API ${status}: ${url}`
   }

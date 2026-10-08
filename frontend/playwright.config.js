@@ -1,3 +1,4 @@
+import { resolve } from 'node:path'
 import { defineConfig, devices } from '@playwright/test'
 import { E2E_BASE_URL } from './e2e/utils/e2e-config.js'
 
@@ -14,20 +15,35 @@ const authMatch = /e2e[\\/]auth[\\/].*\.spec\.js/
 const providerMatch = /e2e[\\/]members[\\/]invitations\.spec\.js/
 const faultsMatch = /e2e[\\/](?:foundation[\\/]operational-gate-409|tutorial[\\/]tutorial-network-boundary)\.spec\.js/
 const capacityMatch = /e2e[\\/]capacity[\\/]capacity\.spec\.js/
+const acceptanceMatch = /e2e[\\/]acceptance[\\/].*\.spec\.js/
+const preparationMatch = /e2e[\\/]preparation[\\/].*\.spec\.js/
+const acceptanceReport = process.env.E2E_ACCEPTANCE_REPORT
+const preparationReport = process.env.E2E_PREPARATION_REPORT
+const outputDirectory = resolve(process.env.PLAYWRIGHT_OUTPUT_DIR || 'test-results')
+
+function reporters() {
+  if (!acceptanceReport || preparationReport) {
+    return process.env.CI || process.env.PLAYWRIGHT_JUNIT_OUTPUT_FILE
+      ? [
+          ['list', { printSteps: true }],
+          ['junit', { outputFile: process.env.PLAYWRIGHT_JUNIT_OUTPUT_FILE || 'test-results/playwright-junit.xml' }],
+          ['html', { open: 'never' }],
+        ]
+      : 'html'
+  }
+  const selected = [['list', { printSteps: true }], ['./e2e/acceptance-reporter.js', { outputFile: acceptanceReport, artifactRoot: outputDirectory }]]
+  if (process.env.PLAYWRIGHT_JUNIT_OUTPUT_FILE) selected.push(['junit', { outputFile: process.env.PLAYWRIGHT_JUNIT_OUTPUT_FILE }])
+  return selected
+}
 
 export default defineConfig({
   testDir: './e2e',
+  outputDir: outputDirectory,
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: 0,
   workers: Number(process.env.PLAYWRIGHT_WORKERS || 2),
-  reporter: process.env.CI || process.env.PLAYWRIGHT_JUNIT_OUTPUT_FILE
-    ? [
-        ['list', { printSteps: true }],
-        ['junit', { outputFile: process.env.PLAYWRIGHT_JUNIT_OUTPUT_FILE || 'test-results/playwright-junit.xml' }],
-        ['html', { open: 'never' }],
-      ]
-    : 'html',
+  reporter: reporters(),
   timeout: 60_000,
   expect: { timeout: 10_000 },
 
@@ -65,7 +81,7 @@ export default defineConfig({
     },
     {
       name: 'app',
-      testIgnore: [setupMatch, authStateMatch, publicMatch, authMatch, providerMatch, faultsMatch, capacityMatch],
+      testIgnore: [setupMatch, authStateMatch, publicMatch, authMatch, providerMatch, faultsMatch, capacityMatch, acceptanceMatch, preparationMatch],
       use: { ...devices['Desktop Chrome'] },
       // These tests mutate the single disposable E2E organization.
       workers: 1,
@@ -85,6 +101,22 @@ export default defineConfig({
       workers: 1,
       dependencies: ['app', 'provider'],
     },
+    ...(acceptanceReport ? [{
+      name: 'acceptance',
+      testMatch: acceptanceMatch,
+      fullyParallel: false,
+      workers: 1,
+      retries: 0,
+      use: { ...devices['Desktop Chrome'], channel: 'chrome', trace: 'on' },
+    }] : []),
+    ...(preparationReport ? [{
+      name: 'preparation',
+      testMatch: preparationMatch,
+      fullyParallel: false,
+      workers: 1,
+      retries: 0,
+      use: { ...devices['Desktop Chrome'], channel: 'chrome', trace: 'on' },
+    }] : []),
     ...(process.env.CAPACITY_ENABLED === '1' ? [{
       name: 'capacity',
       testMatch: capacityMatch,

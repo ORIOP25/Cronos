@@ -1,3 +1,6 @@
 # Force shell scripts to always use LF line endings (Unix)
 *.sh text eol=lf
 entrypoint.sh text eol=lf
+
+# Owner-supplied CSVs are byte-verified; never normalize their line endings
+frontend/e2e/data/originals/* -text

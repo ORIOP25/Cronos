@@ -61,6 +61,9 @@ Routes use `<RequireAuth>`, `<RequireAdmin>`, `<RequireTeacher>`, and `<RequireF
 - `/courses` offers `Importar CSV` and `Novo Curso`. Assignment imports remain available through `/imports`.
 - Signed-out users accessing protected routes are redirected to `/login`.
 - A signed-in user without an active organization sees the organization selector.
+- The authenticated layout also provides the native Clerk selector to create or switch schools.
+- Creating a school opens `/foundation`. Selecting or leaving a school uses the normal root route guard.
+- The demonstration layout hides the selector and cannot change the real active school.
 - A pending Clerk organization task uses `/login/tasks/choose-organization` for organization selection only.
 - The route gate bootstraps the selected organization and completes current legal acceptance in the background; the destination remains `/foundation` or the member's normal route.
 - `/legal/aceitar` is not a client route.

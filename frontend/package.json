@@ -9,7 +9,7 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "vite build && node scripts/build-marketing-pages.mjs",
+    "build": "vite build && node scripts/build-marketing-pages.mjs && node scripts/write-build-revision.mjs",
     "lint": "eslint . --max-warnings 0",
     "lint:dead-code": "knip --no-progress",
     "lint:dead-code:production": "knip --production --no-progress",
@@ -22,10 +22,11 @@
     "test:e2e:ui": "playwright test --ui",
     "audit:production": "node scripts/audit-production.mjs",
     "test:marketing-assets": "node scripts/audit-marketing-assets.mjs",
-    "test:marketing-build": "node --test scripts/build-marketing-pages.test.mjs",
+    "test:marketing-build": "node --test scripts/build-marketing-pages.test.mjs scripts/write-build-revision.test.mjs",
+    "test:acceptance-infrastructure": "node --test scripts/acceptance-policy.test.mjs scripts/acceptance-reporter.test.mjs scripts/acceptance-runtime.test.mjs scripts/deployments.test.mjs scripts/gmail.test.mjs scripts/ui-school.test.mjs scripts/expected-results.test.mjs ../scripts/test.test.mjs ../scripts/acceptance-run.test.mjs ../scripts/protect-test-evidence.test.mjs ../scripts/real-browser-preflight.test.mjs ../scripts/e2e-run-registry.test.mjs ../scripts/finalize-real-browser-run.test.mjs ../scripts/cleanup-production-campaign.test.mjs ../scripts/prepare-history.test.mjs",
     "test:legal-contract": "node --test scripts/verify-legal-version-contract.test.mjs && node scripts/verify-legal-version-contract.mjs",
     "legal-manifest:update": "node scripts/verify-legal-version-contract.mjs --write",
-    "verify": "npm run lint && npm run lint:dead-code && npm run lint:dead-code:production && npm run test:legal-contract && npm run test:marketing-build && node --test scripts/edge-worker.test.mjs && npm run test:marketing-assets && npm run test:coverage && npm run build"
+    "verify": "npm run lint && npm run lint:dead-code && npm run lint:dead-code:production && npm run test:legal-contract && npm run test:marketing-build && npm run test:acceptance-infrastructure && node --test scripts/edge-worker.test.mjs && npm run test:marketing-assets && npm run test:coverage && npm run build"
   },
   "dependencies": {
     "@clerk/localizations": "^4.16.1",

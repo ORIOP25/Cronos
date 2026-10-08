@@ -121,6 +121,7 @@ export function withWorkerHeaders(response, { contentType, status, vary, cacheCo
 function assetRequest(request, pathname) {
   const url = new URL(request.url)
   url.pathname = pathname
+  url.search = ''
   return new Request(url, request)
 }
 
