@@ -201,30 +201,43 @@ async def _load_export_from_session(db, organization_id: int) -> dict[str, list[
     return result
 
 
+def open_private_export(destination: Path):
+    destination = Path(destination)
+    if ".." in destination.parts:
+        raise ValueError("Export path must not contain parent traversal")
+    if any(parent.is_symlink() for parent in destination.parents):
+        raise ValueError("Export directory must not be a symbolic link")
+    destination.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    descriptor = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    return os.fdopen(descriptor, "wb")
+
+
 def _write_export(output: Path, data: dict[str, list[dict[str, Any]]]) -> dict[str, Any]:
     if output.exists() and output.is_dir():
         raise ValueError("--output deve indicar um ficheiro ZIP, não uma pasta")
-    output.parent.mkdir(parents=True, exist_ok=True)
     manifest: dict[str, Any] = {"format": "cronos-privacy-export-v1", "tables": {}}
     created = False
     try:
-        with zipfile.ZipFile(output, "x", compression=zipfile.ZIP_DEFLATED) as archive:
+        with open_private_export(output) as export_file:
             created = True
-            for table_name, rows in sorted(data.items()):
-                content = json.dumps(rows, ensure_ascii=False, indent=2, sort_keys=True).encode(
-                    "utf-8"
-                )
-                filename = f"tables/{table_name}.json"
-                archive.writestr(filename, content)
-                manifest["tables"][table_name] = {
-                    "file": filename,
-                    "count": len(rows),
-                    "sha256": hashlib.sha256(content).hexdigest(),
-                }
-            manifest_content = json.dumps(
-                manifest, ensure_ascii=False, indent=2, sort_keys=True
-            ).encode("utf-8")
-            archive.writestr("manifest.json", manifest_content)
+            with zipfile.ZipFile(export_file, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+                for table_name, rows in sorted(data.items()):
+                    content = json.dumps(rows, ensure_ascii=False, indent=2, sort_keys=True).encode(
+                        "utf-8"
+                    )
+                    filename = f"tables/{table_name}.json"
+                    archive.writestr(filename, content)
+                    manifest["tables"][table_name] = {
+                        "file": filename,
+                        "count": len(rows),
+                        "sha256": hashlib.sha256(content).hexdigest(),
+                    }
+                manifest_content = json.dumps(
+                    manifest, ensure_ascii=False, indent=2, sort_keys=True
+                ).encode("utf-8")
+                archive.writestr("manifest.json", manifest_content)
+            export_file.flush()
+            os.fsync(export_file.fileno())
     except Exception:
         if created:
             output.unlink(missing_ok=True)

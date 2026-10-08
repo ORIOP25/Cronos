@@ -26,7 +26,9 @@ export const REQUIRED_CASES = Object.entries({
 Object.freeze(REQUIRED_CASES)
 
 function utcTimestamp(value) {
-  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?(?:Z|\+00:00)$/.test(value) ? Date.parse(value) : NaN
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?(?:Z|\+00:00)$/.test(value)) return Number.NaN
+  const timestamp = Date.parse(value)
+  return Number.isFinite(timestamp) && new Date(timestamp).toISOString().slice(0, 19) === value.slice(0, 19) ? timestamp : Number.NaN
 }
 
 export function validateProductionConfig(environment) {
@@ -38,19 +40,7 @@ export function validateProductionConfig(environment) {
   return { baseUrl: environment.BASE_URL, expectedRevision: environment.E2E_EXPECTED_REVISION, mailboxes: { ...MAILBOXES } }
 }
 
-export function evaluateAcceptance(run) {
-  const failures = [...(run.failures || [])]
-  const incomplete = []
-  const dependencies = []
-  const cases = run.cases || []
-  const seen = new Set()
-  const required = new Map(REQUIRED_CASES.map(item => [item.id, item]))
-  const started = utcTimestamp(run.started_at)
-  const finished = utcTimestamp(run.finished_at)
-  if (run.schema_version !== 1 || !run.run_id) failures.push('Invalid run identity')
-  if (!FULL_REVISION.test(run.expected_revision || '') || run.tests_revision !== run.expected_revision) failures.push('Test revision does not match production')
-  if (run.mode !== 'acceptance') incomplete.push('Diagnostic selection cannot certify production')
-  if (!Number.isFinite(started) || !Number.isFinite(finished) || finished < started) failures.push('Invalid campaign timestamps')
+function evaluateDeploymentSnapshots(run, cases, { started, finished }, { failures, incomplete }) {
   for (const phase of ['before', 'after']) {
     const snapshots = (run.deployments || []).filter(item => item.phase === phase)
     if (snapshots.length !== 1) incomplete.push(`Missing unique ${phase} deployment snapshot`)
@@ -64,6 +54,9 @@ export function evaluateAcceptance(run) {
       if (snapshot.components?.[name] !== run.expected_revision) failures.push(`Deployment revision mismatch: ${name}`)
     }
   }
+}
+
+function evaluateProtectionAndCleanup(run, { failures, incomplete }) {
   if (run.data_verified !== true) incomplete.push('Original data not verified')
   if (run.evidence_protected !== true) failures.push('Evidence protection not confirmed')
   if (run.cleanup?.status !== 'completed') failures.push('Cleanup not completed')
@@ -71,23 +64,64 @@ export function evaluateAcceptance(run) {
   for (const name of ['pending', 'pending_actors']) {
     if (!Array.isArray(run.cleanup?.[name]) || run.cleanup[name].length) failures.push(`Cleanup targets remain pending or unknown: ${name}`)
   }
+}
+
+function evaluateCaseStatus(item, { failures, incomplete, dependencies }) {
+  if (item.status === 'failed' || item.attempts !== 1) failures.push(`Case failed or retried: ${item.id}`)
+  else if (item.status === 'dependency_unavailable') dependencies.push(item.id)
+  else if (item.status !== 'passed') incomplete.push(`Case not passed: ${item.id}`)
+}
+
+function evaluateCaseEvidence(item, { failures, incomplete }) {
+  if (!Array.isArray(item.evidence) || !item.evidence.length || item.evidence.some(path => typeof path !== 'string' || !path)) incomplete.push(`Missing evidence: ${item.id}`)
+  else if (item.evidence.some(path => /[\\:]/.test(path) || path.includes('\0') || path.split('/').some(part => !part || part === '.' || part === '..'))) failures.push(`Invalid evidence reference: ${item.id}`)
+}
+
+function evaluateCaseIdentity(item, expected, { failures, incomplete }) {
+  if (item.eligible !== true || item.ui_provenance !== true) incomplete.push(`Ineligible state or provenance: ${item.id}`)
+  if (item.requirement !== expected?.requirement || item.name !== expected?.name) failures.push(`Case identity mismatch: ${item.id}`)
+}
+
+function evaluateCampaignCases(cases, { started, finished }, result) {
+  const { failures, incomplete } = result
+  const seen = new Set()
+  const required = new Map(REQUIRED_CASES.map(item => [item.id, item]))
   for (const item of cases) {
     const caseStarted = utcTimestamp(item.started_at)
     const caseFinished = utcTimestamp(item.finished_at)
     if (!Number.isFinite(caseStarted) || !Number.isFinite(caseFinished) || caseStarted < started || caseFinished > finished || caseFinished < caseStarted) failures.push(`Invalid case timestamps: ${item.id}`)
     if (!required.has(item.id) || seen.has(item.id)) failures.push(`Unknown or duplicate case: ${item.id}`)
     seen.add(item.id)
-    if (item.status === 'failed' || item.attempts !== 1) failures.push(`Case failed or retried: ${item.id}`)
-    else if (item.status === 'dependency_unavailable') dependencies.push(item.id)
-    else if (item.status !== 'passed') incomplete.push(`Case not passed: ${item.id}`)
-    if (!Array.isArray(item.evidence) || !item.evidence.length || item.evidence.some(path => typeof path !== 'string' || !path)) incomplete.push(`Missing evidence: ${item.id}`)
-    else if (item.evidence.some(path => /[\\:]/.test(path) || path.includes('\0') || path.split('/').some(part => !part || part === '.' || part === '..'))) failures.push(`Invalid evidence reference: ${item.id}`)
-    if (item.eligible !== true || item.ui_provenance !== true) incomplete.push(`Ineligible state or provenance: ${item.id}`)
-    if (item.requirement !== required.get(item.id)?.requirement || item.name !== required.get(item.id)?.name) failures.push(`Case identity mismatch: ${item.id}`)
+    evaluateCaseStatus(item, result)
+    evaluateCaseEvidence(item, result)
+    evaluateCaseIdentity(item, required.get(item.id), result)
+
   }
   for (const id of required.keys()) if (!seen.has(id)) incomplete.push(`Missing case: ${id}`)
-  return {
-    status: failures.length ? 'failed' : dependencies.length ? 'dependency_unavailable' : incomplete.length ? 'incomplete' : 'validated',
-    failures, dependencies, incomplete,
-  }
+}
+
+function acceptanceStatus({ failures, dependencies, incomplete }) {
+  if (failures.length) return 'failed'
+  if (dependencies.length) return 'dependency_unavailable'
+  if (incomplete.length) return 'incomplete'
+  return 'validated'
+}
+
+export function evaluateAcceptance(run) {
+  const failures = [...(run.failures || [])]
+  const incomplete = []
+  const dependencies = []
+  const result = { failures, dependencies, incomplete }
+  const cases = run.cases || []
+  const started = utcTimestamp(run.started_at)
+  const finished = utcTimestamp(run.finished_at)
+  if (run.schema_version !== 1 || typeof run.run_id !== 'string' || !/^[a-z0-9-]+$/.test(run.run_id)) failures.push('Invalid run identity')
+  if (!FULL_REVISION.test(run.expected_revision || '') || run.tests_revision !== run.expected_revision) failures.push('Test revision does not match production')
+  if (run.mode !== 'acceptance') incomplete.push('Diagnostic selection cannot certify production')
+  if (!Number.isFinite(started) || !Number.isFinite(finished) || finished < started) failures.push('Invalid campaign timestamps')
+  const timing = { started, finished }
+  evaluateDeploymentSnapshots(run, cases, timing, result)
+  evaluateProtectionAndCleanup(run, result)
+  evaluateCampaignCases(cases, timing, result)
+  return { status: acceptanceStatus(result), failures, dependencies, incomplete }
 }

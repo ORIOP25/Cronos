@@ -92,11 +92,45 @@ def test_export_encryption_uses_the_same_authenticated_envelope_as_browser_evide
         cleanup_e2e_run.protect_export(destination, b"overwrite", key, "run-1")
 
 
-def test_export_refuses_parent_traversal_before_creating_files(tmp_path):
+@pytest.mark.parametrize("protected", [True, False])
+def test_export_refuses_parent_traversal_before_creating_files(tmp_path, protected):
     destination = tmp_path / "nested" / ".." / "outside.zip.enc"
     with pytest.raises(ValueError, match="parent traversal"):
-        cleanup_e2e_run.protect_export(destination, b"private", bytes(range(32)), "run-1")
+        if protected:
+            cleanup_e2e_run.protect_export(destination, b"private", bytes(range(32)), "run-1")
+        else:
+            cleanup_e2e_run.privacy._write_export(destination, {"organization": [{"id": 7}]})
     assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize("protected", [True, False])
+def test_export_refuses_a_symbolic_parent_without_writing_to_its_target(tmp_path, protected):
+    target = tmp_path / "foreign"
+    target.mkdir()
+    link = tmp_path / "exports"
+    link.symlink_to(target, target_is_directory=True)
+    destination = link / "export.zip"
+    with pytest.raises(ValueError, match="symbolic link"):
+        if protected:
+            cleanup_e2e_run.protect_export(destination, b"private", bytes(range(32)), "run-1")
+        else:
+            cleanup_e2e_run.privacy._write_export(destination, {"organization": [{"id": 7}]})
+    assert list(target.iterdir()) == []
+
+
+def test_plain_export_is_private_exclusive_and_preserves_the_complete_archive(tmp_path):
+    destination = tmp_path / "export.zip"
+    data = {"organization": [{"id": 7, "name": "Private school"}]}
+    cleanup_e2e_run.privacy._write_export(destination, data)
+    assert destination.stat().st_mode & 0o777 == 0o600
+    original = destination.read_bytes()
+    with zipfile.ZipFile(destination) as archive:
+        assert json.loads(archive.read("tables/organization.json")) == data["organization"]
+        manifest = json.loads(archive.read("manifest.json"))
+        assert manifest["tables"]["organization"]["count"] == 1
+    with pytest.raises(FileExistsError):
+        cleanup_e2e_run.privacy._write_export(destination, {"organization": []})
+    assert destination.read_bytes() == original
 
 
 def test_export_refuses_invalid_key_before_creating_files(tmp_path):

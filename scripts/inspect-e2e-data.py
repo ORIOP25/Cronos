@@ -27,13 +27,7 @@ def minutes(hours):
         raise ValueError("Invalid module hours") from error
 
 
-def inspect(directory):
-    directory = Path(directory)
-    manifest = json.loads((directory / "manifest.json").read_text(encoding="utf-8-sig"))
-    if manifest.get("schema_version") != 1 or set(manifest.get("files", {})) != {
-        item[0] for item in FILES.values()
-    }:
-        raise ValueError("Invalid original data manifest")
+def read_original_resources(directory, manifest):
     resources = {}
     for resource, (name, delimiter, count) in FILES.items():
         raw = (directory / name).read_bytes()
@@ -51,8 +45,11 @@ def inspect(directory):
         ):
             raise ValueError(f"Incomplete original CSV: {name}")
         resources[resource] = rows
+    return resources
+
+def original_subjects(rows):
     subjects = {}
-    for row in resources["subjects"]:
+    for row in rows:
         name = row["Nome da disciplina"]
         subject = subjects.setdefault(
             name, {"room_type": row["Tipo de sala"], "modules": []}
@@ -73,8 +70,11 @@ def inspect(directory):
             or len({module["code"] for module in subject["modules"]}) != 4
         ):
             raise ValueError("Incomplete or duplicate subject modules")
+    return subjects
+
+def original_teachers(rows, subjects):
     teachers = {}
-    for row in resources["teachers"]:
+    for row in rows:
         email = row["Email do professor"]
         subject = row["Nome da disciplina"]
         if subject not in subjects:
@@ -88,15 +88,12 @@ def inspect(directory):
         ):
             raise ValueError("Conflicting teacher identity or duplicate competency")
         teacher["subjects"].append(subject)
-    classes = {}
-    for row in resources["courses"]:
-        key = (row["Sigla do curso"], row["Nome da turma"])
-        if key in classes:
-            raise ValueError("Duplicate class")
-        classes[key] = row
+    return teachers
+
+def original_demand(rows, classes, subjects, teachers):
     demand = []
     seen = set()
-    for row in resources["assignments"]:
+    for row in rows:
         course, class_name, subject, email = (
             row[field]
             for field in [
@@ -128,6 +125,26 @@ def inspect(directory):
                 ),
             }
         )
+    return demand
+
+
+def inspect(directory):
+    directory = Path(directory)
+    manifest = json.loads((directory / "manifest.json").read_text(encoding="utf-8-sig"))
+    if manifest.get("schema_version") != 1 or set(manifest.get("files", {})) != {
+        item[0] for item in FILES.values()
+    }:
+        raise ValueError("Invalid original data manifest")
+    resources = read_original_resources(directory, manifest)
+    subjects = original_subjects(resources["subjects"])
+    teachers = original_teachers(resources["teachers"], subjects)
+    classes = {}
+    for row in resources["courses"]:
+        key = (row["Sigla do curso"], row["Nome da turma"])
+        if key in classes:
+            raise ValueError("Duplicate class")
+        classes[key] = row
+    demand = original_demand(resources["assignments"], classes, subjects, teachers)
     counts = {
         "rooms": len(resources["rooms"]),
         "teachers": len(teachers),

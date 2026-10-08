@@ -698,7 +698,49 @@ O novo teste do gate falhou antes da correção.
 A preparação continua sem execução real; esta opção não certifica uma escola nem história operacional.
 
 No commit `5a78e925c8f920e8c2372a5720a5461345e1b009`, os três jobs passaram no push e na PR.
+No commit `763eeac4f78268ac3f0b2012bc855cd14bdbac1b`, os três jobs também passaram no push e na PR.
 O gate Sonar continua rejeitado; campanha real, história operacional e entrega final permanecem pendentes.
+
+### Proteção partilhada dos exports e revisão de responsabilidades
+
+O teste do export de privacidade reproduziu a aceitação de componentes `..` antes da correção.
+Um segundo teste Linux confirmou que o ZIP era criado com permissões `0644`.
+Os dois exportadores agora reutilizam a criação privada e exclusiva de ficheiros.
+A política rejeita parent traversal e diretórios simbólicos; mantém permissões `0600` e diretórios novos `0700`.
+O teste também confere o conteúdo integral do arquivo e recusa sobrescrever um export existente.
+Os 26 testes do wrapper passaram após a correção; Ruff passou nos três ficheiros backend alterados.
+
+O leitor independente separa recursos CSV, disciplinas, professores e atribuições em funções puras.
+Os 12 testes independentes passaram antes e depois da refatoração, sem alterar bytes, contagens ou critérios.
+A recuperação do backup separa a autenticação do envelope da validação das tabelas do ZIP.
+A integração com PostgreSQL e Redis reais passou: 15 casos de limpeza e os 61 contratos obrigatórios.
+A política de timestamps rejeita dias impossíveis que JavaScript normalizava silenciosamente.
+O teste reproduziu aceitação de 30 de fevereiro antes da correção.
+A política também recusa IDs com traversal, separadores ou valores não textuais.
+O novo teste reproduziu a certificação indevida antes da correção.
+Os oito testes da política passaram, incluindo um dia bissexto válido com offset UTC explícito.
+O diagnóstico do Chrome próprio observou um iframe de desafio Cloudflare e nenhum input de verificação.
+Não observou pedidos de criação de conta nem uma sessão autenticada; o remetente permanece por observar.
+A campanha real e o gate Sonar continuam pendentes.
+
+### Verificação pelo plugin Cloudflare
+
+O plugin autenticado confirmou a conta do proprietário e a zona ativa `cronos.pt`.
+O Email Routing está desativado, com estado `unconfigured`; não existem destinos verificados.
+Os MX do domínio apontam para `mx1.hostinger.com` e `mx2.hostinger.com`.
+O MX de `send.forms.cronos.pt` pertence ao envio Amazon SES e não recebe a caixa de contacto.
+O encaminhamento deve ser configurado na Hostinger; os MX e a entrega existente foram preservados.
+A conta contém dois widgets Turnstile do contacto, ambos em modo `managed`.
+A listagem de rulesets não revelou uma regra personalizada de desafio para o registo.
+A documentação Cloudflare declara que browsers automatizados não são suportados para resolver desafios de produção.
+A resolução manual noutro browser não comprova aceitação autónoma na CI.
+
+A verificação backend integral terminou com código zero: 911 unidades, 454 integrações e 61 contratos.
+O gate de cobertura passou com 82%; a política crítica do scheduler manteve 100%.
+Ruff e a limpeza da stack própria passaram.
+Os 106 testes da infraestrutura de aceitação passaram após a refatoração da política pura.
+Estes resultados não certificam a campanha de produção ainda pendente.
+
 ## Fontes e documentos relacionados
 
 - [Política de aceitação](../../frontend/e2e/utils/acceptance-policy.js)

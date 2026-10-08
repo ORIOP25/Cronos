@@ -115,10 +115,15 @@ The identity journey persists generated passwords and delivered codes before usi
 Preflight requires this value before account creation. Do not derive it from the development Clerk instance.
 The contact journey requires an authorized forward from `contacto@cronos.pt` to `admincronos100@gmail.com`.
 Keep the production contact recipient unchanged. Configure forwarding separately; these tests do not provision it.
+The provider check on 2026-10-08 found Hostinger MX records and disabled Cloudflare Email Routing.
+Configure the forward with the current mailbox provider. Do not replace working MX records to enable these tests.
 The reader checks the original To, Delivered-To, Reply-To, sender, bounded delivery time and all seven submitted answers.
 Discovery includes the unique contact run marker. Other contact messages cannot satisfy the case.
 `E2E_CONTACT_SENDER` optionally identifies a configured production sender; its default is `website@forms.cronos.pt`.
 The browser uses the real Turnstile widget. Missing verification or missing delivered email fails the case.
+Cloudflare does not support automated browsers for solving production challenges.
+A manual challenge in another browser does not prove autonomous CI execution.
+Test keys certify isolated integration behavior; they do not replace the required production acceptance proof.
 OAuth profile verification does not prove that the forward exists; actual message observation provides that proof.
 The current identity spec covers registration, verification, fresh-context login and delivered recovery through visible controls.
 Its real execution remains pending production deployment alignment and the observed code sender; no new identity is certified by these code changes.

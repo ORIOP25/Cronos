@@ -80,15 +80,7 @@ def protect_export(destination, content, key, run_id):
 
 
 def _write_protected_export(destination, content):
-    destination = Path(destination)
-    if ".." in destination.parts:
-        raise ValueError("Export path must not contain parent traversal")
-    for parent in [destination.parent, *destination.parents]:
-        if parent.is_symlink():
-            raise ValueError("Export directory must not be a symbolic link")
-    destination.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    descriptor = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    with os.fdopen(descriptor, "wb") as output:
+    with privacy.open_private_export(destination) as output:
         output.write(content)
         output.flush()
         os.fsync(output.fileno())
@@ -214,25 +206,7 @@ def _protect_export_data(data, destination, key, run_id):
         protect_export(destination, output.read_bytes(), key, run_id)
 
 
-def recover_export_ownership(content, key, run_id, local_id):
-    """Authenticate the complete classified archive before trusting its ownership receipt."""
-    envelope = json.loads(content)
-    if (
-        not isinstance(envelope, dict)
-        or type(envelope.get("version")) is not int
-        or envelope["version"] != 1
-    ):
-        raise ValueError("Invalid pre-deletion export envelope")
-    aad = json.dumps(
-        {"version": 1, "run_id": run_id, "path": f"organization-{local_id}.zip"},
-        separators=(",", ":"),
-    ).encode()
-    plaintext = AESGCM(key).decrypt(
-        base64.b64decode(envelope["nonce"], validate=True),
-        base64.b64decode(envelope["ciphertext"], validate=True)
-        + base64.b64decode(envelope["tag"], validate=True),
-        aad,
-    )
+def _verified_archive_tables(plaintext):
     limit = 64 * 1024 * 1024
     if len(plaintext) > limit:
         raise ValueError("Pre-deletion archive exceeds limit")
@@ -268,6 +242,29 @@ def recover_export_ownership(content, key, run_id, local_id):
             tables[name] = rows
         if set(names) != expected:
             raise ValueError("Unexpected pre-deletion archive content")
+    return tables
+
+
+def recover_export_ownership(content, key, run_id, local_id):
+    """Authenticate the complete classified archive before trusting its ownership receipt."""
+    envelope = json.loads(content)
+    if (
+        not isinstance(envelope, dict)
+        or type(envelope.get("version")) is not int
+        or envelope["version"] != 1
+    ):
+        raise ValueError("Invalid pre-deletion export envelope")
+    aad = json.dumps(
+        {"version": 1, "run_id": run_id, "path": f"organization-{local_id}.zip"},
+        separators=(",", ":"),
+    ).encode()
+    plaintext = AESGCM(key).decrypt(
+        base64.b64decode(envelope["nonce"], validate=True),
+        base64.b64decode(envelope["ciphertext"], validate=True)
+        + base64.b64decode(envelope["tag"], validate=True),
+        aad,
+    )
+    tables = _verified_archive_tables(plaintext)
     organizations = tables.get("organization", [])
     receipts = tables.get("e2e_ownership", [])
     if len(organizations) != 1 or organizations[0].get("id") != local_id or len(receipts) != 1:
@@ -298,8 +295,8 @@ async def _export(db, local_id, destination, key, run_id, *, ownership=None):
 async def _remove_unshared_actor(db, sdk, actor, registry, before_delete=None):
     current = await _observe_actor(sdk, actor["id"])
     created = datetime.fromisoformat(current["created_at"])
-    started = datetime.fromisoformat(registry["started_at"].replace("Z", "+00:00"))
-    finished = datetime.fromisoformat(registry["finished_at"].replace("Z", "+00:00"))
+    started = datetime.fromisoformat(registry["started_at"])
+    finished = datetime.fromisoformat(registry["finished_at"])
     memberships = await sdk.users.get_organization_memberships_async(
         user_id=actor["id"], limit=1, timeout_ms=30000
     )
@@ -313,10 +310,7 @@ async def _remove_unshared_actor(db, sdk, actor, registry, before_delete=None):
         current["id"] != actor["id"]
         or current["email"] != actor["email"]
         or not started <= created <= finished
-        or (
-            actor.get("created_at")
-            and created != datetime.fromisoformat(actor["created_at"].replace("Z", "+00:00"))
-        )
+        or (actor.get("created_at") and created != datetime.fromisoformat(actor["created_at"]))
     ):
         raise ValueError("Actor creation does not belong to this run")
     if memberships.total_count is None:

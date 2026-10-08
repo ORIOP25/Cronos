@@ -48,6 +48,9 @@ python -m scripts.privacy export --organization-id <id> --output <explicit-file.
 ```
 
 The command writes one UTF-8 JSON member per relevant table, a manifest, and SHA-256 hashes. It excludes secrets, tokens, passwords, and other tenants.
+The exporter creates each destination exclusively with mode `0600`; an existing file remains unchanged.
+New parent directories use mode `0700`. Parent traversal and symbolic parent directories are rejected.
+The plain and encrypted exporters share this file creation policy.
 The standalone export reads through `DATABASE_URL` with the tenant context.
 The campaign wrapper reuses the same classified export within its administrative transaction.
 

@@ -83,3 +83,25 @@ test('deployment observations and case proofs must be bounded by the actual camp
     assert.equal(evaluateAcceptance(run).status, 'failed')
   }
 })
+
+
+test('a normalized impossible calendar day cannot authenticate campaign timestamps', () => {
+  const run = JSON.parse(JSON.stringify(campaign()).replaceAll('2026-10-07', '2026-02-30'))
+  assert.equal(evaluateAcceptance(run).status, 'failed')
+})
+
+
+test('real leap days and explicit UTC offsets retain valid campaign timing', () => {
+  const run = JSON.parse(JSON.stringify(campaign()).replaceAll('2026-10-07', '2028-02-29').replaceAll('.000Z', '.000+00:00'))
+  assert.equal(evaluateAcceptance(run).status, 'validated')
+})
+
+
+test('unsafe or nontext campaign identities cannot certify cleanup and evidence ownership', () => {
+  for (const runId of ['../outside', 'run/name', { id: 'run-1' }, 123]) {
+    const run = campaign()
+    run.run_id = runId
+    run.cleanup.run_id = runId
+    assert.equal(evaluateAcceptance(run).status, 'failed')
+  }
+})
