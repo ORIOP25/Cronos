@@ -656,6 +656,9 @@ O exportador administrativo agora rejeita componentes `..` antes de criar diret�
 O novo teste falhou antes da correção; os 22 testes do wrapper passaram depois.
 O transporte SSH continua a criar o destino num diretório temporário próprio.
 As identidades assinadas continuam limitadas a IDs de organização numéricos e IDs Clerk sem separadores.
+A resposta administrativa também rejeita um ator declarado removido e pendente em simultâneo.
+O teste reproduziu a contradição antes da correção; os 12 testes do transporte passaram depois.
+Nenhum efeito remoto nem export local é certificado a partir dessa resposta contraditória.
 A CI censura as passwords aleatórias antes de as publicar no ambiente dos passos seguintes.
 
 O check nativo Cloudflare revelou os IDs reais da conta e do projeto.

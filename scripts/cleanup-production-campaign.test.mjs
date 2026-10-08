@@ -200,3 +200,16 @@ test('artifact directory aliases are rejected before any administrative transpor
     assert.deepEqual(await readdir(join(f.root, 'real-directory')), [])
   } finally { await rm(f.root, { recursive: true, force: true }) }
 })
+test('conflicting removed and pending actor outcomes cannot certify remote effects', async () => {
+  const f = await fixture()
+  try {
+    const result = await cleanupProductionCampaign(f.options, f.environment, { execute: async () => ({
+      ...f.response, result: { ...f.response.result, status: 'failed', pending_actors: ['user_Founder'] },
+    }) })
+    assert.equal(result.status, 'failed')
+    assert.deepEqual(result.removed_actors, [])
+    assert.deepEqual(result.pending_actors, ['user_Founder'])
+    assert.deepEqual(result.completed, [])
+    assert.deepEqual(await readdir(f.options.artifactRoot).catch(() => []), [])
+  } finally { await rm(f.root, { recursive: true, force: true }) }
+})

@@ -140,7 +140,7 @@ export async function cleanupProductionCampaign({ registryPath, runId, expectedR
     for (const [field, allowed] of [['completed', organizations], ['pending', organizations], ['removed_actors', actors], ['pending_actors', actors]]) {
       if (!Array.isArray(result[field]) || new Set(result[field]).size !== result[field].length || result[field].some(id => !allowed.includes(id))) throw new Error('Administrative target mismatch')
     }
-    if (result.removed_actors.some(id => persistentActors.has(id)) || result.completed.some(id => result.pending.includes(id))) throw new Error('Administrative ownership conflict')
+    if (result.removed_actors.some(id => persistentActors.has(id) || result.pending_actors.includes(id)) || result.completed.some(id => result.pending.includes(id))) throw new Error('Administrative ownership conflict')
     if (organizations.some(id => !result.completed.includes(id) && !result.pending.includes(id))) throw new Error('Administrative target outcome missing')
     if (result.status === 'completed' && (result.pending.length || result.pending_actors.length || organizations.some(id => !result.completed.includes(id)))) throw new Error('Administrative cleanup remains pending')
     if (exportOnly && (result.completed.length || result.removed_actors.length || !Array.isArray(result.exported)
