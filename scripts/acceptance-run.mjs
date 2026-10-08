@@ -17,7 +17,6 @@ export function acceptanceSecrets(environment, dynamic) {
 export function acceptancePlan(environment, artifactDir, { preparation = false, testsRevision } = {}) {
   const config = validateProductionConfig(environment)
   const missing = productionDependencies(environment, { preparation })
-  if (!environment.E2E_SECRET_REGISTRY) missing.push('E2E_SECRET_REGISTRY')
   if (missing.length) return { status: 'dependency_unavailable', missing }
   if (testsRevision !== undefined && testsRevision !== config.expectedRevision) throw new Error('Test revision does not match production')
   if (Buffer.from(environment.E2E_ARTIFACT_KEY, 'base64').length !== 32) {

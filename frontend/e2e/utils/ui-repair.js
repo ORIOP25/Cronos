@@ -1,4 +1,5 @@
 import { expect } from '@playwright/test'
+import { recordCheckpoint } from './acceptance-proof.js'
 import { canonicalExecutedModules, validateImportedData } from './expected-results.js'
 import { readImportedData, readOriginalExpectations, readSchoolResource } from './ui-school.js'
 import { approveVerifiedProposal, generateProposal, readGenerationCalendar, readMaterializedProposal, validateMaterializedSchedule } from './ui-generation.js'
@@ -69,7 +70,7 @@ export async function exerciseHistoricalRepair(teacherPage, adminPage, testInfo,
     expect(changedStatus.active_version_id).toBe(beforeStatus.active_version_id)
     expect(changedStatus.revisions.planning).toBeGreaterThan(beforeStatus.revisions.planning)
     expect(changedStatus.eligibility.can_generate).toBe(true)
-    const generated = await generateProposal(adminPage, testInfo, original, imported, { repair: true })
+    const generated = await generateProposal(adminPage, testInfo, original, imported, { repair: true, checkpoint: false })
     expect(generated.versionId).not.toBe(baseline.versionId)
     expect(generated.executed).toEqual(baseline.executed)
     const calendar = await readGenerationCalendar(adminPage, original, imported, generated.status.school_year)
@@ -108,6 +109,9 @@ export async function exerciseHistoricalRepair(teacherPage, adminPage, testInfo,
       beforeStatus, baseline, observedCalendar: calendar.observed, protected_dates: [...protectedDates], event,
       generated, validation, approved, published, beforeWeek, afterWeek, progress, writes,
     })), contentType: 'application/json' })
+    await recordCheckpoint(testInfo, [
+      'E2E-13/future-change-repair', 'E2E-13/physical-lineage', 'E2E-13/residual-coverage', 'E2E-13/historical-credit-preserved',
+    ], { requires: 'school', observation: { target_date: target.date, historical_lessons: baselineHistory.length } })
   } finally {
     adminPage.off('request', observe)
     teacherPage.off('request', observe)

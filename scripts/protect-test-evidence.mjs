@@ -40,6 +40,15 @@ export function recoverEvidence(envelope, key, metadata) {
   return Buffer.concat([decipher.update(Buffer.from(decoded.ciphertext, 'base64')), decipher.final()])
 }
 
+function confinedDestination(destination) {
+  if (typeof destination !== 'string' || !destination || destination.includes(String.fromCharCode(0))) {
+    throw new Error('Evidence destination must be a confined path')
+  }
+  const segments = destination.split(/[\\/]/)
+  if (segments.some(part => part === '..')) throw new Error('Evidence destination must not traverse parent directories')
+  return resolve(destination)
+}
+
 async function createConfinedParent(target) {
   const segments = []
   let directory = resolve(target, '..')
@@ -48,6 +57,16 @@ async function createConfinedParent(target) {
     if (parent === directory) break
     segments.unshift(basename(directory))
     directory = parent
+  }
+  let probe = directory
+  for (const segment of segments) {
+    probe = join(probe, segment)
+    let info
+    try { info = await lstat(probe) } catch (error) {
+      if (error.code === 'ENOENT') break
+      throw error
+    }
+    if (info.isSymbolicLink() || !info.isDirectory()) throw new Error('Evidence protection directory must not be a symbolic link')
   }
   let current = directory
   for (const segment of segments) {
@@ -63,7 +82,7 @@ async function createConfinedParent(target) {
 export async function protectEvidenceFile(source, destination, key, metadata) {
   validateKey(key)
   const envelope = protectEvidence(await readFile(source), key, metadata)
-  const target = resolve(destination)
+  const target = confinedDestination(destination)
   const directory = await createConfinedParent(target)
   const written = join(directory, basename(target))
   await writeFile(written, envelope, { flag: 'wx', mode: 0o600 })

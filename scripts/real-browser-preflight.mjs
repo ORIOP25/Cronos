@@ -4,7 +4,7 @@ import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { validateProductionConfig } from '../frontend/e2e/utils/acceptance-policy.js'
 import { createGmailReader } from '../frontend/e2e/utils/gmail.js'
-import { readDeploymentSnapshot } from '../frontend/e2e/utils/deployments.js'
+import { deploymentConfig, readDeploymentSnapshot } from '../frontend/e2e/utils/deployments.js'
 import { verifyRegistry } from './e2e-run-registry.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -15,7 +15,7 @@ export function productionDependencies(environment, { preparation = false } = {}
     'CLOUDFLARE_API_TOKEN', 'E2E_CLOUDFLARE_ACCOUNT_ID', 'E2E_CLOUDFLARE_PROJECT',
     'E2E_RAILWAY_TOKEN', 'E2E_RAILWAY_TOKEN_TYPE', 'E2E_RAILWAY_PROJECT_ID', 'E2E_RAILWAY_ENVIRONMENT_ID',
     'E2E_RAILWAY_API_SERVICE_ID', 'E2E_RAILWAY_WORKER_SERVICE_ID', 'E2E_RAILWAY_SUPERVISOR_SERVICE_ID', 'E2E_RAILWAY_BEAT_SERVICE_ID',
-    'E2E_ARTIFACT_KEY', 'E2E_PERSISTENT_REGISTRY', 'E2E_ADMIN_SSH_KEY', 'E2E_REGISTRY_HMAC_KEY', 'E2E_HISTORY_TEACHER_PASSWORD', 'E2E_HISTORY_ADMIN_PASSWORD',
+    'E2E_ARTIFACT_KEY', 'E2E_SECRET_REGISTRY', 'E2E_PERSISTENT_REGISTRY', 'E2E_ADMIN_SSH_KEY', 'E2E_REGISTRY_HMAC_KEY', 'E2E_HISTORY_TEACHER_PASSWORD', 'E2E_HISTORY_ADMIN_PASSWORD',
   ]
   return names.filter(name => !(preparation && ['E2E_HISTORY_TEACHER_PASSWORD', 'E2E_HISTORY_ADMIN_PASSWORD'].includes(name)) && !environment[name])
 }
@@ -48,11 +48,7 @@ export async function preflight(environment, { fetchImpl = fetch, inspect = insp
     const reader = await createGmailReader({ clientId: environment.E2E_GMAIL_CLIENT_ID, clientSecret: environment.E2E_GMAIL_CLIENT_SECRET, refreshToken: environment[`E2E_GMAIL_${actor.toUpperCase()}_REFRESH_TOKEN`], mailbox: config.mailboxes[actor] }, { fetchImpl })
     gmail[actor] = { mailbox: reader.mailbox, readonly: true, verified: true }
   }
-  const snapshot = await readDeploymentSnapshot({
-    expectedRevision: config.expectedRevision,
-    cloudflare: { token: environment.CLOUDFLARE_API_TOKEN, account: environment.E2E_CLOUDFLARE_ACCOUNT_ID, project: environment.E2E_CLOUDFLARE_PROJECT },
-    railway: { token: environment.E2E_RAILWAY_TOKEN, tokenType: environment.E2E_RAILWAY_TOKEN_TYPE, project: environment.E2E_RAILWAY_PROJECT_ID, environment: environment.E2E_RAILWAY_ENVIRONMENT_ID, services: Object.fromEntries(['api', 'worker', 'supervisor', 'beat'].map(name => [name, environment[`E2E_RAILWAY_${name.toUpperCase()}_SERVICE_ID`]])) },
-  }, { fetchImpl })
+  const snapshot = await readDeploymentSnapshot(deploymentConfig(environment, config.expectedRevision), { fetchImpl })
   return { status: 'ready', phase, checked_at: snapshot.checked_at, components: snapshot.components, deployments: snapshot.deployments, gmail, data: { files: data.files, counts: data.counts, required_minutes: data.required_minutes } }
 }
 

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
 import test from 'node:test'
-import { observeAcceptanceRuntime } from '../e2e/utils/acceptance-runtime.js'
+import { observeAcceptanceActivity, observeAcceptanceRuntime } from '../e2e/utils/acceptance-runtime.js'
 
 function request(url, method = 'GET') {
   return { url: () => url, method: () => method, failure: () => ({ errorText: 'net::ERR_FAILED' }) }
@@ -94,6 +94,22 @@ test('console exceptions require an observed request, and 500 errors are never e
   })
   assert.equal(observer.errors.length, 2)
   observer.dispose()
+})
+
+test('acceptance activity is reported only for real page requests and navigations while subscribed', () => {
+  const page = new EventEmitter()
+  let seen = 0
+  observeAcceptanceActivity(() => { seen += 1 })
+  try {
+    const observer = observeAcceptanceRuntime(page)
+    page.emit('request', request('https://api.cronos.pt/api/v1/rooms'))
+    page.emit('framenavigated')
+    assert.equal(seen, 2)
+    observeAcceptanceActivity(null)
+    page.emit('request', request('https://api.cronos.pt/api/v1/rooms'))
+    assert.equal(seen, 2)
+    observer.dispose()
+  } finally { observeAcceptanceActivity(null) }
 })
 
 test('a new request cannot reuse an old expected console failure at the same URL', async () => {

@@ -5,10 +5,15 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
-import { recoverEvidence } from './protect-test-evidence.mjs'
+import { protectEvidence, recoverEvidence } from './protect-test-evidence.mjs'
+import { signRegistry } from './e2e-run-registry.mjs'
+import { finalizeRun, verifyRunArtifacts } from './finalize-real-browser-run.mjs'
+import { evaluatePreparation } from './prepare-history.mjs'
+import { COMPONENTS } from '../frontend/e2e/utils/acceptance-policy.js'
 import {
   childSpec,
   displayArgs,
+  finalizePreparation,
   isOwnedResource,
   parseArgs,
   preservePrimaryFailure,
@@ -122,6 +127,7 @@ test('production acceptance stays serialized and sanitizes its own artifact root
   assert.match(workflow, /E2E_RUN_ID: \$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}/)
   assert.match(workflow, /sanitize-test-artifacts\.mjs "\.test-artifacts\/\$\{E2E_RUN_ID\}\/acceptance-artifacts"/)
   assert.match(workflow, /E2E_EXPECTED_REVISION: \$\{\{ github\.sha \}\}/)
+  assert.doesNotMatch(workflow, /protect-test-evidence\.mjs protect/)
 })
 
 test('exposes production acceptance as its own command', () => {
@@ -201,6 +207,21 @@ test('a raw binary renamed to enc is not accepted as protected evidence', async 
   try {
     writeFileSync(join(root, 'trace.zip.enc'), 'unprotected session data')
     await assert.rejects(sanitizeDirectory(root, [], { key: randomBytes(32), runId: 'run-1' }))
+  } finally {
+    rmSync(root, { force: true, recursive: true })
+  }
+})
+
+test('repeated sanitization keeps protected evidence byte-identical', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'cronos-sanitize-idempotent-'))
+  try {
+    const key = randomBytes(32)
+    writeFileSync(join(root, 'trace.zip'), Buffer.from('opaque sensitive trace'))
+    await sanitizeDirectory(root, [], { key, runId: 'run-1' })
+    const afterFirst = readFileSync(join(root, 'trace.zip.enc'))
+    await sanitizeDirectory(root, [], { key, runId: 'run-1' })
+    assert.deepEqual(readFileSync(join(root, 'trace.zip.enc')), afterFirst)
+    assert.equal(recoverEvidence(afterFirst, key, { run_id: 'run-1', path: 'trace.zip' }).toString(), 'opaque sensitive trace')
   } finally {
     rmSync(root, { force: true, recursive: true })
   }
@@ -338,4 +359,171 @@ test('includes untracked source paths in the measured file set', () => {
     frontendTests: 0,
     e2eTests: 0,
   })
+})
+
+const preparationKey = randomBytes(32)
+const preparationSigningKey = randomBytes(32)
+
+function preparationFixture(revision = 'a'.repeat(40)) {
+  const runId = 'run-1'
+  const organization = {
+    local_id: 7, clerk_id: 'org_School', creation_run_id: runId, provenance: 'ui', type: 'persistent',
+    actors: [
+      { id: 'user_admin', email: `admincronos100+${runId}@gmail.com` },
+      { id: 'user_teacher', email: `professorcronos100+${runId}@gmail.com` },
+    ],
+  }
+  const data = { files: { rooms: { sha256: 'a'.repeat(64) } }, counts: { rooms: 48 }, required_minutes: 1_209_600 }
+  const prepared = {
+    schema_version: 1, status: 'prepared', run_id: runId, revision, organization,
+    prepared_at: '2026-10-08T10:30:00.000Z', proposal_id: 6,
+    publication: { publication_state: 'PUBLISHED', active_version_id: 8, active_job: null, pending_proposal: null },
+    original_files: data.files, counts: data.counts, required_minutes: data.required_minutes, teacher_id: 9,
+    credentials_path: 'preparation/persistent-credentials.json.enc', history_verified: false,
+  }
+  const run = {
+    schema_version: 1, run_id: runId, mode: 'preparation', tests_revision: revision, expected_revision: revision,
+    started_at: '2026-10-08T10:00:00.000Z', finished_at: '2026-10-08T11:00:00.000Z',
+    cases: [], failures: [], data, preparation: prepared, data_verified: true, evidence_protected: false,
+    cleanup: { run_id: runId, status: 'completed', pending: [], pending_actors: [] },
+    deployments: ['before', 'after'].map((phase, index) => ({
+      phase, checked_at: index ? '2026-10-08T10:59:00.000Z' : '2026-10-08T10:01:00.000Z',
+      components: Object.fromEntries(COMPONENTS.map(name => [name, revision])),
+    })),
+  }
+  return { run, registry: { run_id: runId, organizations: [organization] } }
+}
+
+function writeRegistry(directory, name, value) {
+  const path = join(directory, name)
+  writeFileSync(path, JSON.stringify(signRegistry(value, preparationSigningKey)))
+  return path
+}
+
+test('preparation orchestration keeps a stage1 protection failure even when stage2 passes', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'cronos-orchestration-'))
+  try {
+    const { run, registry } = preparationFixture()
+    const registryPath = writeRegistry(directory, 'ui-registry.json', registry)
+    const calls = []
+    const finalizeRunImpl = async (input) => {
+      calls.push(input)
+      const failures = calls.length === 1
+        ? [...input.failures, 'Artifact finalization failed: registries']
+        : [...input.failures]
+      return {
+        run: { ...input, failures, evidence_protected: calls.length > 1 },
+        artifacts: calls.length > 1 ? [{ path: 'preparation/persistent-credentials.json.enc' }] : [],
+        envelope: calls.length > 1 ? {} : null,
+      }
+    }
+    let retainCalls = 0
+    const { result, assessment, prepared } = await finalizePreparation({
+      run, artifactRoot: join(directory, 'artifacts'), key: preparationKey, signingKey: preparationSigningKey,
+      secrets: [], registryPath, observedReport: run.preparation,
+      persistentRegistryPath: join(directory, 'persistent.json'), secretRegistryPath: join(directory, 'secret.json'),
+      finalizeRunImpl, retain: async () => { retainCalls += 1 },
+    })
+    assert.equal(calls.length, 2)
+    assert.ok(calls[1].failures.includes('Artifact finalization failed: registries'))
+    assert.equal(retainCalls, 0)
+    assert.equal(result.run.evidence_protected, true)
+    assert.equal(prepared, false)
+    assert.ok(assessment.failures.includes('Artifact finalization failed: registries'))
+  } finally { rmSync(directory, { recursive: true, force: true }) }
+})
+
+function writePreparationArtifacts(directory, { credentials = true } = {}) {
+  const artifactRoot = join(directory, 'acceptance-artifacts')
+  mkdirSync(join(artifactRoot, 'preparation'), { recursive: true })
+  if (credentials) {
+    writeFileSync(join(artifactRoot, 'preparation', 'persistent-credentials.json.enc'),
+      protectEvidence(Buffer.from('private login credentials'), preparationKey, { run_id: 'run-1', path: 'preparation/persistent-credentials.json' }))
+  }
+  return artifactRoot
+}
+
+test('a real promotion rejection is classified and the signed envelope matches the delivered result', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'cronos-orchestration-'))
+  try {
+    const { run, registry } = preparationFixture()
+    const artifactRoot = writePreparationArtifacts(directory)
+    const registryPath = writeRegistry(directory, 'ui-registry.json', registry)
+    const persistentRegistryPath = join(directory, 'persistent.json')
+    writeFileSync(persistentRegistryPath, JSON.stringify(signRegistry({ schema_version: 1, run_id: 'run-1', organizations: [], history_verified: false }, randomBytes(32))))
+    const secretRegistryPath = join(directory, 'secret.json')
+    writeFileSync(secretRegistryPath, JSON.stringify(['123456']))
+    const { result, assessment, prepared } = await finalizePreparation({
+      run, artifactRoot, key: preparationKey, signingKey: preparationSigningKey, secrets: ['123456'],
+      registryPath, observedReport: run.preparation, persistentRegistryPath, secretRegistryPath,
+    })
+    assert.equal(prepared, false)
+    assert.equal(assessment.status, 'failed')
+    assert.ok(result.run.failures.includes('Persistent school promotion failed'))
+    assert.equal(result.run.failures.some(message => /signature|secret-value/.test(message)), false)
+    const manifest = await verifyRunArtifacts(result.envelope, artifactRoot, { key: preparationKey, signingKey: preparationSigningKey })
+    assert.deepEqual(manifest.run, result.run)
+    assert.deepEqual(manifest.assessment, result.assessment)
+    assert.ok(manifest.run.failures.includes('Persistent school promotion failed'))
+    assert.equal(evaluatePreparation(manifest.run, registry, manifest.artifacts).status, 'failed')
+  } finally { rmSync(directory, { recursive: true, force: true }) }
+})
+
+test('a stage1 ineligibility stays in the signed run even when stage2 supplies the missing file', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'cronos-orchestration-'))
+  try {
+    const { run, registry } = preparationFixture()
+    const artifactRoot = writePreparationArtifacts(directory, { credentials: false })
+    const registryPath = writeRegistry(directory, 'ui-registry.json', registry)
+    const persistentRegistryPath = writeRegistry(directory, 'persistent.json', { schema_version: 1, run_id: 'run-1', organizations: [], history_verified: false })
+    const secretRegistryPath = join(directory, 'secret.json')
+    writeFileSync(secretRegistryPath, JSON.stringify(['123456']))
+    let calls = 0
+    const finalizeRunImpl = async (input, root, options) => {
+      calls += 1
+      if (calls === 2) {
+        writeFileSync(join(root, 'preparation', 'persistent-credentials.json.enc'),
+          protectEvidence(Buffer.from('recovered credentials'), preparationKey, { run_id: 'run-1', path: 'preparation/persistent-credentials.json' }))
+      }
+      return finalizeRun(input, root, options)
+    }
+    const { result, assessment, prepared } = await finalizePreparation({
+      run, artifactRoot, key: preparationKey, signingKey: preparationSigningKey, secrets: ['123456'],
+      registryPath, observedReport: run.preparation, persistentRegistryPath, secretRegistryPath, finalizeRunImpl,
+    })
+    assert.equal(calls, 2)
+    assert.equal(prepared, false)
+    assert.equal(assessment.status, 'failed')
+    assert.ok(result.run.failures.includes('Protected persistent credentials are missing'))
+    const manifest = await verifyRunArtifacts(result.envelope, artifactRoot, { key: preparationKey, signingKey: preparationSigningKey })
+    assert.deepEqual(manifest.run, result.run)
+    assert.ok(manifest.run.failures.includes('Protected persistent credentials are missing'))
+    assert.equal(evaluatePreparation(manifest.run, registry, manifest.artifacts).status, 'failed')
+  } finally { rmSync(directory, { recursive: true, force: true }) }
+})
+
+test('preparation orchestration delivers a verifiable inventory with both protected registries', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'cronos-orchestration-'))
+  try {
+    const { run, registry } = preparationFixture()
+    const artifactRoot = join(directory, 'acceptance-artifacts')
+    mkdirSync(join(artifactRoot, 'preparation'), { recursive: true })
+    writeFileSync(join(artifactRoot, 'preparation', 'persistent-credentials.json.enc'),
+      protectEvidence(Buffer.from('private login credentials'), preparationKey, { run_id: 'run-1', path: 'preparation/persistent-credentials.json' }))
+    const registryPath = writeRegistry(directory, 'ui-registry.json', registry)
+    const persistentRegistryPath = writeRegistry(directory, 'persistent.json', { schema_version: 1, run_id: 'run-1', organizations: [], history_verified: false })
+    const secretRegistryPath = join(directory, 'secret.json')
+    writeFileSync(secretRegistryPath, JSON.stringify(['123456']))
+    const { result, assessment, prepared } = await finalizePreparation({
+      run, artifactRoot, key: preparationKey, signingKey: preparationSigningKey, secrets: ['123456'],
+      registryPath, observedReport: run.preparation, persistentRegistryPath, secretRegistryPath,
+    })
+    assert.equal(prepared, true)
+    assert.equal(assessment.status, 'prepared')
+    const manifest = await verifyRunArtifacts(result.envelope, artifactRoot, { key: preparationKey, signingKey: preparationSigningKey })
+    assert.deepEqual(manifest.artifacts, result.artifacts)
+    const paths = manifest.artifacts.map(item => item.path)
+    assert.ok(paths.includes('preparation/persistent-registry.json.enc'))
+    assert.ok(paths.includes('preparation/private-secret-registry.json.enc'))
+  } finally { rmSync(directory, { recursive: true, force: true }) }
 })

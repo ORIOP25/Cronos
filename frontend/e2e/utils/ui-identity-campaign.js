@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto'
+import { recordCheckpoint } from './acceptance-proof.js'
 import { archiveAndRestoreCampaignTeacher, completeFoundation, futureSchoolPeriod, importOriginalData, inviteImportedTeacher, readOriginalExpectations, verifyAcceptedTeacher, verifyImportedData } from '../utils/ui-school.js'
 import { addAdminPreference, saveTeacherPreference, verifyAdminAvailability, verifyFutureExecutionAndIncompleteWeek, verifyInitialProgress, verifyPublishedTeacherSchedule, verifyTeacherPreference } from '../utils/ui-teacher.js'
 import { exerciseCourseAndInitialClass, exerciseRoomCrud, exerciseSubjectCrud } from '../utils/ui-catalog.js'
@@ -106,6 +107,18 @@ export async function runIdentityCampaign({ page, browser, provenance, delivered
   await codeInput.pressSequentially(verification.code)
   await expectIdentity(page, email)
   await provenance.recordCurrentActor()
+  // Actual verified session metadata only; never the delivered code or credential.
+  const session = await page.evaluate(() => ({
+    email_verified: window.Clerk?.user?.primaryEmailAddress?.verification?.status ?? null,
+    session_active: Boolean(window.Clerk?.session),
+    user_created_at: window.Clerk?.user?.createdAt?.toISOString?.() ?? null,
+  }))
+  const registration = { registration: true, email_verified: session.email_verified,
+    session_active: session.session_active, user_created_at: session.user_created_at, delivered_at: verification.delivered_at }
+  await testInfo.attach('registration-verification-observation', {
+    body: Buffer.from(JSON.stringify(registration)), contentType: 'application/json',
+  })
+  await recordCheckpoint(testInfo, ['E2E-01/founder-registration', 'E2E-01/email-verification'], { requires: 'actor', observation: registration })
 
   await page.goto('/foundation')
   const schoolName = page.locator('input[name="name"]')
@@ -116,7 +129,7 @@ export async function runIdentityCampaign({ page, browser, provenance, delivered
   await expect(page.locator('#school_start_date')).toBeEnabled()
   await provenance.recordCreatedSchool(schoolType)
   const schoolPeriod = futureSchoolPeriod()
-  await completeFoundation(page, schoolPeriod)
+  await completeFoundation(page, schoolPeriod, testInfo)
   await testInfo.attach('foundation-browser-evidence', {
     body: await page.screenshot({ fullPage: true, mask: [page.locator('input, textarea')] }), contentType: 'image/png',
   })
@@ -125,6 +138,7 @@ export async function runIdentityCampaign({ page, browser, provenance, delivered
   await expect.poll(() => page.evaluate(() => Boolean(window.Clerk?.loaded && !window.Clerk.user && !window.Clerk.session))).toBe(true)
 
   await freshSession(browser, testInfo, 'fresh-login', loginPage => login(loginPage, email, password))
+  await recordCheckpoint(testInfo, ['E2E-02/admin-login-logout', 'E2E-02/new-context-login'], { requires: 'actor' })
   await freshSession(browser, testInfo, 'recovery', async recoveryPage => {
     await recoveryPage.goto('/recuperar-palavra-passe')
     await recoveryPage.getByLabel('Email', { exact: true }).fill(email)
@@ -139,18 +153,28 @@ export async function runIdentityCampaign({ page, browser, provenance, delivered
     await recoveryPage.getByRole('button', { name: 'Guardar e entrar', exact: true }).click()
     await expectIdentity(recoveryPage, email)
   })
+  await recordCheckpoint(testInfo, 'E2E-03/delivered-recovery', { requires: 'actor' })
   await freshSession(browser, testInfo, 'old-password-rejected', (loginPage, runtime) => rejectOldPassword(loginPage, runtime, testInfo, email, password))
+  await recordCheckpoint(testInfo, 'E2E-03/credential-change', { requires: 'actor' })
   await freshSession(browser, testInfo, 'recovered-login', async (loginPage, runtime) => {
     await login(loginPage, email, recoveredPassword)
+    await recordCheckpoint(testInfo, 'E2E-03/recovered-login', { requires: 'actor', observation: { recovered: true } })
     await importOriginalData(loginPage, testInfo)
-    const imported = await verifyImportedData(loginPage, original)
-    const converted = await inviteImportedTeacher(loginPage, original, imported, teacherEmail)
+    const imported = await verifyImportedData(loginPage, original, testInfo)
+    const converted = await inviteImportedTeacher(loginPage, original, imported, teacherEmail, testInfo)
     const invitation = await deliveredMail('teacher', {
       recipient: teacherEmail, senders: ['invitations@cronos.pt'],
       subject: new RegExp(`^Invitation to join Cronos Aceitação ${runId}$`), purpose: 'invitation',
       after: converted.requestedAt, before: converted.requestedAt + 120_000,
       linkHosts: ['clerk.cronos.pt'], linkPath: '/v1/tickets/accept',
     })
+    // Bounded, secret-free observation of the actual delivered invitation.
+    await testInfo.attach('invitation-delivery-observation', {
+      body: Buffer.from(JSON.stringify({ message_id: invitation.id, delivered_at: invitation.delivered_at,
+        invited_member_id: converted.member.id, access_status: converted.member.access_status })), contentType: 'application/json',
+    })
+    // Delivery and the preserved pending-conversion relations share the same UI invitation request.
+    await recordCheckpoint(testInfo, ['E2E-04/delivered-invitation', 'E2E-04/pending-conversion-relations'], { requires: 'school' })
     let preferenceSlot
     await freshSession(browser, testInfo, 'teacher-invitation', async teacherPage => {
       await teacherPage.goto(invitation.link)
@@ -171,11 +195,12 @@ export async function runIdentityCampaign({ page, browser, provenance, delivered
       await provenance.recordCurrentActor(teacherPage)
       await teacherPage.goto('/my-schedules')
       await expect(teacherPage).toHaveURL(/\/my-schedules$/)
-      preferenceSlot = await saveTeacherPreference(teacherPage)
+      preferenceSlot = await saveTeacherPreference(teacherPage, testInfo)
       await expect(teacherPage.getByRole('button', { name: 'Terminar sessão', exact: true })).toBeVisible()
       await teacherPage.getByRole('button', { name: 'Terminar sessão', exact: true }).click()
       await expect.poll(() => teacherPage.evaluate(() => Boolean(window.Clerk?.loaded && !window.Clerk.user && !window.Clerk.session))).toBe(true)
     })
+    await recordCheckpoint(testInfo, 'E2E-04/invitation-acceptance', { requires: 'school' })
     await freshSession(browser, testInfo, 'teacher-fresh-login', async teacherPage => {
       await login(teacherPage, teacherEmail, teacherPassword)
       await teacherPage.goto('/my-schedules')
@@ -183,17 +208,25 @@ export async function runIdentityCampaign({ page, browser, provenance, delivered
       await verifyTeacherPreference(teacherPage, preferenceSlot)
       await verifyTeacherPermissions(teacherPage)
     })
+    await recordCheckpoint(testInfo, [
+      'E2E-02/teacher-login-logout', 'E2E-15/teacher-admin-routes-denied', 'E2E-15/denied-actions-no-effects',
+    ], { requires: 'school', observation: { denied_routes: 13, denied_writes: 0 } })
     await loginPage.reload()
     await verifyAcceptedTeacher(loginPage, converted)
     await verifyAdminAvailability(loginPage, teacherEmail, preferenceSlot)
     await provenance.recordCreatedSchool(schoolType, loginPage)
-    await archiveAndRestoreCampaignTeacher(loginPage, converted)
+    await archiveAndRestoreCampaignTeacher(loginPage, converted, testInfo)
     await provenance.recordCreatedSchool(schoolType, loginPage)
-    await exerciseRoomCrud(loginPage, runId)
-    await exerciseSubjectCrud(loginPage, runId)
-    await exerciseCourseAndInitialClass(loginPage, runId, Number(schoolPeriod.start.slice(0, 4)))
+    await exerciseRoomCrud(loginPage, runId, testInfo)
+    await exerciseSubjectCrud(loginPage, runId, testInfo)
+    await exerciseCourseAndInitialClass(loginPage, runId, Number(schoolPeriod.start.slice(0, 4)), testInfo)
+    // Aggregate only when all three real CRUD journeys completed.
+    await recordCheckpoint(testInfo, 'E2E-06/resource-crud', {
+      requires: 'school',
+      requiredEvidence: ['room-crud-observation', 'subject-crud-observation', 'course-and-initial-class-observation'],
+    })
     await verifyAcceptedTeacher(loginPage, converted)
-    const rejected = await generateProposal(loginPage, testInfo, original, imported)
+    const rejected = await generateProposal(loginPage, testInfo, original, imported, { checkpoint: false })
     const rejectionStatus = await rejectUnpublishedProposal(loginPage, testInfo, rejected)
     await addAdminPreference(loginPage, testInfo, converted, preferenceSlot, rejectionStatus)
     const generated = await generateProposal(loginPage, testInfo, original, imported)
@@ -220,11 +253,16 @@ export async function runIdentityCampaign({ page, browser, provenance, delivered
     await restartDisposableSchoolYear(loginPage, testInfo, provenance, converted, imported.snapshot.organization_id, generated, operationalHistory)
     await exerciseSchoolIsolation(loginPage, testInfo, provenance, original, converted, runId)
     const missingPath = '/acceptance-authenticated-missing-path'
+    let notFound
     await runtime.action('authenticated-404', [{ origin: 'https://cronos.pt', pathname: missingPath, method: 'GET', status: 404, action: 'authenticated-404' }], async () => {
       const response = await loginPage.goto(missingPath)
       expect(response.status()).toBe(404)
-      await expect(loginPage.getByRole('heading', { name: 'Página não encontrada', exact: true })).toBeVisible()
+      const heading = loginPage.getByRole('heading', { name: 'Página não encontrada', exact: true })
+      await expect(heading).toBeVisible()
+      notFound = { status: response.status(), heading: await heading.innerText(), url: loginPage.url() }
     })
+    await testInfo.attach('authenticated-404-observation', { body: Buffer.from(JSON.stringify(notFound)), contentType: 'application/json' })
+    await recordCheckpoint(testInfo, 'E2E-16/authenticated-404', { requires: 'school', observation: notFound })
     await loginPage.getByRole('link', { name: 'Ir para o painel', exact: true }).click()
     await expect(loginPage).toHaveURL(/\/dashboard$/)
     await loginPage.getByRole('button', { name: 'Terminar sessão', exact: true }).click()

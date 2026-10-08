@@ -111,7 +111,11 @@ test('acceptance requires every configured dependency before any browser effect'
 
   const withoutSecrets = readyEnvironment()
   delete withoutSecrets.E2E_SECRET_REGISTRY
-  assert.equal(acceptancePlan(withoutSecrets, artifactDir).status, 'dependency_unavailable')
+  const secretUnavailable = acceptancePlan(withoutSecrets, artifactDir)
+  assert.equal(secretUnavailable.status, 'dependency_unavailable')
+  assert.deepEqual(secretUnavailable.missing, ['E2E_SECRET_REGISTRY'])
+  // Standalone preflight and the runner share the same dependency list.
+  assert.ok(productionDependencies(withoutSecrets).includes('E2E_SECRET_REGISTRY'))
 
   assert.throws(() => acceptancePlan({ ...readyEnvironment(), BASE_URL: 'http://localhost:5173' }, artifactDir), /BASE_URL/)
   assert.throws(() => acceptancePlan({ ...readyEnvironment(), E2E_ARTIFACT_KEY: 'short' }, artifactDir), /32 random bytes/)

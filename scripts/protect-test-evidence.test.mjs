@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { randomBytes } from 'node:crypto'
-import { access, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { access, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { protectEvidence, protectEvidenceFile, recoverEvidence, recoverEvidenceFile } from './protect-test-evidence.mjs'
@@ -42,6 +42,35 @@ test('file protection writes an exclusive authenticated envelope and refuses ove
     assert.deepEqual(await readFile(recovered), content)
     await assert.rejects(protectEvidenceFile(source, destination, randomBytes(16), metadata), /32/)
     assert.throws(() => protectEvidence(Buffer.from('x'), key, { ...metadata, path: '../registry.json' }), /path/)
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})
+
+test('file protection rejects traversal and symbolic parents before any side effect', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'cronos-protect-link-'))
+  try {
+    const key = randomBytes(32)
+    const metadata = { run_id: 'run-1', path: 'preparation/registry.json' }
+    const content = Buffer.from('{"organizations":[]}')
+    const source = join(directory, 'registry.json')
+    await writeFile(source, content)
+    const outside = join(directory, 'outside')
+    await mkdir(outside)
+    await symlink(outside, join(directory, 'linked'), process.platform === 'win32' ? 'junction' : 'dir')
+    await assert.rejects(
+      protectEvidenceFile(source, join(directory, 'linked', 'registry.json.enc'), key, metadata),
+      /symbolic link/,
+    )
+    assert.deepEqual(await readdir(outside), [])
+    await assert.rejects(
+      protectEvidenceFile(source, `${directory}/missing/../escape.json.enc`, key, metadata),
+      /traverse/,
+    )
+    assert.deepEqual((await readdir(directory)).sort(), ['linked', 'outside', 'registry.json'])
+    await assert.rejects(
+      protectEvidenceFile(source, join(directory, 'artifacts', 'nested', 'registry.json.enc'), randomBytes(16), metadata),
+      /32/,
+    )
+    assert.equal(await access(join(directory, 'artifacts')).then(() => true).catch(() => false), false)
   } finally { await rm(directory, { recursive: true, force: true }) }
 })
 

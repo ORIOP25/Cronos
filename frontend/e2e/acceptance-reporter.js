@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises'
-import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
+import { dirname, resolve } from 'node:path'
 import { REQUIRED_CASES } from './utils/acceptance-policy.js'
+import { PROOF_SCHEMA_VERSION, evidencePath, matchCaseProof, validateProofEvidence } from './utils/acceptance-proof.js'
 
 const required = new Map(REQUIRED_CASES.map(item => [item.id, item]))
 
@@ -20,30 +21,52 @@ export default class AcceptanceReporter {
   onTestEnd(test, result) {
     const identifiers = test.annotations.filter(item => item.type === 'acceptance-case').map(item => item.description)
     if (!identifiers.length) this.failures.push('Test without a concrete acceptance case')
-    const evidence = []
-    const proofs = []
+    const annotated = new Set(identifiers)
+    const candidates = []
+    const actualPaths = []
     for (const attachment of result.attachments) {
       if (attachment.name === 'acceptance-proof') {
-        try { proofs.push(JSON.parse(attachment.body.toString('utf8'))) }
-        catch { this.failures.push('Invalid acceptance proof attachment') }
+        try {
+          const value = JSON.parse(attachment.body.toString('utf8'))
+          if (value?.schema_version !== PROOF_SCHEMA_VERSION) throw new Error('Unsupported acceptance proof schema')
+          candidates.push(value)
+        } catch { this.failures.push('Invalid acceptance proof attachment') }
       } else if (attachment.path) {
-        const path = relative(this.artifactRoot, resolve(attachment.path))
-        if (!path || path === '..' || path.startsWith(`..${sep}`) || isAbsolute(path)) this.failures.push('Evidence is outside the artifact root')
-        else evidence.push(path.split(sep).join('/'))
+        const path = evidencePath(this.artifactRoot, attachment.path)
+        if (path) actualPaths.push(path)
+        else this.failures.push('Evidence is outside the artifact root')
       }
+    }
+    const records = []
+    for (const value of candidates) {
+      const caseIds = Array.isArray(value.case_ids) ? value.case_ids : []
+      if (!caseIds.length || caseIds.some(id => typeof id !== 'string' || !id) || caseIds.length !== new Set(caseIds).size) {
+        this.failures.push('Invalid acceptance proof case list')
+        continue
+      }
+      const unannotated = caseIds.filter(id => !required.has(id) || !annotated.has(id))
+      if (unannotated.length) {
+        this.failures.push(`Unannotated acceptance proof: ${unannotated.join(', ')}`)
+        continue
+      }
+      records.push(value)
     }
     for (const id of identifiers) {
       const descriptor = required.get(id)
       if (!descriptor) { this.failures.push('Unknown acceptance case'); continue }
-      const matching = proofs.filter(item => item?.case_id === id)
-      if (matching.length > 1) this.failures.push(`Ambiguous acceptance proof: ${id}`)
-      const proof = matching.length === 1 ? matching[0] : null
+      const { proof, failure } = matchCaseProof(id, records)
+      if (failure) this.failures.push(failure)
+      const { evidence, failures } = validateProofEvidence(proof, actualPaths, id)
+      for (const message of failures) this.failures.push(message)
+      const eligible = result.status === 'passed' && result.retry === 0
+        && proof?.eligible === true && proof?.ui_provenance === true && failures.length === 0
       this.cases.push({
-        ...descriptor, status: result.status === 'passed' ? 'passed' : result.status === 'skipped' ? 'skipped' : 'failed',
+        ...descriptor,
+        status: result.status === 'passed' ? 'passed' : result.status === 'skipped' ? 'skipped' : 'failed',
         attempts: result.retry + 1,
-        started_at: result.startTime.toISOString(), finished_at: new Date(result.startTime.getTime() + result.duration).toISOString(),
-        eligible: proof?.eligible === true, ui_provenance: proof?.ui_provenance === true,
-        evidence: [...new Set(evidence)],
+        started_at: proof?.started_at ?? result.startTime.toISOString(),
+        finished_at: proof?.finished_at ?? new Date(result.startTime.getTime() + result.duration).toISOString(),
+        eligible, ui_provenance: proof?.ui_provenance === true, evidence,
       })
     }
   }

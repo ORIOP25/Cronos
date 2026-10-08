@@ -1,3 +1,4 @@
+import { writeFile } from 'node:fs/promises'
 import { COMPONENTS } from './acceptance-policy.js'
 
 // Verified against Railway's live schema on 2026-10-07.
@@ -10,6 +11,22 @@ const RAILWAY_QUERY = `query E2EDeployments($serviceId: String!, $environmentId:
     pageInfo { hasNextPage endCursor }
   }
 }`
+
+// One provider configuration is shared by the standalone preflight and by the
+// per-group acceptance check, so the provider identities cannot drift.
+export function deploymentConfig(environment, expectedRevision = environment.E2E_EXPECTED_REVISION) {
+  return {
+    expectedRevision,
+    cloudflare: { token: environment.CLOUDFLARE_API_TOKEN, account: environment.E2E_CLOUDFLARE_ACCOUNT_ID, project: environment.E2E_CLOUDFLARE_PROJECT },
+    railway: {
+      token: environment.E2E_RAILWAY_TOKEN,
+      tokenType: environment.E2E_RAILWAY_TOKEN_TYPE,
+      project: environment.E2E_RAILWAY_PROJECT_ID,
+      environment: environment.E2E_RAILWAY_ENVIRONMENT_ID,
+      services: Object.fromEntries(['api', 'worker', 'supervisor', 'beat'].map(name => [name, environment[`E2E_RAILWAY_${name.toUpperCase()}_SERVICE_ID`]])),
+    },
+  }
+}
 
 async function json(fetchImpl, url, options = {}) {
   const response = await fetchImpl(url, { ...options, redirect: 'error', signal: AbortSignal.timeout(20_000), cache: 'no-store' })
@@ -78,5 +95,18 @@ export async function readDeploymentSnapshot(config, { fetchImpl = fetch } = {})
   }
   const snapshot = { checked_at: new Date().toISOString(), components, deployments }
   assertRevisionSnapshot(snapshot, expectedRevision)
+  return snapshot
+}
+
+// W04.6: a publication during the campaign invalidates the previous revision.
+// Verify the live production revision before a group starts, using the expected
+// SHA from the environment only, and materialize its proof. A provider mismatch
+// throws before any snapshot is attached, so the group body never runs.
+export async function recordGroupRevisionSnapshot(testInfo, environment, { fetchImpl = fetch } = {}) {
+  const snapshot = await readDeploymentSnapshot(deploymentConfig(environment), { fetchImpl })
+  assertRevisionSnapshot(snapshot, environment.E2E_EXPECTED_REVISION)
+  const path = testInfo.outputPath('group-revision-snapshot.json')
+  await writeFile(path, `${JSON.stringify(snapshot, null, 2)}\n`, { flag: 'wx', mode: 0o600 })
+  await testInfo.attach('group-revision-snapshot', { path, contentType: 'application/json' })
   return snapshot
 }

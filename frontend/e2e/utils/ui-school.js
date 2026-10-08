@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { isDeepStrictEqual, promisify } from 'node:util'
 import { expect } from '@playwright/test'
+import { recordCheckpoint } from './acceptance-proof.js'
 import { validateImportedData } from './expected-results.js'
 
 export async function readOriginalExpectations() {
@@ -34,7 +35,7 @@ export async function readImportedData(page) {
   return snapshot
 }
 
-export async function verifyImportedData(page, original) {
+export async function verifyImportedData(page, original, testInfo) {
   const snapshot = await readImportedData(page)
   const identities = validateImportedData(original, snapshot)
   for (const kind of ['rooms', 'subjects', 'courses']) {
@@ -50,10 +51,16 @@ export async function verifyImportedData(page, original) {
   }
   await page.reload()
   expect(isDeepStrictEqual(validateImportedData(original, await readImportedData(page)), identities), 'Imported identities and relations survive a UI reload').toBe(true)
+  if (testInfo) {
+    await testInfo.attach('imported-entity-relations-observation', {
+      body: Buffer.from(JSON.stringify({ identities_verified: true, reload_preserved: true })), contentType: 'application/json',
+    })
+    await recordCheckpoint(testInfo, ['E2E-05/entity-relations', 'E2E-05/reload-persistence'], { requires: 'school' })
+  }
   return { identities, snapshot }
 }
 
-export async function inviteImportedTeacher(page, original, before, email) {
+export async function inviteImportedTeacher(page, original, before, email, testInfo) {
   const importedEmail = Object.keys(original.teachers)[0]
   const teacherId = before.identities.teachers[importedEmail]
   const members = await readSchoolResource(page, 'members/?limit=100&skip=0')
@@ -88,6 +95,11 @@ export async function inviteImportedTeacher(page, original, before, email) {
   identities.teachers[email] = identities.teachers[importedEmail]
   delete identities.teachers[importedEmail]
   expect(isDeepStrictEqual(validateImportedData(converted, await readImportedData(page)), identities), 'Invitation preserves every imported identity, competency and assignment').toBe(true)
+  if (testInfo) {
+    await testInfo.attach('original-imported-teacher-invitation', {
+      body: Buffer.from(JSON.stringify({ member_id: invited.id, access_status: invited.access_status, clerk_invitation_id: invited.clerk_invitation_id })), contentType: 'application/json',
+    })
+  }
   return { original: converted, identities, member: invited, requestedAt }
 }
 
@@ -102,7 +114,7 @@ export async function verifyAcceptedTeacher(page, converted) {
   expect(isDeepStrictEqual(validateImportedData(converted.original, await readImportedData(page)), converted.identities), 'Accepted teacher preserves every imported relation').toBe(true)
 }
 
-export async function archiveAndRestoreCampaignTeacher(page, converted) {
+export async function archiveAndRestoreCampaignTeacher(page, converted, testInfo) {
   const expectedEmail = `professorcronos100+${process.env.E2E_RUN_ID}@gmail.com`
   expect(converted.member.email).toBe(expectedEmail)
   const member = await readSchoolResource(page, `members/${converted.member.id}`)
@@ -132,6 +144,14 @@ export async function archiveAndRestoreCampaignTeacher(page, converted) {
   await page.reload()
   await expect(row.getByRole('button', { name: 'Remover membro', exact: true })).toBeEnabled()
   await verifyAcceptedTeacher(page, converted)
+  if (testInfo) {
+    await testInfo.attach('archived-and-restored-teacher', {
+      body: Buffer.from(JSON.stringify({ member_id: member.id, lifecycle_status: archived.lifecycle_status, restored: true })), contentType: 'application/json',
+    })
+    await recordCheckpoint(testInfo, 'E2E-06/archive-restore', {
+      requires: 'school', observation: { member_id: member.id, lifecycle_status: archived.lifecycle_status },
+    })
+  }
 }
 
 export function futureSchoolPeriod(now = new Date()) {
@@ -144,7 +164,7 @@ export function futureSchoolPeriod(now = new Date()) {
 
 const displayDate = value => value.split('-').reverse().join('/')
 
-export async function completeFoundation(page, period) {
+export async function completeFoundation(page, period, testInfo, { checkpoint = true } = {}) {
   await page.goto('/foundation')
   await expect(page.getByRole('heading', { name: '1. Período do Ano Letivo', exact: true })).toBeVisible()
   for (const [id, value] of [['school_start_date', period.start], ['school_hard_end_date', period.hard]]) {
@@ -193,9 +213,14 @@ export async function completeFoundation(page, period) {
   for (const [id, value] of [['startDate', period.start], ['hardEndDate', period.hard], ['preferredEndDate', period.preferred]]) {
     await expect(page.locator(`#${id}`)).toHaveValue(displayDate(value))
   }
+  if (checkpoint && testInfo) {
+    await recordCheckpoint(testInfo, [
+      'E2E-01/foundation-completion', 'E2E-07/ten-foundation-steps', 'E2E-07/preferred-date-draft', 'E2E-07/calendar-persistence',
+    ], { requires: 'school', observation: { steps: 10, start: period.start, preferred: period.preferred, hard: period.hard } })
+  }
 }
 
-export async function importOriginalData(page, testInfo) {
+export async function importOriginalData(page, testInfo, { checkpoint = true } = {}) {
   const files = {
     rooms: 'Folha de cálculo sem nome - Cronos_Salas_Template_Maior.csv',
     subjects: 'Cronos_DisciplinasEModulos_Template_Maior.csv',
@@ -237,4 +262,9 @@ export async function importOriginalData(page, testInfo) {
   await testInfo.attach('original-import-result', { body: Buffer.from(JSON.stringify(result)), contentType: 'application/json' })
   await expect(page).toHaveURL(/\/rooms$/)
   await expect(page.getByText('Importação concluída.', { exact: true })).toBeVisible()
+  if (checkpoint) {
+    await recordCheckpoint(testInfo, ['E2E-05/five-original-imports', 'E2E-05/import-report', 'E2E-16/five-model-downloads'], {
+      requires: 'school', observation: { created_counts: result.created_counts },
+    })
+  }
 }

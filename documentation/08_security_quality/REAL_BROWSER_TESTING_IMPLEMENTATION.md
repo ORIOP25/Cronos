@@ -3,7 +3,9 @@
 Revisão: 2026-10-08. Estado: implementação parcial; percursos, integração final e aceitação de produção pendentes.
 
 Estado atual da matriz: 69 IDs concretos definidos e recolhidos, sem erros de discovery.
+O âmbito do WBS mantém os 80 IDs originais. Anotar um caso não é executá-lo.
 Esta contagem não certifica execução nem aprovação dos percursos em produção.
+Os 69 casos anotados não equivalem a cobertura da matriz. Nenhum caso recebe `validated` sem execução real.
 
 ## Objetivo
 
@@ -125,16 +127,16 @@ As observações de escolas, os percursos de identidade e a composição remota 
 | W00.2–4 | Consumidores mapeados; acessos externos configurados e confirmados por leitura. | Manter a conferência durante a campanha real. |
 | W01.1–3 | Originais completos, manifesto, inspetor independente e preservação de bytes na CI. | Conferir os resultados depois da importação pela UI. |
 | W01.4–5 | Política pura exige produção, SHA completo e caixas dedicadas; runner ligado ao preflight. | Confirmar em execução real. |
-| W02.1–6 | Helpers OAuth/Gmail com PKCE readonly; perfis das duas caixas confirmados. | Mensagens reais entregues durante os percursos (bloqueadas pelo desafio Cloudflare no registo). |
-| W03.1–7 | Matriz de 69 casos, avaliação pura, reporter, cifragem, recuperação confinada, guards e composição fail-closed. | Execução real com registo dinâmico de segredos e upload protegido. |
-| W04 | Writer da revisão frontend e adaptadores de deployments; Cloudflare e Railway confirmados por leitura. | Alinhar produção com a branch publicada e obter `/revision.json` verificável. |
-| W05 e W06.3–W08 | Três specs de aceitação anotam os 69 casos concretos com helpers de UI reais. | Execução real pela UI: contas, escola, geração, operação e história elegível. |
+| W02.1–6 | Helpers OAuth/Gmail com PKCE readonly; os quatro secrets Gmail e os perfis das duas caixas confirmados. | Observar o remetente do código (`E2E_GMAIL_CODE_SENDER`) e entregar mensagens reais nos percursos. |
+| W03.1–7 | Matriz de 69 casos, avaliação pura, reporter, checkpoints explícitos por caso, cifragem, recuperação confinada, guards e composição fail-closed. | Execução real com registo dinâmico de segredos e upload protegido. |
+| W04 | Writer da revisão frontend e adaptadores de deployments; Cloudflare e Railway confirmados; produção alinhada em `c850235` com `/revision.json` verificável; o fixture W04.6 verifica deployments vivos por grupo. | Publicar o diff atual e reobservar a revisão de produção. |
+| W05 e W06.3–W08 | Historicamente, os três specs anotavam os 69 casos concretos; atualmente cada caso exige checkpoint explícito, prova materializada e proveniência de UI. | Execução real pela UI: contas, escola, geração, operação e história elegível. |
 | W06.1–2 | Verificador independente de procura, crédito modular e recursos. | Ligar às leituras autenticadas e ao horário real. |
-| W09 | Regressão do chamador corrigida com testes determinísticos. | Inventário e redução após provas substitutas executadas. |
-| W10.1–3, W10.7 | Comandos `acceptance` e `prepare-history` fail-closed, workflow serializado, upload sanitizado em falha. | Executar a campanha real com os segredos e a matriz de percursos. |
+| W09 | Regressão do chamador corrigida com testes determinísticos; nenhuma remoção de testes foi executada e o cutover W09 continua bloqueado. | Inventário e redução após provas substitutas executadas. |
+| W10.1–3, W10.7 | Comandos `acceptance` e `prepare-history` fail-closed, workflow serializado e upload sanitizado em falha; `E2E_ACCEPTANCE_ENABLED` está `false`. | Ativar a variável e executar a campanha real com os segredos e a matriz de percursos. |
 | W10.4–6 | Registo HMAC, wrapper administrativo, exportação cifrada, erasure com bloqueio de jobs e transporte SSH separado. | Executar o wrapper remoto sobre o registo real produzido pela UI e comprovar eliminação no fornecedor. |
-| W11.1–3 | Recuperação com broker real e processo Celery próprio; entrega duplicada sem proposta adicional. | W11.4: repetir num ambiente Railway isolado quando a prova exigir o fornecedor. |
-| W12 | Documentação e comandos reconciliados com o comportamento comprovado; 69 casos anotados sem faltas. | Campanha completa no SHA publicado, limpeza por execução e gate Sonar resolvido. |
+| W11.1–3 | Recuperação com broker real, worker próprio terminado e supervisor real por Redis; entrega duplicada sem proposta adicional. | W11.4: repetir num ambiente Railway isolado quando a prova exigir o fornecedor. |
+| W12 | Documentação e comandos reconciliados com o comportamento comprovado; os 69 casos anotados usam agora checkpoints explícitos por caso. | Campanha completa no SHA publicado, limpeza por execução e verificação de qualidade da PR atual. |
 
 O sanitizador preserva o modo legado enquanto não ocorre o cutover.
 Nesse modo, a expectativa antiga de eliminar traces permanece ativa.
@@ -770,7 +772,8 @@ e `/health/ready` respondeu `ok` com PostgreSQL e Redis ligados na mesma revisã
 No Railway, `api`, `worker` e `beat` atualizaram pelo evento de publicação; o `scheduler-supervisor` não tinha deploy automático
 e foi publicado para o commit explícito através da API, ficando os quatro serviços `SUCCESS` na revisão fundida.
 
-A variável `E2E_ACCEPTANCE_ENABLED` está ativa; a campanha corre no SHA da `main` e a preparação preservou o modo manual.
+No momento desta publicação, a variável `E2E_ACCEPTANCE_ENABLED` estava ativa; a campanha corria no SHA da `main` e a preparação preservou o modo manual.
+A leitura atual mostra `E2E_ACCEPTANCE_ENABLED=false`; a secção de continuação regista esta correção.
 A PR 60 acrescenta o modo `protect` ao CLI de evidências e protege os registos atualizados da preparação antes do upload,
 para que a escola persistente e o registo privado possam ser recuperados com a chave de artefactos.
 Quatro testes Node cobrem a escrita exclusiva, a recusa de sobrescrita e a recuperação autenticada.
@@ -780,13 +783,125 @@ O remetente de produção do código de verificação permanece por observar e t
 Sem esse valor, `prepare-history` e os percursos de identidade falham antes do registo; o desafio de bot na página pública
 também não é resolúvel por um browser automatizado na CI.
 
+## Continuação — checkpoints por caso e recuperação real do worker
+
+As secções anteriores mantêm-se como registo histórico. Esta secção descreve a continuação local atual.
+Esta continuação corre num checkout local. O diff atual ainda não foi publicado nem executado pela CI.
+
+O reporter usa agora checkpoints explícitos por caso, em vez de anotações automáticas.
+Historicamente, o reporter anexava uma prova por anotação de caso; essa anotação não era prova de execução.
+Cada checkpoint declara IDs concretos, provas materializadas e a proveniência de UI observada.
+O schema `PROOF_SCHEMA_VERSION = 2` exige instantes UTC exatos e recusa provas sem evidência.
+Um teste aprovado sem o checkpoint do seu caso permanece incompleto.
+Um checkpoint não reclamante partilha a janela de observação e o início com o checkpoint seguinte do mesmo bloco.
+
+A raiz das provas é a pasta de saída configurada do projeto; o reporter recebe a mesma raiz.
+
+A proveniência de uma escola persistente exige o ator Clerk vivo e a organização ativa iguais aos assinados.
+A observação nunca escreve o ator antigo como registo novo.
+
+Os corpos de prova não JSON são materializados como binários (`.bin`), com os bytes originais.
+A ordem da assinatura final foi corrigida: as falhas primárias ficam dentro do payload assinado.
+O finalizador regista a fase que falhou e preserva a falha primária, impedindo `validated` falso.
+Os registos persistentes e privados da preparação são protegidos antes do upload, dentro de `finalizeRun`.
+A promoção da escola persistente só ocorre depois de uma primeira avaliação `prepared`.
+Uma falha de promoção entra nas falhas assinadas e mantém a preparação falhada.
+
+A recuperação de worker passa a terminar um processo Celery próprio real.
+O teste bloqueia a transação de persistência numa lock PostgreSQL só de teste, ligada ao PID detentor.
+O teste confirma que o worker próprio está bloqueado, mata-o e liberta a lock.
+Um supervisor próprio separado consome a mensagem real `scheduler.v1.supervise` no Redis.
+O supervisor reconcilia a tentativa abandonada para `FAILED/WORKER_STALLED`, sem proposta nem versão.
+O ensaio não deixa recursos de teste: a limpeza removeu 0 recursos sobrantes.
+
+Passaram 9 casos deste ficheiro e 61 contratos backend.
+
+### Verificação local desta continuação
+
+A nova `npm run verify` terminou com sucesso até ao build: 592 testes de produto em 88 ficheiros e 74,06% de cobertura de statements.
+A execução inclui 140 testes de infraestrutura, após o estágio e a prova explícita, e 13 testes diretos do edge worker.
+Nenhuma remoção de testes foi executada; o cutover W09 continua bloqueado.
+Estes resultados locais não certificam a campanha de produção.
+
+A execução completa do backend está no artefacto aprovado `.test-artifacts/1791500097167-13744/run.json`.
+Correu na revisão `99d752b` com a árvore suja, comando `all` e âmbito `backend`.
+Terminou com código 0 e limpeza 0.
+Passaram 1 434 casos: 911 unitários, 462 de integração e 61 contratos, sem falhas, skips ou erros.
+A cobertura global foi 82% e a política crítica manteve 100%, conforme o relatório do worker revisto.
+
+O frontend local foi reconstruído a partir da fonte temporária com o SHA exato do worker `aad548ef511f6dc5a10bcd8d50d07ff9fef627270bfb2258bc8f77daa40c93b3`.
+Só o frontend foi recriado, com a imagem nova `3201ceb8...`, e respondeu HTTP 200 em `:5173`.
+A etiqueta de rollback anterior foi conservada e o resto da stack permaneceu inalterado.
+
+O fixture de W04.6 verifica agora os deployments vivos antes de cada um dos sete grupos de percursos e antes da preparação.
+O instantâneo por grupo é seguro e entra no inventário final.
+Nenhuma asserção de fornecedor vivo é afirmada a partir de testes unitários.
+
+O dispatch nativo `prepare-history` correu em `main` `c850235`, como [run 37848687151](https://github.com/ORIOP25/Cronos/actions/runs/37848687151).
+Terminou com código 3 e `Acceptance dependencies unavailable: E2E_GMAIL_CODE_SENDER`.
+A falha ocorreu antes de qualquer ação de browser ou de negócio.
+As chaves existem nos metadados do GitHub; nenhum valor foi lido.
+
+A variável de repositório `E2E_ACCEPTANCE_ENABLED` está atualmente `false`, confirmada por `gh variable get`.
+O workflow de aceitação permanece inativo para o modo de campanha; a ativação anterior fica como registo cronológico.
+
+A [PR 60](https://github.com/ORIOP25/Cronos/pull/60) permanece não fundida, com head `99d752b` e a CI anterior verde.
+Todos os diffs locais continuam por publicar; será publicado um único checkpoint consolidado, ainda não publicado.
+Numa repetição independente, os 9 casos reais do worker e os 61 contratos voltaram a passar, com limpeza 0.
+W11.4 continua não certificado no Railway.
+O encaminhamento do contacto e a preparação de escolas persistentes com história elegível continuam por provar.
+Os quatro planos não estão concluídos e W09.5 permanece pendente.
+
+### Diagnóstico público parcial e correção do 304
+
+Um diagnóstico público parcial correu num Chrome headless isolado contra a produção `c850235`, com o test HEAD `99d752b` num checkout sujo.
+As asserções de rota pública, canonical, documentos legais, 404 e teclado passaram.
+Os quatro testes de runtime gate falharam com 404 nos assets versionados.
+O diagnóstico não é `validated` nem comprova um caso aprovado.
+Vinte corpos e traces foram cifrados; não existe binário em texto simples nos artefactos.
+
+A sonda HEAD pública de `/logo.png` e `/favicon.png` respondeu 200 com ETag na produção `c850235`.
+A revalidação condicional seguinte devolveu 404 na mesma produção.
+O edge worker tratava `304 Not Modified` como `!ok` e servia o documento HTML 404.
+O teste local reproduziu 404 em vez de 304 antes da correção.
+Depois da correção, os 13 testes do edge worker passaram.
+Esta correção é local e não foi republicada; não se afirma causa única nem redeploy.
+
+### Procedimento de verificação desta continuação
+
+Execute a verificação de produto:
+
+```powershell
+cd frontend
+npm run verify
+```
+
+Execute a infraestrutura de aceitação atualizada:
+
+```powershell
+cd frontend
+npm run test:acceptance-infrastructure
+```
+
+Execute a recuperação real do worker e os contratos:
+
+```powershell
+node scripts/test.mjs integration -- -k test_an_owned_worker
+```
+
 ## Fontes e documentos relacionados
 
 - [Política de aceitação](../../frontend/e2e/utils/acceptance-policy.js)
+- [Checkpoints e proveniência das provas](../../frontend/e2e/utils/acceptance-proof.js)
 - [Reporter](../../frontend/e2e/acceptance-reporter.js)
 - [Preflight](../../scripts/real-browser-preflight.mjs)
 - [Proteção e recuperação](../../scripts/protect-test-evidence.mjs)
 - [Finalização e verificação dos artefactos](../../scripts/finalize-real-browser-run.mjs)
+- [Runner e composição da preparação](../../scripts/test.mjs)
+- [Recuperação real do worker](../../backend/tests/integration/committed/test_worker_process_recovery.py)
+- [Edge worker](../../frontend/public/_worker.js)
+- [Testes do edge worker](../../frontend/scripts/edge-worker.test.mjs)
+- [Workflow de aceitação](../../.github/workflows/acceptance.yml)
 - [Verificação independente do horário](../../scripts/validate-e2e-schedule.py)
 - [Política de limpeza](../../backend/scripts/e2e_cleanup_policy.py)
 - [Wrapper administrativo](../../backend/scripts/cleanup_e2e_run.py)

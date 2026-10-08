@@ -80,6 +80,14 @@ The runner exits `3` while any campaign dependency is missing, and writes the mi
 The result document is `.test-artifacts/<run>/acceptance-result.json`; only `validated` for the complete matrix can certify production.
 
 The campaign is fail-closed: a failed or missing reporter, an unprotected artifact, a revision mismatch, an unfinished cleanup or a retried case cannot produce green.
+The finalizer redacts the report before signing.
+Redaction walks the report structure and replaces string leaves.
+An exact numeric match becomes `[REDACTED]`; other numeric and boolean metadata stays unchanged.
+Short and six-digit secrets remain redacted; the redactor does not apply a minimum length.
+The text sanitizer keeps its strict substring replacement for artifacts.
+A finalization failure keeps the primary failure and records a fixed stage class.
+The stage classes are `keys`, `root`, `registries`, `sanitize`, `inventory`, `evidence` and `sign`.
+The finalizer never copies a raw exception message or an exception secret into the result.
 The runner invokes the administrative wrapper (`backend/scripts/cleanup_e2e_run.py`) through native Railway SSH after the browser phase.
 The wrapper consumes the dedicated `ui-run-registry.json` envelope, not the signed result manifest.
 The transport authenticates encrypted exports before accepting deletion results; unfinished cleanup fails the campaign.
@@ -149,6 +157,49 @@ Retain the protected artifact directory for credential recovery. Update the priv
 Configure the recovered persistent teacher credential as `E2E_HISTORY_TEACHER_PASSWORD` after successful preparation.
 Configure the recovered founder credential as `E2E_HISTORY_ADMIN_PASSWORD` for native historical decisions and weekly approval.
 The school starts after its actual creation day. Preparation neither backdates lessons nor certifies ended history.
+
+### Preparation finalization and recovery
+
+The preparation command protects every binary artifact before it signs the result.
+It promotes the persistent school before the final signature.
+It then encrypts the updated persistent registry and private secret registry into the artifact root.
+The final manifest includes `preparation/persistent-registry.json.enc` and `preparation/private-secret-registry.json.enc`.
+Verification accepts the delivered manifest only when both registries are present and authenticated.
+The workflow never adds files to the signed artifact root after the signature.
+The sanitizer runs after the signature and only validates the existing envelopes.
+
+The finalization runs in two stages.
+The first stage protects evidence and evaluates the preparation.
+The second stage runs after the promotion and includes both protected registries.
+The second stage starts from the first-stage assessment.
+All first-stage ineligibility and promotion failures enter the signed run before signing.
+No signed field changes after the final signature.
+A failure in either stage prevents `prepared` and preserves the primary failure.
+A promotion rejection becomes a classified failure.
+The runner still writes protected recovery output when a stage fails.
+The runner never uploads a raw registry file.
+
+Recover one protected file with the separate artifact key:
+
+```powershell
+node scripts/protect-test-evidence.mjs recover <source.enc> <output-directory> <run-id> <original-relative-path>
+```
+
+Use the original relative path without the `.enc` suffix.
+The command authenticates before writing and refuses overwrite, traversal and symbolic parents.
+For preparation, the run id is the value in `E2E_RUN_ID`.
+Recover `preparation/persistent-registry.json.enc`, `preparation/private-secret-registry.json.enc` and `preparation/persistent-credentials.json.enc`.
+Update `E2E_PERSISTENT_REGISTRY_JSON` and `E2E_SECRET_REGISTRY_JSON` from the recovered registries.
+
+Protect a raw registry only when the artifact root lacks its envelope:
+
+```powershell
+node scripts/protect-test-evidence.mjs protect <source> <destination.enc> <run-id> <relative-path>
+```
+
+The destination rejects lexical traversal and symbolic parents.
+Write the envelope into the artifact root under the same relative path.
+Do not upload a raw registry file.
 
 `E2E_HISTORY_TEACHER_PASSWORD` holds the UI login credential of the first registered persistent school's invited teacher.
 The history spec derives its dedicated alias from the signed school creation run and verifies the actual Clerk actor and organization.

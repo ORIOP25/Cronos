@@ -110,15 +110,6 @@ jobs:
           E2E_HISTORY_TEACHER_PASSWORD: ${{ secrets.E2E_HISTORY_TEACHER_PASSWORD }}
           E2E_HISTORY_ADMIN_PASSWORD: ${{ secrets.E2E_HISTORY_ADMIN_PASSWORD }}
 
-      - name: Protect the updated campaign registries
-        if: always() && env.CAMPAIGN_MODE == 'prepare-history'
-        run: |
-          root=".test-artifacts/${E2E_RUN_ID}/acceptance-artifacts/preparation"
-          node scripts/protect-test-evidence.mjs protect "$E2E_PERSISTENT_REGISTRY" "$root/persistent-registry.json.enc" "$E2E_RUN_ID" "preparation/persistent-registry.json"
-          node scripts/protect-test-evidence.mjs protect "$E2E_SECRET_REGISTRY" "$root/private-secret-registry.json.enc" "$E2E_RUN_ID" "preparation/private-secret-registry.json"
-        env:
-          E2E_ARTIFACT_KEY: ${{ secrets.E2E_ARTIFACT_KEY }}
-
       - name: Sanitize acceptance artifacts after any outcome
         id: sanitize
         if: always()

@@ -1,5 +1,13 @@
 import { getApiResponseError, getConsoleError, getRequestFailureError } from './runtime-guards.js'
 
+let activityObserver = null
+
+// The acceptance proof adapter subscribes once per test. Every observed page
+// navigation or request counts as a real UI/page action for checkpoint provenance.
+export function observeAcceptanceActivity(observer) {
+  activityObserver = observer
+}
+
 export function observeAcceptanceRuntime(page) {
   const errors = []
   const requests = new WeakMap()
@@ -7,11 +15,14 @@ export function observeAcceptanceRuntime(page) {
   const baseUrl = 'https://cronos.pt'
   let current = { action: null, allowed: [] }
   const record = error => { if (error) errors.push(error) }
+  const activity = () => { activityObserver?.() }
   const listeners = {
     request(request) {
+      activity()
       requests.set(request, current)
       failedResponses.delete(request.url())
     },
+    framenavigated() { activity() },
     pageerror(error) { record(`Browser exception: ${error.message}`) },
     requestfailed(request) {
       record(getRequestFailureError({ url: request.url(), method: request.method(), errorText: request.failure()?.errorText }, { baseUrl }))

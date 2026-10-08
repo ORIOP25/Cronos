@@ -945,6 +945,35 @@ async function runE2e(project, context, extraEnv = {}) {
   context.e2e = project || 'all'
 }
 
+export async function finalizePreparation({
+  run, artifactRoot, key, signingKey, secrets, registryPath, observedReport,
+  persistentRegistryPath, secretRegistryPath,
+  finalizeRunImpl = finalizeRun,
+  retain = retainPersistentSchoolFile,
+  evaluate = evaluatePreparation,
+}) {
+  const registry = await readFile(registryPath, 'utf8').then(value => verifyRegistry(JSON.parse(value), signingKey))
+  const finalize = (input, registries = []) => finalizeRunImpl(input, artifactRoot, { key, signingKey, secrets, registries })
+  const first = await finalize(run)
+  const initial = evaluate(first.run, registry, first.artifacts)
+  const eligible = initial.status === 'prepared'
+  let promotionFailure = null
+  if (eligible) {
+    try {
+      await retain(persistentRegistryPath, signingKey, observedReport, registry)
+    } catch {
+      promotionFailure = 'Persistent school promotion failed'
+    }
+  }
+  const failures = [...new Set([...initial.failures, ...(promotionFailure ? [promotionFailure] : [])])]
+  const result = await finalize({ ...first.run, failures }, [
+    { source: persistentRegistryPath, path: 'preparation/persistent-registry.json' },
+    { source: secretRegistryPath, path: 'preparation/private-secret-registry.json' },
+  ])
+  const assessment = evaluate(result.run, registry, result.artifacts)
+  return { result, assessment, prepared: !promotionFailure && eligible && assessment.status === 'prepared' }
+}
+
 async function runAcceptance(context, { preparation = false } = {}) {
   const plan = acceptancePlan(process.env, context.artifactDir, { preparation, testsRevision: context.revision })
   if (plan.status !== 'ready') {
@@ -1020,24 +1049,28 @@ async function runAcceptance(context, { preparation = false } = {}) {
   }
   if (registryEvidenceError) run.failures.push('Protected UI ownership registry unavailable')
   const secrets = acceptanceSecrets(process.env, JSON.parse(await readFile(process.env.E2E_SECRET_REGISTRY, 'utf8')))
-  const result = await finalizeRun(run, plan.artifactRoot, {
-    key: Buffer.from(process.env.E2E_ARTIFACT_KEY, 'base64'),
-    signingKey: Buffer.from(process.env.E2E_REGISTRY_HMAC_KEY, 'base64'),
-    secrets,
-  })
-  await writeFile(plan.resultPath, `${JSON.stringify(result, null, 2)}\n`)
+  const signingKey = Buffer.from(process.env.E2E_REGISTRY_HMAC_KEY, 'base64')
+  const key = Buffer.from(process.env.E2E_ARTIFACT_KEY, 'base64')
   if (preparation) {
-    const registry = await readFile(registryPath, 'utf8').then(value => verifyRegistry(JSON.parse(value), Buffer.from(process.env.E2E_REGISTRY_HMAC_KEY, 'base64')))
-    const assessment = evaluatePreparation(result.run, registry, result.artifacts)
-    context.preparation = 'failed'
+    const { result, assessment, prepared } = await finalizePreparation({
+      run,
+      artifactRoot: plan.artifactRoot,
+      key,
+      signingKey,
+      secrets,
+      registryPath,
+      observedReport,
+      persistentRegistryPath: process.env.E2E_PERSISTENT_REGISTRY,
+      secretRegistryPath: process.env.E2E_SECRET_REGISTRY,
+    })
+    context.preparation = prepared ? 'prepared' : 'failed'
     await writeFile(join(context.artifactDir, 'preparation-assessment.json'), `${JSON.stringify(assessment, null, 2)}\n`)
-    if (assessment.status === 'prepared') {
-      await retainPersistentSchoolFile(process.env.E2E_PERSISTENT_REGISTRY, Buffer.from(process.env.E2E_REGISTRY_HMAC_KEY, 'base64'), observedReport, registry)
-      context.preparation = 'prepared'
-      return
-    }
+    await writeFile(plan.resultPath, `${JSON.stringify(result, null, 2)}\n`)
+    if (prepared) return
     throw Object.assign(new Error(`Preparation failed: ${assessment.failures.slice(0, 5).join('; ')}`), { runnerCode: 1 })
   }
+  const result = await finalizeRun(run, plan.artifactRoot, { key, signingKey, secrets })
+  await writeFile(plan.resultPath, `${JSON.stringify(result, null, 2)}\n`)
   context.acceptance = result.assessment.status
   const code = acceptanceExitCode(result.assessment.status)
   if (code === 0) return

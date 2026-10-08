@@ -1,5 +1,6 @@
 import { formatDateLong } from '../../src/utils/formatUtils.js'
 import { expect } from '@playwright/test'
+import { recordCheckpoint } from './acceptance-proof.js'
 import { schoolDateRange, validateInitialTeacherProgress, validatePublishedTeacherWeek } from './expected-results.js'
 import { readSchoolResource } from './ui-school.js'
 
@@ -50,6 +51,9 @@ export async function verifyPublishedTeacherSchedule(page, testInfo, generated, 
     await verifyVisibleTeacherWeek(page, weeks[index].rows)
   }
   await testInfo.attach('teacher-published-year', { body: Buffer.from(JSON.stringify({ member, horizon, weeks })), contentType: 'application/json' })
+  await recordCheckpoint(testInfo, 'E2E-09/teacher-published-schedule', {
+    requires: 'school', observation: { teacher_id: member.teacher_id, weeks: weeks.length },
+  })
   return { member, week: weeks[firstOccupied] }
 }
 
@@ -73,6 +77,9 @@ export async function verifyInitialProgress(page, testInfo, original, imported, 
   expect(await readSchoolResource(page, 'teachers/me/progress')).toEqual(progress)
   for (const schoolClass of progress) await expect(page.getByText(schoolClass.class_name, { exact: true })).toBeVisible()
   await testInfo.attach('teacher-new-session-curriculum-progress', { body: Buffer.from(JSON.stringify(progress)), contentType: 'application/json' })
+  await recordCheckpoint(testInfo, 'E2E-09/new-session-progress', {
+    requires: 'school', observation: { classes: progress.length, teacher_id: teacherId },
+  })
 }
 
 export async function verifyFutureExecutionAndIncompleteWeek(page, testInfo, week) {
@@ -101,10 +108,13 @@ export async function verifyFutureExecutionAndIncompleteWeek(page, testInfo, wee
     expect(await readSchoolResource(page, `schedule/week?week_start=${week.weekStart}`)).toEqual(week.rows)
     expect(writes, 'Reviewing an unfinished lesson must not execute it or submit the week').toHaveLength(0)
     await testInfo.attach('future-execution-and-incomplete-week-blocked', { body: Buffer.from(JSON.stringify({ weekStart: week.weekStart, rows: week.rows, explanation, businessWrites: writes.length })), contentType: 'application/json' })
+    await recordCheckpoint(testInfo, ['E2E-10/premature-execution-blocked', 'E2E-12/incomplete-week-blocked'], {
+      requires: 'school', observation: { week_start: week.weekStart, business_writes: writes.length },
+    })
   } finally { page.off('request', observe) }
 }
 
-export async function saveTeacherPreference(page) {
+export async function saveTeacherPreference(page, testInfo) {
   await page.goto('/my-availability')
   const cell = page.locator('button[data-timeslot-id]').first()
   await expect(cell).toHaveAttribute('aria-label', /estado guardado: Neutro/)
@@ -120,6 +130,14 @@ export async function saveTeacherPreference(page) {
   expect((await saved).status()).toBe(200)
   await expect(page.getByText('Preferências guardadas.', { exact: true })).toBeVisible()
   await verifyTeacherPreference(page, timeslotId)
+  if (testInfo) {
+    await testInfo.attach('teacher-availability-persistence', {
+      body: Buffer.from(JSON.stringify({ timeslot_id: timeslotId, persisted: true })), contentType: 'application/json',
+    })
+    await recordCheckpoint(testInfo, 'E2E-06/availability-persistence', {
+      requires: 'school', observation: { timeslot_id: timeslotId, persisted: true },
+    })
+  }
   return timeslotId
 }
 
@@ -179,6 +197,9 @@ export async function addAdminPreference(page, testInfo, converted, preservedTim
   await dialog.getByRole('button', { name: 'Fechar', exact: true }).click()
   await testInfo.attach('planning-change-after-rejection', {
     body: Buffer.from(JSON.stringify({ teacher_id: teacherId, timeslot_id: timeslotId, before, after, status })), contentType: 'application/json',
+  })
+  await recordCheckpoint(testInfo, 'E2E-07/readiness', {
+    requires: 'school', observation: { teacher_id: teacherId, can_generate: status.eligibility.can_generate },
   })
 }
 
