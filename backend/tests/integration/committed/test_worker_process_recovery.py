@@ -306,37 +306,55 @@ async def _enqueue(db_session, seed, key: str):
     return outcome
 
 
-async def test_an_owned_worker_never_duplicates_delivery_of_a_queued_job(db_session):
-    first = await seed_generatable_school(
-        db_session, clerk_user_id="w11_redelivery", clerk_org_id="w11_org_redelivery"
-    )
-    first_job = await _enqueue(db_session, first, "w11-redelivery")
+async def _run_redelivery_with_flush(
+    db_session,
+    target: tuple[str, str, str],
+    flush: tuple[str, str, str],
+) -> None:
+    """Deliver the target job twice on one owned worker; a flush job orders it.
 
-    queue = _unique_queue("delivery")
+    Each case is (clerk_user_id, clerk_org_id, idempotency_key). The flush job's
+    success proves the duplicate delivery was consumed before it, without a
+    sleep. The helper owns one unique queue and one owned process, and always
+    stops that process.
+    """
+    target_user, target_org, target_key = target
+    flush_user, flush_org, flush_key = flush
+    target_seed = await seed_generatable_school(
+        db_session, clerk_user_id=target_user, clerk_org_id=target_org
+    )
+    target_job = await _enqueue(db_session, target_seed, target_key)
+    queue = _unique_queue("redelivery")
     worker = _owned_process(queue, SOLVE_INCLUDE)
     try:
         celery_app.send_task(RUN_TASK, queue=queue)
         celery_app.send_task(RUN_TASK, queue=queue)
         succeeded = await _wait_for_status(
-            first.organization.id, first_job.job.id, {"SUCCEEDED"}, processes=(worker,)
+            target_seed.organization.id, target_job.job.id, {"SUCCEEDED"}, processes=(worker,)
         )
         assert succeeded.result_code in (None, "COMPLETE")
 
-        # A later isolated job on the same single-threaded queue proves the
-        # duplicate message was consumed before this success, without a sleep.
-        later = await seed_generatable_school(
-            db_session, clerk_user_id="w11_later", clerk_org_id="w11_org_later"
+        flush_seed = await seed_generatable_school(
+            db_session, clerk_user_id=flush_user, clerk_org_id=flush_org
         )
-        later_job = await _enqueue(db_session, later, "w11-later")
+        flush_job = await _enqueue(db_session, flush_seed, flush_key)
         celery_app.send_task(RUN_TASK, queue=queue)
         await _wait_for_status(
-            later.organization.id, later_job.job.id, {"SUCCEEDED"}, processes=(worker,)
+            flush_seed.organization.id, flush_job.job.id, {"SUCCEEDED"}, processes=(worker,)
         )
 
-        assert await _proposal_count(first.organization.id, first_job.job.id) == 1
-        assert await _proposal_count(later.organization.id, later_job.job.id) == 1
+        assert await _proposal_count(target_seed.organization.id, target_job.job.id) == 1
+        assert await _proposal_count(flush_seed.organization.id, flush_job.job.id) == 1
     finally:
         _stop(worker)
+
+
+async def test_an_owned_worker_never_duplicates_delivery_of_a_queued_job(db_session):
+    await _run_redelivery_with_flush(
+        db_session,
+        ("w11_redelivery", "w11_org_redelivery", "w11-redelivery"),
+        ("w11_later", "w11_org_later", "w11-later"),
+    )
 
 
 async def test_an_owned_worker_process_loss_is_recovered_by_a_real_supervisor(db_session):
@@ -350,7 +368,6 @@ async def test_an_owned_worker_process_loss_is_recovered_by_a_real_supervisor(db
     lock, holder_pid = await _lock_state_row(seed.organization.id, seed.year.id)
     worker = None
     supervisor = None
-    worker_two = None
     try:
         worker = _owned_process(solve_queue, SOLVE_INCLUDE)
         celery_app.send_task(RUN_TASK, queue=solve_queue)
@@ -391,35 +408,17 @@ async def test_an_owned_worker_process_loss_is_recovered_by_a_real_supervisor(db
         assert "received" in receipt
 
         # A later isolated job succeeds once; its duplicate delivery is flushed
-        # by a third job on the same single-threaded queue.
-        later = await seed_generatable_school(
-            db_session, clerk_user_id="w11_recovered", clerk_org_id="w11_org_recovered"
+        # by a second job on the same single-threaded queue.
+        await _run_redelivery_with_flush(
+            db_session,
+            ("w11_recovered", "w11_org_recovered", "w11-recovered"),
+            ("w11_flush", "w11_org_flush", "w11-flush"),
         )
-        later_job = await _enqueue(db_session, later, "w11-recovered")
-        later_queue = _unique_queue("later")
-        worker_two = _owned_process(later_queue, SOLVE_INCLUDE)
-        celery_app.send_task(RUN_TASK, queue=later_queue)
-        celery_app.send_task(RUN_TASK, queue=later_queue)
-        await _wait_for_status(
-            later.organization.id, later_job.job.id, {"SUCCEEDED"}, processes=(worker_two,)
-        )
-
-        flush = await seed_generatable_school(
-            db_session, clerk_user_id="w11_flush", clerk_org_id="w11_org_flush"
-        )
-        flush_job = await _enqueue(db_session, flush, "w11-flush")
-        celery_app.send_task(RUN_TASK, queue=later_queue)
-        await _wait_for_status(
-            flush.organization.id, flush_job.job.id, {"SUCCEEDED"}, processes=(worker_two,)
-        )
-        assert await _proposal_count(later.organization.id, later_job.job.id) == 1
     finally:
         if worker is not None:
             _stop(worker)
         if supervisor is not None:
             _stop(supervisor)
-        if worker_two is not None:
-            _stop(worker_two)
         if lock is not None:
             await _release_lock(lock)
 
