@@ -85,19 +85,106 @@ async function nativeTransport(packet, environment) {
   } finally { await rm(temporary, { recursive: true, force: true }) }
 }
 
+function validateAdministrativeConfiguration({ runId, expectedRevision, exportOnly, usePriorExports }, environment) {
+  if (typeof exportOnly !== 'boolean' || typeof usePriorExports !== 'boolean' || (exportOnly && usePriorExports)) throw new Error('Invalid administrative export mode')
+  if (!/^[a-z0-9-]+$/.test(runId || '') || !/^[a-f0-9]{40}$/.test(expectedRevision || '')) throw new Error('Invalid campaign identity')
+  for (const name of ['E2E_REGISTRY_HMAC_KEY', 'E2E_ARTIFACT_KEY', 'E2E_ADMIN_SSH_KEY', 'E2E_RAILWAY_TOKEN', 'E2E_RAILWAY_PROJECT_ID', 'E2E_RAILWAY_ENVIRONMENT_ID', 'E2E_RAILWAY_API_SERVICE_ID']) {
+    if (!environment[name]) throw new Error('Administrative dependency unavailable')
+  }
+  if (!['account', 'project'].includes(environment.E2E_RAILWAY_TOKEN_TYPE)) throw new Error('Invalid Railway token type')
+  for (const name of ['E2E_REGISTRY_HMAC_KEY', 'E2E_ARTIFACT_KEY']) {
+    const key = Buffer.from(environment[name], 'base64')
+    if (key.length !== 32 || key.toString('base64') !== environment[name]) throw new Error('Invalid administrative protection key')
+  }
+}
+
+async function inspectArtifactRoot(artifactRoot) {
+  for (let parent = dirname(resolve(artifactRoot)); ; parent = dirname(parent)) {
+    const parentInfo = await lstat(parent)
+    if (!parentInfo.isDirectory() || parentInfo.isSymbolicLink()) throw new Error('Administrative artifact parent is not confined')
+    if (parent === dirname(parent)) break
+  }
+  const existingRoot = await lstat(resolve(artifactRoot)).catch(error => { if (error.code !== 'ENOENT') throw error; return null })
+  if (existingRoot && (!existingRoot.isDirectory() || existingRoot.isSymbolicLink())) throw new Error('Administrative artifact root is not confined')
+  return existingRoot
+}
+
+async function readPriorExports({ artifactRoot, existingRoot, organizations, runId, usePriorExports }, environment) {
+  const prior = new Map()
+  if (usePriorExports && existingRoot) {
+    for (const local_id of organizations) {
+      const name = `organization-${local_id}.zip.enc`
+      const path = join(artifactRoot, name)
+      const file = await lstat(path).catch(error => { if (error.code !== 'ENOENT') throw error; return null })
+      if (!file) continue
+      if (!file.isFile() || file.isSymbolicLink() || file.size > 64 * 1024 * 1024) throw new Error('Prior administrative export is not confined')
+      const content = await readFile(path)
+      recoverEvidence(content, Buffer.from(environment.E2E_ARTIFACT_KEY, 'base64'), { run_id: runId, path: name.slice(0, -4) })
+      prior.set(name, { local_id, content })
+    }
+  }
+  return prior
+}
+
+function validateExportOnlyOutcome(result, organizations, actors) {
+  if (result.completed.length || result.removed_actors.length || !Array.isArray(result.exported)
+    || new Set(result.exported).size !== result.exported.length || result.exported.some(id => !organizations.includes(id))
+    || result.pending.length !== organizations.length || result.pending_actors.length !== actors.length
+    || (result.status === 'exported' && result.exported.length !== organizations.length)) throw new Error('Administrative export cannot certify deletion')
+}
+
+function validateAdministrativeOutcome(result, { registry, runId, organizations, actors, exportOnly }) {
+  if (!result || result.run_id !== runId || !(exportOnly ? ['exported', 'failed'] : ['completed', 'failed']).includes(result.status)) throw new Error('Administrative result identity mismatch')
+  const persistentActors = new Set(registry.organizations.filter(item => item.type === 'persistent').flatMap(item => item.actors.map(actor => actor.id)))
+  for (const [field, allowed] of [['completed', organizations], ['pending', organizations], ['removed_actors', actors], ['pending_actors', actors]]) {
+    if (!Array.isArray(result[field]) || new Set(result[field]).size !== result[field].length || result[field].some(id => !allowed.includes(id))) throw new Error('Administrative target mismatch')
+  }
+  if (result.removed_actors.some(id => persistentActors.has(id) || result.pending_actors.includes(id)) || result.completed.some(id => result.pending.includes(id))) throw new Error('Administrative ownership conflict')
+  if (organizations.some(id => !result.completed.includes(id) && !result.pending.includes(id))) throw new Error('Administrative target outcome missing')
+  if (result.status === 'completed' && (result.pending.length || result.pending_actors.length || organizations.some(id => !result.completed.includes(id)))) throw new Error('Administrative cleanup remains pending')
+  if (exportOnly) validateExportOnlyOutcome(result, organizations, actors)
+}
+
+function authenticateAdministrativeExports(response, result, { registry, organizations, actors, runId, exportOnly }, environment) {
+  if (!Array.isArray(response.exports)) throw new Error('Administrative exports unavailable')
+  const names = new Set()
+  const authenticated = response.exports.map(item => {
+    const allowed = organizations.map(id => `organization-${id}.zip.enc`).concat(actors.map(id => `actor-${id}.zip.enc`))
+    if (!allowed.includes(item.name) || names.has(item.name) || typeof item.content !== 'string') throw new Error('Administrative export identity mismatch')
+    names.add(item.name)
+    const content = Buffer.from(item.content, 'base64')
+    if (content.toString('base64') !== item.content) throw new Error('Invalid administrative export encoding')
+    recoverEvidence(content, Buffer.from(environment.E2E_ARTIFACT_KEY, 'base64'), { run_id: runId, path: item.name.slice(0, -4) })
+    return { name: item.name, content }
+  })
+  if (result.completed.some(id => !names.has(`organization-${id}.zip.enc`))) throw new Error('Completed deletion lacks its authenticated export')
+  if (exportOnly && result.exported.some(id => !names.has(`organization-${id}.zip.enc`))) throw new Error('Observed export lacks its authenticated backup')
+  for (const id of result.removed_actors) {
+    const covered = registry.organizations.some(school => result.completed.includes(school.local_id) && school.actors.some(actor => actor.id === id))
+    if (!covered && !names.has(`actor-${id}.zip.enc`)) throw new Error('Removed orphan actor lacks its authenticated export')
+  }
+  return { names, authenticated }
+}
+
+async function persistAdministrativeExports(artifactRoot, authenticated, prior, failure) {
+  await mkdir(resolve(artifactRoot), { recursive: true, mode: 0o700 })
+  const rootInfo = await lstat(resolve(artifactRoot))
+  if (!rootInfo.isDirectory() || rootInfo.isSymbolicLink()) throw new Error('Administrative artifact root is not confined')
+  for (const item of authenticated) {
+    const path = join(artifactRoot, item.name)
+    if (prior.has(item.name)) {
+      const current = await lstat(path)
+      if (!current.isFile() || current.isSymbolicLink() || !item.content.equals(prior.get(item.name).content)
+        || !(await readFile(path)).equals(item.content)) throw new Error('Authenticated prior export changed')
+    } else await writeFile(path, item.content, { mode: 0o600, flag: 'wx' })
+    failure.exports.push(item.name)
+  }
+}
+
 export async function cleanupProductionCampaign({ registryPath, runId, expectedRevision, artifactRoot }, environment, { execute = nativeTransport, exportOnly = false, usePriorExports = false } = {}) {
   const failure = { run_id: runId, status: 'failed', completed: [], removed_actors: [], pending: [], pending_actors: [], failure_type: 'AdministrativeCleanupFailed' }
   try {
-    if (typeof exportOnly !== 'boolean' || typeof usePriorExports !== 'boolean' || (exportOnly && usePriorExports)) throw new Error('Invalid administrative export mode')
-    if (!/^[a-z0-9-]+$/.test(runId || '') || !/^[a-f0-9]{40}$/.test(expectedRevision || '')) throw new Error('Invalid campaign identity')
-    for (const name of ['E2E_REGISTRY_HMAC_KEY', 'E2E_ARTIFACT_KEY', 'E2E_ADMIN_SSH_KEY', 'E2E_RAILWAY_TOKEN', 'E2E_RAILWAY_PROJECT_ID', 'E2E_RAILWAY_ENVIRONMENT_ID', 'E2E_RAILWAY_API_SERVICE_ID']) {
-      if (!environment[name]) throw new Error('Administrative dependency unavailable')
-    }
-    if (!['account', 'project'].includes(environment.E2E_RAILWAY_TOKEN_TYPE)) throw new Error('Invalid Railway token type')
-    for (const name of ['E2E_REGISTRY_HMAC_KEY', 'E2E_ARTIFACT_KEY']) {
-      const key = Buffer.from(environment[name], 'base64')
-      if (key.length !== 32 || key.toString('base64') !== environment[name]) throw new Error('Invalid administrative protection key')
-    }
+    validateAdministrativeConfiguration({ runId, expectedRevision, exportOnly, usePriorExports }, environment)
     const info = await lstat(registryPath)
     if (!info.isFile() || info.isSymbolicLink()) throw new Error('Registry must be a regular file')
     const envelope = JSON.parse(await readFile(registryPath, 'utf8'))
@@ -110,75 +197,19 @@ export async function cleanupProductionCampaign({ registryPath, runId, expectedR
     failure.pending_actors = [...actors]
     if (new Set(organizations).size !== organizations.length || new Set(actors).size !== actors.length) throw new Error('Duplicate administrative identity')
     if (!organizations.length && !actors.length) return { ...failure, status: exportOnly ? 'exported' : 'completed', exports: [], ...(exportOnly ? { exported: [] } : {}), failure_type: undefined }
-    for (let parent = dirname(resolve(artifactRoot)); ; parent = dirname(parent)) {
-      const parentInfo = await lstat(parent)
-      if (!parentInfo.isDirectory() || parentInfo.isSymbolicLink()) throw new Error('Administrative artifact parent is not confined')
-      if (parent === dirname(parent)) break
-    }
-    const existingRoot = await lstat(resolve(artifactRoot)).catch(error => { if (error.code !== 'ENOENT') throw error; return null })
-    if (existingRoot && (!existingRoot.isDirectory() || existingRoot.isSymbolicLink())) throw new Error('Administrative artifact root is not confined')
-    const prior = new Map()
-    if (usePriorExports && existingRoot) {
-      for (const local_id of organizations) {
-        const name = `organization-${local_id}.zip.enc`
-        const path = join(artifactRoot, name)
-        const file = await lstat(path).catch(error => { if (error.code !== 'ENOENT') throw error; return null })
-        if (!file) continue
-        if (!file.isFile() || file.isSymbolicLink() || file.size > 64 * 1024 * 1024) throw new Error('Prior administrative export is not confined')
-        const content = await readFile(path)
-        recoverEvidence(content, Buffer.from(environment.E2E_ARTIFACT_KEY, 'base64'), { run_id: runId, path: name.slice(0, -4) })
-        prior.set(name, { local_id, content })
-      }
-    }
+    const existingRoot = await inspectArtifactRoot(artifactRoot)
+    const prior = await readPriorExports({ artifactRoot, existingRoot, organizations, runId, usePriorExports }, environment)
     const response = await execute({ run_id: runId, expected_revision: expectedRevision, registry: envelope, mode: exportOnly ? 'export' : 'cleanup',
       prior_exports: [...prior.values()].map(({ local_id, content }) => ({ local_id, content: content.toString('base64') })),
       signing_key: environment.E2E_REGISTRY_HMAC_KEY, artifact_key: environment.E2E_ARTIFACT_KEY }, environment)
     const result = response?.result
     if (typeof response?.export_directory === 'string' && new RegExp(`^/tmp/cronos-e2e-${runId}-[a-zA-Z0-9_-]+$`).test(response.export_directory)) failure.remote_export_directory = response.export_directory
-    if (!result || result.run_id !== runId || !(exportOnly ? ['exported', 'failed'] : ['completed', 'failed']).includes(result.status)) throw new Error('Administrative result identity mismatch')
-    const persistentActors = new Set(registry.organizations.filter(item => item.type === 'persistent').flatMap(item => item.actors.map(actor => actor.id)))
-    for (const [field, allowed] of [['completed', organizations], ['pending', organizations], ['removed_actors', actors], ['pending_actors', actors]]) {
-      if (!Array.isArray(result[field]) || new Set(result[field]).size !== result[field].length || result[field].some(id => !allowed.includes(id))) throw new Error('Administrative target mismatch')
-    }
-    if (result.removed_actors.some(id => persistentActors.has(id) || result.pending_actors.includes(id)) || result.completed.some(id => result.pending.includes(id))) throw new Error('Administrative ownership conflict')
-    if (organizations.some(id => !result.completed.includes(id) && !result.pending.includes(id))) throw new Error('Administrative target outcome missing')
-    if (result.status === 'completed' && (result.pending.length || result.pending_actors.length || organizations.some(id => !result.completed.includes(id)))) throw new Error('Administrative cleanup remains pending')
-    if (exportOnly && (result.completed.length || result.removed_actors.length || !Array.isArray(result.exported)
-      || new Set(result.exported).size !== result.exported.length || result.exported.some(id => !organizations.includes(id))
-      || result.pending.length !== organizations.length || result.pending_actors.length !== actors.length
-      || (result.status === 'exported' && result.exported.length !== organizations.length))) throw new Error('Administrative export cannot certify deletion')
-    if (!Array.isArray(response.exports)) throw new Error('Administrative exports unavailable')
-    const names = new Set()
-    const authenticated = response.exports.map(item => {
-      const allowed = organizations.map(id => `organization-${id}.zip.enc`).concat(actors.map(id => `actor-${id}.zip.enc`))
-      if (!allowed.includes(item.name) || names.has(item.name) || typeof item.content !== 'string') throw new Error('Administrative export identity mismatch')
-      names.add(item.name)
-      const content = Buffer.from(item.content, 'base64')
-      if (content.toString('base64') !== item.content) throw new Error('Invalid administrative export encoding')
-      recoverEvidence(content, Buffer.from(environment.E2E_ARTIFACT_KEY, 'base64'), { run_id: runId, path: item.name.slice(0, -4) })
-      return { name: item.name, content }
-    })
-    if (result.completed.some(id => !names.has(`organization-${id}.zip.enc`))) throw new Error('Completed deletion lacks its authenticated export')
-    if (exportOnly && result.exported.some(id => !names.has(`organization-${id}.zip.enc`))) throw new Error('Observed export lacks its authenticated backup')
-    for (const id of result.removed_actors) {
-      const covered = registry.organizations.some(school => result.completed.includes(school.local_id) && school.actors.some(actor => actor.id === id))
-      if (!covered && !names.has(`actor-${id}.zip.enc`)) throw new Error('Removed orphan actor lacks its authenticated export')
-    }
+    validateAdministrativeOutcome(result, { registry, runId, organizations, actors, exportOnly })
+    const { names, authenticated } = authenticateAdministrativeExports(response, result, { registry, organizations, actors, runId, exportOnly }, environment)
     // Preserve confirmed remote effects if local evidence persistence fails.
     Object.assign(failure, { completed: [...result.completed], removed_actors: [...result.removed_actors],
       pending: [...result.pending], pending_actors: [...result.pending_actors], exports: [] })
-    await mkdir(resolve(artifactRoot), { recursive: true, mode: 0o700 })
-    const rootInfo = await lstat(resolve(artifactRoot))
-    if (!rootInfo.isDirectory() || rootInfo.isSymbolicLink()) throw new Error('Administrative artifact root is not confined')
-    for (const item of authenticated) {
-      const path = join(artifactRoot, item.name)
-      if (prior.has(item.name)) {
-        const current = await lstat(path)
-        if (!current.isFile() || current.isSymbolicLink() || !item.content.equals(prior.get(item.name).content)
-          || !(await readFile(path)).equals(item.content)) throw new Error('Authenticated prior export changed')
-      } else await writeFile(path, item.content, { mode: 0o600, flag: 'wx' })
-      failure.exports.push(item.name)
-    }
+    await persistAdministrativeExports(artifactRoot, authenticated, prior, failure)
     return { run_id: runId, status: result.status, completed: result.completed, removed_actors: result.removed_actors,
       pending: result.pending, pending_actors: result.pending_actors, exports: [...names],
       ...(exportOnly ? { exported: [...result.exported] } : {}),

@@ -659,6 +659,9 @@ As identidades assinadas continuam limitadas a IDs de organização numéricos e
 A resposta administrativa também rejeita um ator declarado removido e pendente em simultâneo.
 O teste reproduziu a contradição antes da correção; os 12 testes do transporte passaram depois.
 Nenhum efeito remoto nem export local é certificado a partir dessa resposta contraditória.
+A revisão separa configuração, resultados, autenticação de backups, leitura anterior e persistência do transporte SSH.
+As validações de resultados e envelopes continuam puras; operações de ficheiros permanecem nos adaptadores.
+Os 102 testes de infraestrutura passaram após a extração, sem novos efeitos de produção.
 A CI censura as passwords aleatórias antes de as publicar no ambiente dos passos seguintes.
 
 O check nativo Cloudflare revelou os IDs reais da conta e do projeto.
