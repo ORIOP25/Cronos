@@ -4,7 +4,7 @@ import { randomBytes } from 'node:crypto'
 import { access, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { protectEvidence, recoverEvidence, recoverEvidenceFile } from './protect-test-evidence.mjs'
+import { protectEvidence, protectEvidenceFile, recoverEvidence, recoverEvidenceFile } from './protect-test-evidence.mjs'
 
 test('authenticated evidence round trips with a separate 256-bit key', () => {
   const key = randomBytes(32)
@@ -24,6 +24,25 @@ test('evidence metadata rejects traversal and absolute destinations', () => {
   for (const path of ['../trace.zip', '/trace.zip', 'C:/trace.zip', 'failure/../../trace.zip', 'failure\\trace.zip', 'a//trace.zip']) {
     assert.throws(() => protectEvidence(Buffer.from('x'), randomBytes(32), { run_id: 'run', path }), /path/)
   }
+})
+
+test('file protection writes an exclusive authenticated envelope and refuses overwrite', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'cronos-protect-'))
+  try {
+    const key = randomBytes(32)
+    const metadata = { run_id: 'run-1', path: 'preparation/registry.json' }
+    const content = Buffer.from('{"organizations":[]}')
+    const source = join(directory, 'registry.json')
+    await writeFile(source, content)
+    const destination = join(directory, 'artifacts', 'nested', 'registry.json.enc')
+    await protectEvidenceFile(source, destination, key, metadata)
+    const recovered = await recoverEvidenceFile(destination, join(directory, 'recovered'), key, metadata)
+    assert.deepEqual(await readFile(recovered), content)
+    await assert.rejects(protectEvidenceFile(source, destination, key, metadata), /EEXIST|exist/i)
+    assert.deepEqual(await readFile(recovered), content)
+    await assert.rejects(protectEvidenceFile(source, destination, randomBytes(16), metadata), /32/)
+    assert.throws(() => protectEvidence(Buffer.from('x'), key, { ...metadata, path: '../registry.json' }), /path/)
+  } finally { await rm(directory, { recursive: true, force: true }) }
 })
 
 test('file recovery authenticates before writing and never overwrites existing evidence', async () => {

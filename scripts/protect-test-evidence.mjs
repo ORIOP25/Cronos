@@ -1,6 +1,6 @@
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto'
 import { lstat, mkdir, readFile, writeFile } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { basename, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 function authenticatedMetadata(metadata) {
@@ -40,6 +40,36 @@ export function recoverEvidence(envelope, key, metadata) {
   return Buffer.concat([decipher.update(Buffer.from(decoded.ciphertext, 'base64')), decipher.final()])
 }
 
+async function createConfinedParent(target) {
+  const segments = []
+  let directory = resolve(target, '..')
+  for (;;) {
+    const parent = resolve(directory, '..')
+    if (parent === directory) break
+    segments.unshift(basename(directory))
+    directory = parent
+  }
+  let current = directory
+  for (const segment of segments) {
+    const next = join(current, segment)
+    try { await mkdir(next, { mode: 0o700 }) } catch (error) { if (error.code !== 'EEXIST') throw error }
+    const info = await lstat(next)
+    if (info.isSymbolicLink() || !info.isDirectory()) throw new Error('Evidence protection directory must not be a symbolic link')
+    current = next
+  }
+  return current
+}
+
+export async function protectEvidenceFile(source, destination, key, metadata) {
+  validateKey(key)
+  const envelope = protectEvidence(await readFile(source), key, metadata)
+  const target = resolve(destination)
+  const directory = await createConfinedParent(target)
+  const written = join(directory, basename(target))
+  await writeFile(written, envelope, { flag: 'wx', mode: 0o600 })
+  return written
+}
+
 export async function recoverEvidenceFile(source, destinationRoot, key, metadata) {
   const content = recoverEvidence(await readFile(source), key, metadata)
   let directory = resolve(destinationRoot)
@@ -59,12 +89,17 @@ export async function recoverEvidenceFile(source, destinationRoot, key, metadata
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const [command, source, destinationRoot, runId, path, ...extra] = process.argv.slice(2)
+  const [command, source, destination, runId, path, ...extra] = process.argv.slice(2)
+  const usage = 'Usage: node scripts/protect-test-evidence.mjs recover <source.enc> <output-directory> <run-id> <original-relative-path> | protect <source> <destination.enc> <run-id> <relative-path>'
   try {
-    if (command !== 'recover' || !source || !destinationRoot || !runId || !path || extra.length) throw new Error('Usage: node scripts/protect-test-evidence.mjs recover <source.enc> <output-directory> <run-id> <original-relative-path>')
+    if (!['recover', 'protect'].includes(command) || !source || !destination || !runId || !path || extra.length) throw new Error(usage)
     const key = Buffer.from(process.env.E2E_ARTIFACT_KEY || '', 'base64')
-    const destination = await recoverEvidenceFile(source, destinationRoot, key, { run_id: runId, path })
-    console.log(`Recovered authenticated evidence: ${destination}`)
+    const metadata = { run_id: runId, path }
+    if (command === 'recover') {
+      console.log(`Recovered authenticated evidence: ${await recoverEvidenceFile(source, destination, key, metadata)}`)
+    } else {
+      console.log(`Protected evidence: ${await protectEvidenceFile(source, destination, key, metadata)}`)
+    }
   } catch (error) {
     console.error(error.message)
     process.exitCode = 1
