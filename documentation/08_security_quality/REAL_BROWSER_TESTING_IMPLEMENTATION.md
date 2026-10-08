@@ -759,6 +759,27 @@ Após a revisão, o gate da PR 55 respondia `OK`: fiabilidade, segurança e manu
 O projeto SonarCloud não recebia análises desde junho; a branch principal mantém um passivo histórico de avisos
 antigos fora do âmbito desta iniciativa. A análise automática atualiza-se com cada push da PR.
 
+### Publicação, alinhamento e ativação
+
+A PR 55 foi fundida na `main` em squash como `c850235807475d83149e2b7220e144f63d3354d0`, com autorização explícita do proprietário.
+A CI da `main` passou nos três jobs nesse commit.
+O gate Sonar da PR passou (`OK`, ratings `A`) e o `Cloudflare Pages` publicou o frontend.
+
+A produção ficou alinhada na revisão fundida: `/revision.json` respondeu `c850235...` com `verifiable: true`,
+e `/health/ready` respondeu `ok` com PostgreSQL e Redis ligados na mesma revisão.
+No Railway, `api`, `worker` e `beat` atualizaram pelo evento de publicação; o `scheduler-supervisor` não tinha deploy automático
+e foi publicado para o commit explícito através da API, ficando os quatro serviços `SUCCESS` na revisão fundida.
+
+A variável `E2E_ACCEPTANCE_ENABLED` está ativa; a campanha corre no SHA da `main` e a preparação preservou o modo manual.
+A PR 60 acrescenta o modo `protect` ao CLI de evidências e protege os registos atualizados da preparação antes do upload,
+para que a escola persistente e o registo privado possam ser recuperados com a chave de artefactos.
+Quatro testes Node cobrem a escrita exclusiva, a recusa de sobrescrita e a recuperação autenticada.
+
+O diagnóstico aos dois mailboxes dedicados não encontrou nenhuma mensagem do Clerk; só existem mensagens do Google.
+O remetente de produção do código de verificação permanece por observar e tem de ser lido no painel do Clerk.
+Sem esse valor, `prepare-history` e os percursos de identidade falham antes do registo; o desafio de bot na página pública
+também não é resolúvel por um browser automatizado na CI.
+
 ## Fontes e documentos relacionados
 
 - [Política de aceitação](../../frontend/e2e/utils/acceptance-policy.js)
