@@ -80,9 +80,13 @@ The runner exits `3` while any campaign dependency is missing, and writes the mi
 The result document is `.test-artifacts/<run>/acceptance-result.json`; only `validated` for the complete matrix can certify production.
 
 The campaign is fail-closed: a failed or missing reporter, an unprotected artifact, a revision mismatch, an unfinished cleanup or a retried case cannot produce green.
-Cleanup is supplied by the administrative wrapper (`backend/scripts/cleanup_e2e_run.py`) through `E2E_CLEANUP_RESULT`; while it is absent the campaign is `failed`.
+The runner invokes the administrative wrapper (`backend/scripts/cleanup_e2e_run.py`) through native Railway SSH after the browser phase.
 The wrapper consumes the dedicated `ui-run-registry.json` envelope, not the signed result manifest.
-Automatic remote cleanup and re-evaluation remain pending; the current runner accepts an explicit administrative result through `E2E_CLEANUP_RESULT`.
+The transport authenticates encrypted exports before accepting deletion results; unfinished cleanup fails the campaign.
+Actual production exports and deletion remain unverified.
+The native Clerk deletion case exports its selected disposable school before confirming deletion through visible controls.
+Final cleanup authenticates that prior backup locally and remotely before reconciling Clerk 404 with the current local ownership.
+The returned archive must preserve its original bytes; changed or missing evidence prevents green.
 Acceptance rejects cleanup from another `run_id` and requires empty `pending` and `pending_actors` arrays.
 The legacy local `e2e` command remains a diagnostic until each substituted group has real proof.
 
@@ -98,26 +102,57 @@ Isolated worker recovery is verified with real PostgreSQL, Redis, a real broker 
 
 Keep credentials in separate GitHub secrets.
 The runner collects sensitive environment values in memory for artifact redaction.
-`E2E_SECRET_REGISTRY_JSON` stores additional values observed during UI journeys, including verification codes.
+`E2E_SECRET_REGISTRY_JSON` initializes the private file named by `E2E_SECRET_REGISTRY`.
+The workflow creates registry directories with mode `0700` and files with mode `0600`.
+The running campaign appends observed verification codes and generated passwords to that file, without changing the GitHub secret.
 It can start as `[]`; it must grow when the campaign observes new secrets.
 The identity journey persists generated passwords and delivered codes before using them in the browser.
 `E2E_GMAIL_CODE_SENDER` identifies the observed production verification/recovery sender; configure it as a repository variable.
 Preflight requires this value before account creation. Do not derive it from the development Clerk instance.
+The contact journey requires an authorized forward from `contacto@cronos.pt` to `admincronos100@gmail.com`.
+Keep the production contact recipient unchanged. Configure forwarding separately; these tests do not provision it.
+The reader checks the original To, Delivered-To, Reply-To, sender, bounded delivery time and all seven submitted answers.
+Discovery includes the unique contact run marker. Other contact messages cannot satisfy the case.
+`E2E_CONTACT_SENDER` optionally identifies a configured production sender; its default is `website@forms.cronos.pt`.
+The browser uses the real Turnstile widget. Missing verification or missing delivered email fails the case.
+OAuth profile verification does not prove that the forward exists; actual message observation provides that proof.
 The current identity spec covers registration, verification, fresh-context login and delivered recovery through visible controls.
 Its real execution remains pending Gmail OAuth and production deployment alignment; no new identity is certified by these code changes.
-Logout, old-password rejection, teacher invitation and school setup remain separate pending cases.
+Logout, old-password rejection, teacher invitation and school setup have concrete UI journeys.
+Their real production execution remains pending the complete campaign prerequisites.
+The old-password journey accepts only the documented Clerk HTTP 422 password error for the observed request.
+Other authentication failures, network failures and server errors fail the campaign.
 Do not duplicate the administrative SSH private key in that JSON registry.
 
 `E2E_PERSISTENT_REGISTRY_JSON` contains the signed campaign school inventory.
 An empty signed inventory permits initial preparation; it does not prove eligible historical schools.
 Historical cases require observed UI provenance, ended lessons and the required consecutive campaigns.
 
+Run `node scripts/test.mjs prepare-history` to create a persistent full school through the production UI.
+This command requires Gmail, matching published revisions, protected evidence and administrative access, but no existing historical password.
+It reuses registration, Foundation, five original imports, invitation, generation, independent validation and native approval.
+It stores registration, recovered administrator and teacher passwords in an encrypted recovery attachment before creating accounts.
+The separate `preparation` project declares no acceptance case IDs and is excluded from default local E2E.
+The runner protects evidence, checks the final deployments, preserves persistent identities and authenticates the prepared result.
+Successful preparation atomically appends the school and preparation metadata to the signed persistent registry without replacing prior schools.
+The metadata retains the observed approved proposal ID for later independent comparison of the materialized baseline.
+Retain the protected artifact directory for credential recovery. Update the private GitHub persistent registry secret from the resulting signed file.
+Configure the recovered persistent teacher credential as `E2E_HISTORY_TEACHER_PASSWORD` after successful preparation.
+Configure the recovered founder credential as `E2E_HISTORY_ADMIN_PASSWORD` for native historical decisions and weekly approval.
+The school starts after its actual creation day. Preparation neither backdates lessons nor certifies ended history.
+
+`E2E_HISTORY_TEACHER_PASSWORD` holds the UI login credential of the first registered persistent school's invited teacher.
+The history spec derives its dedicated alias from the signed school creation run and verifies the actual Clerk actor and organization.
+It selects an ended, unregistered lesson at the actual curricular frontier and reads exact minute balances from weekly slices.
+Editing the completed summary must preserve its log identity, minute balances and teacher progress.
+Historical preflight requires both passwords; preparation requires neither. The runner and CI sanitizer redact both.
+
 After preflight, the runner creates `.test-artifacts/<run>/ui-run-registry.json` with an authenticated empty actor inventory.
 Acceptance fixtures can record the current Clerk identity through `provenance.recordCurrentActor()` and also observe it during teardown.
 Identity observation reads the session; it does not create users or alter authentication.
 The journal accepts only fresh dedicated aliases and preserves previous data when validation fails.
 Call the recorder immediately after account creation and before logout; teardown alone cannot recover an identity after its session ends.
-The journal stays outside the artifact upload list. School observations and automatic cleanup are still pending.
+The plaintext journal stays outside the artifact upload list. The runner encrypts a recovery copy before automatic administrative cleanup.
 
 The `acceptance` project currently implements three public cases.
 They use Chrome, semantic locators and the runtime observer without programmatic authentication or business seeds.

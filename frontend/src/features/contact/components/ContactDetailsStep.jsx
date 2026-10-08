@@ -1,6 +1,12 @@
+import { useEffect, useRef } from 'react'
+
 export default function ContactDetailsStep({ answers, errors, onChange, onNext }) {
+  const formRef = useRef(null)
+  useEffect(() => {
+    formRef.current?.querySelector('[aria-invalid="true"]')?.focus()
+  }, [errors])
   return (
-    <form className="cronos-questionnaire__step" onSubmit={onNext} noValidate>
+    <form ref={formRef} className="cronos-questionnaire__step" onSubmit={onNext} noValidate>
       <h2>Como podemos entrar em contacto?</h2>
       <div className="cronos-questionnaire__fields">
         <Field id="name" label="Nome" value={answers.name} error={errors.name} onChange={onChange} />
@@ -18,7 +24,7 @@ function Field({ id, type = 'text', label, value, error, onChange }) {
     <label className="cronos-questionnaire__field" htmlFor={id}>
       <span>{label}{id === 'name' || id === 'email' ? ' *' : ''}</span>
       <input id={id} name={id} type={type} value={value} required={id === 'name' || id === 'email'} aria-invalid={Boolean(error)} aria-describedby={error ? errorId : undefined} onChange={(event) => onChange(id, event.target.value)} />
-      {error && <small id={errorId}>{error}</small>}
+      {error && <small id={errorId} role="alert">{error}</small>}
     </label>
   )
 }

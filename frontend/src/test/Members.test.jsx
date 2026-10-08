@@ -66,6 +66,14 @@ describe('Members', () => {
     expect(container.firstChild).toHaveClass('p-4')
   })
 
+  it('labels the archive filter and lets its visible label toggle it', () => {
+    renderWithRouter(<Members />)
+    const filter = screen.getByRole('checkbox', { name: 'Mostrar arquivados' })
+    expect(filter).not.toBeChecked()
+    fireEvent.click(screen.getByText('Mostrar arquivados', { exact: true }))
+    expect(filter).toBeChecked()
+  })
+
   it('exposes the member form controls through their visible labels', async () => {
     renderWithRouter(<Members />)
 

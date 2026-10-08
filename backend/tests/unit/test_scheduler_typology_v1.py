@@ -63,8 +63,11 @@ def test_twelve_classes_generate_a_complete_valid_schedule():
     result = generate_schedule(
         fixture.snapshot,
         fixture.periods,
-        time_limit_seconds=8,
-        num_workers=2,
+        # Verify complete generation with the same production policy as 48 classes.
+        # An eight-second deadline makes this correctness check depend on host load.
+        time_limit_seconds=900,
+        stop_at_first_complete=True,
+        num_workers=1,
         random_seed=3,
     )
 

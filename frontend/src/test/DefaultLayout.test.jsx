@@ -31,6 +31,7 @@ describe('DefaultLayout', () => {
     expect(getByText('Equipa')).toBeInTheDocument()
     expect(getByRole('button', { name: /terminar sessão/i })).toBeInTheDocument()
     expect(getByTestId('child')).toHaveTextContent('Content')
+    expect(within(getByRole('group', { name: 'Selecionar escola' })).getByTestId('organization-switcher')).toBeInTheDocument()
   })
 
   it('renders the requested demo navigation before the member role is available', () => {
@@ -70,5 +71,13 @@ describe('DefaultLayout', () => {
     expect(brandRow.children[0]).toContainElement(logo)
     expect(brandRow.children[1]).toContainElement(within(sidebar).getByRole('button', { name: 'Expandir menu' }))
     expect(appShellCss).toMatch(/\.app-sidebar\.is-collapsed \.app-sidebar__brand-row\s*\{[^}]*flex-direction:\s*column[^}]*gap:\s*8px/)
+  })
+
+  it('does not expose real organization changes inside the demonstration layout', () => {
+    const { queryByRole, queryByTestId } = renderWithProviders(
+      <MemoryRouter><DefaultLayout navigationDisabled navigationRole="admin"><span>Demo</span></DefaultLayout></MemoryRouter>
+    )
+    expect(queryByRole('group', { name: 'Selecionar escola' })).not.toBeInTheDocument()
+    expect(queryByTestId('organization-switcher')).not.toBeInTheDocument()
   })
 })

@@ -278,6 +278,101 @@ async def test_pending_proposal_diff_and_approval_through_the_api(
     assert payload["counts"]["added"] >= 1
     assert payload["physical"] and payload["modular"] == []
 
+    from app.scheduler.infrastructure import queries
+    from app.scheduler.infrastructure.models import (
+        SchedulerLessonSliceV1,
+        SchedulerLessonV1,
+        SchedulerProposalV1,
+    )
+
+    proposal = await db_session.get(SchedulerProposalV1, proposal_id)
+    lessons = list(
+        await db_session.scalars(
+            select(SchedulerLessonV1)
+            .where(SchedulerLessonV1.version_id == proposal.version_id)
+            .order_by(SchedulerLessonV1.id)
+        )
+    )
+    materialized = []
+    for skip in range(len(lessons)):
+        page = await async_client.get(
+            f"/api/v1/scheduler/drafts/{proposal_id}/lessons?skip={skip}&limit=1",
+            headers=HEADERS,
+        )
+        assert page.status_code == 200
+        result = page.json()
+        assert result["proposal_id"] == proposal_id
+        assert result["version_id"] == proposal.version_id
+        assert result["total"] == len(lessons)
+        assert result["executed"] == []
+        assert len(result["lessons"]) == 1
+        materialized.extend(result["lessons"])
+    assert [lesson["id"] for lesson in materialized] == [lesson.id for lesson in lessons]
+    for observed, stored in zip(materialized, lessons, strict=True):
+        assert observed["assignment_id"] == stored.assignment_id
+        assert observed["source_lesson_id"] == stored.source_lesson_id
+        assert observed["lesson_log_status"] is None
+        assert observed["class_id"] == seed.class_.id
+        assert observed["subject_id"] == seed.subject.id
+        assert observed["teacher_id"] == seed.assignment.teacher_id
+        assert observed["room_id"] == stored.room_id
+        assert observed["school_date"] == stored.school_date.isoformat()
+        assert datetime.fromisoformat(observed["starts_at"]) == stored.starts_at
+        assert datetime.fromisoformat(observed["ends_at"]) == stored.ends_at
+        assert observed["physical_minutes"] == stored.physical_minutes
+        assert observed["credit_minutes"] == stored.credit_minutes
+        slices = list(
+            await db_session.scalars(
+                select(SchedulerLessonSliceV1)
+                .where(SchedulerLessonSliceV1.lesson_id == stored.id)
+                .order_by(SchedulerLessonSliceV1.id)
+            )
+        )
+        assert slices
+        assert observed["slices"] == [
+            {
+                "module_id": item.module_id,
+                "offset_minutes": item.offset_minutes,
+                "minutes": item.minutes,
+            }
+            for item in slices
+        ]
+    empty = await async_client.get(
+        f"/api/v1/scheduler/drafts/{proposal_id}/lessons?skip={len(lessons)}",
+        headers=HEADERS,
+    )
+    assert empty.status_code == 200
+    assert empty.json()["lessons"] == []
+    assert (
+        await queries.proposal_lessons(db_session, seed.organization.id + 999, proposal_id) is None
+    )
+    assert proposal.status == "PENDING"
+
+    foreign = await seed_generatable_school(
+        db_session, clerk_user_id="foreign_proposal_admin", clerk_org_id="foreign_proposal_org"
+    )
+    await db_session.commit()
+    denied_foreign = await async_client.get(
+        f"/api/v1/scheduler/drafts/{proposal_id}/lessons",
+        headers={"Authorization": "Bearer foreign_proposal_admin"},
+    )
+    assert foreign.organization.id != seed.organization.id
+    assert denied_foreign.status_code == 404
+    assert denied_foreign.json()["detail"]["code"] == "scheduler_draft_not_found"
+
+    seed.membership.can_admin = False
+    seed.membership.can_teach = True
+    seed.membership.teacher_access_mode = models.TeacherAccessMode.platform
+    await db_session.commit()
+    denied_teacher = await async_client.get(
+        f"/api/v1/scheduler/drafts/{proposal_id}/lessons", headers=HEADERS
+    )
+    assert denied_teacher.status_code == 403
+    seed.membership.can_admin = True
+    seed.membership.can_teach = False
+    seed.membership.teacher_access_mode = None
+    await db_session.commit()
+
     stale_client = await async_client.post(
         f"/api/v1/scheduler/drafts/{proposal_id}/approve",
         json={"expected_input_revision": 999},
@@ -300,7 +395,56 @@ async def test_pending_proposal_diff_and_approval_through_the_api(
     status = await async_client.get("/api/v1/scheduler/status", headers=HEADERS)
     assert status.status_code == 200
     assert status.json()["publication_state"] == "PUBLISHED"
+    assert status.json()["active_proposal_id"] == proposal_id
     assert status.json()["default_strategy"] == "ADAPTIVE_RECOVERY"
+
+    from app.scheduler.infrastructure.operations import (
+        lesson_context,
+        record_lesson_log,
+        reverse_lesson_execution,
+    )
+
+    first_lesson = lessons[0]
+    await record_lesson_log(
+        db_session,
+        seed.organization.id,
+        membership_id=seed.membership.id,
+        lesson_id=first_lesson.id,
+        status="COMPLETED",
+        summary="Observed executed credit",
+        notes=None,
+        now_utc=first_lesson.ends_at,
+    )
+    await db_session.commit()
+    observed = await async_client.get(
+        f"/api/v1/scheduler/drafts/{proposal_id}/lessons?limit=1",
+        headers=HEADERS,
+    )
+    assert observed.status_code == 200
+    assert observed.json()["lessons"][0]["lesson_log_status"] == "COMPLETED"
+    assert observed.json()["executed"] == [
+        {
+            "assignment_id": seed.assignment.id,
+            "module_id": part["module_id"],
+            "minutes": part["minutes"],
+        }
+        for part in materialized[0]["slices"]
+    ]
+    context = await lesson_context(db_session, seed.organization.id, first_lesson.id)
+    await reverse_lesson_execution(
+        db_session,
+        seed.organization.id,
+        context,
+        membership_id=seed.membership.id,
+        now_utc=first_lesson.ends_at,
+    )
+    await db_session.commit()
+    compensated = await async_client.get(
+        f"/api/v1/scheduler/drafts/{proposal_id}/lessons?limit=1",
+        headers=HEADERS,
+    )
+    assert compensated.status_code == 200
+    assert compensated.json()["executed"] == []
 
 
 async def test_job_and_proposal_reads_return_not_found_for_the_wrong_id(async_client, db_session):
@@ -309,3 +453,18 @@ async def test_job_and_proposal_reads_return_not_found_for_the_wrong_id(async_cl
     missing_diff = await async_client.get("/api/v1/scheduler/drafts/999999/diff", headers=HEADERS)
     assert missing_job.status_code == 404
     assert missing_diff.status_code == 404
+    missing_lessons = await async_client.get(
+        "/api/v1/scheduler/drafts/999999/lessons", headers=HEADERS
+    )
+    assert missing_lessons.status_code == 404
+
+
+@pytest.mark.parametrize("query", ["skip=-1", "limit=0", "limit=2001"])
+async def test_materialized_proposal_pagination_rejects_invalid_bounds(
+    async_client, db_session, query
+):
+    await _configured_school(db_session)
+    response = await async_client.get(
+        f"/api/v1/scheduler/drafts/999999/lessons?{query}", headers=HEADERS
+    )
+    assert response.status_code == 422

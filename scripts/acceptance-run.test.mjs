@@ -3,10 +3,19 @@ import { join } from 'node:path'
 import test from 'node:test'
 import { acceptanceExitCode, acceptancePlan, acceptanceSecrets, assembleCampaign } from './acceptance-run.mjs'
 import { productionDependencies } from './real-browser-preflight.mjs'
+import { redactSecrets } from './sanitize-test-artifacts.mjs'
 import { COMPONENTS, evaluateAcceptance, REQUIRED_CASES } from '../frontend/e2e/utils/acceptance-policy.js'
 
 const revision = 'c'.repeat(40)
 const artifactDir = join('artifacts', 'run-1')
+
+test('public Railway token type cannot corrupt account identity evidence', () => {
+  const secrets = acceptanceSecrets({ E2E_RAILWAY_TOKEN_TYPE: 'account', E2E_RAILWAY_TOKEN: 'actual-token-value' }, [])
+  const evidence = JSON.parse(redactSecrets(JSON.stringify({ member: { account_id: 7 }, token_type: 'account', credential: 'actual-token-value' }), secrets))
+  assert.equal(evidence.member.account_id, 7)
+  assert.equal(evidence.token_type, 'account')
+  assert.equal(JSON.stringify(evidence).includes('actual-token-value'), false)
+})
 const startedAt = '2026-10-07T08:00:00.000Z'
 const finishedAt = '2026-10-07T09:00:00.000Z'
 
@@ -106,6 +115,26 @@ test('acceptance requires every configured dependency before any browser effect'
 
   assert.throws(() => acceptancePlan({ ...readyEnvironment(), BASE_URL: 'http://localhost:5173' }, artifactDir), /BASE_URL/)
   assert.throws(() => acceptancePlan({ ...readyEnvironment(), E2E_ARTIFACT_KEY: 'short' }, artifactDir), /32 random bytes/)
+})
+
+test('persistent preparation has a separate project and does not require an existing historical login', () => {
+  const environment = readyEnvironment()
+  delete environment.E2E_HISTORY_TEACHER_PASSWORD
+  delete environment.E2E_HISTORY_ADMIN_PASSWORD
+  const plan = acceptancePlan(environment, artifactDir, { preparation: true })
+  assert.equal(plan.status, 'ready')
+  assert.equal(plan.project, 'preparation')
+  assert.equal(plan.reportPath, join(artifactDir, 'preparation-report.json'))
+  assert.equal(acceptancePlan(environment, artifactDir).status, 'dependency_unavailable')
+  delete environment.E2E_GMAIL_ADMIN_REFRESH_TOKEN
+  assert.equal(acceptancePlan(environment, artifactDir, { preparation: true }).status, 'dependency_unavailable')
+})
+
+test('a different test revision is rejected before production preparation or acceptance', () => {
+  for (const preparation of [false, true]) {
+    assert.throws(() => acceptancePlan(readyEnvironment(), artifactDir, { preparation, testsRevision: 'd'.repeat(40) }), /revision/)
+    assert.equal(acceptancePlan(readyEnvironment(), artifactDir, { preparation, testsRevision: revision }).status, 'ready')
+  }
 })
 
 test('acceptance exit codes preserve validated, incomplete and dependency states', () => {

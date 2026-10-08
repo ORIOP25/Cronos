@@ -1,6 +1,7 @@
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto'
 import { lstat, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
+import { isDeepStrictEqual } from 'node:util'
 
 function timestamp(value) {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value) || !Number.isFinite(Date.parse(value)) || new Date(value).toISOString() !== value) throw new Error('Invalid UI registry timestamp')
@@ -26,6 +27,34 @@ export function recordUiActor(registry, observed, observedAt) {
   const previous = registry.actors.find(item => item.id === actor.id)
   if (previous && Object.entries(actor).some(([field, value]) => previous[field] !== value)) throw new Error('Observed actor identity changed')
   return { ...registry, finished_at: observedAt, actors: previous ? [...registry.actors] : [...registry.actors, actor] }
+}
+
+export function recordUiSchool(registry, observed, type, observedAt) {
+  if (!['disposable', 'persistent'].includes(type)) throw new Error('Unknown UI school type')
+  if (!Number.isSafeInteger(observed?.local_id) || observed.local_id <= 0 || !/^org_[a-zA-Z0-9]+$/.test(observed.clerk_id || '')) throw new Error('Invalid UI school identity')
+  const creator = registry.actors?.find(actor => actor.id === observed.creator_id)
+  if (!creator) throw new Error('UI school creator was not observed in this campaign')
+  const checked = recordUiActor(registry, creator, observedAt)
+  const created = timestamp(observed.created_at)
+  if (created < timestamp(creator.created_at) || created > timestamp(observedAt)) throw new Error('UI school creation is outside the campaign')
+  if (!Array.isArray(observed.actors) || !observed.actors.length || new Set(observed.actors.map(actor => actor.id)).size !== observed.actors.length) throw new Error('Invalid UI school member inventory')
+  const actors = observed.actors.map(actor => {
+    const registered = checked.actors.find(item => item.id === actor.id && item.email === actor.email)
+    if (!registered) throw new Error('UI school member does not belong to this campaign')
+    recordUiActor(checked, registered, observedAt)
+    return { ...registered }
+  })
+  if (!actors.some(actor => actor.id === creator.id)) throw new Error('UI school creator is missing from its members')
+  const school = {
+    local_id: observed.local_id, clerk_id: observed.clerk_id, creator_id: creator.id,
+    created_at: observed.created_at, creation_run_id: registry.run_id, provenance: 'ui', type, actors,
+  }
+  const previous = checked.organizations.find(item => item.local_id === school.local_id || item.clerk_id === school.clerk_id)
+  if (previous && Object.entries(school).some(([field, value]) => field !== 'actors' && previous[field] !== value)) throw new Error('Observed UI school identity changed')
+  return {
+    ...checked,
+    organizations: previous ? checked.organizations.map(item => item === previous ? school : item) : [...checked.organizations, school],
+  }
 }
 
 function signature(payload, key) {
@@ -67,12 +96,20 @@ export async function createUiRegistryFile(path, key, runId, startedAt) {
 }
 
 export async function recordUiActorFile(path, key, runId, actor, observedAt) {
+  await updateUiRegistryFile(path, key, runId, registry => recordUiActor(registry, actor, observedAt))
+}
+
+export async function recordUiSchoolFile(path, key, runId, school, type, observedAt) {
+  await updateUiRegistryFile(path, key, runId, registry => recordUiSchool(registry, school, type, observedAt))
+}
+
+async function updateUiRegistryFile(path, key, runId, update) {
   await realParents(path)
   const info = await lstat(path)
   if (!info.isFile() || info.isSymbolicLink()) throw new Error('UI registry must be a regular file')
   const registry = verifyRegistry(JSON.parse(await readFile(path, 'utf8')), key)
   if (registry.run_id !== runId) throw new Error('UI registry run identity does not match')
-  const envelope = signRegistry(recordUiActor(registry, actor, observedAt), key)
+  const envelope = signRegistry(update(registry), key)
   await writePrivateJson(path, envelope)
 }
 
@@ -82,6 +119,29 @@ async function writePrivateJson(path, value) {
     await writeFile(temporary, JSON.stringify(value), { flag: 'wx', mode: 0o600 })
     await rename(temporary, path)
   } finally { await rm(temporary, { force: true }) }
+}
+
+export async function retainPersistentSchoolFile(path, key, prepared, source) {
+  const school = prepared?.organization
+  if (prepared?.schema_version !== 1 || prepared.status !== 'prepared' || prepared.history_verified !== false
+    || prepared.run_id !== source?.run_id || source?.organizations?.length !== 1
+    || !isDeepStrictEqual(source.organizations[0], school) || school?.type !== 'persistent'
+    || school.provenance !== 'ui' || school.creation_run_id !== source.run_id
+    || !Number.isSafeInteger(school.local_id) || school.local_id <= 0 || !/^org_[a-zA-Z0-9]+$/.test(school.clerk_id || '')) throw new Error('Unconfirmed persistent UI preparation')
+  await realParents(path)
+  const info = await lstat(path)
+  if (!info.isFile() || info.isSymbolicLink()) throw new Error('Persistent registry must be a regular file')
+  const registry = verifyRegistry(JSON.parse(await readFile(path, 'utf8')), key)
+  if (registry.schema_version !== 1 || !Array.isArray(registry.organizations)) throw new Error('Invalid persistent registry')
+  const preparation = { ...prepared }
+  delete preparation.organization
+  const retained = { ...school, preparation }
+  const existing = registry.organizations.filter(item => item.local_id === school.local_id || item.clerk_id === school.clerk_id)
+  if (existing.length) {
+    if (existing.length !== 1 || !isDeepStrictEqual(existing[0], retained)) throw new Error('Persistent school identity or preparation changed')
+    return
+  }
+  await writePrivateJson(path, signRegistry({ ...registry, organizations: [...registry.organizations, retained] }, key))
 }
 
 // Acceptance runs with one worker; persist before a value can enter browser evidence.

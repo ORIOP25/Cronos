@@ -2,6 +2,7 @@ import { setTimeout as sleep } from 'node:timers/promises'
 
 const READONLY_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly'
 const DEDICATED_MAILBOXES = new Set(['admincronos100@gmail.com', 'professorcronos100@gmail.com'])
+const DEDICATED_ALIAS = /^(?:admincronos100|professorcronos100)\+[a-z0-9-]+@gmail\.com$/
 
 function addresses(value) {
   return String(value || '').match(/[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi)?.map(item => item.toLowerCase()) || []
@@ -20,11 +21,28 @@ export function validateDeliveredLink(value, hosts) {
   return url
 }
 
+export function deliveredMessageSecrets(message) {
+  if (message.code) return [message.code]
+  if (!message.link) throw new Error('Delivered message contains no credential')
+  const values = [...new URL(message.link).searchParams.values()].filter(Boolean)
+  return [...new Set([message.link, ...values, ...values.map(value => encodeURIComponent(value))])]
+}
+
 function validateCriteria(criteria) {
   const recipient = criteria.recipient?.toLowerCase()
-  if (!/^admincronos100\+[a-z0-9-]+@gmail\.com$|^professorcronos100\+[a-z0-9-]+@gmail\.com$/.test(recipient || '')) throw new Error('Message recipient must identify a dedicated run alias')
+  if (criteria.purpose === 'contact') {
+    const fields = criteria.fields
+    const labels = ['Nome', 'Email', 'Telefone', 'Assunto', 'Cursos', 'Professores', 'Mensagem']
+    if (recipient !== 'contacto@cronos.pt' || !DEDICATED_MAILBOXES.has(criteria.forwardedMailbox)
+      || !DEDICATED_ALIAS.test(criteria.replyTo || '') || !/^e2e-contact-[a-z0-9-]{1,100}$/.test(criteria.marker || '')
+      || !fields || Object.keys(fields).length !== labels.length
+      || labels.some(label => typeof fields[label] !== 'string' || !fields[label] || /[\r\n]/.test(fields[label]))
+      || fields.Email !== criteria.replyTo || fields.Mensagem !== criteria.marker) {
+      throw new Error('Contact delivery requires its original recipient, dedicated forward and complete run-specific answers')
+    }
+  } else if (!DEDICATED_ALIAS.test(recipient || '')) throw new Error('Message recipient must identify a dedicated run alias')
   if (!Number.isSafeInteger(criteria.after) || !Number.isSafeInteger(criteria.before) || criteria.before <= criteria.after) throw new Error('Message interval must have bounded epoch timestamps')
-  if (!Array.isArray(criteria.senders) || !criteria.senders.length || !(criteria.subject instanceof RegExp) || !['code', 'invitation'].includes(criteria.purpose)) throw new Error('Message sender and purpose criteria are required')
+  if (!Array.isArray(criteria.senders) || !criteria.senders.length || !(criteria.subject instanceof RegExp) || !['code', 'invitation', 'contact'].includes(criteria.purpose)) throw new Error('Message sender and purpose criteria are required')
   if (criteria.purpose === 'invitation' && (!Array.isArray(criteria.linkHosts) || !criteria.linkHosts.length)) throw new Error('Invitation link hosts are required')
 }
 
@@ -40,6 +58,15 @@ export function extractMessage(message, criteria) {
   criteria.subject.lastIndex = 0
   if (!criteria.subject.test(header('subject'))) return null
   const text = textParts(message.payload).join('\n').replaceAll('&amp;', '&')
+  if (criteria.purpose === 'contact') {
+    const recipients = addresses(header('to')), reply = addresses(header('reply-to'))
+    const lines = text.split(/\r?\n/)
+    if (recipients.length !== 1 || reply.length !== 1 || reply[0] !== criteria.replyTo
+      || !addresses(header('delivered-to')).includes(criteria.forwardedMailbox)
+      || Object.entries(criteria.fields).some(([label, value]) => !lines.includes(`${label}: ${value}`))) return null
+    return { id: message.id, delivered_at: new Date(delivered).toISOString(), recipient: recipients[0],
+      reply_to: reply[0], marker: criteria.marker }
+  }
   if (criteria.purpose === 'code') {
     const codes = [...new Set(text.match(/(?<!\d)\d{6}(?!\d)/g) || [])]
     if (!codes.length) return null
@@ -84,9 +111,10 @@ export async function createGmailReader(credentials, { fetchImpl = fetch } = {})
     mailbox,
     async poll(criteria, { timeoutMs = 120_000, intervalMs = 2000 } = {}) {
       validateCriteria(criteria)
+      if (criteria.purpose === 'contact' && criteria.forwardedMailbox !== mailbox) throw new Error('Contact forward belongs to a different mailbox')
       if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || timeoutMs > 300_000 || !Number.isFinite(intervalMs) || intervalMs < 100 || intervalMs > timeoutMs) throw new Error('Gmail polling bounds are invalid')
       const deadline = Date.now() + timeoutMs
-      const query = new URLSearchParams({ q: `to:${criteria.recipient} after:${Math.floor(criteria.after / 1000)} before:${Math.ceil(criteria.before / 1000)}`, maxResults: '100' })
+      const query = new URLSearchParams({ q: `to:${criteria.recipient}${criteria.purpose === 'contact' ? ` "${criteria.marker}"` : ''} after:${Math.floor(criteria.after / 1000)} before:${Math.ceil(criteria.before / 1000)}`, maxResults: '100' })
       do {
         const matches = []
         let pageToken

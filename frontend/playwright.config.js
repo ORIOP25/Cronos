@@ -16,11 +16,13 @@ const providerMatch = /e2e[\\/]members[\\/]invitations\.spec\.js/
 const faultsMatch = /e2e[\\/](?:foundation[\\/]operational-gate-409|tutorial[\\/]tutorial-network-boundary)\.spec\.js/
 const capacityMatch = /e2e[\\/]capacity[\\/]capacity\.spec\.js/
 const acceptanceMatch = /e2e[\\/]acceptance[\\/].*\.spec\.js/
+const preparationMatch = /e2e[\\/]preparation[\\/].*\.spec\.js/
 const acceptanceReport = process.env.E2E_ACCEPTANCE_REPORT
+const preparationReport = process.env.E2E_PREPARATION_REPORT
 const outputDirectory = resolve(process.env.PLAYWRIGHT_OUTPUT_DIR || 'test-results')
 
 function reporters() {
-  if (!acceptanceReport) {
+  if (!acceptanceReport || preparationReport) {
     return process.env.CI || process.env.PLAYWRIGHT_JUNIT_OUTPUT_FILE
       ? [
           ['list', { printSteps: true }],
@@ -79,7 +81,7 @@ export default defineConfig({
     },
     {
       name: 'app',
-      testIgnore: [setupMatch, authStateMatch, publicMatch, authMatch, providerMatch, faultsMatch, capacityMatch, acceptanceMatch],
+      testIgnore: [setupMatch, authStateMatch, publicMatch, authMatch, providerMatch, faultsMatch, capacityMatch, acceptanceMatch, preparationMatch],
       use: { ...devices['Desktop Chrome'] },
       // These tests mutate the single disposable E2E organization.
       workers: 1,
@@ -105,7 +107,15 @@ export default defineConfig({
       fullyParallel: false,
       workers: 1,
       retries: 0,
-      use: { ...devices['Desktop Chrome'], channel: 'chrome' },
+      use: { ...devices['Desktop Chrome'], channel: 'chrome', trace: 'on' },
+    }] : []),
+    ...(preparationReport ? [{
+      name: 'preparation',
+      testMatch: preparationMatch,
+      fullyParallel: false,
+      workers: 1,
+      retries: 0,
+      use: { ...devices['Desktop Chrome'], channel: 'chrome', trace: 'on' },
     }] : []),
     ...(process.env.CAPACITY_ENABLED === '1' ? [{
       name: 'capacity',

@@ -1,7 +1,10 @@
 import { test as base, expect } from '@playwright/test'
+import { readFile, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import { observeAcceptanceRuntime } from '../utils/acceptance-runtime.js'
-import { recordSecretFile, recordUiActorFile } from '../../../scripts/e2e-run-registry.mjs'
-import { createGmailReader } from '../utils/gmail.js'
+import { recordSecretFile, recordUiActorFile, recordUiSchoolFile, signRegistry, verifyRegistry } from '../../../scripts/e2e-run-registry.mjs'
+import { cleanupProductionCampaign } from '../../../scripts/cleanup-production-campaign.mjs'
+import { createGmailReader, deliveredMessageSecrets } from '../utils/gmail.js'
 
 export const test = base.extend({
   deliveredMail: async ({ baseURL }, runFixture) => {
@@ -16,7 +19,9 @@ export const test = base.extend({
         mailbox: process.env[`E2E_${actor.toUpperCase()}_EMAIL`],
       }))
       const message = await readers.get(actor).poll(criteria)
-      await recordSecretFile(process.env.E2E_SECRET_REGISTRY, message.code ?? message.link)
+      if (criteria.purpose !== 'contact') {
+        for (const secret of deliveredMessageSecrets(message)) await recordSecretFile(process.env.E2E_SECRET_REGISTRY, secret)
+      }
       return message
     })
   },
@@ -26,15 +31,55 @@ export const test = base.extend({
   },
   provenance: async ({ page }, runFixture) => {
     await runFixture({
-      async recordCurrentActor() {
+      async exportBeforeDeletion(testInfo, selected) {
+        if (process.env.E2E_PREPARATION_REPORT) throw new Error('Preparation cannot delete its retained school')
+        const key = Buffer.from(process.env.E2E_REGISTRY_HMAC_KEY || '', 'base64')
+        const registry = verifyRegistry(JSON.parse(await readFile(process.env.E2E_RUN_REGISTRY, 'utf8')), key)
+        const school = registry.organizations.find(item => item.local_id === selected.local_id && item.clerk_id === selected.clerk_id)
+        if (registry.run_id !== process.env.E2E_RUN_ID || school?.type !== 'disposable' || school.creation_run_id !== registry.run_id) throw new Error('UI deletion requires an owned disposable school from this run')
+        const active = await page.evaluate(() => ({ organization: window.Clerk?.organization?.id, actor: window.Clerk?.user?.id }))
+        if (active.organization !== school.clerk_id || active.actor !== school.creator_id) throw new Error('UI deletion requires the actual founder and active school')
+        const path = testInfo.outputPath('pre-deletion-ui-registry.json')
+        await writeFile(path, JSON.stringify(signRegistry({ ...registry, organizations: [school] }, key)), { flag: 'wx', mode: 0o600 })
+        const result = await cleanupProductionCampaign({ registryPath: path, runId: registry.run_id,
+          expectedRevision: process.env.E2E_EXPECTED_REVISION, artifactRoot: process.env.PLAYWRIGHT_OUTPUT_DIR }, process.env, { exportOnly: true })
+        expect(result.status, 'Authenticated administrative export must precede native UI deletion').toBe('exported')
+        expect(result.exported).toEqual([school.local_id])
+        await testInfo.attach('pre-ui-deletion-protected-backup', {
+          path: join(process.env.PLAYWRIGHT_OUTPUT_DIR, `organization-${school.local_id}.zip.enc`), contentType: 'application/octet-stream',
+        })
+        return result
+      },
+      async recordCurrentActor(observedPage = page) {
         if (!process.env.E2E_RUN_REGISTRY) return
-        const actor = await page.evaluate(() => {
+        const actor = await observedPage.evaluate(() => {
           const user = window.Clerk?.user
           if (!user) return null
           return { id: user.id, email: user.primaryEmailAddress?.emailAddress, created_at: user.createdAt?.toISOString() ?? null }
         })
         if (!actor || !['admincronos100', 'professorcronos100'].some(base => actor.email === `${base}+${process.env.E2E_RUN_ID}@gmail.com`)) return
         await recordUiActorFile(process.env.E2E_RUN_REGISTRY, Buffer.from(process.env.E2E_REGISTRY_HMAC_KEY || '', 'base64'), process.env.E2E_RUN_ID, actor, new Date().toISOString())
+      },
+      // Call after creating the school through visible controls, using its founder's page.
+      async recordCreatedSchool(type, observedPage = page) {
+        await this.recordCurrentActor(observedPage)
+        const school = await observedPage.evaluate(async () => {
+          const clerk = window.Clerk
+          const organization = clerk?.organization
+          if (!organization || !clerk.user || !clerk.session) throw new Error('UI school identity is not active')
+          const response = await fetch('/api/v1/members/me', { redirect: 'error', headers: { Authorization: `Bearer ${await clerk.session.getToken()}` } })
+          if (!response.ok) throw new Error('Local school identity is unavailable')
+          const member = await response.json()
+          const memberships = await organization.getMemberships({ pageSize: 100, initialPage: 1 })
+          // A campaign creates two Clerk actors; never accept a partial inventory.
+          if (memberships.total_count !== memberships.data.length) throw new Error('UI school member inventory is incomplete')
+          return {
+            local_id: member.organization_id, clerk_id: organization.id, creator_id: clerk.user.id,
+            created_at: organization.createdAt.toISOString(),
+            actors: memberships.data.map(item => ({ id: item.publicUserData.userId, email: item.publicUserData.identifier })),
+          }
+        })
+        await recordUiSchoolFile(process.env.E2E_RUN_REGISTRY, Buffer.from(process.env.E2E_REGISTRY_HMAC_KEY || '', 'base64'), process.env.E2E_RUN_ID, school, type, new Date().toISOString())
       },
     })
   },

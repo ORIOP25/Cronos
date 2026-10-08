@@ -82,6 +82,61 @@ class IndependentScheduleTests(unittest.TestCase):
         self.assertEqual(report["executed_minutes"], 10)
         self.assertEqual(report["required_minutes"], 90)
 
+    def test_repair_preserves_physical_history_without_counting_its_credit_twice(self):
+        history = copy.deepcopy(self.snapshot["lessons"][0])
+        history.update(id="old-history", start="08:00", end="08:50", credit_minutes=10)
+        history["slices"] = [{"module": "M1", "offset": 0, "minutes": 10}]
+        self.snapshot["baseline_history"] = [history]
+        self.snapshot["history"] = [
+            {**history, "id": "new-history", "source_id": "old-history"}
+        ]
+        self.snapshot["protected"] = [copy.deepcopy(self.snapshot["lessons"][0])]
+        self.snapshot["lessons"][0].update(id="new-protected", source_id="one")
+        report = checker.validate(self.originals, self.snapshot)
+        self.assertEqual(report["planned_minutes"], 80)
+        self.assertEqual(report["historical_lessons"], 1)
+        self.assertEqual(report["protected_lessons"], 1)
+        mutations = [
+            lambda s: s["history"].clear(),
+            lambda s: s["history"][0].update(source_id="unknown"),
+            lambda s: s["history"][0].update(start="08:10"),
+            lambda s: s["history"].append(copy.deepcopy(s["history"][0])),
+            lambda s: s["lessons"][0].update(source_id="unknown"),
+            lambda s: s["lessons"][0].update(room="different"),
+        ]
+        for mutate in mutations:
+            with self.subTest(mutation=mutate):
+                snapshot = copy.deepcopy(self.snapshot)
+                mutate(snapshot)
+                with self.assertRaises(ValueError):
+                    checker.validate(self.originals, snapshot)
+
+    def test_reserved_future_history_prevents_class_teacher_and_room_overlap(self):
+        history = copy.deepcopy(self.snapshot["lessons"][0])
+        history.update(id="original-history")
+        self.snapshot["baseline_history"] = [history]
+        self.snapshot["history"] = [
+            {**history, "id": "copied-history", "source_id": history["id"]}
+        ]
+        with self.assertRaisesRegex(ValueError, "Resource overlap"):
+            checker.validate(self.originals, self.snapshot)
+
+    def test_partial_protected_credit_can_precede_the_final_editable_lesson(self):
+        first, second = self.snapshot["lessons"]
+        first.update(credit_minutes=20)
+        first["slices"] = [{"module": "M1", "offset": 10, "minutes": 20}]
+        second.update(end="11:00", credit_minutes=60)
+        second["slices"] = [{"module": "M2", "offset": 0, "minutes": 60}]
+        self.snapshot["school"]["grid"]["2026-10-07"][1] = ["09:50", "11:00"]
+        self.snapshot["protected"] = [copy.deepcopy(first)]
+        first.update(id="copied-protected", source_id="one")
+        self.assertEqual(
+            checker.validate(self.originals, self.snapshot)["planned_minutes"], 80
+        )
+        self.snapshot["protected"] = []
+        with self.assertRaisesRegex(ValueError, "final editable"):
+            checker.validate(self.originals, self.snapshot)
+
     def test_missing_excess_misordered_and_wrongly_offset_credit_is_refused(self):
         mutations = [
             lambda s: s["lessons"].pop(),

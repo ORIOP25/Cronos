@@ -18,6 +18,9 @@ Cronos creates a weekly timesheet for a linked teacher.
 It validates lesson coverage before submission and exposes approval actions to administrators.
 
 Progress views aggregate append-only completed and debt minute deltas.
+The teacher progress view uses the same v1 execution and open-debt projection as the class dashboard when curricular assignments exist.
+Schools without v1 assignments retain the legacy ledger projection.
+Progress displays hours rounded to one decimal; debt endpoints retain exact minute totals expressed as hours.
 
 ## Why the Behavior Exists
 

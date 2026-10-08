@@ -153,19 +153,28 @@ test('redacts fake secrets from text artifacts', () => {
   assert.equal(redactSecrets('verification code 123456', ['123456']), 'verification code [REDACTED]')
 })
 
+test('persistent preparation is an explicit command with no diagnostic selection flags', () => {
+  assert.equal(parseArgs(['prepare-history']).command, 'prepare-history')
+  assert.throws(() => parseArgs(['prepare-history', '--', 'identity.spec.js']), /not supported/)
+})
+
 test('production acceptance is excluded from default local E2E and explicitly enabled by its reporter', () => {
   const source = "import config from './playwright.config.js'; console.log(JSON.stringify(config.projects.map(({name,use,workers,retries})=>({name,channel:use?.channel,workers,retries}))))"
-  function projects(baseUrl, report) {
+  function projects(baseUrl, report, preparationReport = '') {
     const result = spawnSync(process.execPath, ['--input-type=module', '-e', source], {
       cwd: join(ROOT, 'frontend'), windowsHide: true, encoding: 'utf8',
-      env: { ...process.env, BASE_URL: baseUrl, E2E_ACCEPTANCE_REPORT: report },
+      env: { ...process.env, BASE_URL: baseUrl, E2E_ACCEPTANCE_REPORT: report, E2E_PREPARATION_REPORT: preparationReport },
     })
     assert.equal(result.status, 0, result.stderr)
     return JSON.parse(result.stdout)
   }
   assert.equal(projects('http://localhost:5173', '').some(project => project.name === 'acceptance'), false)
+  assert.equal(projects('http://localhost:5173', '').some(project => project.name === 'preparation'), false)
   const acceptance = projects('https://cronos.pt', 'acceptance-report.json').find(project => project.name === 'acceptance')
   assert.deepEqual(acceptance, { name: 'acceptance', channel: 'chrome', workers: 1, retries: 0 })
+  const preparation = projects('https://cronos.pt', '', 'preparation-report.json')
+  assert.equal(preparation.some(project => project.name === 'acceptance'), false)
+  assert.deepEqual(preparation.find(project => project.name === 'preparation'), { name: 'preparation', channel: 'chrome', workers: 1, retries: 0 })
 })
 
 test('production artifacts preserve encrypted traces and screenshots, without raw copies', async () => {

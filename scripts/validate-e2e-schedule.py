@@ -57,6 +57,42 @@ def _overlaps(left, right):
     return left[0] < right[1] and right[0] < left[1]
 
 
+def _register_identity(lesson, identities):
+    identity = lesson["id"]
+    if (
+        type(identity) not in {int, str}
+        or not identity
+        or (type(identity) is int and identity < 0)
+        or identity in identities
+    ):
+        raise ValueError("Missing or duplicate lesson identity")
+    identities.add(identity)
+
+
+def _preserve_positions(expected, observed, *, historical=False):
+    fields = ["assignment", "teacher", "room", "date", "start", "end"]
+    if historical:
+        fields.extend(["credit_minutes", "slices"])
+    baselines = {}
+    for lesson in expected:
+        _register_identity(lesson, set(baselines))
+        baselines[lesson["id"]] = lesson
+    matched = set()
+    for lesson in observed:
+        origin = lesson.get("source_id")
+        if origin not in baselines:
+            if historical:
+                raise ValueError("Historical lesson has no observed physical origin")
+            continue
+        if origin in matched or any(
+            lesson[field] != baselines[origin][field] for field in fields
+        ):
+            raise ValueError("Historical or protected physical position changed")
+        matched.add(origin)
+    if matched != set(baselines):
+        raise ValueError("Historical or protected physical position disappeared")
+
+
 def _continuous_gap(intervals, window):
     start, end = window
     cursor, longest = start, 0
@@ -131,16 +167,35 @@ def validate(originals, snapshot):
             _interval(blocked["start"], blocked["end"])
         )
     grouped, occupied, identities = defaultdict(list), defaultdict(list), set()
-    for lesson in snapshot["lessons"]:
-        identity = lesson["id"]
+    history = snapshot.get("history", [])
+    protected = snapshot.get("protected", [])
+    protected_origins = {lesson["id"] for lesson in protected}
+    _preserve_positions(snapshot.get("baseline_history", []), history, historical=True)
+    _preserve_positions(protected, snapshot["lessons"])
+    for lesson in history:
+        _register_identity(lesson, identities)
+        key = _assignment(lesson["assignment"])
         if (
-            type(identity) not in {int, str}
-            or not identity
-            or (type(identity) is int and identity < 0)
-            or identity in identities
+            key not in assignments
+            or lesson["teacher"] not in originals["teachers"]
+            or lesson["room"] not in originals["rooms"]
         ):
-            raise ValueError("Missing or duplicate lesson identity")
-        identities.add(identity)
+            raise ValueError(
+                "Historical lesson references an unknown original resource"
+            )
+        day = _day(lesson["date"])
+        if not start <= day <= end:
+            raise ValueError("Historical lesson lies outside the school year")
+        interval = _interval(lesson["start"], lesson["end"])
+        for kind, resource in [
+            ("class", key[:2]),
+            ("teacher", lesson["teacher"]),
+            ("room", lesson["room"]),
+        ]:
+            occupied[kind, resource, day].append(interval)
+    for lesson in snapshot["lessons"]:
+        _register_identity(lesson, identities)
+        identity = lesson["id"]
         key = _assignment(lesson["assignment"])
         if key not in assignments:
             raise ValueError("Unknown lesson assignment")
@@ -205,7 +260,11 @@ def validate(originals, snapshot):
         lessons = sorted(grouped[key])
         for index, (_, interval, _, lesson) in enumerate(lessons):
             credit = lesson["credit_minutes"]
-            if index < len(lessons) - 1 and credit != interval[1] - interval[0]:
+            if (
+                index < len(lessons) - 1
+                and lesson.get("source_id") not in protected_origins
+                and credit != interval[1] - interval[0]
+            ):
                 raise ValueError(
                     "Only the final editable lesson may have partial credit"
                 )
@@ -236,6 +295,8 @@ def validate(originals, snapshot):
         "executed_minutes": executed,
         "planned_minutes": planned,
         "lessons": len(identities),
+        "historical_lessons": len(history),
+        "protected_lessons": len(protected),
     }
 
 

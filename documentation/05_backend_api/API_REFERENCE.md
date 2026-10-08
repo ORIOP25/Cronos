@@ -161,6 +161,7 @@ Valid calendar replacements do not produce a constraint conflict. Invalid date c
 | `POST` | `/api/v1/scheduler/jobs/{job_id}/cancel` | Admin |
 | `GET` | `/api/v1/scheduler/drafts/current` | Active |
 | `GET` | `/api/v1/scheduler/drafts/{proposal_id}/diff` | Active |
+| `GET` | `/api/v1/scheduler/drafts/{proposal_id}/lessons` | Admin |
 | `POST` | `/api/v1/scheduler/drafts/{proposal_id}/approve` | Admin |
 | `POST` | `/api/v1/scheduler/drafts/{proposal_id}/reject` | Admin |
 | `POST` | `/api/v1/schedule/constraints/` | Admin |
@@ -172,6 +173,15 @@ Valid calendar replacements do not produce a constraint conflict. Invalid date c
 | `PUT` | `/api/v1/schedule/active-blocks/{id}/log` | Active; assigned teacher or admin |
 | `PUT` | `/api/v1/schedule/operational-blocks/{id}/log` | Active; assigned teacher or admin |
 | `PUT` | `/api/v1/schedule/lessons/{lesson_id}/log` | Active; assigned teacher or admin |
+
+Proposal lesson reads return persisted intervals, resource IDs, credit minutes, and module slices.
+They also expose the source lesson ID and the current or inherited operational log status.
+Each page includes exact effective execution minutes per assignment and module for that school year.
+Execution totals replay compensations and omit zero balances. They are current observations, not the proposal's original snapshot.
+Scheduler status exposes `active_proposal_id` for the approved proposal linked to the active version, or `null` when absent.
+Use `skip` from zero and `limit` from one through 2000. The default limit is 500.
+Pages retain the proposal version ID and total lesson count. Reads do not approve or publish proposals.
+Other schools receive `404`. Teachers receive `403`.
 
 ### Occurrences, timesheets, and webhooks
 

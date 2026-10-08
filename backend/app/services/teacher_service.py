@@ -10,6 +10,7 @@ from sqlalchemy.orm import selectinload
 from app import models
 from app.core.exceptions import AppError
 from app.models import Availability
+from app.scheduler.infrastructure.operations import class_progress_map
 from app.schemas import AvailabilitySelfCreate
 from app.services import grid_version_service
 from app.services.availability_matrix_service import AvailabilityMatrixInspector
@@ -446,6 +447,14 @@ async def get_teacher_progress(
         progress_map = {
             (row[0], row[1]): (int(row[2]), int(row[3])) for row in progress_result.all()
         }
+        # Use the same v1 accounting projection as the class dashboard.
+        # Schools without curricular assignments keep the legacy ledger above.
+        for class_id in sorted(class_ids):
+            v1_progress = await class_progress_map(db, organization_id, class_id)
+            if v1_progress is not None:
+                progress_map.update(
+                    {(class_id, module_id): minutes for module_id, minutes in v1_progress.items()}
+                )
 
     # 4. Construir dados de disciplinas com progresso por turma
     for link in links:

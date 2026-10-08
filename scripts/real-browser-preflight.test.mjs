@@ -17,6 +17,11 @@ test('preflight requires administrative cleanup identity separately from browser
   assert.ok(productionDependencies(environment).includes('E2E_REGISTRY_HMAC_KEY'))
 })
 
+test('historical acceptance requires the persistent teacher credential before browser effects', () => {
+  assert.ok(productionDependencies(environment).includes('E2E_HISTORY_TEACHER_PASSWORD'))
+  assert.ok(productionDependencies(environment).includes('E2E_HISTORY_ADMIN_PASSWORD'))
+})
+
 test('missing production code sender blocks the campaign before any account is created', async () => {
   const configured = { ...environment }
   for (const name of productionDependencies({})) configured[name] = 'configured'

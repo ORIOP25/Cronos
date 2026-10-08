@@ -15,6 +15,14 @@ SPEC.loader.exec_module(inspector)
 
 
 class OriginalDataTests(unittest.TestCase):
+    def test_full_entity_labels_and_academic_years_are_available_for_ui_comparison(self):
+        result = inspector.inspect(ROOT / "frontend/e2e/data/originals")
+        self.assertEqual(result["subjects"]["Português"]["modules"][0]["name"], "Fundamentos")
+        self.assertEqual(result["classes"][0], {
+            "course": "TGPSI", "course_name": "Técnico de Gestão e Programação de Sistemas Informáticos",
+            "class": "TGPSI 10", "size": 27, "grade_level": 10, "start_year": 2026, "end_year": 2029,
+        })
+
     def test_full_originals_and_expanded_minutes(self):
         result = inspector.inspect(ROOT / "frontend/e2e/data/originals")
         self.assertEqual(

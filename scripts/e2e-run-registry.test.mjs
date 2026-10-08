@@ -4,7 +4,55 @@ import { randomBytes } from 'node:crypto'
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createUiRegistry, createUiRegistryFile, recordUiActor, recordUiActorFile, recordSecretFile, signRegistry, verifyRegistry } from './e2e-run-registry.mjs'
+import { createUiRegistry, createUiRegistryFile, recordUiActor, recordUiActorFile, recordUiSchool, recordUiSchoolFile, recordSecretFile, retainPersistentSchoolFile, signRegistry, verifyRegistry } from './e2e-run-registry.mjs'
+
+test('prepared persistent school is retained atomically without replacing older UI history', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'cronos-persistent-registry-'))
+  try {
+    const key = randomBytes(32), path = join(directory, 'persistent.json')
+    const old = { local_id: 6, clerk_id: 'org_Old', type: 'persistent', preparation: { run_id: 'old-run' } }
+    await writeFile(path, JSON.stringify(signRegistry({ schema_version: 1, organizations: [old], history_verified: false }, key)))
+    const school = { local_id: 7, clerk_id: 'org_New', type: 'persistent', provenance: 'ui', creation_run_id: 'run-1' }
+    const prepared = { schema_version: 1, status: 'prepared', run_id: 'run-1', organization: school, history_verified: false }
+    const source = { run_id: 'run-1', organizations: [school] }
+    await retainPersistentSchoolFile(path, key, prepared, source)
+    await retainPersistentSchoolFile(path, key, prepared, source)
+    const result = verifyRegistry(JSON.parse(await readFile(path, 'utf8')), key)
+    assert.equal(result.organizations.length, 2)
+    assert.deepEqual(result.organizations[0], old)
+    assert.deepEqual(result.organizations[1].preparation, { schema_version: 1, status: 'prepared', run_id: 'run-1', history_verified: false })
+    const unchanged = await readFile(path, 'utf8')
+    for (const change of [{ status: 'failed' }, { run_id: 'foreign' }, { organization: { ...school, clerk_id: 'org_Conflicting' } }]) {
+      await assert.rejects(retainPersistentSchoolFile(path, key, { ...prepared, ...change }, source))
+      assert.equal(await readFile(path, 'utf8'), unchanged)
+    }
+    await assert.rejects(retainPersistentSchoolFile(path, randomBytes(32), prepared, source), /signature/)
+    assert.equal(await readFile(path, 'utf8'), unchanged)
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})
+
+test('UI school ownership binds both identities and members to actors born in the campaign', () => {
+  const actor = { id: 'user_founder', email: 'admincronos100+run-1@gmail.com', created_at: '2026-10-07T08:01:00.000Z' }
+  const registry = recordUiActor(createUiRegistry('run-1', '2026-10-07T08:00:00.000Z'), actor, '2026-10-07T08:02:00.000Z')
+  const school = { local_id: 17, clerk_id: 'org_owned', creator_id: actor.id, created_at: '2026-10-07T08:03:00.000Z', actors: [{ id: actor.id, email: actor.email }] }
+  const observedAt = '2026-10-07T08:04:00.000Z'
+  const recorded = recordUiSchool(registry, school, 'disposable', observedAt)
+  assert.deepEqual(registry.organizations, [])
+  assert.equal(recorded.organizations[0].creation_run_id, 'run-1')
+  assert.equal(recorded.organizations[0].provenance, 'ui')
+  assert.equal(recorded.organizations[0].actors[0].created_at, actor.created_at)
+  assert.equal(recordUiSchool(recorded, school, 'disposable', observedAt).organizations.length, 1)
+  assert.equal(recordUiSchool(registry, school, 'persistent', observedAt).organizations[0].type, 'persistent')
+  for (const change of [
+    { local_id: 0 }, { local_id: '17' }, { clerk_id: 'org/other' }, { creator_id: 'user_unknown' },
+    { created_at: '2026-10-06T08:03:00.000Z' }, { created_at: '2026-10-07T08:05:00.000Z' },
+    { actors: [] }, { actors: [school.actors[0], school.actors[0]] },
+    { actors: [{ id: actor.id, email: 'someone@gmail.com' }] },
+  ]) assert.throws(() => recordUiSchool(registry, { ...school, ...change }, 'disposable', observedAt))
+  assert.throws(() => recordUiSchool(recorded, school, 'persistent', observedAt), /identity/)
+  assert.throws(() => recordUiSchool(recorded, { ...school, clerk_id: 'org_other' }, 'disposable', observedAt), /identity/)
+  assert.throws(() => recordUiSchool(registry, school, 'unknown', observedAt), /type/)
+})
 
 test('dynamic credentials are durably registered before browser use and invalid registries remain untouched', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'cronos-dynamic-secrets-'))
@@ -52,8 +100,10 @@ test('signed UI journal never overwrites an existing run or accepts tampered obs
     await assert.rejects(createUiRegistryFile(path, key, 'run-1', '2026-10-07T08:00:00.000Z'), /exist/i)
     const actor = { id: 'user_owned', email: 'admincronos100+run-1@gmail.com', created_at: '2026-10-07T08:05:00.000Z' }
     await recordUiActorFile(path, key, 'run-1', actor, '2026-10-07T08:06:00.000Z')
+    await recordUiSchoolFile(path, key, 'run-1', { local_id: 17, clerk_id: 'org_owned', creator_id: actor.id, created_at: '2026-10-07T08:06:00.000Z', actors: [{ id: actor.id, email: actor.email }] }, 'disposable', '2026-10-07T08:06:00.000Z')
     const before = await readFile(path)
     assert.equal(verifyRegistry(JSON.parse(before), key).actors[0].id, actor.id)
+    assert.equal(verifyRegistry(JSON.parse(before), key).organizations[0].local_id, 17)
     await assert.rejects(recordUiActorFile(path, key, 'other', actor, '2026-10-07T08:07:00.000Z'), /identity/)
     await assert.rejects(recordUiActorFile(path, randomBytes(32), 'run-1', actor, '2026-10-07T08:07:00.000Z'), /signature/)
     assert.deepEqual(await readFile(path), before)

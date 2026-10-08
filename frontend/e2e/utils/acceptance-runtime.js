@@ -33,6 +33,25 @@ export function observeAcceptanceRuntime(page) {
   for (const [name, listener] of Object.entries(listeners)) page.on(name, listener)
   return {
     errors,
+    allowRequestFailure(request, status) {
+      if (!current.action || requests.get(request) !== current || !Number.isInteger(status) || status < 400 || status >= 500) {
+        record('Expected failure registration requires an observed request in its initiating action and a 4xx status')
+        return false
+      }
+      let url
+      try { url = new URL(request.url()) } catch {
+        record('Expected failure registration requires a valid request URL')
+        return false
+      }
+      if (!['https://cronos.pt', 'https://api.cronos.pt', 'https://clerk.cronos.pt'].includes(url.origin)) {
+        record('Expected failure registration requires a production application origin')
+        return false
+      }
+      requests.set(request, { action: current.action, allowed: [...current.allowed, {
+        origin: url.origin, pathname: url.pathname, method: request.method(), status, action: current.action,
+      }] })
+      return true
+    },
     async action(name, allowed, perform) {
       const previous = current
       current = { action: name, allowed: [...allowed] }

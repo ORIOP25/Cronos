@@ -61,6 +61,7 @@ def inspect(directory):
             raise ValueError("Inconsistent subject room type")
         subject["modules"].append(
             {
+                "name": row["Nome do módulo"],
                 "code": row["Código do módulo"],
                 "order": int(row["Ordem do módulo"]),
                 "minutes": minutes(row["Horas do módulo"]),
@@ -163,7 +164,15 @@ def inspect(directory):
             for row in resources["rooms"]
         },
         "classes": [
-            {"course": course, "class": name, "size": int(row["Número de alunos"])}
+            {
+                "course": course,
+                "course_name": row["Nome do curso"],
+                "class": name,
+                "size": int(row["Número de alunos"]),
+                "grade_level": int(row["Ano escolar"]),
+                "start_year": int(row["Ano de início"]),
+                "end_year": int(row["Ano de fim"]),
+            }
             for (course, name), row in classes.items()
         ],
         "teachers": teachers,

@@ -349,7 +349,7 @@ const Members = ({ readOnly = false, allowedActions }) => {
               { value: 'archived', label: 'Arquivado' },
             ]}
           />
-          <CFormSwitch label="Mostrar arquivados" checked={includeArchived} onChange={(event) => setIncludeArchived(event.target.checked)} />
+          <CFormSwitch id="members-include-archived" label="Mostrar arquivados" checked={includeArchived} onChange={(event) => setIncludeArchived(event.target.checked)} />
         </div>
         {canCreate && <div className="d-flex gap-2">
           <CButton component="a" href="/imports?resource=teachers" color="secondary" variant="outline">Importar CSV</CButton>
