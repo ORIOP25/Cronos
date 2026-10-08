@@ -189,6 +189,9 @@ test('independent calendar preserves the full horizon, actual grid versions and 
   ])
   for (const corrupt of [
     value => { value.days.pop() }, value => { value.days[1].date = value.days[0].date },
+    value => { value.year.preferred_end_date = value.settings.preferred_end_date = '2026-10-25' },
+    value => { value.year.preferred_end_date = value.settings.preferred_end_date = '2026-10-29' },
+    value => { value.year.preferred_end_date = value.settings.preferred_end_date = '2026-02-30' },
     value => { value.settings.organization_id = 8 }, value => { value.gridSettings.lunch_window_end = null },
     value => { value.events[1].class_ids = [999] }, value => { value.events[0].event_type = 'unknown' },
     value => { value.availability[0].teachers = [] },

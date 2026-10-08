@@ -115,6 +115,10 @@ export function canonicalSchoolCalendar(original, identities, source) {
   if (!Number.isSafeInteger(organizationId) || organizationId <= 0 || settings.organization_id !== organizationId || gridSettings.organization_id !== organizationId) throw new Error('Calendar configuration belongs to another school')
   if (settings.school_start_date !== year.start_date || settings.school_hard_end_date !== year.hard_end_date || settings.preferred_end_date !== year.preferred_end_date) throw new Error('School settings and scheduler dates differ')
   const dates = schoolDateRange(year.start_date, year.hard_end_date)
+  if (year.preferred_end_date != null) {
+    schoolDay(year.preferred_end_date)
+    if (year.preferred_end_date < year.start_date || year.preferred_end_date > year.hard_end_date) throw new Error('Preferred end date is outside the school horizon')
+  }
   requireEqual(days.map(day => day.date), dates, 'complete grid horizon')
   const classes = new Map(original.classes.map(row => [identities.classes[`${row.course}/${row.class}`], [row.course, row.class]]))
   const teachers = new Map(Object.entries(identities.teachers).map(([email, id]) => [id, email]))

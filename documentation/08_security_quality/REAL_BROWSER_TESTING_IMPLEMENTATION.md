@@ -662,6 +662,9 @@ Nenhum efeito remoto nem export local é certificado a partir dessa resposta con
 A revisão separa configuração, resultados, autenticação de backups, leitura anterior e persistência do transporte SSH.
 As validações de resultados e envelopes continuam puras; operações de ficheiros permanecem nos adaptadores.
 Os 102 testes de infraestrutura passaram após a extração, sem novos efeitos de produção.
+A expectativa independente agora rejeita datas preferenciais inválidas ou fora do horizonte escolar.
+Os casos negativos falharam antes da correção; os nove testes de expectativas passaram depois.
+Esta validação usa o helper independente de datas, sem importar schemas ou regras do produto.
 A CI censura as passwords aleatórias antes de as publicar no ambiente dos passos seguintes.
 
 O check nativo Cloudflare revelou os IDs reais da conta e do projeto.
