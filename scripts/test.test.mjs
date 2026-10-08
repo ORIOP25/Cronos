@@ -116,6 +116,7 @@ test('parses scheduler lab campaign options and rejects them elsewhere', () => {
 
 test('production acceptance stays serialized and sanitizes its own artifact root', () => {
   const workflow = readFileSync(join(ROOT, '.github/workflows/acceptance.yml'), 'utf8')
+  assert.match(workflow, /if: github\.ref == 'refs\/heads\/main' && \(/)
   assert.match(workflow, /group: cronos-production-acceptance/)
   assert.match(workflow, /cancel-in-progress: false/)
   assert.match(workflow, /E2E_RUN_ID: \$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}/)

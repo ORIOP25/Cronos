@@ -60,3 +60,20 @@ test('all Railway pages are inspected so an older active process cannot hide bey
   assert.deepEqual(cursors, [null, 'older-page', null, 'older-page', null, 'older-page', null, 'older-page'])
   await assert.rejects(readDeploymentSnapshot(config, { fetchImpl: pagedFetch(true) }), /active deployment/)
 })
+test('Pages snapshot uses the accepted default pagination and never masks a provider rejection', async () => {
+  const data = responses()
+  let pagesReads = 0
+  const fetchImpl = async (url, options) => {
+    if (url.includes('cloudflare.com')) {
+      pagesReads++
+      const query = new URL(url).searchParams
+      assert.equal(query.get('env'), 'production')
+      if (query.get('per_page') === '100') return { ok: false, status: 400 }
+      return mockFetch(data)(url, options)
+    }
+    return mockFetch(data)(url, options)
+  }
+  const snapshot = await readDeploymentSnapshot(config, { fetchImpl })
+  assert.equal(pagesReads, 1)
+  assertRevisionSnapshot(snapshot, revision)
+})

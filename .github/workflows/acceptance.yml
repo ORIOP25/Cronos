@@ -2,6 +2,15 @@ name: Production acceptance
 
 on:
   workflow_dispatch:
+    inputs:
+      mode:
+        description: Run the acceptance campaign or prepare a persistent school through the production UI
+        type: choice
+        required: true
+        default: acceptance
+        options:
+          - acceptance
+          - prepare-history
   push:
     branches: [main]
 
@@ -14,11 +23,12 @@ concurrency:
 
 jobs:
   acceptance:
-    if: vars.E2E_ACCEPTANCE_ENABLED == 'true'
+    if: github.ref == 'refs/heads/main' && (vars.E2E_ACCEPTANCE_ENABLED == 'true' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'prepare-history'))
     runs-on: ubuntu-latest
     timeout-minutes: 240
     env:
       E2E_RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+      CAMPAIGN_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || 'acceptance' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -70,8 +80,8 @@ jobs:
             echo "E2E_SECRET_REGISTRY=${registry_dir}/private-secret-registry.json" >> "$GITHUB_ENV"
           fi
 
-      - name: Run production acceptance campaign
-        run: node scripts/test.mjs acceptance
+      - name: Run production campaign
+        run: node scripts/test.mjs "$CAMPAIGN_MODE"
         env:
           BASE_URL: https://cronos.pt
           E2E_EXPECTED_REVISION: ${{ github.sha }}

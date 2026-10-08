@@ -668,9 +668,37 @@ Esta validação usa o helper independente de datas, sem importar schemas ou reg
 A CI censura as passwords aleatórias antes de as publicar no ambiente dos passos seguintes.
 
 O check nativo Cloudflare revelou os IDs reais da conta e do projeto.
-Os dois secrets correspondentes estão configurados; o token Cloudflare continua expirado.
+Os dois secrets correspondentes estão configurados.
+Na primeira consulta, o token Cloudflare disponível estava expirado.
 A revisão do preview coincide com o commit publicado; a resposta de produção não comprova essa revisão.
-Gmail OAuth, campanha real, história operacional e gates finais continuam pendentes.
+
+### Acessos reais e preparação inicial
+
+O proprietário forneceu o cliente OAuth Desktop e um novo token Cloudflare.
+O script existente confirmou os perfis Gmail das duas contas após os consentimentos readonly.
+Guardou os refresh tokens nos secrets GitHub; não imprimiu nem guardou tokens locais.
+Os quatro secrets Gmail estão configurados e os dois scripts terminaram com código zero.
+
+O novo token Cloudflare respondeu HTTP 200, com estado `active`.
+A consulta autenticada do projeto Pages também respondeu HTTP 200.
+O secret usado pelo workflow é `E2E_CLOUDFLARE_API_TOKEN`.
+A listagem real rejeitou `per_page=100` com HTTP 400.
+O adaptador agora usa a paginação padrão aceite; a consulta real devolveu 25 deployments.
+O teste reproduziu a rejeição antes da correção; os quatro testes de deployments passaram depois.
+O deployment de produção mais recente mantém o SHA `91a9d28bcb9c9a829a8578872156a6b90fa04bcf`, com estágio `deploy` concluído.
+A resposta `https://cronos.pt/revision.json` foi HTTP 404; o alinhamento final continua pendente.
+
+A consulta Clerk autenticada confirmou a instância de produção e o domínio `cronos.pt`.
+Os templates `verification_code` e `reset_password_code` são entregues pelo Clerk.
+A API consultada não devolveu os remetentes desses templates; a configuração do leitor permanece pendente de observação.
+
+O workflow permite dispatch manual `prepare-history` sem ativar a campanha completa.
+Ambos os modos exigem o ref `main` e preservam os gates de revisão, Gmail, proteção e limpeza.
+O novo teste do gate falhou antes da correção.
+A preparação continua sem execução real; esta opção não certifica uma escola nem história operacional.
+
+No commit `5a78e925c8f920e8c2372a5720a5461345e1b009`, os três jobs passaram no push e na PR.
+O gate Sonar continua rejeitado; campanha real, história operacional e entrega final permanecem pendentes.
 ## Fontes e documentos relacionados
 
 - [Política de aceitação](../../frontend/e2e/utils/acceptance-policy.js)

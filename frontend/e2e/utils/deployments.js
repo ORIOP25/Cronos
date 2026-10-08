@@ -62,7 +62,7 @@ export async function readDeploymentSnapshot(config, { fetchImpl = fetch } = {})
   }
   const frontend = await json(fetchImpl, `https://cronos.pt/revision.json?expected=${expectedRevision}`, { headers: { 'Cache-Control': 'no-cache' } })
   if (frontend.schema_version !== 1 || frontend.verifiable !== true || frontend.source !== 'cloudflare-pages') throw new Error('Frontend build revision is not verifiable')
-  const pages = await json(fetchImpl, `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(cloudflare.account)}/pages/projects/${encodeURIComponent(cloudflare.project)}/deployments?env=production&per_page=100`, { headers: { Authorization: `Bearer ${cloudflare.token}` } })
+  const pages = await json(fetchImpl, `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(cloudflare.account)}/pages/projects/${encodeURIComponent(cloudflare.project)}/deployments?env=production`, { headers: { Authorization: `Bearer ${cloudflare.token}` } })
   if (pages.success !== true || !Array.isArray(pages.result) || !pages.result.length) throw new Error('Pages production deployment unavailable')
   // API order is newest first. An older successful deployment cannot mask a newer failure.
   const deployed = pages.result[0]

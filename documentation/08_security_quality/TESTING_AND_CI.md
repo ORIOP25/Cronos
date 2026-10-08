@@ -24,7 +24,7 @@ node scripts/test.mjs benchmark --profile fast
 node scripts/test.mjs campaign --manifest backend/tests/scheduler_lab/manifest.json
 ```
 
-The runner exposes `setup`, `doctor`, `fast`, `integration`, `e2e`, `capacity`, `capacity-smoke`, `acceptance`, `all`, `benchmark`, and `campaign`. The `e2e` command accepts `--project public|auth|app|provider|faults|capacity`. E2E starts its own stack on port `5174`.
+The runner exposes `setup`, `doctor`, `fast`, `integration`, `e2e`, `capacity`, `capacity-smoke`, `acceptance`, `prepare-history`, `all`, `benchmark`, and `campaign`. The `e2e` command accepts `--project public|auth|app|provider|faults|capacity`. E2E starts its own stack on port `5174`.
 
 `fast` never starts Docker or installs packages. Forwarded arguments are accepted only after `--` by `fast` and `integration`, and are passed as separate process arguments. Run artefacts are written to `.test-artifacts/`.
 
@@ -94,13 +94,17 @@ The legacy local `e2e` command remains a diagnostic until each substituted group
 After success or failure, it uploads only the protected evidence directory, final result and dependency plan, provided sanitization succeeds.
 Raw Playwright reports, JUnit output and other files outside this upload list remain excluded.
 The sanitizer reads separated environment credentials and the private dynamic registry; an invalid registry prevents artifact changes and upload.
-It activates only when the `E2E_ACCEPTANCE_ENABLED` repository variable is `true` and the documented `E2E_*` secrets and variables exist; PRs never receive them.
+Both workflow modes require the `main` ref; PRs never receive these credentials.
+The complete matrix runs only when `E2E_ACCEPTANCE_ENABLED` is `true`.
+Manual dispatch with `mode=prepare-history` permits initial preparation while that variable remains disabled.
+Both modes retain the same revision, Gmail, evidence and cleanup gates.
 The real campaign still requires the two Gmail OAuth consents, the Cloudflare and Railway read tokens, the browser/admin credentials, the signed persistent registry and the protected secret registry.
 Isolated worker recovery is verified with real PostgreSQL, Redis, a real broker message and an owned Celery worker process in `backend/tests/integration/committed/test_worker_process_recovery.py`.
 
 ### Credential and provenance registries
 
 Keep credentials in separate GitHub secrets.
+Store the Pages token as `E2E_CLOUDFLARE_API_TOKEN`; the workflow maps it to `CLOUDFLARE_API_TOKEN`.
 The runner collects sensitive environment values in memory for artifact redaction.
 `E2E_SECRET_REGISTRY_JSON` initializes the private file named by `E2E_SECRET_REGISTRY`.
 The workflow creates registry directories with mode `0700` and files with mode `0600`.
@@ -117,7 +121,7 @@ Discovery includes the unique contact run marker. Other contact messages cannot 
 The browser uses the real Turnstile widget. Missing verification or missing delivered email fails the case.
 OAuth profile verification does not prove that the forward exists; actual message observation provides that proof.
 The current identity spec covers registration, verification, fresh-context login and delivered recovery through visible controls.
-Its real execution remains pending Gmail OAuth and production deployment alignment; no new identity is certified by these code changes.
+Its real execution remains pending production deployment alignment and the observed code sender; no new identity is certified by these code changes.
 Logout, old-password rejection, teacher invitation and school setup have concrete UI journeys.
 Their real production execution remains pending the complete campaign prerequisites.
 The old-password journey accepts only the documented Clerk HTTP 422 password error for the observed request.
@@ -156,7 +160,7 @@ The plaintext journal stays outside the artifact upload list. The runner encrypt
 
 The `acceptance` project currently implements three public cases.
 They use Chrome, semantic locators and the runtime observer without programmatic authentication or business seeds.
-The remaining case matrix still requires implementation and real execution.
+All 69 case IDs are defined and discovered. The matrix still requires real execution.
 A green legacy CI run does not certify this production matrix.
 
 ## References
