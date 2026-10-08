@@ -9,10 +9,10 @@ const assets = new Map([
   ['/llms.txt', { body: '# Cronos', contentType: 'text/plain; charset=utf-8' }],
   ['/404', { body: '<h1>404</h1><a href="/">Voltar ao início</a>', contentType: 'text/html; charset=utf-8' }],
   ['/404.md', { body: '# 404 — Página não encontrada', contentType: 'text/plain; charset=utf-8' }],
-  ['/sobre', { body: '<h1>Sobre</h1>', contentType: 'text/html; charset=utf-8' }],
+  ['/sobre', { body: '<h1>Sobre</h1>', contentType: 'text/html; charset=utf-8', etag: '"sobre-v1"' }],
   ['/about', { body: '<h1>Sobre</h1>', contentType: 'text/html; charset=utf-8' }],
-  ['/assets/main-abc12345.js', { body: 'console.log(1)', contentType: 'text/javascript' }],
-  ['/logo.png', { body: 'png', contentType: 'image/png' }],
+  ['/assets/main-abc12345.js', { body: 'console.log(1)', contentType: 'text/javascript', etag: '"main-abc12345"' }],
+  ['/logo.png', { body: 'png', contentType: 'image/png', etag: '"logo-v1"', lastModified: 'Wed, 21 Sep 2026 00:00:00 GMT' }],
   ['/favicon.png', { body: 'png', contentType: 'image/png' }],
   ['/marketing/hero.webp', { body: 'webp', contentType: 'image/webp' }],
 ])
@@ -31,7 +31,16 @@ function createEnvironment() {
           }
           const asset = assets.get(url.pathname + url.search)
           if (!asset) return Promise.resolve(new Response('missing', { status: 404 }))
-          return Promise.resolve(new Response(asset.body, { headers: { 'Content-Type': asset.contentType, ...(url.pathname === '/' ? { Vary: 'Accept-Encoding' } : {}) } }))
+          const headers = { 'Content-Type': asset.contentType, ...(url.pathname === '/' ? { Vary: 'Accept-Encoding' } : {}) }
+          if (asset.etag) headers.ETag = asset.etag
+          if (asset.lastModified) headers['Last-Modified'] = asset.lastModified
+          if (asset.etag && request.headers.get('If-None-Match') === asset.etag) {
+            return Promise.resolve(new Response(null, { status: 304, headers }))
+          }
+          if (asset.lastModified && request.headers.get('If-Modified-Since') === asset.lastModified) {
+            return Promise.resolve(new Response(null, { status: 304, headers }))
+          }
+          return Promise.resolve(new Response(asset.body, { headers }))
         },
       },
     },
@@ -105,6 +114,45 @@ test('cache-busting queries resolve the same physical public assets', async () =
     assert.equal(await response.text(), content, path)
     assert.equal(response.headers.get('Cache-Control'), 'no-cache, max-age=0, must-revalidate')
   }
+})
+
+test('preserves conditional 304 revalidation for existing static assets', async () => {
+  const asset = await request('/assets/main-abc12345.js', { headers: { 'If-None-Match': '"main-abc12345"' } })
+  assert.equal(asset.response.status, 304)
+  assert.equal(await asset.response.text(), '')
+  assert.equal(asset.response.headers.get('ETag'), '"main-abc12345"')
+  assert.equal(asset.response.headers.get('Cache-Control'), 'public, max-age=31536000, immutable')
+  assert.equal(asset.response.headers.get('X-Frame-Options'), 'DENY')
+  assert.equal(asset.response.headers.get('X-Content-Type-Options'), 'nosniff')
+
+  const strippedQuery = await request('/assets/main-abc12345.js?v=20260921', { headers: { 'If-None-Match': '"main-abc12345"' } })
+  assert.equal(strippedQuery.response.status, 304)
+  assert.equal(await strippedQuery.response.text(), '')
+
+  const lastModified = await request('/logo.png', { headers: { 'If-Modified-Since': 'Wed, 21 Sep 2026 00:00:00 GMT' } })
+  assert.equal(lastModified.response.status, 304)
+  assert.equal(lastModified.response.headers.get('Last-Modified'), 'Wed, 21 Sep 2026 00:00:00 GMT')
+  assert.equal(lastModified.response.headers.get('Cache-Control'), 'no-cache, max-age=0, must-revalidate')
+
+  const head = await request('/assets/main-abc12345.js', { method: 'HEAD', headers: { 'If-None-Match': '"main-abc12345"' } })
+  assert.equal(head.response.status, 304)
+  assert.equal(await head.response.text(), '')
+})
+
+test('preserves conditional 304 revalidation for known public HTML routes', async () => {
+  const { response } = await request('/sobre', { headers: { 'If-None-Match': '"sobre-v1"' } })
+  assert.equal(response.status, 304)
+  assert.equal(await response.text(), '')
+  assert.equal(response.headers.get('ETag'), '"sobre-v1"')
+  assert.equal(response.headers.get('Cache-Control'), 'no-store')
+  assert.equal(response.headers.get('X-Frame-Options'), 'DENY')
+})
+
+test('keeps missing assets at 404 no-store under conditional revalidation', async () => {
+  const { response } = await request('/assets/missing-abc12345.js', { headers: { 'If-None-Match': '"main-abc12345"' } })
+  assert.equal(response.status, 404)
+  assert.equal(response.headers.get('Cache-Control'), 'no-store')
+  assert.match(await response.text(), /Voltar ao início/)
 })
 
 test('rewrites every application route family to the application shell', async () => {
