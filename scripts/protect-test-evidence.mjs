@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 
 function authenticatedMetadata(metadata) {
   const path = metadata?.path
-  if (typeof path !== 'string' || /[\\:\u0000]/.test(path) || path.split('/').some(part => !part || part === '.' || part === '..')) {
+  if (typeof path !== 'string' || path.includes('\\') || path.includes(':') || path.includes(String.fromCharCode(0)) || path.split('/').some(part => !part || part === '.' || part === '..')) {
     throw new Error('Evidence path must be a confined relative POSIX path')
   }
   if (typeof metadata.run_id !== 'string' || !metadata.run_id) throw new Error('Evidence run_id is required')

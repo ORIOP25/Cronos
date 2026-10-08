@@ -52,8 +52,8 @@ jobs:
       - name: Generate ephemeral backend credentials
         shell: bash
         run: |
-          CI_MIGRATOR_PASSWORD="$(openssl rand -hex 24)"
-          CI_APP_PASSWORD="$(openssl rand -hex 24)"
+          CI_MIGRATOR_PASSWORD="$(openssl rand -hex 24)" # NOSONAR - ephemeral credential generated at execution time, never stored
+          CI_APP_PASSWORD="$(openssl rand -hex 24)" # NOSONAR - ephemeral credential generated at execution time, never stored
           echo "::add-mask::${CI_MIGRATOR_PASSWORD}"
           echo "::add-mask::${CI_APP_PASSWORD}"
           echo "CI_MIGRATOR_PASSWORD=${CI_MIGRATOR_PASSWORD}" >> "$GITHUB_ENV"

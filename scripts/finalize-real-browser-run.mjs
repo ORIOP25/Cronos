@@ -50,7 +50,7 @@ export async function finalizeRun(input, artifactRoot, { key, signingKey, secret
     const files = new Set(artifacts.map(item => item.path))
     for (const item of run.cases || []) {
       item.evidence = (item.evidence || []).map(path => {
-        if (typeof path !== 'string' || /[\\:\u0000]/.test(path) || path.split('/').some(part => !part || part === '.' || part === '..')) throw new Error('Invalid evidence path')
+        if (typeof path !== 'string' || path.includes('\\') || path.includes(':') || path.includes(String.fromCharCode(0)) || path.split('/').some(part => !part || part === '.' || part === '..')) throw new Error('Invalid evidence path')
         const protectedPath = files.has(`${path}.enc`) ? `${path}.enc` : path
         if (!files.has(protectedPath)) throw new Error('Referenced evidence is missing')
         return protectedPath

@@ -310,9 +310,8 @@ def main():
     inspector = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(inspector)
     originals = inspector.inspect(script.parent.parent / "frontend/e2e/data/originals")
-    result = validate(
-        originals, json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
-    )
+    snapshot = Path(sys.argv[1]).resolve()
+    result = validate(originals, json.loads(snapshot.read_text(encoding="utf-8")))
     print(json.dumps(result, separators=(",", ":")))
 
 

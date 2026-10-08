@@ -49,7 +49,9 @@ export function schoolDateRange(start, end) {
   const first = schoolDay(start), last = schoolDay(end)
   if (first > last) throw new Error('Invalid observed school date bounds')
   const dates = []
-  for (const day = new Date(first); day <= last; day.setUTCDate(day.getUTCDate() + 1)) dates.push(day.toISOString().slice(0, 10))
+  for (let cursor = first.getTime(); cursor <= last.getTime(); cursor += 86_400_000) {
+    dates.push(new Date(cursor).toISOString().slice(0, 10))
+  }
   return dates
 }
 

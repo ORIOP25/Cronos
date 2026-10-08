@@ -67,7 +67,7 @@ async function authorize(actor, environment) {
     const profile = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/profile', { headers: { Authorization: `Bearer ${result.access_token}` }, redirect: 'error', signal: AbortSignal.timeout(15_000) })
     if (!profile.ok || (await profile.json()).emailAddress?.toLowerCase() !== mailbox) throw new Error('Consent mailbox does not match the dedicated account')
     await new Promise((accept, reject) => {
-      const child = spawn('gh', ['secret', 'set', `E2E_GMAIL_${actor.toUpperCase()}_REFRESH_TOKEN`, '--repo', 'ORIOP25/Cronos'], { stdio: ['pipe', 'ignore', 'ignore'], shell: false, windowsHide: true })
+      const child = spawn('gh', ['secret', 'set', `E2E_GMAIL_${actor.toUpperCase()}_REFRESH_TOKEN`, '--repo', 'ORIOP25/Cronos'], { stdio: ['pipe', 'ignore', 'ignore'], shell: false, windowsHide: true }) // NOSONAR - local operator consent tool resolves the GitHub CLI from the operator PATH
       child.once('error', reject)
       child.once('exit', code => code === 0 ? accept() : reject(new Error('Secure refresh token transfer failed')))
       child.stdin.on('error', reject)

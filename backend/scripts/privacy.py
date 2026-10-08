@@ -201,18 +201,28 @@ async def _load_export_from_session(db, organization_id: int) -> dict[str, list[
     return result
 
 
-def open_private_export(destination: Path):
-    destination = Path(destination)
-    if ".." in destination.parts:
+def confined_export_path(destination) -> Path:
+    """Reject traversal and symbolic parents, then canonicalize the target."""
+    path = Path(destination)
+    if ".." in path.parts:
         raise ValueError("Export path must not contain parent traversal")
-    if any(parent.is_symlink() for parent in destination.parents):
+    if any(parent.is_symlink() for parent in path.parents):
         raise ValueError("Export directory must not be a symbolic link")
-    destination.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    descriptor = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    resolved = Path(os.path.realpath(path))
+    if not resolved.name or resolved.name in {".", ".."}:
+        raise ValueError("Export path must name a file")
+    return resolved
+
+
+def open_private_export(destination: Path):
+    path = confined_export_path(destination)
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     return os.fdopen(descriptor, "wb")
 
 
 def _write_export(output: Path, data: dict[str, list[dict[str, Any]]]) -> dict[str, Any]:
+    output = confined_export_path(output)
     if output.exists() and output.is_dir():
         raise ValueError("--output deve indicar um ficheiro ZIP, não uma pasta")
     manifest: dict[str, Any] = {"format": "cronos-privacy-export-v1", "tables": {}}
