@@ -739,6 +739,26 @@ Ruff e a limpeza da stack própria passaram.
 Os 106 testes da infraestrutura de aceitação passaram após a refatoração da política pura.
 Estes resultados não certificam a campanha de produção ainda pendente.
 
+### Gate de qualidade da PR 55
+
+O check `SonarCloud Code Analysis` da PR 55 falhava em duas condições no código novo: fiabilidade e segurança.
+Na revisão de 2026-10-08, a fiabilidade estava em `E` e a segurança em `C`, com 4 bugs e 6 vulnerabilidades.
+
+As correções provadas eliminaram os quatro bugs: o intervalo de datas usa um cursor numérico que avança de dia,
+e os dois validadores de caminhos deixaram de conter uma sequência de escape de controlo.
+Os testes das expectativas independentes e dos contratos do runner passaram após as alterações.
+
+O caminho de exportação administrativo foi canonicalizado com `os.path.realpath` depois de rejeitar traversal e
+diretórios simbólicos; a lista de vulnerabilidades caiu para quatro falsos positivos de ferramentas administrativas de CLI.
+Cada um foi revisto e transicionado com um comentário registado no SonarCloud: os três `pythonsecurity:S8707` como riscos
+aceites (o operador escolhe o caminho, não há entrada não fidedigna, e o destino é validado e canonicalizado antes de
+qualquer escrita ou remoção) e o `yaml:S2068` do `ci.yml` como falso positivo (a palavra-passe é gerada em execução com
+`openssl rand`, mascarada e nunca armazenada).
+Após a revisão, o gate da PR 55 respondia `OK`: fiabilidade, segurança e manutenibilidade em `A`.
+
+O projeto SonarCloud não recebia análises desde junho; a branch principal mantém um passivo histórico de avisos
+antigos fora do âmbito desta iniciativa. A análise automática atualiza-se com cada push da PR.
+
 ## Fontes e documentos relacionados
 
 - [Política de aceitação](../../frontend/e2e/utils/acceptance-policy.js)
