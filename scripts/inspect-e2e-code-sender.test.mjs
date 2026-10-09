@@ -282,3 +282,75 @@ test('bounds the UTC window and requires a reason beyond seven days', async () =
   assert.equal(invalid.reason, 'invalid_window')
   assert.equal(effects, 0)
 })
+
+test('reports the safe OAuth operation, code, status and reason without leaking the response', async () => {
+  const fetchImpl = async url => (url.includes('/token')
+    ? { ok: false, status: 400, json: async () => ({ error: 'invalid_grant', error_description: 'Token has been expired or revoked.', scope: 'openid email profile' }) }
+    : { ok: true, status: 200, json: async () => ({ emailAddress: MAILBOX }) })
+  const result = await runInspection(environment(), { fetchImpl })
+  assert.equal(result.status, 'dependency_unavailable')
+  assert.equal(result.reason, 'gmail_unavailable')
+  assert.deepEqual(result.diagnostic, { operation: 'oauth_refresh', code: 'invalid_grant', http_status: 400, reason: 'oauth_error' })
+  const serialized = JSON.stringify(result)
+  for (const secret of ['Token has been expired', 'openid email profile', 'error_description']) assert.equal(serialized.includes(secret), false, secret)
+})
+
+test('reports the safe Gmail listing operation and status for the metadata integration', async () => {
+  const fetchImpl = async url => {
+    if (url.includes('/token')) return { ok: true, status: 200, json: async () => ({ access_token: 'private-token', scope: 'https://www.googleapis.com/auth/gmail.readonly' }) }
+    if (url.endsWith('/profile')) return { ok: true, status: 200, json: async () => ({ emailAddress: MAILBOX }) }
+    return { ok: false, status: 400, json: async () => ({ error: { code: 400, message: 'Invalid field selection payload(headers(name,value))' } }) }
+  }
+  const result = await runInspection(environment(), { fetchImpl })
+  assert.equal(result.diagnostic.operation, 'message_listing')
+  assert.equal(result.diagnostic.code, 'http_error')
+  assert.equal(result.diagnostic.http_status, 400)
+  assert.equal(result.diagnostic.reason, 'http')
+  assert.equal(JSON.stringify(result).includes('Invalid field selection'), false)
+})
+
+test('reports a safe mailbox mismatch without exposing the profile address', async () => {
+  const fetchImpl = async url => (url.includes('/token')
+    ? { ok: true, status: 200, json: async () => ({ access_token: 'private-token', scope: 'https://www.googleapis.com/auth/gmail.readonly' }) }
+    : { ok: true, status: 200, json: async () => ({ emailAddress: 'someone-else@gmail.com' }) })
+  const result = await runInspection(environment(), { fetchImpl })
+  assert.deepEqual(result.diagnostic, { operation: 'mailbox_profile', code: 'mailbox_mismatch', http_status: 200, reason: 'profile_mismatch' })
+  assert.equal(JSON.stringify(result).includes('someone-else'), false)
+})
+
+test('reports a safe readonly scope diagnostic without exposing real scopes', async () => {
+  const fetchImpl = async () => ({ ok: true, status: 200, json: async () => ({ access_token: 'private-token', scope: 'https://mail.google.com/ https://www.googleapis.com/auth/calendar' }) })
+  const result = await runInspection(environment(), { fetchImpl })
+  assert.deepEqual(result.diagnostic, { operation: 'oauth_refresh', code: 'invalid_readonly_scope', http_status: 200, reason: 'scope_mismatch' })
+  assert.equal(JSON.stringify(result).includes('mail.google.com'), false)
+})
+
+test('classifies network and malformed JSON without echoing the original message', async () => {
+  const network = await runInspection(environment(), { fetchImpl: async () => { throw new Error('getaddrinfo ENOTFOUND admincronos100@gmail.com') } })
+  assert.deepEqual(network.diagnostic, { operation: 'oauth_refresh', code: 'network_error', http_status: null, reason: 'network' })
+  assert.equal(JSON.stringify(network).includes('ENOTFOUND'), false)
+  const malformed = await runInspection(environment(), { fetchImpl: async () => ({ ok: true, status: 200, json: async () => { throw new Error('raw body fragment') } }) })
+  assert.deepEqual(malformed.diagnostic, { operation: 'oauth_refresh', code: 'invalid_json', http_status: null, reason: 'invalid_json' })
+  assert.equal(JSON.stringify(malformed).includes('raw body fragment'), false)
+})
+
+test('sanitizes arbitrary provider error text at every stage', async () => {
+  const stages = [
+    async url => (url.includes('/token')
+      ? { ok: false, status: 403, json: async () => ({ error: 'quota_exceeded_secret', error_description: 'secret-oauth-detail' }) }
+      : { ok: true, status: 200, json: async () => ({ emailAddress: MAILBOX }) }),
+    async url => {
+      if (url.includes('/token')) return { ok: true, status: 200, json: async () => ({ access_token: 'private-token', scope: 'https://www.googleapis.com/auth/gmail.readonly' }) }
+      if (url.endsWith('/profile')) return { ok: false, status: 500, json: async () => ({ error: 'secret-profile-detail' }) }
+      return { ok: true, status: 200, json: async () => ({ messages: [] }) }
+    },
+  ]
+  for (const fetchImpl of stages) {
+    const result = await runInspection(environment(), { fetchImpl })
+    const serialized = JSON.stringify(result)
+    for (const secret of ['quota_exceeded_secret', 'secret-oauth-detail', 'secret-profile-detail', 'error_description']) {
+      assert.equal(serialized.includes(secret), false, secret)
+    }
+    assert.equal(['oauth_refresh', 'mailbox_profile', 'message_listing', 'message_metadata'].includes(result.diagnostic.operation), true)
+  }
+})

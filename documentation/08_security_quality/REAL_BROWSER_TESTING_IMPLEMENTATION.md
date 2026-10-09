@@ -1016,3 +1016,15 @@ gh workflow run acceptance.yml --ref main -f mode=inspect-code-sender -f mailbox
 O job expõe um único token de refresh da caixa escolhida (`E2E_GMAIL_REFRESH_TOKEN`), nunca as duas em simultâneo.
 A evidência de metadados não autentica a origem do correio nem certifica a matriz de 69 casos.
 Estes testes locais não certificam produção.
+
+## Estado da observação do remetente (pós-PR63)
+
+A [PR 63](https://github.com/ORIOP25/Cronos/pull/63) foi fundida em `main` como `81e503cbf0019f514b6ca01a1dc0cab9d94fc27c`.
+A CI e o Sonar ficaram verdes no commit da PR `9cfa25e`.
+O dispatch real `inspect-code-sender` [run 37981590551](https://github.com/ORIOP25/Cronos/actions/runs/37981590551) terminou `dependency_unavailable` com `gmail_unavailable` em 0,8 s.
+Nenhuma mensagem nem remetente foi observado.
+A causa exata permanece desconhecida: o resultado anterior não distinguia OAuth, perfil, listing ou metadata.
+Não se afirma expiração nem revogação de credenciais.
+Uma correção local devolve agora um diagnóstico seguro por operação e código (`oauth_refresh`, `mailbox_profile`, `message_listing`, `message_metadata`), sem corpo, scopes, tokens, URLs ou aliases.
+A observação real do From continua pendente e o plano de fecho permanece aberto.
+Estes testes locais não certificam produção.

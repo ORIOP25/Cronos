@@ -177,10 +177,53 @@ export function extractMessage(message, criteria) {
   return { id: message.id, delivered_at: new Date(delivered).toISOString(), link: links[0] }
 }
 
-async function requestJson(fetchImpl, url, options) {
-  const response = await fetchImpl(url, { ...options, redirect: 'error', signal: AbortSignal.timeout(15_000) })
-  if (!response.ok) throw new Error(`Gmail dependency unavailable: HTTP ${response.status}`)
-  try { return await response.json() } catch { throw new Error('Gmail dependency returned invalid JSON') }
+const OAUTH_ERRORS = new Set(['invalid_grant', 'invalid_client', 'unauthorized_client', 'access_denied'])
+
+function safeHttpStatus(value) {
+  return Number.isInteger(value) && value >= 100 && value <= 599 ? value : null
+}
+
+// A dependency error carries only an operation enum, a safe code, a bounded
+// HTTP status and a reason enum. Provider bodies, descriptions, scopes and
+// messages never reach it.
+function gmailError(code, { operation, httpStatus = null, reason, message }) {
+  const status = safeHttpStatus(httpStatus)
+  const error = new Error(message || `Gmail ${operation} failed${status ? `: HTTP ${status}` : ''}`)
+  error.name = 'GmailDependencyError'
+  error.code = code
+  error.operation = operation
+  error.httpStatus = status
+  error.reason = reason
+  return error
+}
+
+// Parse the provider response only in memory and keep an allowlisted OAuth code.
+async function providerErrorCode(response, operation) {
+  if (operation !== 'oauth_refresh') return null
+  try {
+    const payload = await response.json()
+    return typeof payload?.error === 'string' && OAUTH_ERRORS.has(payload.error) ? payload.error : null
+  } catch {
+    return null
+  }
+}
+
+async function requestJson(fetchImpl, url, { operation, ...options }) {
+  let response
+  try {
+    response = await fetchImpl(url, { ...options, redirect: 'error', signal: AbortSignal.timeout(15_000) })
+  } catch {
+    throw gmailError('network_error', { operation, reason: 'network' })
+  }
+  if (!response.ok) {
+    const providerCode = await providerErrorCode(response, operation)
+    throw gmailError(providerCode || 'http_error', { operation, httpStatus: response.status, reason: providerCode ? 'oauth_error' : 'http' })
+  }
+  try {
+    return await response.json()
+  } catch {
+    throw gmailError('invalid_json', { operation, reason: 'invalid_json' })
+  }
 }
 
 export async function createGmailReader(credentials, { fetchImpl = fetch } = {}) {
@@ -190,18 +233,23 @@ export async function createGmailReader(credentials, { fetchImpl = fetch } = {})
   let expiresAt = 0
   async function renew() {
     const result = await requestJson(fetchImpl, 'https://oauth2.googleapis.com/token', {
+      operation: 'oauth_refresh',
       method: 'POST', body: new URLSearchParams({ client_id: clientId, client_secret: clientSecret, refresh_token: refreshToken, grant_type: 'refresh_token' }),
     })
-    if (!result.access_token || result.scope !== READONLY_SCOPE) throw new Error('Gmail token must grant only readonly scope')
+    if (!result.access_token || result.scope !== READONLY_SCOPE) {
+      throw gmailError('invalid_readonly_scope', { operation: 'oauth_refresh', httpStatus: 200, reason: 'scope_mismatch', message: 'Gmail token must grant only readonly scope' })
+    }
     token = result.access_token
     expiresAt = Date.now() + Math.max(0, Number(result.expires_in || 3600) - 60) * 1000
-    const profile = await requestJson(fetchImpl, 'https://gmail.googleapis.com/gmail/v1/users/me/profile', { method: 'GET', headers: { Authorization: `Bearer ${token}` } })
-    if (profile.emailAddress?.toLowerCase() !== mailbox) throw new Error('Gmail token belongs to a different mailbox')
+    const profile = await requestJson(fetchImpl, 'https://gmail.googleapis.com/gmail/v1/users/me/profile', { operation: 'mailbox_profile', method: 'GET', headers: { Authorization: `Bearer ${token}` } })
+    if (profile.emailAddress?.toLowerCase() !== mailbox) {
+      throw gmailError('mailbox_mismatch', { operation: 'mailbox_profile', httpStatus: 200, reason: 'profile_mismatch', message: 'Gmail token belongs to a different mailbox' })
+    }
   }
   await renew()
-  async function get(path) {
+  async function get(path, operation) {
     if (Date.now() >= expiresAt) await renew()
-    return requestJson(fetchImpl, `https://gmail.googleapis.com/gmail/v1/users/me/${path}`, { method: 'GET', headers: { Authorization: `Bearer ${token}` } })
+    return requestJson(fetchImpl, `https://gmail.googleapis.com/gmail/v1/users/me/${path}`, { operation, method: 'GET', headers: { Authorization: `Bearer ${token}` } })
   }
   // Shared bounded pagination for delivery polling and sender discovery. It
   // stops on the deadline or the page cap and reports both explicitly.
@@ -213,7 +261,7 @@ export async function createGmailReader(credentials, { fetchImpl = fetch } = {})
       if (expired()) return { truncated: Boolean(pageToken), expired: true }
       const params = new URLSearchParams(query)
       if (pageToken) params.set('pageToken', pageToken)
-      const listing = await get(`messages?${params}`)
+      const listing = await get(`messages?${params}`, 'message_listing')
       for (const item of listingItems(listing)) {
         if (expired()) return { truncated: Boolean(pageToken), expired: true }
         await visit(item)
@@ -236,7 +284,7 @@ export async function createGmailReader(credentials, { fetchImpl = fetch } = {})
       const found = { senders: new Set(), messageCount: 0, malformedCount: 0 }
       const query = listingQuery({ recipient: criteria.recipient, after: criteria.after, before: criteria.before, fields: DISCOVERY_LISTING_FIELDS })
       const { truncated, expired } = await scanPages(query, { deadline: Date.now() + deadlineMs, maxPages }, async item => {
-        const message = await get(`messages/${encodeURIComponent(messageId(item))}?${DISCOVERY_METADATA_HEADERS}`)
+        const message = await get(`messages/${encodeURIComponent(messageId(item))}?${DISCOVERY_METADATA_HEADERS}`, 'message_metadata')
         recordObservation(found, metadataSender(message, criteria, subject))
       })
       // A remaining page token means the bounded scan was truncated; a unique
@@ -259,7 +307,7 @@ export async function createGmailReader(credentials, { fetchImpl = fetch } = {})
       do {
         const matches = []
         const { expired } = await scanPages(query, { deadline }, async item => {
-          const delivered = extractMessage(await get(`messages/${encodeURIComponent(messageId(item))}?format=full`), criteria)
+          const delivered = extractMessage(await get(`messages/${encodeURIComponent(messageId(item))}?format=full`, 'message_metadata'), criteria)
           if (delivered) matches.push(delivered)
         })
         if (expired) throw new Error(DEADLINE_ERROR)

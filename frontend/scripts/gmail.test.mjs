@@ -184,3 +184,13 @@ test('a refreshed Gmail token must explicitly confirm only readonly scope before
     assert.equal(calls.length, 1)
   }
 })
+
+test('Gmail dependency errors expose only a safe operation, code, status and reason', async () => {
+  const errorFetch = async () => ({ ok: false, status: 400, json: async () => ({ error: 'invalid_grant', error_description: 'do not leak this body' }) })
+  const error = await createGmailReader({ clientId: 'client', clientSecret: 'secret', refreshToken: 'refresh', mailbox: 'admincronos100@gmail.com' }, { fetchImpl: errorFetch }).then(() => null, value => value)
+  assert.equal(error.code, 'invalid_grant')
+  assert.equal(error.operation, 'oauth_refresh')
+  assert.equal(error.httpStatus, 400)
+  assert.equal(error.reason, 'oauth_error')
+  assert.equal(error.message.includes('do not leak this body'), false)
+})
