@@ -10,6 +10,13 @@ function request(url, method = 'GET') {
 const BEACON_URL = 'https://static.cloudflareinsights.com/beacon.min.js/v4bc70e2c01a94c73b74392e4234840661791215815920'
 const BEACON_PATH = '/beacon.min.js/v4bc70e2c01a94c73b74392e4234840661791215815920'
 const BEACON_REASON = 'csp-blocked-optional-telemetry'
+// Exact Chrome message recorded on production run 37935721500: the console CSP
+// message arrives before the network events.
+const REAL_CSP_TEXT = `Loading the script '${BEACON_URL}' violates the following Content Security Policy directive: "script-src 'self' https://clerk.cronos.pt https://challenges.cloudflare.com https://*.protect.clerk.com". Note that 'script-src-elem' was not explicitly set, so 'script-src' is used as a fallback. The action has been blocked.`
+
+function realCspConsole(locationUrl = 'https://cronos.pt/contacto') {
+  return { type: () => 'error', text: () => REAL_CSP_TEXT, location: () => ({ url: locationUrl }) }
+}
 
 function scriptRequest(url, method = 'GET', resourceType = 'script') {
   return { url: () => url, method: () => method, resourceType: () => resourceType, failure: () => null }
@@ -308,5 +315,79 @@ test('a valid CSP prefix with appended first-party error text is not ignored', (
   page.emit('requestfailed', failedScriptRequest(BEACON_URL))
   assert.equal(observer.errors.length, 1)
   assert.equal(observer.ignoredOptionalTelemetry.length, 1)
+  observer.dispose()
+})
+
+test('a CSP console before the script GET is reconciled by the later CSP failure', () => {
+  const page = new EventEmitter()
+  const observer = observeAcceptanceRuntime(page)
+  page.emit('console', realCspConsole())
+  page.emit('request', scriptRequest(BEACON_URL))
+  page.emit('requestfailed', failedScriptRequest(BEACON_URL))
+  assert.deepEqual(observer.errors, [])
+  assert.equal(observer.ignoredOptionalTelemetry.length, 2)
+  assert.deepEqual(observer.ignoredOptionalTelemetry.map(item => item.event).sort(), ['console', 'requestfailed'])
+  for (const item of observer.ignoredOptionalTelemetry) {
+    assert.equal(item.host, 'static.cloudflareinsights.com')
+    assert.equal(item.path, BEACON_PATH)
+    assert.equal(item.reason, BEACON_REASON)
+  }
+  observer.dispose()
+})
+
+test('a main navigation keeps an earlier unresolved console error across a later CSP failure', () => {
+  const page = new EventEmitter()
+  const observer = observeAcceptanceRuntime(page)
+  page.emit('console', realCspConsole())
+  page.emit('framenavigated')
+  page.emit('request', scriptRequest(BEACON_URL))
+  page.emit('requestfailed', failedScriptRequest(BEACON_URL))
+  assert.equal(observer.errors.length, 1)
+  assert.match(observer.errors[0], /Browser console error/)
+  observer.dispose()
+})
+
+test('a served beacon 500 after a pending console candidate stays failing', () => {
+  const page = new EventEmitter()
+  const observer = observeAcceptanceRuntime(page)
+  const beacon = scriptRequest(BEACON_URL)
+  page.emit('console', realCspConsole())
+  page.emit('request', beacon)
+  page.emit('response', { request: () => beacon, url: () => BEACON_URL, status: () => 500 })
+  assert.equal(observer.errors.length, 2)
+  assert.deepEqual(observer.ignoredOptionalTelemetry, [])
+  observer.dispose()
+})
+
+test('a non-GET request at the beacon URL confirms the pending console candidate', () => {
+  const page = new EventEmitter()
+  const observer = observeAcceptanceRuntime(page)
+  page.emit('console', realCspConsole())
+  page.emit('request', scriptRequest(BEACON_URL))
+  page.emit('request', scriptRequest(BEACON_URL, 'POST'))
+  assert.equal(observer.errors.length, 1)
+  assert.deepEqual(observer.ignoredOptionalTelemetry, [])
+  observer.dispose()
+})
+
+test('two unobserved CSP console events at the same URL stay two visible errors', () => {
+  const page = new EventEmitter()
+  const observer = observeAcceptanceRuntime(page)
+  page.emit('console', realCspConsole())
+  page.emit('console', realCspConsole())
+  assert.equal(observer.errors.length, 2)
+  observer.dispose()
+})
+
+test('a later script GET and CSP failure reconcile both pending console events', () => {
+  const page = new EventEmitter()
+  const observer = observeAcceptanceRuntime(page)
+  page.emit('console', realCspConsole())
+  page.emit('console', realCspConsole())
+  page.emit('request', scriptRequest(BEACON_URL))
+  page.emit('requestfailed', failedScriptRequest(BEACON_URL))
+  assert.deepEqual(observer.errors, [])
+  assert.equal(observer.ignoredOptionalTelemetry.length, 3)
+  assert.deepEqual(observer.ignoredOptionalTelemetry.map(item => item.event).sort(), ['console', 'console', 'requestfailed'])
   observer.dispose()
 })

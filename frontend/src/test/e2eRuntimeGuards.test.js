@@ -279,6 +279,11 @@ describe('E2E runtime guard classifiers', () => {
     expect(optionalTelemetryScriptFromConsoleText('Uncaught TypeError: boom')).toBeNull()
   })
 
+  it('matches the exact Chrome message recorded on production run 37935721500', () => {
+    const text = `Loading the script '${BEACON_URL}' violates the following Content Security Policy directive: "script-src 'self' https://clerk.cronos.pt https://challenges.cloudflare.com https://*.protect.clerk.com". Note that 'script-src-elem' was not explicitly set, so 'script-src' is used as a fallback. The action has been blocked.`
+    expect(optionalTelemetryScriptFromConsoleText(text)).toBe(BEACON_URL)
+  })
+
   it('reports a served beacon 4xx/5xx as a fail-closed error without a console message', () => {
     const observed = new Set([BEACON_URL])
     expect(getOptionalTelemetryResponseError({ url: BEACON_URL, status: 500 }, observed))

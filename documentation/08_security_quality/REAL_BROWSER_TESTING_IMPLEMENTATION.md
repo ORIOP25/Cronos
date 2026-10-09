@@ -866,12 +866,36 @@ O novo modo `diagnose-public` corre quatro casos explícitos só de leitura e co
 A avaliação assinada do diagnóstico permanece incompleta e só o resumo derivado seguro é carregado, nunca a execução bruta; os testes locais de modo, leitura e erro de processo passaram (57 focados), sem modo público em produção.
 O trigger da CI foi otimizado para `push` só na `main`, todas as PRs e `workflow_dispatch` manual para branches sem PR, mantendo jobs, auditorias, cobertura e condições de fork.
 
-### Estado atual após a fusão da PR 60
+### Estado após a fusão da PR 60 (histórico)
 
 O workflow público só de leitura [run 37919213244](https://github.com/ORIOP25/Cronos/actions/runs/37919213244) correu após o alinhamento com quatro casos, um worker e zero retries; as quatro asserções principais e as verificações de fornecedor passaram, mas os testes falharam apenas no script injetado `static.cloudflareinsights.com/beacon.min.js/v...` bloqueado por CSP, os 404 de assets já não aparecem nos erros, e os artefactos protegidos foram carregados com o trace de falha cifrado pelo workflow existente, sem afirmar decifragem manual.
 A correção local de W03.7 restringe a exceção ao script observado com GET, host HTTPS exato, caminho de versão hexadecimal e gramática CSP ancorada, cobre navegação, novos pedidos e invalidação por resposta, e nunca isenta 4xx/5xx servidos, API, Clerk, pedidos não observados ou acrescentos de texto; a telemetria ignorada é só metadados e a CSP não muda.
 Passaram os 19 testes de runtime e os 32 guards determinísticos mais recentes; uma sonda local respondeu 200 ao contacto mas não injetou o beacon, pelo que a ordenação da CI continua por verificar e não há prova falsa.
-A correção atual continua por publicar e aguarda um checkpoint de CI; o remetente E2E em falta mantém o bloqueio total e não há remoção de testes.
+Naquele momento, a correção de W03.7 estava por publicar e aguardava um checkpoint de CI; o remetente E2E em falta mantinha o bloqueio total e não havia remoção de testes.
+
+### Estado atual após a fusão da PR 61
+
+A [PR 61](https://github.com/ORIOP25/Cronos/pull/61) foi fundida como `7be9ee1bee1c73b46af0b7353b29ab96e6d386c3`.
+A CI da PR [run 37925178812](https://github.com/ORIOP25/Cronos/actions/runs/37925178812) passou os três jobs, com Sonar e preview Cloudflare aprovados.
+A CI da `main` [run 37928274790](https://github.com/ORIOP25/Cronos/actions/runs/37928274790) passou.
+Os cinco componentes de produção ficaram alinhados em `7be9ee1`.
+Os quatro serviços Railway ficaram `SUCCESS`, não parados e com uma revisão ativa.
+A revisão do frontend coincide e `/health/ready` responde `ok`.
+
+O diagnóstico público real [run 37935721500](https://github.com/ORIOP25/Cronos/actions/runs/37935721500) falhou nos quatro casos apenas por consola precoce de CSP Cloudflare.
+O `requestfailed` de rede é agora classificado como ignorado seguro e estreito.
+As asserções de UI, assets e revisões passam.
+
+Os registos mostram que a consola do Chrome chega antes do pedido.
+Um Chrome real instalado localmente reproduziu o script bloqueado por CSP: consola, depois GET do script, depois `requestfailed` por CSP.
+A correção causal do getter continua por publicar; passaram 25 testes Node e 33 guards, com lint limpo.
+A correção registra cada evento de consola duplicado e mantém o erro pendente visível até existir o GET correspondente com falha CSP.
+A navegação principal, as respostas reais e o flush de pedidos não-GET foram confirmados e nunca apagam o erro.
+Não houve novas alterações de CSP, anti-bot, autenticação ou dados.
+
+A revalidação pública real continua necessária após a publicação.
+O remetente Gmail do código, o encaminhamento do contacto, a história de W09 e o cutover da CI continuam bloqueados.
+Em leitura, o Clerk SDK nativo devolveu `from_email_name=null` para `verification_code` e `reset_password_code`, com domínio principal `cronos.pt`; o From real continua não observável, sem adivinhar.
 
 ### Diagnóstico público parcial e correção do 304 (histórico)
 
