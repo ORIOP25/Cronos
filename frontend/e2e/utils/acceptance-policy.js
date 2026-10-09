@@ -1,6 +1,14 @@
 const FULL_REVISION = /^[a-f0-9]{40}$/
 const MAILBOXES = { admin: 'admincronos100@gmail.com', teacher: 'professorcronos100@gmail.com' }
+export const CODE_SENDER_PATTERN = /^[a-z0-9._-]+@cronos\.pt$/
 export const COMPONENTS = ['frontend', 'api', 'worker', 'supervisor', 'beat']
+
+// The single observed production sender must be known before any account effect.
+// Presence stays a dependency; a present but malformed value is a hard failure.
+export function validateCodeSender(value) {
+  if (!CODE_SENDER_PATTERN.test(value || '')) throw new Error('Configure the observed production code sender')
+  return value
+}
 
 // Each variant is required separately. A requirement label alone is not coverage.
 export const REQUIRED_CASES = Object.entries({

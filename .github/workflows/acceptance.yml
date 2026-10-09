@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: Run the acceptance campaign, prepare a persistent school, or diagnose the readonly public UI
+        description: Run the acceptance campaign, prepare a persistent school, diagnose the readonly public UI, or observe the code sender
         type: choice
         required: true
         default: acceptance
@@ -12,6 +12,27 @@ on:
           - acceptance
           - prepare-history
           - diagnose-public
+          - inspect-code-sender
+      mailbox:
+        description: Dedicated mailbox used only by inspect-code-sender
+        type: choice
+        required: false
+        default: admin
+        options:
+          - admin
+          - teacher
+      purpose:
+        description: Code subject observed only by inspect-code-sender
+        type: choice
+        required: false
+        default: verification
+        options:
+          - verification
+          - reset
+      recipient:
+        description: Optional base or alias recipient observed only by inspect-code-sender
+        type: string
+        required: false
   push:
     branches: [main]
 
@@ -24,7 +45,7 @@ concurrency:
 
 jobs:
   acceptance:
-    if: github.ref == 'refs/heads/main' && (vars.E2E_ACCEPTANCE_ENABLED == 'true' || (github.event_name == 'workflow_dispatch' && (inputs.mode == 'prepare-history' || inputs.mode == 'diagnose-public')))
+    if: github.ref == 'refs/heads/main' && (vars.E2E_ACCEPTANCE_ENABLED == 'true' || (github.event_name == 'workflow_dispatch' && (inputs.mode == 'prepare-history' || inputs.mode == 'diagnose-public'))) && !(github.event_name == 'workflow_dispatch' && inputs.mode == 'inspect-code-sender')
     runs-on: ubuntu-latest
     timeout-minutes: 240
     env:
@@ -141,3 +162,29 @@ jobs:
             .test-artifacts/${{ env.E2E_RUN_ID }}/diagnostic-assessment.json
           if-no-files-found: warn
           retention-days: 14
+
+  # Manual, readonly observation of the production code sender. It reads Gmail
+  # metadata only, exposes no administrative, deployment or evidence secret and
+  # installs neither a browser nor the Railway client.
+  inspect-code-sender:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.mode == 'inspect-code-sender'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+
+      - name: Observe the production code sender metadata
+        run: node scripts/inspect-e2e-code-sender.mjs
+        env:
+          E2E_INSPECT_MAILBOX: ${{ inputs.mailbox }}
+          E2E_INSPECT_PURPOSE: ${{ inputs.purpose }}
+          E2E_INSPECT_RECIPIENT: ${{ inputs.recipient }}
+          E2E_GMAIL_CLIENT_ID: ${{ secrets.E2E_GMAIL_CLIENT_ID }}
+          E2E_GMAIL_CLIENT_SECRET: ${{ secrets.E2E_GMAIL_CLIENT_SECRET }}
+          E2E_GMAIL_REFRESH_TOKEN: ${{ inputs.mailbox == 'teacher' && secrets.E2E_GMAIL_TEACHER_REFRESH_TOKEN || secrets.E2E_GMAIL_ADMIN_REFRESH_TOKEN }}

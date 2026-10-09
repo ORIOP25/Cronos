@@ -873,7 +873,7 @@ A correção local de W03.7 restringe a exceção ao script observado com GET, h
 Passaram os 19 testes de runtime e os 32 guards determinísticos mais recentes; uma sonda local respondeu 200 ao contacto mas não injetou o beacon, pelo que a ordenação da CI continua por verificar e não há prova falsa.
 Naquele momento, a correção de W03.7 estava por publicar e aguardava um checkpoint de CI; o remetente E2E em falta mantinha o bloqueio total e não havia remoção de testes.
 
-### Estado atual após a fusão da PR 61
+### Estado após a fusão da PR 61 (histórico)
 
 A [PR 61](https://github.com/ORIOP25/Cronos/pull/61) foi fundida como `7be9ee1bee1c73b46af0b7353b29ab96e6d386c3`.
 A CI da PR [run 37925178812](https://github.com/ORIOP25/Cronos/actions/runs/37925178812) passou os três jobs, com Sonar e preview Cloudflare aprovados.
@@ -895,7 +895,21 @@ Não houve novas alterações de CSP, anti-bot, autenticação ou dados.
 
 A revalidação pública real continua necessária após a publicação.
 O remetente Gmail do código, o encaminhamento do contacto, a história de W09 e o cutover da CI continuam bloqueados.
-Em leitura, o Clerk SDK nativo devolveu `from_email_name=null` para `verification_code` e `reset_password_code`, com domínio principal `cronos.pt`; o From real continua não observável, sem adivinhar.
+
+### Estado atual — consentimento e diagnóstico público (aa5ab8b)
+
+A CI nativa [run 37949419112](https://github.com/ORIOP25/Cronos/actions/runs/37949419112) passou os três jobs; frontend 598, backend 1434, legado 88 e capacidade verdes.
+Os cinco componentes ficaram alinhados em `aa5ab8b`; os quatro serviços Railway ficaram `SUCCESS`, um ativo e não parado, com `/health/ready` `ok`.
+O diagnóstico público real [run 37951385146](https://github.com/ORIOP25/Cronos/actions/runs/37951385146) passou os quatro casos à primeira tentativa.
+O relatório assinado tem as cinco revisões iguais antes e depois, sem falhas, e provas protegidas.
+A limpeza é `public_readonly` com `not_needed=true` e listas pendentes vazias.
+O estado derivado é `passed` com `certifies_production=false`; a avaliação completa fica `incomplete` e `data_verified=false`.
+Logo, não certifica os 69 casos nem prova remoção de testes.
+O coordenador inspecionou JSON não secreto; não se afirma verificação HMAC nem decifragem local.
+Passaram 25 testes de runtime, 33 guards e 31 de rota assíncrona, com CSP e consentimento controlados.
+Nenhuma alteração de CSP de produto, anti-bot, autenticação ou dados foi feita.
+O From real deve ser observado no painel ou em mail recebido; a variável GitHub `E2E_GMAIL_CODE_SENDER` deve então ser configurada.
+O inventário Railway observado contém apenas produção; W11.4 exige ambiente isolado legítimo, sem novo custo sem autorização.
 
 ### Diagnóstico público parcial e correção do 304 (histórico)
 
@@ -934,6 +948,22 @@ Execute a recuperação real do worker e os contratos:
 node scripts/test.mjs integration -- -k test_an_owned_worker
 ```
 
+## Plano de fecho acelerado
+
+| Ordem | Grupo | Dependências | Concluído observável |
+| :--- | :--- | :--- | :--- |
+| 1 | Observar o From real e configurar a variável GitHub | Nenhuma | From observado (painel ou mail recebido) e `E2E_GMAIL_CODE_SENDER` configurada. |
+| 2 | Preparar a escola pela UI o quanto antes | 1 | Cinco CSV completos, docente, geração publicada e assinada, início futuro preservado. |
+| 3 | Encaminhamento Hostinger e desafios legítimos | Paralelo a 2 | Entrega de contacto observada e desafio anti-bot legítimo concluído. |
+| 4 | Percursos elegíveis, revisão de regressões e W11.4 isolado | Nenhuma para auditoria/W11 isolado; 2 para jornadas | Regressões revistas; W11.4 isolado com recursos próprios. |
+| 5 | Aula terminada real e primeira semana letiva completa | 2 e calendário real | W07 com sumário, minutos exatos e fecho semanal; não duas semanas, data real condicional. |
+| 6 | Matriz completa de 69 casos e limpeza | 3 e 5 | 69 casos validados com limpeza por execução. |
+| 7 | Redução segura W09 e helpers W10.8 | Prova substituta de cada grupo | Nenhuma remoção antes da prova substituta; cutover de CI. |
+| 8 | Verificação final W12 e documentos | 1–7 | Quatro planos reconciliados e checks finais. |
+
+W09.1–4 mantêm o núcleo essencial e o Knip já verificado na CI; não repetir.
+Cada grupo avança apenas com as suas dependências comprovadas.
+
 ## Fontes e documentos relacionados
 
 - [Política de aceitação](../../frontend/e2e/utils/acceptance-policy.js)
@@ -952,3 +982,37 @@ node scripts/test.mjs integration -- -k test_an_owned_worker
 - [Wrapper administrativo](../../backend/scripts/cleanup_e2e_run.py)
 - [Transporte administrativo SSH](../../scripts/cleanup-production-campaign.mjs)
 - [Guia de testes](TESTING_AND_CI.md)
+
+## Observação readonly do remetente do código (metadata-only)
+
+O remetente E2E do código continua por observar; `prepare-history` permanece bloqueado por `E2E_GMAIL_CODE_SENDER`.
+A observação segura reutiliza o leitor readonly e pede apenas metadados.
+Restringe-se a uma das duas caixas dedicadas e ao destinatário base ou alias autorizado.
+A janela UTC é explícita: sete dias por omissão e 30 dias no máximo.
+Uma janela acima de sete dias exige `E2E_INSPECT_WINDOW_REASON`.
+As mensagens, as páginas e o tempo do pedido são limitados.
+Lê apenas os cabeçalhos From, To e Subject; o subject é testado em memória.
+Nunca imprime subject, código, corpo, cabeçalhos brutos, tokens, IDs de mensagens nem endereços dos aliases.
+Devolve apenas `observed`, `incomplete`, `dependency_unavailable` ou `failed`, os remetentes distintos e a contagem, as datas limitadas e `certifies_production: false`.
+Uma ambiguidade de remetentes, um remetente incompatível ou a ausência de mensagens termina com código não zero.
+Não envia correio, não altera etiquetas, não autentica por API, não muda contas e não configura variáveis.
+O preflight e o percurso de identidade partilham um validador puro, pelo que um remetente malformado falha antes de qualquer efeito.
+
+Invocação local exata:
+
+```powershell
+node scripts/inspect-e2e-code-sender.mjs
+```
+
+O [workflow de aceitação](../../.github/workflows/acceptance.yml) disponibiliza `mode=inspect-code-sender` num job readonly dedicado.
+Esse job corre apenas em `main` por `workflow_dispatch`, sem navegador, sem Railway e sem segredos administrativos, de deployment ou de provas.
+Invocação manual exata:
+
+```powershell
+gh workflow run acceptance.yml --ref main -f mode=inspect-code-sender -f mailbox=admin -f purpose=verification
+```
+
+`purpose` é `verification` ou `reset`; `recipient` é opcional e aceita a base ou um alias autorizado.
+O job expõe um único token de refresh da caixa escolhida (`E2E_GMAIL_REFRESH_TOKEN`), nunca as duas em simultâneo.
+A evidência de metadados não autentica a origem do correio nem certifica a matriz de 69 casos.
+Estes testes locais não certificam produção.

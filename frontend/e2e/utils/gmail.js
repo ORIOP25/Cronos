@@ -1,8 +1,49 @@
 import { setTimeout as sleep } from 'node:timers/promises'
+import { CODE_SENDER_PATTERN } from './acceptance-policy.js'
 
 const READONLY_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly'
 const DEDICATED_MAILBOXES = new Set(['admincronos100@gmail.com', 'professorcronos100@gmail.com'])
 const DEDICATED_ALIAS = /^(?:admincronos100|professorcronos100)\+[a-z0-9-]+@gmail\.com$/
+const DISCOVERY_SUBJECTS = {
+  verification: /^\d{6} is your verification code$/,
+  reset: /^\d{6} is your reset password code$/,
+}
+const DISCOVERY_MAX_WINDOW_MS = 30 * 24 * 60 * 60 * 1000
+const DISCOVERY_LISTING_FIELDS = 'messages(id),nextPageToken'
+const DISCOVERY_METADATA_FIELDS = 'internalDate,payload(headers(name,value))'
+const DISCOVERY_METADATA_HEADERS = `format=metadata&fields=${DISCOVERY_METADATA_FIELDS}&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Subject`
+
+// A discovery recipient is the dedicated mailbox itself or one of its own
+// plus-aliases. The rule keeps the search inside the two dedicated mailboxes.
+export function isDedicatedRecipient(mailbox, value) {
+  const base = String(mailbox || '').toLowerCase()
+  const recipient = String(value || '').toLowerCase()
+  if (!DEDICATED_MAILBOXES.has(base)) return false
+  if (recipient === base) return true
+  return DEDICATED_ALIAS.test(recipient) && recipient.startsWith(`${base.slice(0, base.indexOf('@'))}+`)
+}
+
+function validateDiscoveryCriteria(criteria, mailbox) {
+  if (!Object.hasOwn(DISCOVERY_SUBJECTS, criteria.purpose)) throw new Error('Discovery purpose must be verification or reset')
+  if (!isDedicatedRecipient(mailbox, criteria.recipient)) throw new Error('Discovery recipient must identify the dedicated mailbox or one of its aliases')
+  if (!Number.isSafeInteger(criteria.after) || !Number.isSafeInteger(criteria.before) || criteria.before <= criteria.after) throw new Error('Discovery window must have bounded epoch timestamps')
+  if (criteria.before - criteria.after > DISCOVERY_MAX_WINDOW_MS) throw new Error('Discovery window exceeds the maximum of 30 days')
+}
+
+// Apply the same strict To/subject/time filters used for delivered codes, then
+// read only the From header. The subject is tested in memory and never returned.
+function metadataSender(message, criteria, subject) {
+  const delivered = Number(message.internalDate)
+  if (!Number.isSafeInteger(delivered) || delivered < criteria.after || delivered > criteria.before) return null
+  const headers = message.payload?.headers || []
+  const values = name => headers.filter(item => item.name.toLowerCase() === name).map(item => item.value)
+  if (!addresses(values('to').join(', ')).includes(criteria.recipient.toLowerCase())) return null
+  const subjects = values('subject')
+  subject.lastIndex = 0
+  if (subjects.length !== 1 || !subject.test(subjects[0])) return null
+  const senders = addresses(values('from').join(', '))
+  return senders.length === 1 ? { sender: senders[0] } : { malformed: true }
+}
 
 function addresses(value) {
   return String(value || '').split(/[\s<>(),;:"]+/)
@@ -111,6 +152,50 @@ export async function createGmailReader(credentials, { fetchImpl = fetch } = {})
   }
   return {
     mailbox,
+    // Metadata-only discovery of the code sender. It reads From/To/Subject
+    // headers, never the body, and reports only a fixed, secret-free summary.
+    async discoverSender(criteria, { maxPages = 3, deadlineMs = 30_000 } = {}) {
+      validateDiscoveryCriteria(criteria, mailbox)
+      if (!Number.isSafeInteger(maxPages) || maxPages < 1 || maxPages > 10) throw new Error('Discovery page bound is invalid')
+      if (!Number.isFinite(deadlineMs) || deadlineMs <= 0 || deadlineMs > 300_000) throw new Error('Discovery time bound is invalid')
+      const subject = DISCOVERY_SUBJECTS[criteria.purpose]
+      const senders = new Set()
+      let messageCount = 0
+      let malformedCount = 0
+      let pages = 0
+      let pageToken
+      const deadline = Date.now() + deadlineMs
+      const summary = (status, reason) => ({ status, reason, senders: [...senders].sort(), message_count: messageCount })
+      const query = new URLSearchParams({ q: `to:${criteria.recipient} after:${Math.floor(criteria.after / 1000)} before:${Math.ceil(criteria.before / 1000)}`, maxResults: '100', fields: DISCOVERY_LISTING_FIELDS })
+      do {
+        if (Date.now() > deadline) return summary('incomplete', 'time_limit')
+        const params = new URLSearchParams(query)
+        if (pageToken) params.set('pageToken', pageToken)
+        const listing = await get(`messages?${params}`)
+        const items = listing.messages ?? []
+        if (!Array.isArray(items)) throw new Error('Gmail listing returned malformed entries')
+        for (const item of items) {
+          if (typeof item?.id !== 'string' || !item.id) throw new Error('Gmail listing returned malformed entries')
+          if (Date.now() > deadline) return summary('incomplete', 'time_limit')
+          const observed = metadataSender(await get(`messages/${encodeURIComponent(item.id)}?${DISCOVERY_METADATA_HEADERS}`), criteria, subject)
+          if (!observed) continue
+          if (observed.malformed) malformedCount += 1
+          else { messageCount += 1; senders.add(observed.sender) }
+        }
+        pageToken = listing.nextPageToken
+        pages += 1
+      } while (pageToken && pages < maxPages)
+      // A remaining page token means the bounded window was truncated; never
+      // report a unique sender from a partial scan.
+      if (pageToken) return summary('incomplete', 'page_limit')
+      if (Date.now() > deadline) return summary('incomplete', 'time_limit')
+      const distinct = [...senders].sort()
+      if (malformedCount > 0) return { status: 'failed', reason: 'malformed_headers', senders: distinct, message_count: messageCount }
+      if (messageCount === 0) return { status: 'incomplete', reason: 'no_messages', senders: distinct, message_count: 0 }
+      if (distinct.length !== 1) return { status: 'failed', reason: 'ambiguous_senders', senders: distinct, message_count: messageCount }
+      if (!CODE_SENDER_PATTERN.test(distinct[0])) return { status: 'failed', reason: 'incompatible_sender', senders: distinct, message_count: messageCount }
+      return { status: 'observed', reason: 'unique_sender', senders: distinct, message_count: messageCount }
+    },
     async poll(criteria, { timeoutMs = 120_000, intervalMs = 2000 } = {}) {
       validateCriteria(criteria)
       if (criteria.purpose === 'contact' && criteria.forwardedMailbox !== mailbox) throw new Error('Contact forward belongs to a different mailbox')

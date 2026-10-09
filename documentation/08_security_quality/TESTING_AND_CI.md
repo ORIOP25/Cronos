@@ -250,6 +250,52 @@ The fifth public case reads a delivered contact message and is excluded from the
 All 69 case IDs are defined and discovered. The matrix still requires real execution.
 A green legacy CI run does not certify this production matrix.
 
+## Code sender observation
+
+`E2E_GMAIL_CODE_SENDER` must be the real production verification sender.
+Observe it before setting the variable; never guess the address.
+
+Run the readonly metadata observation against one dedicated mailbox:
+
+```powershell
+node scripts/inspect-e2e-code-sender.mjs
+```
+
+The environment selects the mailbox, the purpose and the bounded UTC window.
+`E2E_INSPECT_MAILBOX` is `admin` or `teacher`; the default is `admin`.
+`E2E_INSPECT_PURPOSE` is `verification` or `reset`; the default is `verification`.
+`E2E_INSPECT_AFTER` and `E2E_INSPECT_BEFORE` are ISO-8601 UTC timestamps.
+The default window ends now and starts seven days earlier.
+A window above seven days requires `E2E_INSPECT_WINDOW_REASON`.
+The maximum window is 30 days, with bounded messages, pages and time.
+The workflow injects the selected mailbox token as `E2E_GMAIL_REFRESH_TOKEN`.
+A local run may keep the role-specific `E2E_GMAIL_<ROLE>_REFRESH_TOKEN` fallback.
+
+The reader requests only the `From`, `To` and `Subject` metadata headers.
+It never reads the body, the snippet or the full message.
+It reports only a fixed status, the distinct senders, the sender count, the message count and the bounded window.
+It never prints the subject, the code, the body, raw headers, tokens, message IDs or alias addresses.
+`certifies_production` is always `false`; the command never configures the variable.
+
+The status is `observed`, `incomplete`, `dependency_unavailable` or `failed`.
+`observed` exits zero, `dependency_unavailable` exits three, and anything else exits one.
+A missing sender blocks preflight as `dependency_unavailable`.
+A present but malformed sender fails preflight before any external request.
+Set `E2E_GMAIL_CODE_SENDER` only after observing a unique sender.
+
+Dispatch `.github/workflows/acceptance.yml` manually on `main`:
+
+```powershell
+gh workflow run acceptance.yml --ref main -f mode=inspect-code-sender -f mailbox=admin -f purpose=verification
+```
+
+Add `-f recipient=<base-or-alias>` to observe a specific authorized recipient.
+`purpose` is `verification` or `reset`.
+The dedicated readonly job installs no browser or Railway client.
+It exposes one selected mailbox token, never both mailboxes at once.
+It needs no administrative, deployment or evidence secret.
+The metadata observation does not authenticate the mail origin and does not certify the case matrix.
+
 ## References
 
 - [Contributing Guidelines](../00_getting_started/CONTRIBUTING.md)
