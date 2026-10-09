@@ -69,6 +69,10 @@ flowchart TD
 - CORS permits `Authorization` and `Content-Type`, and exposes `X-Request-ID`.
 - API responses set `nosniff`, `DENY`, `no-referrer`, and `Permissions-Policy`.
 - API responses set `Cache-Control: no-store` for paths under `/api/`.
+- The Clerk protect host appears in `script-src`, `connect-src`, and `frame-src`.
+- Only connections allow non-default Clerk protect ports (`https://*.protect.clerk.com:*`).
+- `script-src` and `frame-src` keep `https://*.protect.clerk.com` without the port wildcard.
+- The frontend Docker build context excludes `.test-artifacts/` and the secret folders or env files.
 - Request bodies default to 1 MiB, except contact at 16 KiB, Clerk webhook at 256 KiB, client errors at 4 KiB, and imports at 8 MiB.
 - Rate limiting fails closed when the Redis store is unavailable.
 - Only configured trusted proxy networks may provide client IP headers.

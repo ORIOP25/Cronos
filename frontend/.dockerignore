@@ -6,6 +6,7 @@ coverage/
 reports/
 playwright-report/
 test-results/
+.test-artifacts/
 .git/
 .auth/
 .env
