@@ -329,7 +329,7 @@ describe('RequireTeacher', () => {
     setClerkState({ orgId: null, memberships: [{ organization: { id: 'org_only', name: 'Escola' } }], setActive })
     renderGuard(<RequireAdmin><div>Admin</div></RequireAdmin>)
     await waitFor(() => expect(setActive).toHaveBeenCalledTimes(1))
-    expect(screen.getByTestId('organization-selector')).toBeInTheDocument()
+    expect(await screen.findByTestId('organization-selector')).toBeInTheDocument()
   })
 
   it('does not auto-activate when multiple organizations need manual selection', () => {
