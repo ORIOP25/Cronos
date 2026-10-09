@@ -163,7 +163,7 @@ test('metadata discovery constrains the request to From, To and Subject and reje
   assert.equal(metadata.searchParams.get('fields').includes('snippet'), false)
   assert.equal(metadata.searchParams.get('fields').includes('body'), false)
   const listing = new URL(calls.find(call => call.url.includes('/messages?')).url)
-  assert.equal(listing.searchParams.get('fields'), 'messages(id),nextPageToken')
+  assert.equal(listing.searchParams.get('fields'), 'messages(id),nextPageToken,resultSizeEstimate')
   for (const forbidden of ['snippet', 'body', 'payload']) {
     assert.equal(listing.searchParams.get('fields').includes(forbidden), false, forbidden)
   }
@@ -193,4 +193,16 @@ test('Gmail dependency errors expose only a safe operation, code, status and rea
   assert.equal(error.httpStatus, 400)
   assert.equal(error.reason, 'oauth_error')
   assert.equal(error.message.includes('do not leak this body'), false)
+})
+
+test('a blank successful Gmail body fails closed with safe body metadata', async () => {
+  const fetchImpl = async () => new Response('', { status: 200, headers: { 'content-type': 'application/json' } })
+  const error = await createGmailReader({ clientId: 'client', clientSecret: 'secret', refreshToken: 'refresh', mailbox: 'admincronos100@gmail.com' }, { fetchImpl }).then(() => null, value => value)
+  assert.equal(error.code, 'invalid_json')
+  assert.equal(error.operation, 'oauth_refresh')
+  assert.equal(error.httpStatus, 200)
+  assert.equal(error.reason, 'invalid_json')
+  assert.equal(error.bodyBytes, 0)
+  assert.equal(error.emptyBody, true)
+  assert.equal(error.contentType, 'json')
 })
