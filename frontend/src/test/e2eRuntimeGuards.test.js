@@ -3,10 +3,20 @@ import { describe, expect, it } from 'vitest'
 import {
   getApiResponseError,
   getConsoleError,
+  getOptionalTelemetryResponseError,
   getRequestFailureError,
+  isOptionalTelemetryScriptUrl,
+  optionalTelemetryScriptFromConsoleText,
 } from '../../e2e/utils/runtime-guards.js'
 
 const baseUrl = 'http://localhost:5173'
+const BEACON_URL = 'https://static.cloudflareinsights.com/beacon.min.js/v4bc70e2c01a94c73b74392e4234840661791215815920'
+const BEACON_PATH = '/beacon.min.js/v4bc70e2c01a94c73b74392e4234840661791215815920'
+const cspConsole = url => ({
+  type: 'error',
+  text: `Loading the script '${url}' violates the following Content Security Policy directive: "script-src 'self'". The action has been blocked.`,
+  locationUrl: 'https://cronos.pt/contacto',
+})
 
 describe('E2E runtime guard classifiers', () => {
   it.each([
@@ -197,5 +207,86 @@ describe('E2E runtime guard classifiers', () => {
       text: 'Failed to load resource: the server responded with a status of 429 ()',
       locationUrl: sentryUrl,
     }, [], { baseUrl })).toBeNull()
+  })
+
+  it('classifies only the exact observed Cloudflare beacon CSP block as optional', () => {
+    const observed = new Set([BEACON_URL])
+    const ignored = []
+    const options = {
+      baseUrl: 'https://cronos.pt',
+      observedOptionalTelemetry: observed,
+      onIgnoredOptionalTelemetry: event => ignored.push(event),
+    }
+
+    expect(getConsoleError(cspConsole(BEACON_URL), [], options)).toBeNull()
+    expect(getRequestFailureError({
+      url: BEACON_URL, method: 'GET', resourceType: 'script', errorText: 'csp',
+    }, options)).toBeNull()
+    expect(ignored).toEqual([
+      { method: 'GET', host: 'static.cloudflareinsights.com', path: BEACON_PATH, reason: 'csp-blocked-optional-telemetry', event: 'console' },
+      { method: 'GET', host: 'static.cloudflareinsights.com', path: BEACON_PATH, reason: 'csp-blocked-optional-telemetry', event: 'requestfailed' },
+    ])
+  })
+
+  it('keeps an unobserved, malformed or non-CSP beacon failure', () => {
+    expect(getConsoleError(cspConsole(BEACON_URL), [], { baseUrl: 'https://cronos.pt' })).toContain('Browser console error')
+    expect(getRequestFailureError({
+      url: BEACON_URL, method: 'GET', resourceType: 'script', errorText: 'csp',
+    }, { baseUrl: 'https://cronos.pt' })).toContain('Network request failed')
+
+    const observed = new Set([BEACON_URL])
+    const options = { baseUrl: 'https://cronos.pt', observedOptionalTelemetry: observed }
+    expect(getRequestFailureError({
+      url: BEACON_URL, method: 'GET', resourceType: 'script', errorText: 'net::ERR_FAILED',
+    }, options)).toContain('Network request failed')
+    expect(getRequestFailureError({
+      url: BEACON_URL, method: 'GET', resourceType: 'fetch', errorText: 'csp',
+    }, options)).toContain('Network request failed')
+    expect(getConsoleError({
+      type: 'error', text: 'Failed to load resource: status of 500', locationUrl: BEACON_URL,
+    }, [], options)).toContain('Browser console error')
+
+    for (const url of [
+      'https://static.cloudflareinsights.com.evil.test/beacon.min.js/v4bc70e2c01a94c73b74392e4234840661791215815920',
+      'https://user:pass@static.cloudflareinsights.com/beacon.min.js/v4bc70e2c01a94c73b74392e4234840661791215815920',
+      'https://static.cloudflareinsights.com:8443/beacon.min.js/v4bc70e2c01a94c73b74392e4234840661791215815920',
+      'http://static.cloudflareinsights.com/beacon.min.js/v4bc70e2c01a94c73b74392e4234840661791215815920',
+      'https://static.cloudflareinsights.com/other.js/v4bc70e2c01a94c73b74392e4234840661791215815920',
+      'https://static.cloudflareinsights.com/beacon.min.js/vshort',
+      'https://static.cloudflareinsights.com/beacon.min.js/4bc70e2c01a94c73b74392e4234840661791215815920',
+      'https://static.cloudflareinsights.com/beacon.min.js/v4bc70e2c01a94c73b74392e423484066179121581Z0',
+    ]) {
+      expect(isOptionalTelemetryScriptUrl(url)).toBe(false)
+    }
+  })
+
+  it('accepts the Chrome fallback-note variant but rejects appended error text', () => {
+    const observed = new Set([BEACON_URL])
+    const options = { baseUrl: 'https://cronos.pt', observedOptionalTelemetry: observed }
+    const fallback = {
+      type: 'error',
+      text: `Loading the script '${BEACON_URL}' violates the following Content Security Policy directive: "script-src 'self'". Note that 'script-src-elem' was not explicitly set, so 'script-src' is used as a fallback. The action has been blocked.`,
+      locationUrl: 'https://cronos.pt/contacto',
+    }
+    expect(getConsoleError(fallback, [], options)).toBeNull()
+    expect(getConsoleError({
+      type: 'error', text: `${fallback.text} Unauthorized`, locationUrl: 'https://cronos.pt/contacto',
+    }, [], options)).toContain('Browser console error')
+  })
+
+  it('extracts the quoted CSP script URL from the console message only', () => {
+    expect(optionalTelemetryScriptFromConsoleText(cspConsole(BEACON_URL).text)).toBe(BEACON_URL)
+    expect(optionalTelemetryScriptFromConsoleText('Uncaught TypeError: boom')).toBeNull()
+  })
+
+  it('reports a served beacon 4xx/5xx as a fail-closed error without a console message', () => {
+    const observed = new Set([BEACON_URL])
+    expect(getOptionalTelemetryResponseError({ url: BEACON_URL, status: 500 }, observed))
+      .toBe(`Optional telemetry beacon failed: 500 static.cloudflareinsights.com${BEACON_PATH}`)
+    expect(getOptionalTelemetryResponseError({ url: BEACON_URL, status: 404 }, observed)).toContain('404')
+    expect(getOptionalTelemetryResponseError({ url: BEACON_URL, status: 200 }, observed)).toBeNull()
+    expect(getOptionalTelemetryResponseError({ url: BEACON_URL, status: 500 }, new Set())).toBeNull()
+    const apiUrl = 'https://api.cronos.pt/api/v1/rooms'
+    expect(getOptionalTelemetryResponseError({ url: apiUrl, status: 500 }, new Set([apiUrl]))).toBeNull()
   })
 })
