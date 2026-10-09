@@ -1,6 +1,22 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { spawnSync } from 'node:child_process'
+import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { runInspection } from './inspect-e2e-code-sender.mjs'
+
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const CLI = join(ROOT, 'scripts', 'inspect-e2e-code-sender.mjs')
+const BASE_ENV = {
+  PATH: process.env.PATH, SystemRoot: process.env.SystemRoot, SystemDrive: process.env.SystemDrive,
+  TEMP: process.env.TEMP, TMP: process.env.TMP, PATHEXT: process.env.PATHEXT, COMSPEC: process.env.COMSPEC,
+}
+
+function runCli(overrides) {
+  const env = { ...BASE_ENV, ...overrides }
+  for (const key of Object.keys(env)) if (env[key] === undefined) delete env[key]
+  return spawnSync(process.execPath, [CLI], { cwd: ROOT, encoding: 'utf8', windowsHide: true, env })
+}
 
 const READONLY = 'https://www.googleapis.com/auth/gmail.readonly'
 const MAILBOX = 'admincronos100@gmail.com'
@@ -353,4 +369,34 @@ test('sanitizes arbitrary provider error text at every stage', async () => {
     }
     assert.equal(['oauth_refresh', 'mailbox_profile', 'message_listing', 'message_metadata'].includes(result.diagnostic.operation), true)
   }
+})
+
+test('the CLI emits one parseable JSON line and never echoes injected control input', () => {
+  const cli = runCli({
+    E2E_INSPECT_MAILBOX: 'admin\nFORGED',
+    E2E_INSPECT_PURPOSE: 'verification\r\nFORGED: injected',
+    E2E_INSPECT_RECIPIENT: 'admincronos100@gmail.com\nFORGED',
+  })
+  assert.equal(cli.status, 1)
+  assert.equal(cli.stderr, '')
+  const records = cli.stdout.split('\n').filter(line => line.length)
+  assert.equal(records.length, 1)
+  const record = JSON.parse(records[0])
+  assert.equal(record.status, 'failed')
+  assert.equal(record.reason, 'invalid_mailbox')
+  assert.equal(cli.stdout.includes('FORGED'), false)
+  assert.equal(cli.stdout.includes('\r'), false)
+})
+
+test('the CLI emits one line for a missing-credential dependency without credential text', () => {
+  const cli = runCli({ E2E_INSPECT_MAILBOX: 'admin', E2E_INSPECT_PURPOSE: 'verification' })
+  assert.equal(cli.status, 3)
+  assert.equal(cli.stderr, '')
+  const records = cli.stdout.split('\n').filter(line => line.length)
+  assert.equal(records.length, 1)
+  const record = JSON.parse(records[0])
+  assert.equal(record.status, 'dependency_unavailable')
+  assert.equal(record.reason, 'missing_credentials')
+  for (const text of ['secret', 'token', 'refresh', 'E2E_GMAIL']) assert.equal(cli.stdout.includes(text), false, text)
+  assert.equal(cli.stdout.includes('\r'), false)
 })

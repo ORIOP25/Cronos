@@ -98,6 +98,8 @@ export function inspectionExitCode(status) {
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const result = await runInspection(process.env)
-  console.log(JSON.stringify(result, null, 2))
+  // One JSON record per invocation on a single line. Any control newline that
+  // could forge a log line is removed before the sink.
+  process.stdout.write(`${JSON.stringify(result).replace(/[\r\n]/g, '')}\n`)
   process.exitCode = inspectionExitCode(result.status)
 }
