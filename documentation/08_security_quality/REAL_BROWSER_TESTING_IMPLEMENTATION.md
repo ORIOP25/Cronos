@@ -136,7 +136,7 @@ As observações de escolas, os percursos de identidade e a composição remota 
 | W10.1–3, W10.7 | Comandos `acceptance` e `prepare-history` fail-closed, workflow serializado e upload sanitizado em falha; `E2E_ACCEPTANCE_ENABLED` está `false`. | Ativar a variável e executar a campanha real com os segredos e a matriz de percursos. |
 | W10.4–6 | Registo HMAC, wrapper administrativo, exportação cifrada, erasure com bloqueio de jobs e transporte SSH separado. | Executar o wrapper remoto sobre o registo real produzido pela UI e comprovar eliminação no fornecedor. |
 | W11.1–3 | Recuperação com broker real, worker próprio terminado e supervisor real por Redis; entrega duplicada sem proposta adicional. | W11.4: repetir num ambiente Railway isolado quando a prova exigir o fornecedor. |
-| W12 | Documentação e comandos reconciliados com o comportamento comprovado; os 69 casos anotados usam agora checkpoints explícitos por caso. | Campanha completa no SHA publicado, limpeza por execução e verificação de qualidade da PR atual. |
+| W12 | Documentação e comandos reconciliados com o comportamento comprovado; os 69 casos anotados usam agora checkpoints explícitos por caso. | Campanha completa no SHA publicado, limpeza por execução e resolução da duplicação Sonar atual. |
 
 O sanitizador preserva o modo legado enquanto não ocorre o cutover.
 Nesse modo, a expectativa antiga de eliminar traces permanece ativa.
@@ -786,7 +786,7 @@ também não é resolúvel por um browser automatizado na CI.
 ## Continuação — checkpoints por caso e recuperação real do worker
 
 As secções anteriores mantêm-se como registo histórico. Esta secção descreve a continuação local atual.
-Esta continuação corre num checkout local. O diff atual ainda não foi publicado nem executado pela CI.
+No início desta continuação, o checkout era local e o diff ainda não estava publicado nem executado pela CI.
 
 O reporter usa agora checkpoints explícitos por caso, em vez de anotações automáticas.
 Historicamente, o reporter anexava uma prova por anotação de caso; essa anotação não era prova de execução.
@@ -845,12 +845,29 @@ As chaves existem nos metadados do GitHub; nenhum valor foi lido.
 A variável de repositório `E2E_ACCEPTANCE_ENABLED` está atualmente `false`, confirmada por `gh variable get`.
 O workflow de aceitação permanece inativo para o modo de campanha; a ativação anterior fica como registo cronológico.
 
-A [PR 60](https://github.com/ORIOP25/Cronos/pull/60) permanece não fundida, com head `99d752b` e a CI anterior verde.
-Todos os diffs locais continuam por publicar; será publicado um único checkpoint consolidado, ainda não publicado.
+A [PR 60](https://github.com/ORIOP25/Cronos/pull/60) permanece não fundida, com head `f651716`; o lote e o refactor de backend já foram publicados na PR.
+A extração do fixture partilhado é o último lote desta continuação. A sua publicação repete a CI e a análise Sonar; a PR 60 ainda não foi fundida.
 Numa repetição independente, os 9 casos reais do worker e os 61 contratos voltaram a passar, com limpeza 0.
+
+A `main` de produção em `c850235` mantém o bug condicional 304 até a PR 60 ser fundida.
+O `prepare-history` autenticado continua com código 3 pelo remetente, e os gates de contacto e história continuam em falta.
 W11.4 continua não certificado no Railway.
-O encaminhamento do contacto e a preparação de escolas persistentes com história elegível continuam por provar.
 Os quatro planos não estão concluídos e W09.5 permanece pendente.
+
+### Publicação do lote na PR 60, CI e Sonar
+
+O lote foi publicado na PR 60 nos commits `6a8cba3`, `a384126` e `45964cf`; o refactor de backend `f651716` também foi publicado.
+A CI de push [run 37858973615](https://github.com/ORIOP25/Cronos/actions/runs/37858973615) e a CI da PR [run 37858976734](https://github.com/ORIOP25/Cronos/actions/runs/37858976734) passaram os três jobs.
+O preview Cloudflare passou.
+O Sonar falha apenas por duplicação 3,8 > 3 no head atual `f651716`, apesar da deduplicação de backend.
+
+Um diagnóstico temporário só de leitura, [run 37862573059](https://github.com/ORIOP25/Cronos/actions/runs/37862573059), mediu a duplicação exata.
+Foram 23 linhas em `frontend/scripts/acceptance-proof.test` e 56 linhas de fixture duplicada entre `scripts/finalize-real-browser-run.test.mjs` (linha 163) e `scripts/test.test.mjs` (linha 368).
+A branch de diagnóstico foi criada e removida; nenhum gate, definição ou exclusão foi alterado, e o workflow temporário não foi fundido.
+
+Um fixture partilhado novo, `scripts/preparation-test-fixture.mjs`, tem agora dois consumidores reais e elimina as 56 linhas de fixture duplicadas.
+Os 41 testes focados e os 140 testes de infraestrutura continuaram a passar sem alterações.
+A extração é um refactor observado localmente; a sua CI continua pendente.
 
 ### Diagnóstico público parcial e correção do 304
 
@@ -865,7 +882,7 @@ A revalidação condicional seguinte devolveu 404 na mesma produção.
 O edge worker tratava `304 Not Modified` como `!ok` e servia o documento HTML 404.
 O teste local reproduziu 404 em vez de 304 antes da correção.
 Depois da correção, os 13 testes do edge worker passaram.
-Esta correção é local e não foi republicada; não se afirma causa única nem redeploy.
+A correção está publicada na PR 60, mas a `main` de produção `c850235` mantém o comportamento até à fusão; não se afirma causa única nem redeploy.
 
 ### Procedimento de verificação desta continuação
 
