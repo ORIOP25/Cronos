@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
 import { finalizeRun, verifyRunArtifacts } from './finalize-real-browser-run.mjs'
-import { verifyRegistry } from './e2e-run-registry.mjs'
-import { recoverEvidence } from './protect-test-evidence.mjs'
+import { retainPersistentSchoolFile, signRegistry, verifyRegistry } from './e2e-run-registry.mjs'
+import { protectEvidence, recoverEvidence } from './protect-test-evidence.mjs'
+import { evaluatePreparation } from './prepare-history.mjs'
+import { preparationFixture } from './preparation-test-fixture.mjs'
 import { REQUIRED_CASES } from '../frontend/e2e/utils/acceptance-policy.js'
 
 function campaign() {
@@ -69,5 +71,137 @@ test('partial diagnostics and removed raw authentication states cannot certify a
     const result = await finalizeRun(run, directory, { key, signingKey, secrets: [] })
     assert.equal(result.assessment.status, 'failed')
     await assert.rejects(readFile(join(directory, 'auth-state.json')), { code: 'ENOENT' })
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})
+
+test('a registry protection failure forbids green, keeps the primary failure and hides the raw error', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'cronos-registry-failure-'))
+  try {
+    const run = campaign()
+    run.failures = ['Primary product regression']
+    const result = await finalizeRun(run, directory, {
+      key, signingKey, secrets: [],
+      registries: [{ source: join(directory, 'missing-registry.json'), path: 'preparation/persistent-registry.json' }],
+    })
+    assert.equal(result.envelope, null)
+    assert.equal(result.run.evidence_protected, false)
+    assert.deepEqual(result.artifacts, [])
+    assert.equal(result.assessment.status, 'failed')
+    assert.ok(result.run.failures.includes('Primary product regression'))
+    assert.ok(result.run.failures.includes('Artifact finalization failed: registries'))
+    assert.equal(result.run.failures.some(message => /missing-registry|ENOENT/.test(message)), false)
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})
+
+test('a short secret that is a substring of numeric metadata keeps the report valid', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'cronos-finalize-'))
+  try {
+    await writeFile(join(directory, 'trace.zip'), 'private OTP 123456')
+    const run = campaign()
+    run.failures = ['Primary product regression']
+    run.numeric_metadata = 1234567
+    run.note = 'delivered code 123456'
+    const result = await finalizeRun(run, directory, { key, signingKey, secrets: ['123456'] })
+    assert.ok(result.envelope)
+    assert.equal(result.run.numeric_metadata, 1234567)
+    assert.equal(result.run.note, 'delivered code [REDACTED]')
+    assert.equal(result.assessment.status, 'failed')
+    assert.ok(result.assessment.failures.includes('Primary product regression'))
+    assert.equal(result.run.note.includes('123456'), false)
+    const manifest = await verifyRunArtifacts(result.envelope, directory, { key, signingKey })
+    assert.deepEqual(manifest.run, result.run)
+    assert.deepEqual(manifest.assessment, result.assessment)
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})
+
+test('registered secrets with quotes and backslashes cannot corrupt the finalizer report', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'cronos-finalize-'))
+  try {
+    await writeFile(join(directory, 'trace.zip'), 'opaque trace')
+    const run = campaign()
+    run.note = 'password a"b and path c\\d'
+    const result = await finalizeRun(run, directory, { key, signingKey, secrets: ['"', '\\', '123456'] })
+    assert.ok(result.envelope)
+    assert.equal(result.run.note, 'password a[REDACTED]b and path c[REDACTED]d')
+    assert.equal(result.assessment.status, 'validated')
+    const manifest = await verifyRunArtifacts(result.envelope, directory, { key, signingKey })
+    assert.deepEqual(manifest.run, result.run)
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})
+
+test('finalizer classifies sanitize, evidence and registry stages without echoing raw errors', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'cronos-finalize-'))
+  try {
+    await writeFile(join(directory, 'trace.zip.enc'), 'not a protected envelope')
+    const sanitized = await finalizeRun(campaign(), directory, { key, signingKey, secrets: [] })
+    assert.equal(sanitized.envelope, null)
+    assert.equal(sanitized.run.evidence_protected, false)
+    assert.ok(sanitized.run.failures.includes('Artifact finalization failed: sanitize'))
+    assert.equal(sanitized.run.failures.some(message => /envelope|base64|JSON/i.test(message)), false)
+  } finally { await rm(directory, { recursive: true, force: true }) }
+
+  const missing = await mkdtemp(join(tmpdir(), 'cronos-finalize-'))
+  try {
+    const result = await finalizeRun(campaign(), missing, { key, signingKey, secrets: [] })
+    assert.equal(result.envelope, null)
+    assert.ok(result.run.failures.includes('Artifact finalization failed: evidence'))
+    assert.equal(result.run.failures.some(message => /trace\.zip/.test(message)), false)
+  } finally { await rm(missing, { recursive: true, force: true }) }
+
+  const registry = await mkdtemp(join(tmpdir(), 'cronos-finalize-'))
+  try {
+    const result = await finalizeRun(campaign(), registry, {
+      key, signingKey, secrets: [],
+      registries: [{ source: join(registry, 'missing-registry.json'), path: 'preparation/persistent-registry.json' }],
+    })
+    assert.equal(result.envelope, null)
+    assert.ok(result.run.failures.includes('Artifact finalization failed: registries'))
+    assert.equal(result.run.failures.some(message => /missing-registry/.test(message)), false)
+  } finally { await rm(registry, { recursive: true, force: true }) }
+})
+
+test('preparation promotion signs both updated registries before the delivered manifest', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'cronos-preparation-'))
+  try {
+    const { run, registry } = preparationFixture()
+    const artifactRoot = join(directory, 'acceptance-artifacts')
+    await mkdir(join(artifactRoot, 'preparation'), { recursive: true })
+    await writeFile(join(artifactRoot, 'preparation', 'persistent-credentials.json.enc'),
+      protectEvidence(Buffer.from('private login credentials'), key, { run_id: 'run-1', path: 'preparation/persistent-credentials.json' }))
+    const persistentPath = join(directory, 'persistent-registry.json')
+    await writeFile(persistentPath, JSON.stringify(signRegistry({ schema_version: 1, run_id: 'run-1', organizations: [], history_verified: false }, signingKey)))
+    const secretPath = join(directory, 'private-secret-registry.json')
+    await writeFile(secretPath, JSON.stringify(['123456']))
+
+    const first = await finalizeRun(run, artifactRoot, { key, signingKey, secrets: ['123456'] })
+    assert.equal(evaluatePreparation(first.run, registry, first.artifacts).status, 'prepared')
+
+    await retainPersistentSchoolFile(persistentPath, signingKey, run.preparation, registry)
+    const result = await finalizeRun(run, artifactRoot, {
+      key, signingKey, secrets: ['123456'],
+      registries: [
+        { source: persistentPath, path: 'preparation/persistent-registry.json' },
+        { source: secretPath, path: 'preparation/private-secret-registry.json' },
+      ],
+    })
+    const paths = result.artifacts.map(item => item.path)
+    assert.ok(paths.includes('preparation/persistent-registry.json.enc'))
+    assert.ok(paths.includes('preparation/private-secret-registry.json.enc'))
+    assert.equal(evaluatePreparation(result.run, registry, result.artifacts).status, 'prepared')
+    const manifest = await verifyRunArtifacts(result.envelope, artifactRoot, { key, signingKey })
+    assert.deepEqual(manifest.artifacts, result.artifacts)
+    assert.equal(recoverEvidence(await readFile(join(artifactRoot, 'preparation', 'private-secret-registry.json.enc')),
+      key, { run_id: 'run-1', path: 'preparation/private-secret-registry.json' }).toString(), '["123456"]')
+
+    const secretEnvelope = join(artifactRoot, 'preparation', 'private-secret-registry.json.enc')
+    const original = await readFile(secretEnvelope)
+    await writeFile(secretEnvelope, Buffer.concat([Buffer.from('x'), original.subarray(1)]))
+    await assert.rejects(verifyRunArtifacts(result.envelope, artifactRoot, { key, signingKey }))
+    await writeFile(secretEnvelope, original)
+    await writeFile(join(artifactRoot, 'preparation', 'extra.json.enc'), original)
+    await assert.rejects(verifyRunArtifacts(result.envelope, artifactRoot, { key, signingKey }))
+    await rm(join(artifactRoot, 'preparation', 'extra.json.enc'))
+    await rm(join(artifactRoot, 'preparation', 'persistent-registry.json.enc'))
+    await assert.rejects(verifyRunArtifacts(result.envelope, artifactRoot, { key, signingKey }))
   } finally { await rm(directory, { recursive: true, force: true }) }
 })

@@ -1,4 +1,5 @@
 import { expect } from '@playwright/test'
+import { recordCheckpoint } from './acceptance-proof.js'
 import { readSchoolResource } from './ui-school.js'
 
 async function readSchoolCatalog(page) {
@@ -68,6 +69,9 @@ export async function completeAndResumeGuide(page, testInfo, runId) {
     expect(telemetry, 'The guide must remain local').toEqual([])
     await testInfo.attach('guide-resume-completion-and-isolation', {
       body: Buffer.from(JSON.stringify({ partial, completed, writes, telemetry, catalog_unchanged: true })), contentType: 'application/json',
+    })
+    await recordCheckpoint(testInfo, ['E2E-17/guide-complete-resume', 'E2E-17/tutorial-isolation'], {
+      requires: 'school', observation: { steps: 13, business_writes: writes.length, telemetry: telemetry.length },
     })
   } finally { page.off('request', observe) }
 }

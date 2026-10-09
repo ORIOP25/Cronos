@@ -1,4 +1,5 @@
 import { expect } from '@playwright/test'
+import { recordCheckpoint } from './acceptance-proof.js'
 import { validateImportedData, validateResetProtectedHistory } from './expected-results.js'
 import { readMaterializedProposal } from './ui-generation.js'
 import { readImportedData, readSchoolResource } from './ui-school.js'
@@ -91,6 +92,9 @@ export async function restartDisposableSchoolYear(page, testInfo, provenance, co
     await testInfo.attach('disposable-school-year-restart-and-period-change', {
       body: Buffer.from(JSON.stringify({ organization_id: organizationId, published, resetStatus, changed, period,
         foundation_preserved: true, original_catalog_preserved: true, writes })), contentType: 'application/json',
+    })
+    await recordCheckpoint(testInfo, ['E2E-18/school-year-change', 'E2E-18/protected-history'], {
+      requires: 'school', observation: { preserved_lessons: preservedLessons, school_year_id: published.school_year.id },
     })
   } finally { page.off('request', observe) }
 }

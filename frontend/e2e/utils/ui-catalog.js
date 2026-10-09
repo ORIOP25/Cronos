@@ -1,4 +1,5 @@
 import { expect } from '@playwright/test'
+import { recordCheckpoint } from './acceptance-proof.js'
 import { readSchoolResource } from './ui-school.js'
 
 async function submit(page, button, path, method) {
@@ -16,7 +17,7 @@ async function remove(page, button, path, confirmText = 'Confirmar') {
   await expect(page.getByRole('dialog')).toHaveCount(0)
 }
 
-export async function exerciseRoomCrud(page, runId) {
+export async function exerciseRoomCrud(page, runId, testInfo) {
   const name = `Sala Aceitação ${runId}`
   await page.goto('/rooms')
   await page.getByRole('button', { name: 'Nova Sala', exact: true }).click()
@@ -36,9 +37,14 @@ export async function exerciseRoomCrud(page, runId) {
   await remove(page, page.getByRole('button', { name: `Remover ${name} revista`, exact: true }), `rooms/${created.id}`)
   await page.reload()
   expect((await readSchoolResource(page, 'rooms/')).some(row => row.id === created.id)).toBe(false)
+  if (testInfo) {
+    await testInfo.attach('room-crud-observation', {
+      body: Buffer.from(JSON.stringify({ created_id: created.id, updated_capacity: 34, removed: true })), contentType: 'application/json',
+    })
+  }
 }
 
-export async function exerciseSubjectCrud(page, runId) {
+export async function exerciseSubjectCrud(page, runId, testInfo) {
   const name = `Disciplina Aceitação ${runId}`
   await page.goto('/subjects')
   await page.getByRole('button', { name: 'Nova Disciplina', exact: true }).click()
@@ -67,9 +73,14 @@ export async function exerciseSubjectCrud(page, runId) {
   await remove(page, page.getByRole('button', { name: `Remover ${name} revista`, exact: true }), `subjects/${created.id}`)
   await page.reload()
   expect((await readSchoolResource(page, 'subjects/')).some(row => row.id === created.id)).toBe(false)
+  if (testInfo) {
+    await testInfo.attach('subject-crud-observation', {
+      body: Buffer.from(JSON.stringify({ created_id: created.id, module_hours: 8, removed: true })), contentType: 'application/json',
+    })
+  }
 }
 
-export async function exerciseCourseAndInitialClass(page, runId, year) {
+export async function exerciseCourseAndInitialClass(page, runId, year, testInfo) {
   const name = `Curso Aceitação ${runId}`, className = 'Aceitação 10', abbreviation = `QA${runId.slice(-6).toUpperCase()}`
   await page.goto('/courses')
   await page.getByRole('button', { name: 'Novo Curso', exact: true }).click()
@@ -100,4 +111,14 @@ export async function exerciseCourseAndInitialClass(page, runId, year) {
   await page.reload()
   expect((await readSchoolResource(page, 'courses/?limit=1000')).some(row => row.id === created.id)).toBe(false)
   expect((await readSchoolResource(page, 'classes/')).some(row => row.id === classId)).toBe(false)
+  if (testInfo) {
+    await testInfo.attach('course-and-initial-class-observation', {
+      body: Buffer.from(JSON.stringify({ course_id: created.id, class_id: classId, updated_size: 31, removed: true })), contentType: 'application/json',
+    })
+    // Initial class is proven here; resource CRUD is aggregated by the caller
+    // only after the room and subject helpers actually completed.
+    await recordCheckpoint(testInfo, 'E2E-06/initial-class', {
+      requires: 'school', claim: false, observation: { class_id: classId, size: persisted.classes[0].size },
+    })
+  }
 }

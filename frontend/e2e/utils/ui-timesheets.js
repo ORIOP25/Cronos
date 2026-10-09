@@ -1,4 +1,5 @@
 import { expect } from '@playwright/test'
+import { recordCheckpoint } from './acceptance-proof.js'
 import { readSchoolResource } from './ui-school.js'
 import { openLessonRecord, openTeacherWeek } from './ui-teacher.js'
 
@@ -139,6 +140,9 @@ export async function exerciseHistoricalWeek(teacherPage, adminPage, testInfo, s
     await testInfo.attach('historical-week-submit-approve-lock-reopen', { body: Buffer.from(JSON.stringify({
       organization_id: school.local_id, before: selected, completed, submitted, approved, closed, reopened, open, progress, writes,
     })), contentType: 'application/json' })
+    await recordCheckpoint(testInfo, [
+      'E2E-12/submit-week', 'E2E-12/approve-week', 'E2E-12/closed-week-blocked', 'E2E-12/reopen-week',
+    ], { requires: 'school', observation: { week_start: selected.weekStart, registrations: registrations.length } })
   } finally {
     teacherPage.off('request', observe)
     adminPage.off('request', observe)

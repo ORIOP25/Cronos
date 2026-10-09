@@ -5,7 +5,9 @@ The [implementation record](REAL_BROWSER_TESTING_IMPLEMENTATION.md) lists which 
 This guide describes the implemented behaviour.
 
 Cronos runs backend, frontend, and end-to-end suites through one root runner.
-GitHub Actions enforces the same gates on every push and pull request.
+GitHub Actions enforces the same gates on every pull request and on every push to `main`.
+A feature branch with an open pull request runs the full pipeline once through the pull request, instead of a second identical push run.
+A branch pushed without a pull request has no automatic CI and requires an explicit manual `workflow_dispatch` checkpoint.
 
 ## Quick start
 
@@ -24,7 +26,7 @@ node scripts/test.mjs benchmark --profile fast
 node scripts/test.mjs campaign --manifest backend/tests/scheduler_lab/manifest.json
 ```
 
-The runner exposes `setup`, `doctor`, `fast`, `integration`, `e2e`, `capacity`, `capacity-smoke`, `acceptance`, `prepare-history`, `all`, `benchmark`, and `campaign`. The `e2e` command accepts `--project public|auth|app|provider|faults|capacity`. E2E starts its own stack on port `5174`.
+The runner exposes `setup`, `doctor`, `fast`, `integration`, `e2e`, `capacity`, `capacity-smoke`, `acceptance`, `prepare-history`, `diagnose-public`, `all`, `benchmark`, and `campaign`. The `e2e` command accepts `--project public|auth|app|provider|faults|capacity`. E2E starts its own stack on port `5174`.
 
 `fast` never starts Docker or installs packages. Forwarded arguments are accepted only after `--` by `fast` and `integration`, and are passed as separate process arguments. Run artefacts are written to `.test-artifacts/`.
 
@@ -80,6 +82,15 @@ The runner exits `3` while any campaign dependency is missing, and writes the mi
 The result document is `.test-artifacts/<run>/acceptance-result.json`; only `validated` for the complete matrix can certify production.
 
 The campaign is fail-closed: a failed or missing reporter, an unprotected artifact, a revision mismatch, an unfinished cleanup or a retried case cannot produce green.
+A nonzero Playwright process is signed as a failure even when a reporter still writes a passing matrix.
+The finalizer redacts the report before signing.
+Redaction walks the report structure and replaces string leaves.
+An exact numeric match becomes `[REDACTED]`; other numeric and boolean metadata stays unchanged.
+Short and six-digit secrets remain redacted; the redactor does not apply a minimum length.
+The text sanitizer keeps its strict substring replacement for artifacts.
+A finalization failure keeps the primary failure and records a fixed stage class.
+The stage classes are `keys`, `root`, `registries`, `sanitize`, `inventory`, `evidence` and `sign`.
+The finalizer never copies a raw exception message or an exception secret into the result.
 The runner invokes the administrative wrapper (`backend/scripts/cleanup_e2e_run.py`) through native Railway SSH after the browser phase.
 The wrapper consumes the dedicated `ui-run-registry.json` envelope, not the signed result manifest.
 The transport authenticates encrypted exports before accepting deletion results; unfinished cleanup fails the campaign.
@@ -98,6 +109,27 @@ Both workflow modes require the `main` ref; PRs never receive these credentials.
 The complete matrix runs only when `E2E_ACCEPTANCE_ENABLED` is `true`.
 Manual dispatch with `mode=prepare-history` permits initial preparation while that variable remains disabled.
 Both modes retain the same revision, Gmail, evidence and cleanup gates.
+The three production modes share one runner flow and one signed-result finalizer; only the plan, preflight, Playwright selection, cleanup and final assessment differ.
+An unknown mode is rejected before any effect.
+Manual dispatch with `mode=diagnose-public` runs an explicit readonly public diagnosis while the full campaign variable remains disabled.
+It selects only the four `@public-readonly` acceptance cases.
+These cover public routing and canonicals, legal documents, the public 404 and the keyboard validation with zero business writes.
+The runtime fixture refuses any extra, unannotated, identity or contact group before its body starts.
+It reuses the same Chrome `acceptance` project, reporter, run composition and finalizer.
+It verifies the five deployment components before, per group and after the run.
+It requires the Cloudflare and Railway provider tokens, the evidence and HMAC keys and the private redaction registry.
+It does not require Gmail, the production code sender, a persistent school, historical passwords or the administrative SSH key.
+It does not read mail and it does not open the administrative SSH channel, because the selected cases create no business state.
+An empty journal reports zero business targets as `not needed`.
+The run records `mode: diagnostic` with an explicit selection and both the test and production SHAs.
+The command exits zero only when the selected four cases pass on one attempt.
+It also requires valid revisions, protected evidence and an empty readonly journal.
+Missing dependencies exit three and any failure exits non-zero.
+The diagnosis reuses the full policy for the common schema, revision, timestamp, evidence path, cleanup and case-identity integrity.
+A failed full assessment can never become a passing diagnosis.
+The signed assessment always stays `incomplete`, because an incomplete diagnosis is not a production certificate.
+The workflow uploads a derived `diagnostic-assessment.json` with the mode, run id, both SHAs, selection, `certifies_production: false` and the computed status.
+The raw run report stays outside the upload allowlist.
 The real campaign still requires the two Gmail OAuth consents, the Cloudflare and Railway read tokens, the browser/admin credentials, the signed persistent registry and the protected secret registry.
 Isolated worker recovery is verified with real PostgreSQL, Redis, a real broker message and an owned Celery worker process in `backend/tests/integration/committed/test_worker_process_recovery.py`.
 
@@ -150,6 +182,49 @@ Configure the recovered persistent teacher credential as `E2E_HISTORY_TEACHER_PA
 Configure the recovered founder credential as `E2E_HISTORY_ADMIN_PASSWORD` for native historical decisions and weekly approval.
 The school starts after its actual creation day. Preparation neither backdates lessons nor certifies ended history.
 
+### Preparation finalization and recovery
+
+The preparation command protects every binary artifact before it signs the result.
+It promotes the persistent school before the final signature.
+It then encrypts the updated persistent registry and private secret registry into the artifact root.
+The final manifest includes `preparation/persistent-registry.json.enc` and `preparation/private-secret-registry.json.enc`.
+Verification accepts the delivered manifest only when both registries are present and authenticated.
+The workflow never adds files to the signed artifact root after the signature.
+The sanitizer runs after the signature and only validates the existing envelopes.
+
+The finalization runs in two stages.
+The first stage protects evidence and evaluates the preparation.
+The second stage runs after the promotion and includes both protected registries.
+The second stage starts from the first-stage assessment.
+All first-stage ineligibility and promotion failures enter the signed run before signing.
+No signed field changes after the final signature.
+A failure in either stage prevents `prepared` and preserves the primary failure.
+A promotion rejection becomes a classified failure.
+The runner still writes protected recovery output when a stage fails.
+The runner never uploads a raw registry file.
+
+Recover one protected file with the separate artifact key:
+
+```powershell
+node scripts/protect-test-evidence.mjs recover <source.enc> <output-directory> <run-id> <original-relative-path>
+```
+
+Use the original relative path without the `.enc` suffix.
+The command authenticates before writing and refuses overwrite, traversal and symbolic parents.
+For preparation, the run id is the value in `E2E_RUN_ID`.
+Recover `preparation/persistent-registry.json.enc`, `preparation/private-secret-registry.json.enc` and `preparation/persistent-credentials.json.enc`.
+Update `E2E_PERSISTENT_REGISTRY_JSON` and `E2E_SECRET_REGISTRY_JSON` from the recovered registries.
+
+Protect a raw registry only when the artifact root lacks its envelope:
+
+```powershell
+node scripts/protect-test-evidence.mjs protect <source> <destination.enc> <run-id> <relative-path>
+```
+
+The destination rejects lexical traversal and symbolic parents.
+Write the envelope into the artifact root under the same relative path.
+Do not upload a raw registry file.
+
 `E2E_HISTORY_TEACHER_PASSWORD` holds the UI login credential of the first registered persistent school's invited teacher.
 The history spec derives its dedicated alias from the signed school creation run and verifies the actual Clerk actor and organization.
 It selects an ended, unregistered lesson at the actual curricular frontier and reads exact minute balances from weekly slices.
@@ -163,8 +238,9 @@ The journal accepts only fresh dedicated aliases and preserves previous data whe
 Call the recorder immediately after account creation and before logout; teardown alone cannot recover an identity after its session ends.
 The plaintext journal stays outside the artifact upload list. The runner encrypts a recovery copy before automatic administrative cleanup.
 
-The `acceptance` project currently implements three public cases.
+The `acceptance` project currently implements five public cases, of which four are `@public-readonly`.
 They use Chrome, semantic locators and the runtime observer without programmatic authentication or business seeds.
+The fifth public case reads a delivered contact message and is excluded from the readonly diagnosis.
 All 69 case IDs are defined and discovered. The matrix still requires real execution.
 A green legacy CI run does not certify this production matrix.
 

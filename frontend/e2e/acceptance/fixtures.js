@@ -1,7 +1,9 @@
 import { test as base, expect } from '@playwright/test'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { observeAcceptanceRuntime } from '../utils/acceptance-runtime.js'
+import { observeAcceptanceActivity, observeAcceptanceRuntime } from '../utils/acceptance-runtime.js'
+import { beginProofSession, finishProofSession, noteActorObservation, notePageActivity, notePersistentSchoolObservation, noteSchoolObservation, proofArtifactRoot, publicReadonlySelection } from '../utils/acceptance-proof.js'
+import { recordGroupRevisionSnapshot } from '../utils/deployments.js'
 import { recordSecretFile, recordUiActorFile, recordUiSchoolFile, signRegistry, verifyRegistry } from '../../../scripts/e2e-run-registry.mjs'
 import { cleanupProductionCampaign } from '../../../scripts/cleanup-production-campaign.mjs'
 import { createGmailReader, deliveredMessageSecrets } from '../utils/gmail.js'
@@ -29,7 +31,7 @@ export const test = base.extend({
     if (baseURL !== 'https://cronos.pt') throw new Error('Dynamic credentials require production acceptance')
     await runFixture(value => recordSecretFile(process.env.E2E_SECRET_REGISTRY, value))
   },
-  provenance: async ({ page }, runFixture) => {
+  provenance: async ({ page }, runFixture, testInfo) => {
     await runFixture({
       async exportBeforeDeletion(testInfo, selected) {
         if (process.env.E2E_PREPARATION_REPORT) throw new Error('Preparation cannot delete its retained school')
@@ -59,6 +61,7 @@ export const test = base.extend({
         })
         if (!actor || !['admincronos100', 'professorcronos100'].some(base => actor.email === `${base}+${process.env.E2E_RUN_ID}@gmail.com`)) return
         await recordUiActorFile(process.env.E2E_RUN_REGISTRY, Buffer.from(process.env.E2E_REGISTRY_HMAC_KEY || '', 'base64'), process.env.E2E_RUN_ID, actor, new Date().toISOString())
+        noteActorObservation(testInfo)
       },
       // Call after creating the school through visible controls, using its founder's page.
       async recordCreatedSchool(type, observedPage = page) {
@@ -80,29 +83,48 @@ export const test = base.extend({
           }
         })
         await recordUiSchoolFile(process.env.E2E_RUN_REGISTRY, Buffer.from(process.env.E2E_REGISTRY_HMAC_KEY || '', 'base64'), process.env.E2E_RUN_ID, school, type, new Date().toISOString())
+        noteSchoolObservation(testInfo)
+      },
+      // Observe an already signed persistent school through the live UI session.
+      // It grants provenance only and never writes the actor as a fresh record.
+      async observePersistentSchool(school, observedPage = page) {
+        const observed = await observedPage.evaluate(() => ({
+          actor_id: window.Clerk?.user?.id ?? null,
+          organization_id: window.Clerk?.organization?.id ?? null,
+        }))
+        if (!notePersistentSchoolObservation(testInfo, school, observed)) {
+          throw new Error('Persistent school observation does not match the signed actor and active organization')
+        }
       },
     })
   },
   runtime: [async ({ page, provenance }, runFixture, testInfo) => {
     if (process.env.BASE_URL !== 'https://cronos.pt') throw new Error('Acceptance requires exactly https://cronos.pt')
+    // W10.1: under the readonly public diagnosis, refuse an extra, unannotated,
+    // identity or contact group before its body can send mail or write state.
+    const selection = publicReadonlySelection({ mode: process.env.CAMPAIGN_MODE, annotations: testInfo.annotations })
+    if (!selection.ok) throw new Error(selection.reason)
+    // Evidence paths are relative to the reporter's artifact root (the configured project output dir).
+    beginProofSession(testInfo, proofArtifactRoot(testInfo))
+    observeAcceptanceActivity(() => notePageActivity(testInfo))
     const runtime = observeAcceptanceRuntime(page)
     try {
+      // W04.6: a publication during the campaign invalidates the previous
+      // revision. Verify the live production revision and materialize its proof
+      // before this group body starts.
+      await recordGroupRevisionSnapshot(testInfo, process.env)
       await runFixture(runtime)
       await page.waitForLoadState('load')
       await provenance.recordCurrentActor()
-      const identifiers = testInfo.annotations.filter(item => item.type === 'acceptance-case').map(item => item.description)
       const screenshot = testInfo.outputPath('browser-evidence.png')
       await page.screenshot({ path: screenshot, fullPage: true, mask: [page.locator('input, textarea')] })
       await testInfo.attach('browser-evidence', { path: screenshot, contentType: 'image/png' })
-      const eligible = testInfo.status === 'passed' && runtime.errors.length === 0
-      for (const caseId of identifiers) {
-        await testInfo.attach('acceptance-proof', {
-          body: Buffer.from(JSON.stringify({ case_id: caseId, eligible, ui_provenance: true })),
-          contentType: 'application/json',
-        })
-      }
       expect(runtime.errors, 'Unanticipated browser runtime failures').toEqual([])
-    } finally { runtime.dispose() }
+    } finally {
+      observeAcceptanceActivity(null)
+      runtime.dispose()
+      finishProofSession(testInfo)
+    }
   }, { auto: true }],
 })
 

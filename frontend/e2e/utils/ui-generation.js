@@ -3,6 +3,7 @@ import { writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { expect } from '@playwright/test'
+import { recordCheckpoint } from './acceptance-proof.js'
 import { readSchoolResource } from './ui-school.js'
 import { canonicalProposalLessons, canonicalSchoolCalendar, schoolDateRange } from './expected-results.js'
 
@@ -47,7 +48,11 @@ export async function verifyFirstProposalAndApprove(page, testInfo, generated, o
   expect(report.required_minutes).toBe(requiredMinutes)
   expect(report.planned_minutes).toBe(requiredMinutes)
   await testInfo.attach('observed-calendar-and-availability', { body: Buffer.from(JSON.stringify(observed)), contentType: 'application/json' })
-  return { ...await approveVerifiedProposal(page, generated), report }
+  const approved = await approveVerifiedProposal(page, generated)
+  await recordCheckpoint(testInfo, [
+    'E2E-08/complete-coverage', 'E2E-08/hard-constraints', 'E2E-09/approve-proposal',
+  ], { requires: 'school', observation: { proposal_id: generated.proposal.proposal_id, planned_minutes: report.planned_minutes } })
+  return { ...approved, report }
 }
 
 export async function validateMaterializedSchedule(testInfo, snapshot, label) {
@@ -110,10 +115,13 @@ export async function rejectUnpublishedProposal(page, testInfo, generated) {
   await testInfo.attach('rejected-proposal-without-publication-or-reroll', {
     body: Buffer.from(JSON.stringify({ before, decision, after })), contentType: 'application/json',
   })
+  await recordCheckpoint(testInfo, 'E2E-09/reject-proposal', {
+    requires: 'school', observation: { proposal_id: generated.proposal.proposal_id, status: decision.status },
+  })
   return after
 }
 
-export async function generateProposal(page, testInfo, original, imported, { repair = false } = {}) {
+export async function generateProposal(page, testInfo, original, imported, { repair = false, checkpoint = true } = {}) {
   await page.goto('/schedules')
   await page.reload()
   const bases = await readSchoolResource(page, 'readiness/bases')
@@ -167,6 +175,11 @@ export async function generateProposal(page, testInfo, original, imported, { rep
   const materialized = await readMaterializedProposal(page, proposal.proposal_id, status.school_year, original, imported)
   await testInfo.attach('materialized-proposal-lessons', { body: Buffer.from(JSON.stringify(materialized)), contentType: 'application/json' })
   await testInfo.attach('generation-job-and-proposal', { body: Buffer.from(JSON.stringify({ bases, prevalidation, job, proposal })), contentType: 'application/json' })
+  if (checkpoint) {
+    await recordCheckpoint(testInfo, ['E2E-08/generation-confirmation', 'E2E-08/terminal-job'], {
+      requires: 'school', observation: { job_id: job.id, job_status: job.status, proposal_id: proposal.proposal_id },
+    })
+  }
   // Full independent coverage and constraints must be checked before any approval.
   return { job, proposal, status, ...materialized }
 }

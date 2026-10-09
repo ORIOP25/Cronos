@@ -1,5 +1,5 @@
 import { act } from 'react'
-import { screen } from '@testing-library/react'
+import { screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
 import { toast } from 'react-hot-toast'
 import App from '../App'
@@ -9,6 +9,14 @@ import { resetClerkState, setClerkState } from './setup'
 
 vi.mock('../components/DefaultLayout', () => ({
   default: ({ children }) => children,
+}))
+
+// The feedback contract lives in App's storage-scope cleanup. The public
+// marketing layout is unrelated and pulls in head metadata plus the signed-in
+// redirect (and its member query). Isolate it so this fixture exercises only
+// the feedback boundary.
+vi.mock('../features/marketing/components/layout/MarketingLayout', () => ({
+  default: () => null,
 }))
 
 describe('feedback context boundaries', () => {
@@ -23,10 +31,11 @@ describe('feedback context boundaries', () => {
   it('removes messages from the previous organization when the context changes', async () => {
     setClerkState({ isSignedIn: true, userId: 'user_a', orgId: 1 })
     window.history.replaceState({}, '', '/')
-    const { rerender } = renderWithProviders(<App />, { withToaster: true })
+    const { rerender, container } = renderWithProviders(<App />, { withToaster: true })
 
     act(() => { toast.success('Mensagem da organização anterior.') })
     expect(await screen.findByText('Mensagem da organização anterior.')).toBeInTheDocument()
+    await waitFor(() => expect(container.querySelector('.spinner-border')).not.toBeInTheDocument())
 
     act(() => { setClerkState({ orgId: 2 }) })
     rerender(<App />)

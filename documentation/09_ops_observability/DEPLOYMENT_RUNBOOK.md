@@ -84,6 +84,8 @@ Cloudflare Pages uses `public/_worker.js` to route public, application, and stat
 Asset lookups remove query parameters before calling the Pages asset binding.
 Versioned image URLs therefore resolve the same physical files.
 The browser keeps the original URL and its query parameters.
+Conditional requests with `If-None-Match` or `If-Modified-Since` keep the `304 Not Modified` status and its validators for existing public pages and static assets.
+Missing files still return `404` with `Cache-Control: no-store`.
 Unknown HTML routes fetch the canonical `/404` asset and preserve the HTTP `404` status.
 Fetching `/404.html` can return an empty canonical redirect. Never re-label that redirect as a `404` response.
 Test every client route on the hosting provider before domain cutover.

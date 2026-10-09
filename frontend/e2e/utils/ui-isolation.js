@@ -1,5 +1,6 @@
 import { expect } from '@playwright/test'
 import { readFile } from 'node:fs/promises'
+import { recordCheckpoint } from './acceptance-proof.js'
 import { validateImportedData } from './expected-results.js'
 import { completeFoundation, futureSchoolPeriod, importOriginalData, readImportedData, readSchoolResource } from './ui-school.js'
 
@@ -153,8 +154,8 @@ export async function exerciseSchoolIsolation(page, testInfo, provenance, origin
   expect(second.name).toBe(secondName)
   expect(second.clerk_id).not.toBe(first.clerk_id)
   const period = futureSchoolPeriod()
-  await completeFoundation(page, period)
-  await importOriginalData(page, testInfo)
+  await completeFoundation(page, period, testInfo, { checkpoint: false })
+  await importOriginalData(page, testInfo, { checkpoint: false })
   const secondCatalog = await readImportedData(page)
   second.local_id = secondCatalog.organization_id
   expect(second.local_id).not.toBe(first.local_id)
@@ -189,4 +190,8 @@ export async function exerciseSchoolIsolation(page, testInfo, provenance, origin
     body: Buffer.from(JSON.stringify({ first, second, firstSettings, secondSettings, resource_ids_disjoint: true,
       full_original_data_in_both_schools: true, switches: [first.local_id, second.local_id, first.local_id] })), contentType: 'application/json',
   })
+  await recordCheckpoint(testInfo, [
+    'E2E-14/distinct-schools', 'E2E-14/switch-without-cache-leak', 'E2E-14/stale-feedback-blocked',
+    'E2E-18/disposable-school-deletion',
+  ], { requires: 'school', observation: { first: first.local_id, second: second.local_id } })
 }

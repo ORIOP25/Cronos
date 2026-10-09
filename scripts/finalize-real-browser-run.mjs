@@ -4,7 +4,7 @@ import { extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { evaluateAcceptance } from '../frontend/e2e/utils/acceptance-policy.js'
 import { signRegistry, verifyRegistry } from './e2e-run-registry.mjs'
-import { recoverEvidence } from './protect-test-evidence.mjs'
+import { protectEvidenceFile, recoverEvidence } from './protect-test-evidence.mjs'
 import { redactSecrets, sanitizeDirectory, TEXT_EXTENSIONS } from './sanitize-test-artifacts.mjs'
 
 async function confinedRoot(directory) {
@@ -34,19 +34,39 @@ async function inventory(directory, protection, prefix = '') {
   return artifacts.sort((left, right) => left.path < right.path ? -1 : left.path > right.path ? 1 : 0)
 }
 
-export async function finalizeRun(input, artifactRoot, { key, signingKey, secrets }) {
+function redactReport(value, secrets) {
+  if (typeof value === 'string') return redactSecrets(value, secrets)
+  if (typeof value === 'number') return secrets.includes(String(value)) ? '[REDACTED]' : value
+  if (Array.isArray(value)) return value.map(item => redactReport(item, secrets))
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([name, item]) => [name, redactReport(item, secrets)]))
+  }
+  return value
+}
+
+export async function finalizeRun(input, artifactRoot, { key, signingKey, secrets, registries = [] }) {
   if (!Array.isArray(secrets)) throw new Error('Explicit dynamic secret registry required')
-  const run = JSON.parse(redactSecrets(JSON.stringify(input), secrets))
+  if (!Array.isArray(registries)) throw new Error('Registries must be an array')
+  const run = JSON.parse(JSON.stringify(redactReport(input, secrets)))
   run.failures = [...(run.failures || [])]
   run.evidence_protected = false
   let artifacts = []
   let envelope = null
+  let stage = 'keys'
   try {
     if (!Buffer.isBuffer(signingKey) || signingKey.length !== 32) throw new Error('Invalid manifest signing key')
+    stage = 'root'
     await confinedRoot(artifactRoot)
     const protection = { key, runId: run.run_id }
+    stage = 'registries'
+    for (const registry of registries) {
+      await protectEvidenceFile(registry?.source, join(artifactRoot, `${registry?.path}.enc`), key, { run_id: run.run_id, path: registry?.path })
+    }
+    stage = 'sanitize'
     await sanitizeDirectory(artifactRoot, secrets, protection)
+    stage = 'inventory'
     artifacts = await inventory(artifactRoot, protection)
+    stage = 'evidence'
     const files = new Set(artifacts.map(item => item.path))
     for (const item of run.cases || []) {
       item.evidence = (item.evidence || []).map(path => {
@@ -58,10 +78,12 @@ export async function finalizeRun(input, artifactRoot, { key, signingKey, secret
     }
     run.evidence_protected = true
     const assessment = evaluateAcceptance(run)
+    stage = 'sign'
     envelope = signRegistry({ schema_version: 1, run, assessment, artifacts }, signingKey)
     return { run, assessment, artifacts, envelope }
   } catch {
-    run.failures.push('Artifact protection or evidence verification failed')
+    run.evidence_protected = false
+    run.failures.push(`Artifact finalization failed: ${stage}`)
     return { run, assessment: evaluateAcceptance(run), artifacts: [], envelope }
   }
 }

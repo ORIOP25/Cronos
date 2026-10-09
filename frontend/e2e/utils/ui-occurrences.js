@@ -1,4 +1,5 @@
 import { expect } from '@playwright/test'
+import { recordCheckpoint } from './acceptance-proof.js'
 import { readSchoolResource } from './ui-school.js'
 import { openLessonRecord, openTeacherWeek } from './ui-teacher.js'
 import { validateExecutedLessonCredit } from './expected-results.js'
@@ -88,6 +89,7 @@ export async function exerciseEndedGiven(teacherPage, adminPage, testInfo, schoo
     expect(writes).toEqual([{ method: 'PUT', path: `/api/v1/schedule/lessons/${slot.scheduler_lesson_id}/log` },
       { method: 'PATCH', path: `/api/v1/${path}` }, { method: 'PATCH', path: `/api/v1/${path}` }])
     await testInfo.attach('ended-given-decision-and-idempotent-credit', { body: Buffer.from(JSON.stringify({ slot, pendingRow, pending, given, after, exact_minutes: minutes, beforeProgress, afterProgress, beforeDebt, writes })), contentType: 'application/json' })
+    await recordCheckpoint(testInfo, 'E2E-11/given-decision', { requires: 'school', observation: { occurrence_id: pending.id, exact_minutes: minutes } })
   } finally {
     teacherPage.off('request', observe)
     adminPage.off('request', observe)
@@ -232,6 +234,9 @@ export async function exerciseEndedSubstitution(teacherPage, adminPage, testInfo
     await testInfo.attach('ended-substitute-credit-and-explicit-compensation', {
       body: Buffer.from(JSON.stringify({ slot, pending, candidate, substituted, debt, reserved, completed, logged, revoked,
         beforeClass, reservedClass, completedClass, substituteBefore, afterWeek, creditEvidence, credited, beforeProgress, originalReservedProgress, writes })), contentType: 'application/json',
+    })
+    await recordCheckpoint(testInfo, ['E2E-11/ended-substitution-credit', 'E2E-11/reversal-compensations'], {
+      requires: 'school', observation: { occurrence_id: pending.id, substitute_block_id: substituted.substitute_block_id },
     })
   } finally {
     teacherPage.off('request', observe)
@@ -454,6 +459,9 @@ export async function exercisePendingOccurrenceAndGap(teacherPage, adminPage, te
     expect(await readSchoolResource(adminPage, reservation.weekPath)).toEqual(reservation.beforeWeek)
     expect(writes).toEqual([{ method: 'PUT', path: logPath }, { method: 'PATCH', path: `/api/v1/${path}` }, { method: 'PATCH', path: `/api/v1/${path}` }, { method: 'POST', path: `/api/v1/${path}/cancel` }])
     await testInfo.attach('future-occurrence-decisions-reservation-and-real-session-conflict', { body: Buffer.from(JSON.stringify({ slot, before, pending, gap, debt, conflict, reservation, revoked, writes })), contentType: 'application/json' })
+    await recordCheckpoint(testInfo, [
+      'E2E-11/pending-zero-credit', 'E2E-11/gap-debt', 'E2E-11/planned-substitution-reservation', 'E2E-11/stale-version',
+    ], { requires: 'school', observation: { occurrence_id: pending.id, conflict_status: conflict.status } })
     return { slot, revoked }
   } finally {
     teacherPage.off('request', observe)

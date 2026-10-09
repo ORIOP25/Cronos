@@ -163,7 +163,11 @@ async function handleRequest(request, env) {
 
   const assetResponse = await fetchAsset(env, request, pathname)
   const isPublicRoute = PUBLIC_ROUTES.has(pathname)
-  if (assetResponse.ok && (isPublicRoute || isStaticAssetPath(pathname))) {
+  // A conditional revalidation (`If-None-Match`/`If-Modified-Since`) legitimately
+  // yields 304, which is not `ok`. Pass it through for real route/asset paths so
+  // clients keep their cached bytes instead of receiving the HTML 404 document.
+  const assetServed = assetResponse.ok || assetResponse.status === 304
+  if (assetServed && (isPublicRoute || isStaticAssetPath(pathname))) {
     return withWorkerHeaders(assetResponse, {
       cacheControl: isPublicRoute ? CACHE_CONTROL.noStore : assetCacheControl(pathname),
     }, method)
