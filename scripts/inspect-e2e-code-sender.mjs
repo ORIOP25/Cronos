@@ -58,16 +58,35 @@ export async function inspectCodeSender(config, { fetchImpl = fetch, maxPages, d
   }
 }
 
+const SAFE_OPERATIONS = new Set(['oauth_refresh', 'mailbox_profile', 'message_listing', 'message_metadata'])
+const SAFE_CODES = new Set([
+  'invalid_grant', 'invalid_client', 'unauthorized_client', 'access_denied',
+  'invalid_readonly_scope', 'mailbox_mismatch', 'http_error', 'network_error', 'invalid_json',
+])
+const SAFE_REASONS = new Set(['oauth_error', 'http', 'network', 'invalid_json', 'scope_mismatch', 'profile_mismatch'])
+
+// Keep only known enums and a bounded status. An unknown error never exposes
+// its message, body, scopes, URLs or identifiers.
+function safeDiagnostic(error) {
+  const httpStatus = Number.isInteger(error?.httpStatus) && error.httpStatus >= 100 && error.httpStatus <= 599 ? error.httpStatus : null
+  return {
+    operation: SAFE_OPERATIONS.has(error?.operation) ? error.operation : null,
+    code: SAFE_CODES.has(error?.code) ? error.code : 'unknown_error',
+    http_status: httpStatus,
+    reason: SAFE_REASONS.has(error?.reason) ? error.reason : null,
+  }
+}
+
 // A safe, secret-free result. Provider and credential failures collapse to a
-// fixed status because raw Gmail errors may carry sensitive detail.
+// fixed status with a structured, enum-only diagnostic.
 export async function runInspection(environment, options = {}) {
   const base = { certifies_production: false }
   const config = inspectionConfig(environment, options.now)
   if (config.status) return { ...base, status: config.status, reason: config.reason }
   try {
     return await inspectCodeSender(config, options)
-  } catch {
-    return { ...base, status: 'dependency_unavailable', reason: 'gmail_unavailable', mailbox: config.role, purpose: config.purpose }
+  } catch (error) {
+    return { ...base, status: 'dependency_unavailable', reason: 'gmail_unavailable', mailbox: config.role, purpose: config.purpose, diagnostic: safeDiagnostic(error) }
   }
 }
 
@@ -79,6 +98,8 @@ export function inspectionExitCode(status) {
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const result = await runInspection(process.env)
-  console.log(JSON.stringify(result, null, 2))
+  // One JSON record per invocation on a single line. Any control newline that
+  // could forge a log line is removed before the sink.
+  process.stdout.write(`${JSON.stringify(result).replace(/[\r\n]/g, '')}\n`)
   process.exitCode = inspectionExitCode(result.status)
 }
