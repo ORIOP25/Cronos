@@ -17,8 +17,8 @@ Conferir persistência após recarregar ou abrir nova sessão.
 Os documentos anteriores não estavam no checkout nem no histórico Git consultado.
 Esta revisão repõe o PRD e os quatro planos a partir das decisões desta conversa.
 As correções de produto existentes são componentes reutilizáveis.
-A aceitação em produção permanece por implementar.
-Configuração de Gmail, Clerk, Cloudflare e Railway permanece por verificar.
+A aceitação em produção permanece por completar.
+Gmail readonly, Cloudflare e Railway foram observados; o remetente do código Clerk continua por observar.
 Não assumir que uma escola atual pertence aos testes.
 
 ## Âmbito e decisões
@@ -189,5 +189,6 @@ Acompanhar cada push até a CI terminar; corrigir falhas de código e repetir a 
 
 Não declarar conclusão sem matriz completa, versão comprovada, dados elegíveis e limpeza limitada.
 O [índice WBS](REAL_BROWSER_TESTING_WBS.md) distribui as 80 tarefas em quatro partes.
+Esse índice inclui a [reconciliação W12.4](REAL_BROWSER_TESTING_WBS.md#reconciliação-w124).
 O [guia atual](TESTING_AND_CI.md) descreve o funcionamento existente até ao cutover.
 Consultar [configuração escolar](../02_domain_model/SCHOOL_CONFIGURATION.md), [scheduler](../03_scheduler_engine/README.md) e [ocorrências](../04_operational_features/OCCURRENCES_AND_SUBSTITUTIONS.md).

@@ -172,6 +172,7 @@ Não publicar storage state ou binários brutos.
 Registar tarefa, commit, ficheiros, RED, GREEN e referências das provas.
 Usar `PENDENTE`, `EM_CURSO`, `CONCLUÍDO` ou `DEPENDÊNCIA`.
 Concluir apenas quando DONE estiver comprovado.
+Consultar também a [reconciliação W12.4](REAL_BROWSER_TESTING_WBS.md#reconciliação-w124).
 
 Uma falha de fornecedor ou falta de histórico não é RED de uma regra do produto.
 Não reduzir critérios nem usar retries para apagar uma falha.

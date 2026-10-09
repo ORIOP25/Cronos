@@ -42,7 +42,7 @@ const COURSE_ROUTE_PATTERNS = [
 ]
 
 const SECURITY_HEADERS = {
-  'Content-Security-Policy': "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' https://clerk.cronos.pt https://challenges.cloudflare.com https://*.protect.clerk.com; connect-src 'self' https://api.cronos.pt https://clerk.cronos.pt https://*.protect.clerk.com https://challenges.cloudflare.com; img-src 'self' data: https://img.clerk.com; font-src 'self' data:; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:; frame-src 'self' https://challenges.cloudflare.com https://*.protect.clerk.com; upgrade-insecure-requests",
+  'Content-Security-Policy': "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' https://clerk.cronos.pt https://challenges.cloudflare.com https://*.protect.clerk.com; connect-src 'self' https://api.cronos.pt https://clerk.cronos.pt https://*.protect.clerk.com:* https://challenges.cloudflare.com; img-src 'self' data: https://img.clerk.com; font-src 'self' data:; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:; frame-src 'self' https://challenges.cloudflare.com https://*.protect.clerk.com; upgrade-insecure-requests",
   'X-Frame-Options': 'DENY',
   'X-Content-Type-Options': 'nosniff',
   'Referrer-Policy': 'strict-origin-when-cross-origin',

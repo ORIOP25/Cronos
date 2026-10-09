@@ -3,12 +3,14 @@
 Revisão: 2026-10-07. Versão: 2.0.
 Main revista: `91a9d28bcb9c9a829a8578872156a6b90fa04bcf`.
 A main remota e o checkout tinham a mesma revisão durante a inspeção.
+Reconciliação W12.4: 2026-10-09. Estado do W12: em curso. Consulte a [reconciliação das 80 tarefas](#reconciliação-w124).
 
 ## Objetivo e leitor
 
 Coordenar a implementação do [PRD](REAL_BROWSER_TESTING_PLAN.md) em quatro partes menores.
 Destina-se ao proprietário e aos implementadores.
 Manter o âmbito aceite e os 80 IDs originais.
+Reconciliar o estado observado sem remover gates aceites nem aumentar o âmbito.
 Os IDs W00–W12 pertencem à iniciativa de testes, não ao WBS entregue do scheduler.
 
 ## Pré-requisitos e recuperação dos documentos
@@ -45,8 +47,9 @@ Preservar alterações externas, incluindo o relatório de revalidação já exi
 | Relatório de capacity-smoke publicado em falha | 1415ecd, 4d493e7 | Reutilizar diagnóstico; não o contar como aceitação humana. |
 
 Funcionalidades implementadas não significam tarefas de aceitação concluídas.
-O runner ainda usa Compose, chaves de teste, `clerk.signIn` e estado preparado.
-Gmail, revisão frontend, proteção de binários e limpeza por execução continuam por implementar/verificar.
+O runner local `e2e` ainda usa Compose, chaves de teste e `clerk.signIn` até ao cutover.
+Gmail readonly, revisão do frontend, proteção de binários e limpeza por execução estão implementados no registo atual.
+A aceitação real continua bloqueada. Ver a [reconciliação W12.4](#reconciliação-w124).
 
 ## Baseline e componentes
 
@@ -165,10 +168,11 @@ Não reduzir critérios para cumprir uma data de entrada de clientes.
 
 ## Estados, falhas e riscos
 
-Implementação e aceitação permanecem pendentes.
+A implementação avança por pacote; a aceitação real permanece pendente.
 Esta revisão regista inspeção de código e uma seleção de testes locais.
-Não marca Gmail, fornecedores ou histórico como configurados.
+Não marca Gmail, fornecedores, histórico ou campanha como concluídos.
 Classificar bloqueios de autenticação, email, calendário, deployments, artefactos e limpeza explicitamente.
+Ver a [reconciliação W12.4](#reconciliação-w124).
 Falhas reais dos fornecedores impedem aceitação verde.
 
 ## Verificação realizada nesta revisão
@@ -186,6 +190,218 @@ node scripts/test.mjs fast --scope frontend -- src/test/foundationModel.test.js 
 
 Não foram executados testes backend de dados, campanhas completas ou E2E em produção nesta revisão.
 Os [comandos comuns](REAL_BROWSER_TESTING_WBS_PART_4_CLEANUP_AND_CI.md#comandos-e-checks-comuns) definem a verificação durante a implementação.
+
+## Reconciliação W12.4
+
+Reconciliação: 2026-10-09.
+Base de implementação: PR 66, fundida na `main` como `804a2dd`.
+O equivalente local desta revisão é `b11a04c`.
+O [registo de implementação](REAL_BROWSER_TESTING_IMPLEMENTATION.md) é a fonte principal.
+
+Esta secção reconcilia as 80 tarefas W00–W12 com o estado observado.
+Separa a implementação de código da aceitação real.
+Nenhum percurso de negócio tem estado `validated`.
+
+Veredicto global: uma estimativa global de progresso, cerca de 60%.
+Não é uma percentagem de código implementado nem uma auditoria por pesos.
+Os 69 IDs de caso estão definidos na fonte, não 69 validados.
+A certificação completa de produção permanece zero.
+Quatro casos públicos `@public-readonly` passaram numa execução real.
+Os restantes percursos dependem de fornecedores e de história real.
+
+A certificação dos 69 casos depende de calendário real e de fornecedores externos.
+Esse bloqueio não impede a entrega do código nem a revisão documental.
+
+Base histórica e estado atual:
+
+| Momento | Revisão | Observação |
+| :--- | :--- | :--- |
+| Histórico | `91a9d28` | Baseline dos quatro planos; o runner local usava Compose, chaves de teste e `clerk.signIn`. |
+| Atual | `804a2dd` | Infraestrutura de aceitação implementada; comandos novos coexistem com o legado até ao cutover. |
+
+A tabela não contradiz o registo histórico; marca a evolução.
+
+Estados das duas colunas:
+
+- `CONCLUÍDO`: código e testes nativos verificados, ou percurso real validado.
+- `EM_CURSO`: trabalho parcial observado.
+- `DEPENDÊNCIA`: bloqueado por fornecedor, calendário ou histórico em falta.
+- `PENDENTE`: não iniciado.
+- `N/A`: pré-requisito sem percurso humano próprio.
+
+Marcadores de evidência:
+
+- `[M]` [Registo de implementação](REAL_BROWSER_TESTING_IMPLEMENTATION.md)
+- `[P]` [acceptance-policy.js](../../frontend/e2e/utils/acceptance-policy.js)
+- `[R]` [acceptance-reporter.js](../../frontend/e2e/acceptance-reporter.js)
+- `[G]` [gmail.js](../../frontend/e2e/utils/gmail.js)
+- `[E]` [protect-test-evidence.mjs](../../scripts/protect-test-evidence.mjs)
+- `[F]` [finalize-real-browser-run.mjs](../../scripts/finalize-real-browser-run.mjs)
+- `[D]` [deployments.js](../../frontend/e2e/utils/deployments.js)
+- `[K]` [write-build-revision.mjs](../../frontend/scripts/write-build-revision.mjs)
+- `[S]` [validate-e2e-schedule.py](../../scripts/validate-e2e-schedule.py)
+- `[I]` [inspect-e2e-data.py](../../scripts/inspect-e2e-data.py)
+- `[C]` [cleanup_e2e_run.py](../../backend/scripts/cleanup_e2e_run.py)
+- `[W]` [test_worker_process_recovery.py](../../backend/tests/integration/committed/test_worker_process_recovery.py)
+- `[Y]` [acceptance.yml](../../.github/workflows/acceptance.yml)
+- `[B]` [public.spec.js](../../frontend/e2e/acceptance/public.spec.js)
+- `[Id]` [identity.spec.js](../../frontend/e2e/acceptance/identity.spec.js)
+- `[H]` [history.spec.js](../../frontend/e2e/acceptance/history.spec.js)
+- `[Uc]` [ui-identity-campaign.js](../../frontend/e2e/utils/ui-identity-campaign.js)
+- `[U]` [ui-school.js](../../frontend/e2e/utils/ui-school.js)
+- `[V]` [expected-results.js](../../frontend/e2e/utils/expected-results.js)
+- `[O]` [test_scheduler_v1_occurrences.py](../../backend/tests/integration/committed/test_scheduler_v1_occurrences.py)
+- `[T]` [test_timesheets_v1.py](../../backend/tests/integration/committed/test_timesheets_v1.py)
+
+Execuções citadas:
+
+- [run 37951385146](https://github.com/ORIOP25/Cronos/actions/runs/37951385146): diagnóstico público; quatro casos readonly passaram.
+- [run 37985882509](https://github.com/ORIOP25/Cronos/actions/runs/37985882509): CI da `main` após a PR 65.
+- [run 37985892978](https://github.com/ORIOP25/Cronos/actions/runs/37985892978): listagem Gmail devolveu `invalid_json` (histórico, já corrigido).
+- [run 37988240397](https://github.com/ORIOP25/Cronos/actions/runs/37988240397): CI da `main` após a PR 66.
+- [run 37988249779](https://github.com/ORIOP25/Cronos/actions/runs/37988249779): verificação admin; `no_messages`.
+- [run 37988345512](https://github.com/ORIOP25/Cronos/actions/runs/37988345512): verificação teacher; `no_messages`.
+- [run 37988345830](https://github.com/ORIOP25/Cronos/actions/runs/37988345830): reset teacher; `no_messages`.
+
+[run 37951385146]: https://github.com/ORIOP25/Cronos/actions/runs/37951385146
+[run 37985882509]: https://github.com/ORIOP25/Cronos/actions/runs/37985882509
+[run 37985892978]: https://github.com/ORIOP25/Cronos/actions/runs/37985892978
+[run 37988240397]: https://github.com/ORIOP25/Cronos/actions/runs/37988240397
+[run 37988249779]: https://github.com/ORIOP25/Cronos/actions/runs/37988249779
+[run 37988345512]: https://github.com/ORIOP25/Cronos/actions/runs/37988345512
+[run 37988345830]: https://github.com/ORIOP25/Cronos/actions/runs/37988345830
+
+### Parte 1 — W00–W03
+
+| ID | Implementação | Aceitação real | Evidência e fronteira |
+| :--- | :--- | :--- | :--- |
+| W00.1 | CONCLUÍDO | N/A | Baseline registada; [M]. |
+| W00.2 | CONCLUÍDO | N/A | [P] mapeia E2E-01–18 em 69 IDs de caso. |
+| W00.3 | EM_CURSO | N/A | Classificação em curso; Knip na CI; remoção em W09. |
+| W00.4 | EM_CURSO | DEPENDÊNCIA | Gmail readonly, Cloudflare e Railway observados; remetente Clerk e encaminhamento Hostinger não observados. |
+| W01.1 | CONCLUÍDO | N/A | Manifesto dos cinco CSV e `.gitattributes`; [M]. |
+| W01.2 | CONCLUÍDO | N/A | [I] usa `csv` e `Decimal`. |
+| W01.3 | CONCLUÍDO | N/A | 48 salas, 40 professores, 52 disciplinas, 208 módulos, 48 turmas, 16 cursos e 336 atribuições; [I]. |
+| W01.4 | CONCLUÍDO | N/A | [P] exige `https://cronos.pt` e SHA completo. |
+| W01.5 | CONCLUÍDO | N/A | Validação pura separada da composição; [P]. |
+| W02.1 | CONCLUÍDO | N/A | Cliente OAuth Desktop readonly; quatro secrets; [M]. |
+| W02.2 | CONCLUÍDO | N/A | PKCE e callback loopback; [M]. |
+| W02.3 | CONCLUÍDO | CONCLUÍDO | Renovação e perfil das duas caixas observados; a listagem passou com `no_messages` em [run 37988249779] e [run 37988345512]. A entrega W02.4–6 continua pendente. |
+| W02.4 | CONCLUÍDO | DEPENDÊNCIA | Leitor de mensagem implementado; nenhuma mensagem do remetente observada. |
+| W02.5 | CONCLUÍDO | DEPENDÊNCIA | Parser MIME e testes Gmail; sem prova real de remetente. |
+| W02.6 | CONCLUÍDO | DEPENDÊNCIA | Validação de ligações; [G]. |
+| W03.1 | CONCLUÍDO | N/A | [P] agrega IDs, elegibilidade e proveniência. |
+| W03.2 | CONCLUÍDO | N/A | Resultado estruturado e código não zero; [R]. |
+| W03.3 | CONCLUÍDO | N/A | Redação de segredos; [F]. |
+| W03.4 | CONCLUÍDO | N/A | AES-256-GCM e mascaramento; [E]. |
+| W03.5 | CONCLUÍDO | N/A | Recuperação íntegra e confinamento; [E]. |
+| W03.6 | CONCLUÍDO | N/A | Falha primária preservada; [F]. |
+| W03.7 | CONCLUÍDO | EM_CURSO | Quatro casos públicos readonly passaram; [run 37951385146]; restantes erros fail-closed. |
+
+### Parte 2 — W04–W06
+
+| ID | Implementação | Aceitação real | Evidência e fronteira |
+| :--- | :--- | :--- | :--- |
+| W04.1 | CONCLUÍDO | N/A | [K] escreve `dist/revision.json`. |
+| W04.2 | CONCLUÍDO | N/A | SHA completo do build Cloudflare; [M]. |
+| W04.3 | CONCLUÍDO | N/A | [D] pagina deployments; 25 observados. |
+| W04.4 | CONCLUÍDO | EM_CURSO | Os quatro serviços estiveram alinhados em `aa5ab8b` (histórico). Agora frontend e API estão em `804a2dd` e o supervisor em `aa5ab8b`. O CLI nativo reconectou apenas a origem ao repositório; o autodeploy futuro não está verificado. |
+| W04.5 | CONCLUÍDO | N/A | Schema e readiness normalizados; [D]. |
+| W04.6 | CONCLUÍDO | EM_CURSO | Fixture por grupo; as revisões estavam misturadas antes do novo alinhamento. Não implica flakiness. |
+| W05.1 | EM_CURSO | DEPENDÊNCIA | [Uc] implementa o registo; a submissão real teve 0 pedidos `sign_up`. |
+| W05.2 | EM_CURSO | DEPENDÊNCIA | [Uc] cobre login e logout; execução real pendente. |
+| W05.3 | EM_CURSO | DEPENDÊNCIA | [Uc] cobre a recuperação; a base local devolveu `form_identifier_not_found`. |
+| W05.4 | CONCLUÍDO | DEPENDÊNCIA | [U] implementa a importação e tem teste; exige escola real pela UI. |
+| W05.5 | CONCLUÍDO | DEPENDÊNCIA | [V] valida as relações importadas e tem teste; [S] não cobre importações. Execução real pendente. |
+| W05.6 | EM_CURSO | DEPENDÊNCIA | [Uc] preserva o consentimento do convite; execução real pendente. |
+| W05.7 | EM_CURSO | DEPENDÊNCIA | Prova de proteção da identidade pendente. |
+| W05.8 | EM_CURSO | DEPENDÊNCIA | Fundação pela UI depende de W05.4–7. |
+| W06.1 | CONCLUÍDO | DEPENDÊNCIA | [S] expande a exigência independente. |
+| W06.2 | CONCLUÍDO | DEPENDÊNCIA | [S] confere restrições; [Id] cobre o caso. |
+| W06.3 | EM_CURSO | DEPENDÊNCIA | Job real exige escola persistente. |
+| W06.4 | EM_CURSO | DEPENDÊNCIA | Aprovação real exige candidato completo. |
+| W06.5 | EM_CURSO | DEPENDÊNCIA | Nova sessão exige horários aprovados. |
+
+### Parte 3 — W07–W08
+
+| ID | Implementação | Aceitação real | Evidência e fronteira |
+| :--- | :--- | :--- | :--- |
+| W07.1 | EM_CURSO | DEPENDÊNCIA | O registo assinado de escolas do teste está vazio; nenhuma escola real criada. |
+| W07.2 | EM_CURSO | DEPENDÊNCIA | [H] exige aulas terminadas; calendário real indisponível. |
+| W07.3 | EM_CURSO | DEPENDÊNCIA | Sumário real exige aula terminada. |
+| W07.4 | EM_CURSO | DEPENDÊNCIA | Núcleo de ocorrências preservado; execução real pendente. |
+| W07.5 | EM_CURSO | DEPENDÊNCIA | Fecho semanal exige semana elegível. |
+| W07.6 | EM_CURSO | DEPENDÊNCIA | Reparação exige história futura real. |
+| W07.7 | EM_CURSO | DEPENDÊNCIA | Segunda campanha sem estado elegível. |
+| W08.1 | EM_CURSO | DEPENDÊNCIA | [Id] cobre CRUD; execução real pendente. |
+| W08.2 | EM_CURSO | DEPENDÊNCIA | [Id] cobre disponibilidade. |
+| W08.3 | EM_CURSO | DEPENDÊNCIA | [Id] cobre isolamento; duas escolas reais em falta. |
+| W08.4 | EM_CURSO | DEPENDÊNCIA | [Id] cobre recusa de rotas administrativas. |
+| W08.5 | EM_CURSO | DEPENDÊNCIA | [B] implementa o contacto; a execução real e o encaminhamento Hostinger continuam pendentes. |
+| W08.6 | EM_CURSO | DEPENDÊNCIA | [Id] cobre o guia; execução real pendente. |
+| W08.7 | EM_CURSO | DEPENDÊNCIA | [Id] cobre o ano escolar; escola real em falta. |
+| W08.8 | CONCLUÍDO | EM_CURSO | [B] quatro casos readonly passaram; [run 37951385146]; 404 autenticado pendente. |
+
+### Parte 4 — W09–W12
+
+| ID | Implementação | Aceitação real | Evidência e fronteira |
+| :--- | :--- | :--- | :--- |
+| W09.1 | CONCLUÍDO | N/A | Núcleo JWT, RLS e webhooks preservado; [M]. |
+| W09.2 | CONCLUÍDO | N/A | Transações, migrations e rollback preservados; [M]. |
+| W09.3 | CONCLUÍDO | N/A | Ocorrências, dívida e fecho preservados no núcleo backend; [O] e [T]. |
+| W09.4 | CONCLUÍDO | N/A | Solver e validador independentes; [S]. |
+| W09.5 | PENDENTE | N/A | Cutover bloqueado; nenhuma remoção executada. |
+| W09.6 | EM_CURSO | N/A | Medição antes/depois pendente. |
+| W09.7 | EM_CURSO | N/A | Knip na CI; remoção de dependências pendente. |
+| W09.8 | EM_CURSO | N/A | Thresholds e gates em conjunto; pendente. |
+| W10.1 | EM_CURSO | DEPENDÊNCIA | `acceptance`, `prepare-history`, `diagnose-public` e `inspect-code-sender` coexistem com o `e2e` legado (Compose e CI legado) até ao cutover W10.8. A campanha está inativa com `E2E_ACCEPTANCE_ENABLED=false`. |
+| W10.2 | CONCLUÍDO | N/A | PRs sem segredos live; [Y]. |
+| W10.3 | CONCLUÍDO | N/A | `cancel-in-progress: false` mantém a execução ativa. O GitHub cancela pedidos pendentes anteriores na fila, como no dispatch readonly paralelo. A configuração de CI não muda; [Y]. |
+| W10.4 | CONCLUÍDO | EM_CURSO | Política de propriedade e registo assinado implementados e testados; a eliminação real não foi executada. |
+| W10.5 | CONCLUÍDO | EM_CURSO | Export e erasure implementados; eliminação real não verificada; [C]. |
+| W10.6 | CONCLUÍDO | DEPENDÊNCIA | Canal SSH validado; a execução remota não interativa ainda não foi executada. |
+| W10.7 | CONCLUÍDO | DEPENDÊNCIA | Resultado obrigatório e upload seguro; exige matriz completa. |
+| W10.8 | EM_CURSO | N/A | Remoção de helpers pendente do cutover. |
+| W11.1 | CONCLUÍDO | N/A | Recursos e nomes de base de teste exatos; [M]. |
+| W11.2 | CONCLUÍDO | CONCLUÍDO | Recuperação real do worker com PostgreSQL e Redis; [W]. |
+| W11.3 | CONCLUÍDO | CONCLUÍDO | Idempotência com serviços reais; [W]. |
+| W11.4 | PENDENTE | DEPENDÊNCIA | O ambiente Railway isolado não existe nem foi ensaiado. Qualquer recurso depende de planeamento isolado, sem novos custos. A integridade e a privacidade mantêm-se mesmo sem clientes. |
+| W12.1 | PENDENTE | DEPENDÊNCIA | Campanha completa não executada. |
+| W12.2 | EM_CURSO | DEPENDÊNCIA | Checks locais e CI verdes; certificação de produção pendente. |
+| W12.3 | PENDENTE | DEPENDÊNCIA | Antes/depois, duração, fila e custos pendentes. |
+| W12.4 | EM_CURSO | N/A | Reconciliação documental entregue; o fecho do W12 depende de W12.1–3. |
+
+### Condições globais G1–G7
+
+| Condição | Estado | Prova observada e fronteira |
+| :--- | :--- | :--- |
+| G1 | DEPENDÊNCIA | W01–W04: dados completos e evidências protegidas; Gmail readonly com perfil e listagem observados; Cloudflare/Railway observados; remetente Clerk e alinhamento de revisão pendentes. |
+| G2 | DEPENDÊNCIA | W05: registo pela UI bloqueado; causa raiz desconhecida. |
+| G3 | DEPENDÊNCIA | W06: candidato completo depende de escola persistente. |
+| G4 | DEPENDÊNCIA | W07: sem aulas terminadas nem semanas elegíveis. |
+| G5 | DEPENDÊNCIA | W08 e matriz E2E-01–18: 4 de 69 casos readonly passaram; cobertura completa pendente. |
+| G6 | EM_CURSO | W09–W10: núcleo preservado e resultado obrigatório preparado; cutover e campanha inativos. |
+| G7 | EM_CURSO | W11–W12: recuperação de worker local provada; Railway isolado, campanha e verificação final pendentes. |
+
+### Fronteiras abertas
+
+- O remetente do código Clerk não está observado; `E2E_GMAIL_CODE_SENDER` não está configurada.
+- O encaminhamento de contacto na Hostinger não está provado.
+- O desafio anti-bot Cloudflare não é resolúvel por browser automatizado.
+- O bloqueio do registo não tem causa raiz identificada.
+- As contas de base devolvem `form_identifier_not_found` na recuperação local.
+- O registo assinado de escolas do teste está vazio; não há prova de escola persistente, aula terminada ou semana elegível.
+- A campanha está inativa com `E2E_ACCEPTANCE_ENABLED=false`.
+- A exportação e a eliminação reais de produção não estão verificadas.
+- O ambiente Railway isolado de W11.4 não existe nem foi ensaiado; qualquer recurso depende de planeamento isolado.
+- O alinhamento de revisão do supervisor está por confirmar.
+
+### Métricas históricas
+
+O baseline de 1 192 definições `test_*` é histórico.
+Está na [tabela de baseline](#baseline-e-componentes).
+Não é a contagem atual e não mede casos recolhidos.
+As reduções não são quotas.
 
 ## Fontes e documentos relacionados
 

@@ -1039,3 +1039,32 @@ A hipótese de uma resposta vazia por máscara de `fields` está por comprovar.
 Uma correção local acrescenta `resultSizeEstimate` à máscara e preserva `http_status` com metadados seguros do corpo (`body_bytes`, `empty_body`, `content_type`), sem nunca interpretar corpo vazio como sucesso.
 A causa permanece apenas observada até uma execução tipada após publicação.
 Nenhum passo deste ciclo certifica produção.
+
+### Estado observado — CSP Clerk protect e diagnóstico de registo
+
+A `connect-src` do frontend não permitia portas não-443 do host Clerk protect.
+Os cinco adaptadores (`public/_worker.js`, `public/_headers`, `nginx.conf`, `nginx.ci.conf`, `nginx.local.conf`) foram alinhados com `https://*.protect.clerk.com:*` apenas em `connect-src`.
+`script-src` e `frame-src` mantêm `https://*.protect.clerk.com` sem port wildcard.
+Um teste Vitest com parser CSP verifica a diretiva exata nos cinco alvos.
+A inspeção local readonly do registo devolveu `ready=true`, sem erros de consola ou de página, e sem submissão.
+As tentativas anteriores de submissão recolheram contadores antes do clique, pelo que não sustentam qualquer negação de efeitos.
+A sequência de aliases e o estado do script não estão verificados.
+Não se afirma que nenhuma conta foi criada.
+A submissão instrumentada final (alias novo) teve 0 pedidos Clerk `sign_up` após o clique, 0 pedidos ao host protect e nenhuma violação `connect-src`+protect.
+Os dois erros de consola pós-clique eram `%c%d font-size:0;color:transparent NaN` (formatação de consola), sem valores sensíveis.
+A hipótese de o bloqueio do registo resultar da CSP de `connect-src` não é sustentada.
+A causa raiz do registo permanece não identificada e fica como dependência bloqueante.
+Nenhum passo deste ciclo certifica produção.
+
+### Refresh do frontend local (CSP e dockerignore)
+
+O frontend local foi reconstruído a partir do código do worktree.
+A imagem anterior `3201ceb8202f` foi preservada na tag `cronos-frontend:local-rollback-20261009-2226`.
+A nova imagem `ca376c55e30e` serviu o container recriado `7307aaf4f354`.
+Apenas o frontend foi reconstruído e recriado; backend, base de dados e workers não mudaram.
+O `docker-compose.yml` do root foi lido apenas para o serviço frontend (target `local`).
+O build usou um override temporário com o contexto absoluto do frontend do worktree.
+O `.dockerignore` do frontend exclui `.test-artifacts/`.
+A verificação HTTP devolveu 200 e a CSP servida tem `https://*.protect.clerk.com:*` apenas em `connect-src`.
+Nenhum valor de `.env` foi lido ou impresso.
+Nenhum passo deste ciclo certifica produção.

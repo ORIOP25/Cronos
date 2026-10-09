@@ -56,3 +56,60 @@ describe('production browser boundary', () => {
     expect(headers).toContain('/404.html\n  Cache-Control: no-store')
   })
 })
+
+function directives(csp) {
+  return Object.fromEntries(csp.split(';')
+    .map((part) => part.trim().split(/\s+/).filter(Boolean))
+    .filter((tokens) => tokens.length)
+    .map((tokens) => [tokens[0], tokens.slice(1)]))
+}
+
+function headerCsp(source) {
+  return source.match(/^\s*Content-Security-Policy:\s*(.+)$/m)?.[1].trim()
+}
+
+function workerCsp(source) {
+  return source.match(/'Content-Security-Policy':\s*"([^"]+)"/)?.[1]
+}
+
+function nginxCsp(source) {
+  return source.match(/add_header Content-Security-Policy "([^"]+)" always;/)?.[1]
+}
+
+describe('Clerk protect port is scoped to connect-src only', () => {
+  const targets = [
+    ['public/_headers', headerCsp(headers)],
+    ['public/_worker.js', workerCsp(worker)],
+    ['nginx.conf', nginxCsp(nginx)],
+    ['nginx.ci.conf', nginxCsp(nginxCi)],
+    ['nginx.local.conf', nginxCsp(nginxLocal)],
+  ]
+
+  it.each(targets)('%s allows every protect port only for connections', (_name, csp) => {
+    expect(typeof csp).toBe('string')
+    const parsed = directives(csp)
+    expect(parsed['connect-src']).toContain('https://*.protect.clerk.com:*')
+    expect(parsed['connect-src']).not.toContain('https://*.protect.clerk.com')
+    for (const directive of ['script-src', 'frame-src']) {
+      expect(parsed[directive]).toContain('https://*.protect.clerk.com')
+      expect(parsed[directive]).not.toContain('https://*.protect.clerk.com:*')
+    }
+    expect(parsed['default-src']).toEqual(["'self'"])
+    expect(parsed['object-src']).toEqual(["'none'"])
+    expect(parsed['frame-ancestors']).toEqual(["'none'"])
+    expect(parsed['form-action']).toEqual(["'self'"])
+    expect(parsed['upgrade-insecure-requests']).toEqual([])
+  })
+})
+
+describe('frontend Docker build context', () => {
+  const dockerignore = fs.readFileSync('.dockerignore', 'utf8')
+    .replaceAll('\r\n', '\n').split('\n').map((line) => line.trim())
+    .filter((line) => line && !line.startsWith('#'))
+
+  it('excludes local diagnostics and keeps every secret folder or env file', () => {
+    for (const entry of ['.test-artifacts/', '.auth/', '.env', '.env.*', '.git/', 'node_modules/', 'dist/', 'coverage/']) {
+      expect(dockerignore).toContain(entry)
+    }
+  })
+})
