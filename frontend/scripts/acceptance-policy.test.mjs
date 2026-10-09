@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { validateProductionConfig, evaluateAcceptance, REQUIRED_CASES } from '../e2e/utils/acceptance-policy.js'
+import { validateProductionConfig, validateCodeSender, evaluateAcceptance, REQUIRED_CASES } from '../e2e/utils/acceptance-policy.js'
 
 const revision = 'a'.repeat(40)
 const environment = {
@@ -96,6 +96,13 @@ test('real leap days and explicit UTC offsets retain valid campaign timing', () 
   assert.equal(evaluateAcceptance(run).status, 'validated')
 })
 
+
+test('the observed production code sender must be the exact cronos.pt address', () => {
+  assert.equal(validateCodeSender('noreply@cronos.pt'), 'noreply@cronos.pt')
+  for (const value of [undefined, null, '', 'noreply@cronos.pt.attacker.test', 'Noreply@cronos.pt', 'noreply@example.com', 'noreply@cronos.pt ', '+tag@cronos.pt']) {
+    assert.throws(() => validateCodeSender(value), /code sender/i)
+  }
+})
 
 test('unsafe or nontext campaign identities cannot certify cleanup and evidence ownership', () => {
   for (const runId of ['../outside', 'run/name', { id: 'run-1' }, 123]) {

@@ -1,6 +1,14 @@
 const FULL_REVISION = /^[a-f0-9]{40}$/
 const MAILBOXES = { admin: 'admincronos100@gmail.com', teacher: 'professorcronos100@gmail.com' }
+export const CODE_SENDER_PATTERN = /^[a-z0-9._-]+@cronos\.pt$/
 export const COMPONENTS = ['frontend', 'api', 'worker', 'supervisor', 'beat']
+
+// The single observed production sender must be known before any account effect.
+// Presence stays a dependency; a present but malformed value is a hard failure.
+export function validateCodeSender(value) {
+  if (!CODE_SENDER_PATTERN.test(value || '')) throw new Error('Configure the observed production code sender')
+  return value
+}
 
 // Each variant is required separately. A requirement label alone is not coverage.
 export const REQUIRED_CASES = Object.entries({
@@ -40,19 +48,27 @@ export function validateProductionConfig(environment) {
   return { baseUrl: environment.BASE_URL, expectedRevision: environment.E2E_EXPECTED_REVISION, mailboxes: { ...MAILBOXES } }
 }
 
-function evaluateDeploymentSnapshots(run, cases, { started, finished }, { failures, incomplete }) {
-  for (const phase of ['before', 'after']) {
-    const snapshots = (run.deployments || []).filter(item => item.phase === phase)
-    if (snapshots.length !== 1) incomplete.push(`Missing unique ${phase} deployment snapshot`)
+function evaluateSnapshotTiming(snapshot, cases, started, finished, failures) {
+  const checked = utcTimestamp(snapshot.checked_at)
+  if (!Number.isFinite(checked) || checked < started || checked > finished) failures.push('Deployment snapshot is outside the campaign')
+  if (snapshot.phase === 'before' && cases.some(item => utcTimestamp(item.started_at) < checked)) failures.push('Deployment preflight occurred after case execution')
+  if (snapshot.phase === 'after' && cases.some(item => utcTimestamp(item.finished_at) > checked)) failures.push('Final deployment check occurred before case execution ended')
+}
+
+function evaluateSnapshotComponents(snapshot, expectedRevision, failures) {
+  for (const name of COMPONENTS) {
+    if (snapshot.components?.[name] !== expectedRevision) failures.push(`Deployment revision mismatch: ${name}`)
   }
-  for (const snapshot of run.deployments || []) {
-    const checked = utcTimestamp(snapshot.checked_at)
-    if (!Number.isFinite(checked) || checked < started || checked > finished) failures.push('Deployment snapshot is outside the campaign')
-    if (snapshot.phase === 'before' && cases.some(item => utcTimestamp(item.started_at) < checked)) failures.push('Deployment preflight occurred after case execution')
-    if (snapshot.phase === 'after' && cases.some(item => utcTimestamp(item.finished_at) > checked)) failures.push('Final deployment check occurred before case execution ended')
-    for (const name of COMPONENTS) {
-      if (snapshot.components?.[name] !== run.expected_revision) failures.push(`Deployment revision mismatch: ${name}`)
-    }
+}
+
+function evaluateDeploymentSnapshots(run, cases, { started, finished }, { failures, incomplete }) {
+  const deployments = run.deployments || []
+  for (const phase of ['before', 'after']) {
+    if (deployments.filter(item => item.phase === phase).length !== 1) incomplete.push(`Missing unique ${phase} deployment snapshot`)
+  }
+  for (const snapshot of deployments) {
+    evaluateSnapshotTiming(snapshot, cases, started, finished, failures)
+    evaluateSnapshotComponents(snapshot, run.expected_revision, failures)
   }
 }
 

@@ -2,7 +2,7 @@ import { readFile, mkdir, writeFile } from 'node:fs/promises'
 import { spawn } from 'node:child_process'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { validateProductionConfig } from '../frontend/e2e/utils/acceptance-policy.js'
+import { validateCodeSender, validateProductionConfig } from '../frontend/e2e/utils/acceptance-policy.js'
 import { createGmailReader } from '../frontend/e2e/utils/gmail.js'
 import { deploymentConfig, readDeploymentSnapshot } from '../frontend/e2e/utils/deployments.js'
 import { verifyRegistry } from './e2e-run-registry.mjs'
@@ -63,6 +63,7 @@ export async function preflight(environment, { fetchImpl = fetch, inspect = insp
   const config = validateProductionConfig(environment)
   const missing = productionDependencies(environment, { preparation })
   if (missing.length) return { status: 'dependency_unavailable', phase, missing, checked_at: new Date().toISOString() }
+  validateCodeSender(environment.E2E_GMAIL_CODE_SENDER)
   if (Buffer.from(environment.E2E_ARTIFACT_KEY, 'base64').length !== 32) throw new Error('Evidence key must contain exactly 32 random bytes')
   const envelope = JSON.parse(await readFile(resolve(environment.E2E_PERSISTENT_REGISTRY), 'utf8'))
   const registry = verifyRegistry(envelope, Buffer.from(environment.E2E_REGISTRY_HMAC_KEY, 'base64'))

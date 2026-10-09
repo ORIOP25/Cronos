@@ -45,6 +45,19 @@ test('missing production code sender blocks the campaign before any account is c
   assert.deepEqual(result.missing, ['E2E_GMAIL_CODE_SENDER'])
 })
 
+test('preflight rejects a malformed production code sender before any external effect', async () => {
+  let effects = 0
+  const configured = { ...environment }
+  for (const name of productionDependencies({})) configured[name] = 'configured'
+  configured.E2E_ARTIFACT_KEY = Buffer.alloc(32, 7).toString('base64')
+  configured.E2E_GMAIL_CODE_SENDER = 'not-a-sender'
+  await assert.rejects(preflight(configured, {
+    fetchImpl: () => { effects += 1; throw new Error('network should not start') },
+    inspect: () => { effects += 1; throw new Error('inspection should not start') },
+  }), /code sender/i)
+  assert.equal(effects, 0)
+})
+
 test('preflight and every acceptance group consume the same deployment provider configuration', () => {
   const configured = { ...environment }
   for (const name of productionDependencies({})) configured[name] = 'configured'

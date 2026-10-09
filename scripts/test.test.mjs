@@ -162,11 +162,38 @@ test('manual public diagnosis is allowed only on main without enabling the full 
   const guard = lines.find(line => line.trimStart().startsWith('if: github.ref'))
   assert.equal(
     guard,
-    "    if: github.ref == 'refs/heads/main' && (vars.E2E_ACCEPTANCE_ENABLED == 'true' || (github.event_name == 'workflow_dispatch' && (inputs.mode == 'prepare-history' || inputs.mode == 'diagnose-public')))",
+    "    if: github.ref == 'refs/heads/main' && (vars.E2E_ACCEPTANCE_ENABLED == 'true' || (github.event_name == 'workflow_dispatch' && (inputs.mode == 'prepare-history' || inputs.mode == 'diagnose-public'))) && !(github.event_name == 'workflow_dispatch' && inputs.mode == 'inspect-code-sender')",
   )
   assert.match(workflow, /- diagnose-public/)
   assert.ok(lines.includes('            .test-artifacts/${{ env.E2E_RUN_ID }}/diagnostic-assessment.json'))
   assert.equal(lines.some(line => /run\.json/.test(line)), false, 'the raw run report must stay outside the upload allowlist')
+})
+
+test('manual code-sender inspection is a readonly workflow that cannot start the campaign', () => {
+  const workflow = readFileSync(join(ROOT, '.github/workflows/acceptance.yml'), 'utf8')
+  assert.match(workflow, /- inspect-code-sender/)
+  assert.match(workflow, /node scripts\/inspect-e2e-code-sender\.mjs/)
+  assert.match(workflow, /permissions:\r?\n  contents: read/)
+  const lines = workflow.split(/\r?\n/)
+  const start = lines.indexOf('  inspect-code-sender:')
+  assert.notEqual(start, -1, 'the readonly inspection job must exist')
+  const nextJob = lines.findIndex((line, index) => index > start && /^  [a-z][a-z0-9-]*:$/.test(line))
+  const block = lines.slice(start, nextJob === -1 ? lines.length : nextJob).join('\n')
+  assert.ok(block.includes('E2E_GMAIL_CLIENT_ID: ${{ secrets.E2E_GMAIL_CLIENT_ID }}'))
+  assert.ok(block.includes('E2E_GMAIL_CLIENT_SECRET: ${{ secrets.E2E_GMAIL_CLIENT_SECRET }}'))
+  // The runtime exposes one selected refresh token, never both mailboxes at once.
+  const tokenLines = block.split('\n').filter(line => /REFRESH_TOKEN:/.test(line))
+  assert.equal(tokenLines.length, 1, 'exactly one runtime refresh token may be exposed')
+  assert.equal(tokenLines[0].trim(), "E2E_GMAIL_REFRESH_TOKEN: ${{ inputs.mailbox == 'teacher' && secrets.E2E_GMAIL_TEACHER_REFRESH_TOKEN || secrets.E2E_GMAIL_ADMIN_REFRESH_TOKEN }}")
+  assert.match(block, /E2E_INSPECT_MAILBOX:/)
+  assert.match(block, /E2E_INSPECT_PURPOSE:/)
+  assert.match(block, /E2E_INSPECT_RECIPIENT:/)
+  assert.doesNotMatch(block, /E2E_ADMIN_SSH_KEY|E2E_ARTIFACT_KEY|E2E_RAILWAY_TOKEN|playwright install|railway-v/)
+  assert.doesNotMatch(block, /run\.json/)
+  // Reset and alias diagnosis are available without another push.
+  assert.match(workflow, /\r?\n      purpose:\r?\n/)
+  assert.match(workflow, /\r?\n          - reset\r?\n/)
+  assert.match(workflow, /\r?\n      recipient:\r?\n/)
 })
 
 test('the diagnose-public command exits three without contacting production when dependencies are missing', () => {

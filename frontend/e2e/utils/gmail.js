@@ -1,13 +1,107 @@
 import { setTimeout as sleep } from 'node:timers/promises'
+import { CODE_SENDER_PATTERN } from './acceptance-policy.js'
 
 const READONLY_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly'
 const DEDICATED_MAILBOXES = new Set(['admincronos100@gmail.com', 'professorcronos100@gmail.com'])
 const DEDICATED_ALIAS = /^(?:admincronos100|professorcronos100)\+[a-z0-9-]+@gmail\.com$/
+const DISCOVERY_SUBJECTS = {
+  verification: /^\d{6} is your verification code$/,
+  reset: /^\d{6} is your reset password code$/,
+}
+const DISCOVERY_MAX_WINDOW_MS = 30 * 24 * 60 * 60 * 1000
+const DISCOVERY_LISTING_FIELDS = 'messages(id),nextPageToken'
+const DISCOVERY_METADATA_FIELDS = 'internalDate,payload(headers(name,value))'
+const DISCOVERY_METADATA_HEADERS = `format=metadata&fields=${DISCOVERY_METADATA_FIELDS}&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Subject`
+
+// A discovery recipient is the dedicated mailbox itself or one of its own
+// plus-aliases. The rule keeps the search inside the two dedicated mailboxes.
+export function isDedicatedRecipient(mailbox, value) {
+  const base = String(mailbox || '').toLowerCase()
+  const recipient = String(value || '').toLowerCase()
+  if (!DEDICATED_MAILBOXES.has(base)) return false
+  if (recipient === base) return true
+  return DEDICATED_ALIAS.test(recipient) && recipient.startsWith(`${base.slice(0, base.indexOf('@'))}+`)
+}
+
+function validateDiscoveryCriteria(criteria, mailbox) {
+  if (!Object.hasOwn(DISCOVERY_SUBJECTS, criteria.purpose)) throw new Error('Discovery purpose must be verification or reset')
+  if (!isDedicatedRecipient(mailbox, criteria.recipient)) throw new Error('Discovery recipient must identify the dedicated mailbox or one of its aliases')
+  if (!Number.isSafeInteger(criteria.after) || !Number.isSafeInteger(criteria.before) || criteria.before <= criteria.after) throw new Error('Discovery window must have bounded epoch timestamps')
+  if (criteria.before - criteria.after > DISCOVERY_MAX_WINDOW_MS) throw new Error('Discovery window exceeds the maximum of 30 days')
+}
+
+// Apply the same strict To/subject/time filters used for delivered codes, then
+// read only the From header. The subject is tested in memory and never returned.
+function metadataSender(message, criteria, subject) {
+  const delivered = Number(message.internalDate)
+  if (!Number.isSafeInteger(delivered) || delivered < criteria.after || delivered > criteria.before) return null
+  const headers = message.payload?.headers || []
+  const values = name => headers.filter(item => item.name.toLowerCase() === name).map(item => item.value)
+  if (!addresses(values('to').join(', ')).includes(criteria.recipient.toLowerCase())) return null
+  const subjects = values('subject')
+  subject.lastIndex = 0
+  if (subjects.length !== 1 || !subject.test(subjects[0])) return null
+  const senders = addresses(values('from').join(', '))
+  return senders.length === 1 ? { sender: senders[0] } : { malformed: true }
+}
 
 function addresses(value) {
   return String(value || '').split(/[\s<>(),;:"]+/)
     .filter(item => /^[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i.test(item))
     .map(item => item.toLowerCase())
+}
+
+const DEADLINE_ERROR = 'Gmail delivery deadline exceeded'
+
+function compareStrings(a, b) {
+  return a < b ? -1 : a > b ? 1 : 0
+}
+
+function listingQuery({ recipient, marker = '', after, before, fields }) {
+  const params = new URLSearchParams({
+    q: `to:${recipient}${marker ? ` "${marker}"` : ''} after:${Math.floor(after / 1000)} before:${Math.ceil(before / 1000)}`,
+    maxResults: '100',
+  })
+  if (fields) params.set('fields', fields)
+  return params
+}
+
+function listingItems(listing) {
+  const items = listing.messages ?? []
+  if (!Array.isArray(items)) throw new Error('Gmail listing returned malformed entries')
+  return items
+}
+
+function messageId(item) {
+  if (typeof item?.id !== 'string' || !item.id) throw new Error('Gmail listing returned malformed entries')
+  return item.id
+}
+
+function validatePollBounds(timeoutMs, intervalMs) {
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || timeoutMs > 300_000
+    || !Number.isFinite(intervalMs) || intervalMs < 100 || intervalMs > timeoutMs) {
+    throw new Error('Gmail polling bounds are invalid')
+  }
+}
+
+function recordObservation(found, observed) {
+  if (!observed) return
+  if (observed.malformed) { found.malformedCount += 1; return }
+  found.messageCount += 1
+  found.senders.add(observed.sender)
+}
+
+function discoveryOutcome(found) {
+  if (found.malformedCount > 0) return { status: 'failed', reason: 'malformed_headers' }
+  if (found.messageCount === 0) return { status: 'incomplete', reason: 'no_messages' }
+  const distinct = [...found.senders]
+  if (distinct.length !== 1) return { status: 'failed', reason: 'ambiguous_senders' }
+  if (!CODE_SENDER_PATTERN.test(distinct[0])) return { status: 'failed', reason: 'incompatible_sender' }
+  return { status: 'observed', reason: 'unique_sender' }
+}
+
+function discoveryResult(found, outcome) {
+  return { ...outcome, senders: [...found.senders].sort(compareStrings), message_count: found.messageCount }
 }
 
 function textParts(payload) {
@@ -109,34 +203,71 @@ export async function createGmailReader(credentials, { fetchImpl = fetch } = {})
     if (Date.now() >= expiresAt) await renew()
     return requestJson(fetchImpl, `https://gmail.googleapis.com/gmail/v1/users/me/${path}`, { method: 'GET', headers: { Authorization: `Bearer ${token}` } })
   }
+  // Shared bounded pagination for delivery polling and sender discovery. It
+  // stops on the deadline or the page cap and reports both explicitly.
+  async function scanPages(query, { deadline, maxPages = Number.POSITIVE_INFINITY }, visit) {
+    const expired = () => Date.now() > deadline
+    let pageToken
+    let pages = 0
+    while (true) {
+      if (expired()) return { truncated: Boolean(pageToken), expired: true }
+      const params = new URLSearchParams(query)
+      if (pageToken) params.set('pageToken', pageToken)
+      const listing = await get(`messages?${params}`)
+      for (const item of listingItems(listing)) {
+        if (expired()) return { truncated: Boolean(pageToken), expired: true }
+        await visit(item)
+      }
+      pageToken = listing.nextPageToken
+      pages += 1
+      if (expired()) return { truncated: Boolean(pageToken), expired: true }
+      if (!pageToken || pages >= maxPages) return { truncated: Boolean(pageToken), expired: false }
+    }
+  }
   return {
     mailbox,
+    // Metadata-only discovery of the code sender. It reads From/To/Subject
+    // headers, never the body, and reports only a fixed, secret-free summary.
+    async discoverSender(criteria, { maxPages = 3, deadlineMs = 30_000 } = {}) {
+      validateDiscoveryCriteria(criteria, mailbox)
+      if (!Number.isSafeInteger(maxPages) || maxPages < 1 || maxPages > 10) throw new Error('Discovery page bound is invalid')
+      if (!Number.isFinite(deadlineMs) || deadlineMs <= 0 || deadlineMs > 300_000) throw new Error('Discovery time bound is invalid')
+      const subject = DISCOVERY_SUBJECTS[criteria.purpose]
+      const found = { senders: new Set(), messageCount: 0, malformedCount: 0 }
+      const query = listingQuery({ recipient: criteria.recipient, after: criteria.after, before: criteria.before, fields: DISCOVERY_LISTING_FIELDS })
+      const { truncated, expired } = await scanPages(query, { deadline: Date.now() + deadlineMs, maxPages }, async item => {
+        const message = await get(`messages/${encodeURIComponent(messageId(item))}?${DISCOVERY_METADATA_HEADERS}`)
+        recordObservation(found, metadataSender(message, criteria, subject))
+      })
+      // A remaining page token means the bounded scan was truncated; a unique
+      // sender is never reported from a partial scan.
+      if (truncated) return discoveryResult(found, { status: 'incomplete', reason: 'page_limit' })
+      if (expired) return discoveryResult(found, { status: 'incomplete', reason: 'time_limit' })
+      return discoveryResult(found, discoveryOutcome(found))
+    },
     async poll(criteria, { timeoutMs = 120_000, intervalMs = 2000 } = {}) {
       validateCriteria(criteria)
       if (criteria.purpose === 'contact' && criteria.forwardedMailbox !== mailbox) throw new Error('Contact forward belongs to a different mailbox')
-      if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || timeoutMs > 300_000 || !Number.isFinite(intervalMs) || intervalMs < 100 || intervalMs > timeoutMs) throw new Error('Gmail polling bounds are invalid')
+      validatePollBounds(timeoutMs, intervalMs)
       const deadline = Date.now() + timeoutMs
-      const query = new URLSearchParams({ q: `to:${criteria.recipient}${criteria.purpose === 'contact' ? ` "${criteria.marker}"` : ''} after:${Math.floor(criteria.after / 1000)} before:${Math.ceil(criteria.before / 1000)}`, maxResults: '100' })
+      const query = listingQuery({
+        recipient: criteria.recipient,
+        marker: criteria.purpose === 'contact' ? criteria.marker : '',
+        after: criteria.after,
+        before: criteria.before,
+      })
       do {
         const matches = []
-        let pageToken
-        do {
-          if (Date.now() > deadline) throw new Error('Gmail delivery deadline exceeded')
-          const params = new URLSearchParams(query)
-          if (pageToken) params.set('pageToken', pageToken)
-          const listing = await get(`messages?${params}`)
-          for (const item of listing.messages || []) {
-            if (Date.now() > deadline) throw new Error('Gmail delivery deadline exceeded')
-            const delivered = extractMessage(await get(`messages/${encodeURIComponent(item.id)}?format=full`), criteria)
-            if (delivered) matches.push(delivered)
-          }
-          pageToken = listing.nextPageToken
-        } while (pageToken)
+        const { expired } = await scanPages(query, { deadline }, async item => {
+          const delivered = extractMessage(await get(`messages/${encodeURIComponent(messageId(item))}?format=full`), criteria)
+          if (delivered) matches.push(delivered)
+        })
+        if (expired) throw new Error(DEADLINE_ERROR)
         if (matches.length > 1) throw new Error('Ambiguous matching Gmail messages')
         if (matches.length === 1) return matches[0]
         await sleep(Math.min(intervalMs, Math.max(0, deadline - Date.now())))
       } while (Date.now() < deadline)
-      throw new Error('Gmail delivery deadline exceeded')
+      throw new Error(DEADLINE_ERROR)
     },
   }
 }

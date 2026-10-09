@@ -138,6 +138,41 @@ test('OAuth uses PKCE, readonly offline consent and validates callback state and
   }
 })
 
+test('metadata discovery constrains the request to From, To and Subject and rejects unsafe criteria', async () => {
+  const calls = []
+  const body = { id: 'mail-9', internalDate: String(criteria.after + 1000), payload: { headers: [
+    { name: 'From', value: 'Cronos <noreply@cronos.pt>' },
+    { name: 'To', value: criteria.recipient },
+    { name: 'Subject', value: '123456 is your verification code' },
+  ] } }
+  const fetchImpl = async (url, options) => {
+    calls.push({ url, method: options.method })
+    const payload = url.includes('/token') ? { access_token: 'private-token', scope: 'https://www.googleapis.com/auth/gmail.readonly' }
+      : url.endsWith('/profile') ? { emailAddress: 'admincronos100@gmail.com' }
+        : url.includes('/messages/') ? body : { messages: [{ id: 'mail-9' }] }
+    return { ok: true, status: 200, json: async () => payload }
+  }
+  const reader = await createGmailReader({ clientId: 'client', clientSecret: 'secret', refreshToken: 'refresh', mailbox: 'admincronos100@gmail.com' }, { fetchImpl })
+  const discovered = await reader.discoverSender({ recipient: criteria.recipient, purpose: 'verification', after: criteria.after, before: criteria.before })
+  assert.equal(discovered.status, 'observed')
+  assert.deepEqual(discovered.senders, ['noreply@cronos.pt'])
+  const metadata = new URL(calls.find(call => call.url.includes('/messages/') && !call.url.includes('/messages?')).url)
+  assert.equal(metadata.searchParams.get('format'), 'metadata')
+  assert.equal(metadata.searchParams.get('fields'), 'internalDate,payload(headers(name,value))')
+  assert.deepEqual(metadata.searchParams.getAll('metadataHeaders'), ['From', 'To', 'Subject'])
+  assert.equal(metadata.searchParams.get('fields').includes('snippet'), false)
+  assert.equal(metadata.searchParams.get('fields').includes('body'), false)
+  const listing = new URL(calls.find(call => call.url.includes('/messages?')).url)
+  assert.equal(listing.searchParams.get('fields'), 'messages(id),nextPageToken')
+  for (const forbidden of ['snippet', 'body', 'payload']) {
+    assert.equal(listing.searchParams.get('fields').includes(forbidden), false, forbidden)
+  }
+  await assert.rejects(reader.discoverSender({ recipient: 'attacker@example.com', purpose: 'verification', after: criteria.after, before: criteria.before }), /recipient/i)
+  await assert.rejects(reader.discoverSender({ recipient: criteria.recipient, purpose: 'other', after: criteria.after, before: criteria.before }), /purpose/i)
+  await assert.rejects(reader.discoverSender({ recipient: criteria.recipient, purpose: 'verification', after: criteria.before, before: criteria.after }), /window/i)
+  await assert.rejects(reader.discoverSender({ recipient: criteria.recipient, purpose: 'verification', after: 0, before: 31 * 86_400_000 }), /window/i)
+})
+
 test('a refreshed Gmail token must explicitly confirm only readonly scope before reading the profile', async () => {
   for (const scope of [undefined, 'https://mail.google.com/', 'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.modify']) {
     const calls = []

@@ -9,6 +9,7 @@ import { restartDisposableSchoolYear } from '../utils/ui-year.js'
 import { exerciseSchoolIsolation } from '../utils/ui-isolation.js'
 import { exercisePendingOccurrenceAndGap } from '../utils/ui-occurrences.js'
 import { expectIdentity, login, freshSession } from '../utils/ui-auth.js'
+import { validateCodeSender } from './acceptance-policy.js'
 import { test, expect } from '@playwright/test'
 
 async function rejectOldPassword(page, runtime, testInfo, email, password) {
@@ -86,8 +87,7 @@ export async function runIdentityCampaign({ page, browser, provenance, delivered
   if (persistent) await persistCredentials({ admin_email: email, teacher_email: teacherEmail,
     admin_registration_password: password, admin_password: recoveredPassword, teacher_password: teacherPassword })
   // Clerk's production sender must be observed/configured, never inferred from development.
-  const sender = process.env.E2E_GMAIL_CODE_SENDER
-  if (!/^[a-z0-9._-]+@cronos\.pt$/.test(sender || '')) throw new Error('Configure the observed production code sender')
+  const sender = validateCodeSender(process.env.E2E_GMAIL_CODE_SENDER)
   const original = await readOriginalExpectations()
   const criteria = (after, subject) => ({ recipient: email, senders: [sender], subject, purpose: 'code', after, before: after + 120_000 })
 
