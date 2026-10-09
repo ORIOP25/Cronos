@@ -17,6 +17,7 @@ import {
   isOwnedResource,
   parseArgs,
   preservePrimaryFailure,
+  productionCampaignMode,
   ROOT,
   resolveE2eBaseUrl,
   summarizeJunit,
@@ -130,10 +131,97 @@ test('production acceptance stays serialized and sanitizes its own artifact root
   assert.doesNotMatch(workflow, /protect-test-evidence\.mjs protect/)
 })
 
+test('root CI keeps push on main while pull requests and manual dispatch run full checks', () => {
+  const lines = readFileSync(join(ROOT, '.github/workflows/ci.yml'), 'utf8').split(/\r?\n/)
+  const start = lines.indexOf('on:')
+  assert.notEqual(start, -1, 'ci.yml must declare an on: trigger block')
+  const end = lines.findIndex((line, index) => index > start && line !== '' && !/^\s/.test(line))
+  assert.equal(
+    lines.slice(start + 1, end).join('\n').trimEnd(),
+    ['  push:', '    branches: [main]', '  pull_request:', '  workflow_dispatch:'].join('\n'),
+  )
+})
+
 test('exposes production acceptance as its own command', () => {
   assert.equal(parseArgs(['acceptance']).command, 'acceptance')
   assert.throws(() => parseArgs(['acceptance', '--project', 'acceptance']), /only valid for e2e/)
   assert.throws(() => parseArgs(['acceptance', '--', 'extra']), /not supported/)
+})
+
+test('public readonly diagnosis is an explicit command with no user selection filter', () => {
+  assert.equal(parseArgs(['diagnose-public']).command, 'diagnose-public')
+  assert.throws(() => parseArgs(['diagnose-public', '--project', 'acceptance']), /only valid for e2e/)
+  assert.throws(() => parseArgs(['diagnose-public', '--grep', '@public-readonly']), /Unknown option/)
+  assert.throws(() => parseArgs(['diagnose-public', '--', 'public.spec.js']), /not supported/)
+  assert.throws(() => parseArgs(['unknown-mode']), /Unknown command/)
+})
+
+test('manual public diagnosis is allowed only on main without enabling the full campaign', () => {
+  const workflow = readFileSync(join(ROOT, '.github/workflows/acceptance.yml'), 'utf8')
+  const lines = workflow.split(/\r?\n/)
+  const guard = lines.find(line => line.trimStart().startsWith('if: github.ref'))
+  assert.equal(
+    guard,
+    "    if: github.ref == 'refs/heads/main' && (vars.E2E_ACCEPTANCE_ENABLED == 'true' || (github.event_name == 'workflow_dispatch' && (inputs.mode == 'prepare-history' || inputs.mode == 'diagnose-public')))",
+  )
+  assert.match(workflow, /- diagnose-public/)
+  assert.ok(lines.includes('            .test-artifacts/${{ env.E2E_RUN_ID }}/diagnostic-assessment.json'))
+  assert.equal(lines.some(line => /run\.json/.test(line)), false, 'the raw run report must stay outside the upload allowlist')
+})
+
+test('the diagnose-public command exits three without contacting production when dependencies are missing', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'cronos-diag-plan-'))
+  try {
+    const result = spawnSync(process.execPath, [join(ROOT, 'scripts/test.mjs'), 'diagnose-public'], {
+      cwd: ROOT, encoding: 'utf8', windowsHide: true,
+      env: {
+        ...process.env,
+        TEST_ARTIFACT_DIR: directory,
+        BASE_URL: 'https://cronos.pt',
+        E2E_EXPECTED_REVISION: 'a'.repeat(40),
+        E2E_ADMIN_EMAIL: 'admincronos100@gmail.com',
+        E2E_TEACHER_EMAIL: 'professorcronos100@gmail.com',
+        CLOUDFLARE_API_TOKEN: '', E2E_CLOUDFLARE_ACCOUNT_ID: '',
+        E2E_RAILWAY_TOKEN: '', E2E_RAILWAY_TOKEN_TYPE: '',
+        E2E_ARTIFACT_KEY: '', E2E_SECRET_REGISTRY: '', E2E_REGISTRY_HMAC_KEY: '',
+      },
+    })
+    assert.equal(result.status, 3, result.stderr)
+    const plan = JSON.parse(readFileSync(join(directory, 'acceptance-plan.json'), 'utf8'))
+    assert.equal(plan.status, 'dependency_unavailable')
+    assert.equal(plan.missing.includes('E2E_GMAIL_CODE_SENDER'), false)
+    assert.equal(plan.missing.includes('E2E_ADMIN_SSH_KEY'), false)
+    assert.ok(plan.missing.includes('CLOUDFLARE_API_TOKEN'))
+  } finally { rmSync(directory, { recursive: true, force: true }) }
+})
+
+test('the shared production flow keeps the readonly diagnosis away from native SSH cleanup', () => {
+  const diagnosis = productionCampaignMode('diagnose-public')
+  assert.deepEqual(diagnosis, { preparation: false, diagnosis: true, cleanup: 'public_readonly', playwright: 'Playwright public readonly diagnosis' })
+  for (const mode of ['acceptance', 'prepare-history']) {
+    const spec = productionCampaignMode(mode)
+    assert.equal(spec.cleanup, 'native_ssh')
+    assert.equal(spec.diagnosis, false)
+  }
+  assert.equal(productionCampaignMode('acceptance').preparation, false)
+  assert.equal(productionCampaignMode('prepare-history').preparation, true)
+  assert.throws(() => productionCampaignMode('unknown'), /Unknown production mode/)
+})
+
+test('the production mode enum rejects inherited object labels before any effect', () => {
+  for (const label of ['toString', 'constructor', 'valueOf', '__proto__', 'hasOwnProperty', 'unknown']) {
+    assert.throws(() => productionCampaignMode(label), /Unknown production mode/)
+  }
+  assert.throws(() => productionCampaignMode(), /Unknown production mode/)
+  assert.throws(() => productionCampaignMode({}), /Unknown production mode/)
+  assert.equal(productionCampaignMode('acceptance').cleanup, 'native_ssh')
+  assert.equal(productionCampaignMode('diagnose-public').cleanup, 'public_readonly')
+})
+
+test('the shared runner signs a captured Playwright process failure before finalizing', () => {
+  const source = readFileSync(join(ROOT, 'scripts/test.mjs'), 'utf8')
+  assert.match(source, /processFailed: Boolean\(playwrightError\)/)
+  assert.doesNotMatch(source, /Playwright preparation did not pass/)
 })
 
 test('preserves paths and arguments containing spaces as separate child arguments', () => {

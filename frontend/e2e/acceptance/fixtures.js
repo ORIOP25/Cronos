@@ -2,7 +2,7 @@ import { test as base, expect } from '@playwright/test'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { observeAcceptanceActivity, observeAcceptanceRuntime } from '../utils/acceptance-runtime.js'
-import { beginProofSession, finishProofSession, noteActorObservation, notePageActivity, notePersistentSchoolObservation, noteSchoolObservation, proofArtifactRoot } from '../utils/acceptance-proof.js'
+import { beginProofSession, finishProofSession, noteActorObservation, notePageActivity, notePersistentSchoolObservation, noteSchoolObservation, proofArtifactRoot, publicReadonlySelection } from '../utils/acceptance-proof.js'
 import { recordGroupRevisionSnapshot } from '../utils/deployments.js'
 import { recordSecretFile, recordUiActorFile, recordUiSchoolFile, signRegistry, verifyRegistry } from '../../../scripts/e2e-run-registry.mjs'
 import { cleanupProductionCampaign } from '../../../scripts/cleanup-production-campaign.mjs'
@@ -100,6 +100,10 @@ export const test = base.extend({
   },
   runtime: [async ({ page, provenance }, runFixture, testInfo) => {
     if (process.env.BASE_URL !== 'https://cronos.pt') throw new Error('Acceptance requires exactly https://cronos.pt')
+    // W10.1: under the readonly public diagnosis, refuse an extra, unannotated,
+    // identity or contact group before its body can send mail or write state.
+    const selection = publicReadonlySelection({ mode: process.env.CAMPAIGN_MODE, annotations: testInfo.annotations })
+    if (!selection.ok) throw new Error(selection.reason)
     // Evidence paths are relative to the reporter's artifact root (the configured project output dir).
     beginProofSession(testInfo, proofArtifactRoot(testInfo))
     observeAcceptanceActivity(() => notePageActivity(testInfo))

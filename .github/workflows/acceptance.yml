@@ -4,13 +4,14 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: Run the acceptance campaign or prepare a persistent school through the production UI
+        description: Run the acceptance campaign, prepare a persistent school, or diagnose the readonly public UI
         type: choice
         required: true
         default: acceptance
         options:
           - acceptance
           - prepare-history
+          - diagnose-public
   push:
     branches: [main]
 
@@ -23,7 +24,7 @@ concurrency:
 
 jobs:
   acceptance:
-    if: github.ref == 'refs/heads/main' && (vars.E2E_ACCEPTANCE_ENABLED == 'true' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'prepare-history'))
+    if: github.ref == 'refs/heads/main' && (vars.E2E_ACCEPTANCE_ENABLED == 'true' || (github.event_name == 'workflow_dispatch' && (inputs.mode == 'prepare-history' || inputs.mode == 'diagnose-public')))
     runs-on: ubuntu-latest
     timeout-minutes: 240
     env:
@@ -137,5 +138,6 @@ jobs:
             .test-artifacts/${{ env.E2E_RUN_ID }}/acceptance-result.json
             .test-artifacts/${{ env.E2E_RUN_ID }}/acceptance-plan.json
             .test-artifacts/${{ env.E2E_RUN_ID }}/acceptance-cleanup.json
+            .test-artifacts/${{ env.E2E_RUN_ID }}/diagnostic-assessment.json
           if-no-files-found: warn
           retention-days: 14

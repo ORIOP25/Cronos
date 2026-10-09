@@ -75,6 +75,7 @@ test('native contact submission delivers every answer to the unchanged recipient
 
 test('contact validation is reachable by keyboard and announces errors without submitting', {
   annotation: { type: 'acceptance-case', description: 'E2E-16/keyboard-focus-announcements' },
+  tag: '@public-readonly',
 }, async ({ page }, testInfo) => {
   const response = await page.goto('/contacto')
   expect(response.status()).toBe(200)
@@ -132,6 +133,7 @@ test('contact validation is reachable by keyboard and announces errors without s
 
 test('public routes render accessible content and keep canonical aliases', {
   annotation: { type: 'acceptance-case', description: 'E2E-16/public-routing' },
+  tag: '@public-readonly',
 }, async ({ page }, testInfo) => {
   test.setTimeout(90_000)
   const routes = []
@@ -160,6 +162,7 @@ test('public routes render accessible content and keep canonical aliases', {
 
 test('all public legal documents remain readable after reload', {
   annotation: { type: 'acceptance-case', description: 'E2E-16/legal-pages' },
+  tag: '@public-readonly',
 }, async ({ page }, testInfo) => {
   const documents = []
   for (const route of ['/termos', '/privacidade', '/dpa', '/cookies']) {
@@ -182,6 +185,7 @@ test('all public legal documents remain readable after reload', {
 
 test('unknown public routes return an actual 404 and offer a working home link', {
   annotation: { type: 'acceptance-case', description: 'E2E-16/public-404' },
+  tag: '@public-readonly',
 }, async ({ page, runtime }, testInfo) => {
   const pathname = '/acceptance-public-missing-path'
   let observation

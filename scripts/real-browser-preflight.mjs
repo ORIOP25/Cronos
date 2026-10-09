@@ -20,6 +20,31 @@ export function productionDependencies(environment, { preparation = false } = {}
   return names.filter(name => !(preparation && ['E2E_HISTORY_TEACHER_PASSWORD', 'E2E_HISTORY_ADMIN_PASSWORD'].includes(name)) && !environment[name])
 }
 
+// Public readonly diagnosis never reads Gmail, a persistent school, historical
+// credentials or the administrative SSH channel, so it requires only the
+// deployment providers, the two protection keys and the private redaction registry.
+export function publicDiagnosticDependencies(environment) {
+  const names = [
+    'CLOUDFLARE_API_TOKEN', 'E2E_CLOUDFLARE_ACCOUNT_ID', 'E2E_CLOUDFLARE_PROJECT',
+    'E2E_RAILWAY_TOKEN', 'E2E_RAILWAY_TOKEN_TYPE', 'E2E_RAILWAY_PROJECT_ID', 'E2E_RAILWAY_ENVIRONMENT_ID',
+    'E2E_RAILWAY_API_SERVICE_ID', 'E2E_RAILWAY_WORKER_SERVICE_ID', 'E2E_RAILWAY_SUPERVISOR_SERVICE_ID', 'E2E_RAILWAY_BEAT_SERVICE_ID',
+    'E2E_ARTIFACT_KEY', 'E2E_SECRET_REGISTRY', 'E2E_REGISTRY_HMAC_KEY',
+  ]
+  return names.filter(name => !environment[name])
+}
+
+// The readonly diagnosis reuses the exact deployment provider check used by the
+// full campaign, but it observes no original data and opens no mailboxes.
+export async function publicPreflight(environment, { fetchImpl = fetch, phase = 'before' } = {}) {
+  const config = validateProductionConfig(environment)
+  const missing = publicDiagnosticDependencies(environment)
+  if (missing.length) return { status: 'dependency_unavailable', phase, missing, checked_at: new Date().toISOString() }
+  if (Buffer.from(environment.E2E_ARTIFACT_KEY, 'base64').length !== 32) throw new Error('Evidence key must contain exactly 32 random bytes')
+  if (Buffer.from(environment.E2E_REGISTRY_HMAC_KEY, 'base64').length !== 32) throw new Error('UI registry key must contain exactly 32 random bytes')
+  const snapshot = await readDeploymentSnapshot(deploymentConfig(environment, config.expectedRevision), { fetchImpl })
+  return { status: 'ready', phase, checked_at: snapshot.checked_at, components: snapshot.components, deployments: snapshot.deployments }
+}
+
 function inspectData(python, directory) {
   return new Promise((accept, reject) => {
     const child = spawn(python, [resolve(ROOT, 'scripts/inspect-e2e-data.py'), directory], { shell: false, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })

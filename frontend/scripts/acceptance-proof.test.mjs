@@ -8,7 +8,8 @@ import { finalizeRun } from '../../scripts/finalize-real-browser-run.mjs'
 import {
   beginProofSession, checkpointRecord, evidencePath, finishProofSession, matchCaseProof,
   noteActorObservation, notePageActivity, notePersistentSchoolObservation, noteSchoolObservation,
-  persistentSchoolProvenance, proofArtifactRoot, recordCheckpoint, validEvidencePath,
+  persistentSchoolProvenance, proofArtifactRoot, PUBLIC_READONLY_CASES, PUBLIC_READONLY_TAG,
+  publicReadonlySelection, recordCheckpoint, validEvidencePath,
 } from '../e2e/utils/acceptance-proof.js'
 
 function fakeTestInfo(root) {
@@ -258,4 +259,44 @@ test('a signed persistent school grants provenance only for its own live actor a
     const valid = await recordCheckpoint(testInfo, 'E2E-10/ended-lesson-log', { requires: 'school' })
     assert.equal(valid.eligible, true)
   } finally { await rm(root, { recursive: true, force: true }) }
+})
+
+// Mirrors the runtime fixture order: a refused group never reaches its body.
+function runGuardedGroup({ mode, annotations }, body) {
+  const selection = publicReadonlySelection({ mode, annotations })
+  if (!selection.ok) throw new Error(selection.reason)
+  return body()
+}
+
+test('the readonly diagnosis refuses an unauthorized annotated group before its body can run', () => {
+  const annotations = description => [{ type: 'acceptance-case', description }]
+  let ran = false
+  const body = () => { ran = true; return 'ran' }
+  assert.throws(() => runGuardedGroup({ mode: 'diagnose-public', annotations: annotations('E2E-16/contact-delivered') }, body), /non-readonly/)
+  assert.throws(() => runGuardedGroup({ mode: 'diagnose-public', annotations: annotations('E2E-01/founder-registration') }, body), /non-readonly/)
+  assert.throws(() => runGuardedGroup({ mode: 'diagnose-public', annotations: [] }, body), /exactly one/)
+  assert.throws(() => runGuardedGroup({ mode: 'diagnose-public', annotations: [...annotations('E2E-16/public-404'), ...annotations('E2E-16/legal-pages')] }, body), /exactly one/)
+  assert.equal(ran, false, 'the group body must not run after a refusal')
+  for (const item of PUBLIC_READONLY_CASES) {
+    ran = false
+    assert.equal(runGuardedGroup({ mode: 'diagnose-public', annotations: annotations(item.id) }, body), 'ran')
+    assert.equal(ran, true)
+  }
+})
+
+test('full and preparation modes keep every group eligible regardless of the whitelist', () => {
+  for (const mode of ['acceptance', 'prepare-history', undefined]) {
+    assert.deepEqual(publicReadonlySelection({ mode, annotations: [] }), { ok: true })
+    assert.deepEqual(publicReadonlySelection({ mode, annotations: [{ type: 'acceptance-case', description: 'E2E-16/contact-delivered' }] }), { ok: true })
+  }
+  assert.equal(PUBLIC_READONLY_TAG, '@public-readonly')
+  assert.equal(PUBLIC_READONLY_CASES.length, 4)
+})
+
+test('the runtime fixture guards the readonly selection before any group body', async () => {
+  const source = await readFile(new URL('../e2e/acceptance/fixtures.js', import.meta.url), 'utf8')
+  const guard = source.indexOf('publicReadonlySelection(')
+  const body = source.indexOf('runFixture(runtime)')
+  assert.ok(guard !== -1, 'the runtime fixture must call the readonly selection guard')
+  assert.ok(body !== -1 && guard < body, 'the guard must run before the group body')
 })

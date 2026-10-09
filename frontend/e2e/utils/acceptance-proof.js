@@ -5,6 +5,33 @@ import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 // may pass, but a case without its own completed checkpoint must stay incomplete.
 export const PROOF_SCHEMA_VERSION = 2
 
+// The readonly public diagnosis selects exactly these cases. The whitelist is
+// explicit so no user-supplied filter can hide a failure or add a case.
+export const PUBLIC_READONLY_TAG = '@public-readonly'
+export const PUBLIC_READONLY_CASES = Object.freeze([
+  Object.freeze({ id: 'E2E-16/public-routing', requirement: 'E2E-16', name: 'public-routing' }),
+  Object.freeze({ id: 'E2E-16/legal-pages', requirement: 'E2E-16', name: 'legal-pages' }),
+  Object.freeze({ id: 'E2E-16/public-404', requirement: 'E2E-16', name: 'public-404' }),
+  Object.freeze({ id: 'E2E-16/keyboard-focus-announcements', requirement: 'E2E-16', name: 'keyboard-focus-announcements' }),
+])
+
+const PUBLIC_READONLY_IDS = new Set(PUBLIC_READONLY_CASES.map(item => item.id))
+
+// Pure pre-body guard. Under the readonly public diagnosis a group must declare
+// exactly one acceptance-case annotation from the whitelist. The runtime fixture
+// calls it before the group body, so an accidentally tagged contact or identity
+// group is refused before it can send mail or write business state. Other modes
+// are unaffected.
+export function publicReadonlySelection({ mode, annotations } = {}) {
+  if (mode !== 'diagnose-public') return { ok: true }
+  const ids = (Array.isArray(annotations) ? annotations : [])
+    .filter(item => item?.type === 'acceptance-case')
+    .map(item => item.description)
+  if (ids.length !== 1) return { ok: false, reason: `Public diagnosis requires exactly one acceptance case annotation, found ${ids.length}` }
+  if (!PUBLIC_READONLY_IDS.has(ids[0])) return { ok: false, reason: `Public diagnosis refuses non-readonly case: ${ids[0]}` }
+  return { ok: true, id: ids[0] }
+}
+
 const PROVENANCE_SOURCES = new Set(['page', 'actor', 'school'])
 const UTC_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
 

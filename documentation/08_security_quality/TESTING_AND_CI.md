@@ -5,7 +5,9 @@ The [implementation record](REAL_BROWSER_TESTING_IMPLEMENTATION.md) lists which 
 This guide describes the implemented behaviour.
 
 Cronos runs backend, frontend, and end-to-end suites through one root runner.
-GitHub Actions enforces the same gates on every push and pull request.
+GitHub Actions enforces the same gates on every pull request and on every push to `main`.
+A feature branch with an open pull request runs the full pipeline once through the pull request, instead of a second identical push run.
+A branch pushed without a pull request has no automatic CI and requires an explicit manual `workflow_dispatch` checkpoint.
 
 ## Quick start
 
@@ -24,7 +26,7 @@ node scripts/test.mjs benchmark --profile fast
 node scripts/test.mjs campaign --manifest backend/tests/scheduler_lab/manifest.json
 ```
 
-The runner exposes `setup`, `doctor`, `fast`, `integration`, `e2e`, `capacity`, `capacity-smoke`, `acceptance`, `prepare-history`, `all`, `benchmark`, and `campaign`. The `e2e` command accepts `--project public|auth|app|provider|faults|capacity`. E2E starts its own stack on port `5174`.
+The runner exposes `setup`, `doctor`, `fast`, `integration`, `e2e`, `capacity`, `capacity-smoke`, `acceptance`, `prepare-history`, `diagnose-public`, `all`, `benchmark`, and `campaign`. The `e2e` command accepts `--project public|auth|app|provider|faults|capacity`. E2E starts its own stack on port `5174`.
 
 `fast` never starts Docker or installs packages. Forwarded arguments are accepted only after `--` by `fast` and `integration`, and are passed as separate process arguments. Run artefacts are written to `.test-artifacts/`.
 
@@ -80,6 +82,7 @@ The runner exits `3` while any campaign dependency is missing, and writes the mi
 The result document is `.test-artifacts/<run>/acceptance-result.json`; only `validated` for the complete matrix can certify production.
 
 The campaign is fail-closed: a failed or missing reporter, an unprotected artifact, a revision mismatch, an unfinished cleanup or a retried case cannot produce green.
+A nonzero Playwright process is signed as a failure even when a reporter still writes a passing matrix.
 The finalizer redacts the report before signing.
 Redaction walks the report structure and replaces string leaves.
 An exact numeric match becomes `[REDACTED]`; other numeric and boolean metadata stays unchanged.
@@ -106,6 +109,27 @@ Both workflow modes require the `main` ref; PRs never receive these credentials.
 The complete matrix runs only when `E2E_ACCEPTANCE_ENABLED` is `true`.
 Manual dispatch with `mode=prepare-history` permits initial preparation while that variable remains disabled.
 Both modes retain the same revision, Gmail, evidence and cleanup gates.
+The three production modes share one runner flow and one signed-result finalizer; only the plan, preflight, Playwright selection, cleanup and final assessment differ.
+An unknown mode is rejected before any effect.
+Manual dispatch with `mode=diagnose-public` runs an explicit readonly public diagnosis while the full campaign variable remains disabled.
+It selects only the four `@public-readonly` acceptance cases.
+These cover public routing and canonicals, legal documents, the public 404 and the keyboard validation with zero business writes.
+The runtime fixture refuses any extra, unannotated, identity or contact group before its body starts.
+It reuses the same Chrome `acceptance` project, reporter, run composition and finalizer.
+It verifies the five deployment components before, per group and after the run.
+It requires the Cloudflare and Railway provider tokens, the evidence and HMAC keys and the private redaction registry.
+It does not require Gmail, the production code sender, a persistent school, historical passwords or the administrative SSH key.
+It does not read mail and it does not open the administrative SSH channel, because the selected cases create no business state.
+An empty journal reports zero business targets as `not needed`.
+The run records `mode: diagnostic` with an explicit selection and both the test and production SHAs.
+The command exits zero only when the selected four cases pass on one attempt.
+It also requires valid revisions, protected evidence and an empty readonly journal.
+Missing dependencies exit three and any failure exits non-zero.
+The diagnosis reuses the full policy for the common schema, revision, timestamp, evidence path, cleanup and case-identity integrity.
+A failed full assessment can never become a passing diagnosis.
+The signed assessment always stays `incomplete`, because an incomplete diagnosis is not a production certificate.
+The workflow uploads a derived `diagnostic-assessment.json` with the mode, run id, both SHAs, selection, `certifies_production: false` and the computed status.
+The raw run report stays outside the upload allowlist.
 The real campaign still requires the two Gmail OAuth consents, the Cloudflare and Railway read tokens, the browser/admin credentials, the signed persistent registry and the protected secret registry.
 Isolated worker recovery is verified with real PostgreSQL, Redis, a real broker message and an owned Celery worker process in `backend/tests/integration/committed/test_worker_process_recovery.py`.
 
@@ -214,8 +238,9 @@ The journal accepts only fresh dedicated aliases and preserves previous data whe
 Call the recorder immediately after account creation and before logout; teardown alone cannot recover an identity after its session ends.
 The plaintext journal stays outside the artifact upload list. The runner encrypts a recovery copy before automatic administrative cleanup.
 
-The `acceptance` project currently implements three public cases.
+The `acceptance` project currently implements five public cases, of which four are `@public-readonly`.
 They use Chrome, semantic locators and the runtime observer without programmatic authentication or business seeds.
+The fifth public case reads a delivered contact message and is excluded from the readonly diagnosis.
 All 69 case IDs are defined and discovered. The matrix still requires real execution.
 A green legacy CI run does not certify this production matrix.
 
