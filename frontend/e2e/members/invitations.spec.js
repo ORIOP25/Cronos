@@ -70,7 +70,10 @@ async function completeVisibleInvitationAuth(page, email) {
     const password = page.locator('input[name="password"]')
     if (await password.isVisible().catch(() => false)) await password.fill('Cronos-E2E-Password-123!')
     const consent = page.getByRole('checkbox').first()
-    if (await consent.isVisible().catch(() => false) && !(await consent.isChecked())) await consent.check()
+    if (await consent.isVisible().catch(() => false) && !(await consent.isChecked())) {
+      await consent.click()
+      await expect(consent).toBeChecked()
+    }
     if (/\/(?:foundation|dashboard|my-schedules)(?:[/?#]|$)/.test(page.url())) return
     const continueButton = page.getByRole('button', { name: /continuar|continue|verificar|confirmar|entrar|criar conta/i }).last()
     if (await continueButton.isVisible().catch(() => false)) await continueButton.click()
@@ -142,7 +145,32 @@ test.describe.serial('Member invitations — real Clerk', () => {
 
     const inviteContext = await browser.newContext({ storageState: { cookies: [], origins: [] } })
     const invitePage = await inviteContext.newPage()
+    const failures = []
     try {
+      invitePage.on('response', (response) => {
+        let url
+        try {
+          url = new URL(response.url())
+        } catch {
+          return
+        }
+        if (
+          url.protocol !== 'https:'
+          || !url.hostname.endsWith('.clerk.accounts.dev')
+          || url.pathname !== '/v1/tickets/accept'
+        ) return
+        const request = response.request()
+        const headers = response.headers()
+        const mitigated = headers['cf-mitigated']
+        console.log(
+          '[invitation] /v1/tickets/accept'
+          + ` method=${request.method()} resourceType=${request.resourceType()}`
+          + ` navigation=${request.isNavigationRequest()} status=${response.status()}`
+          + ` contentType=${headers['content-type']} cf-ray=${headers['cf-ray']}`
+          + (mitigated ? ` cf-mitigated=${mitigated}` : '')
+          + ` retry-after=${headers['retry-after']}`,
+        )
+      })
       attachRuntimeGuards(invitePage)
       await setupClerkTestingToken({ page: invitePage })
       await invitePage.goto(invitation.url, { waitUntil: 'domcontentloaded' })
@@ -175,34 +203,48 @@ test.describe.serial('Member invitations — real Clerk', () => {
       await invitePage.waitForFunction((id) => window.Clerk?.organization?.id === id, organizationId)
       await invitePage.goto(`${E2E_BASE_URL}/my-schedules`, { waitUntil: 'domcontentloaded' })
       await expectRouteReady(invitePage, '/my-schedules')
+    } catch (error) {
+      failures.push(error)
     } finally {
-      await inviteContext.close()
-      const users = await client.users.getUserList({ emailAddress: [email] })
-      for (const user of users.data ?? []) {
-        const memberships = await client.organizations.getOrganizationMembershipList({
-          organizationId,
-          userId: [user.id],
-        })
-        for (const membership of memberships.data ?? []) {
-          await client.organizations.deleteOrganizationMembership({
+      try {
+        await inviteContext.close()
+      } catch (error) {
+        failures.push(error)
+      }
+      try {
+        const users = await client.users.getUserList({ emailAddress: [email] })
+        for (const user of users.data ?? []) {
+          const memberships = await client.organizations.getOrganizationMembershipList({
             organizationId,
-            userId: membership.publicUserData?.userId || user.id,
+            userId: [user.id],
+          })
+          for (const membership of memberships.data ?? []) {
+            await client.organizations.deleteOrganizationMembership({
+              organizationId,
+              userId: membership.publicUserData?.userId || user.id,
+              requestingUserId: adminUserId,
+            })
+          }
+          await client.users.deleteUser(user.id)
+        }
+        const currentInvitation = await client.organizations.getOrganizationInvitation({
+          organizationId,
+          invitationId: createdInvitation.clerk_invitation_id,
+        })
+        if (currentInvitation.status === 'pending') {
+          await client.organizations.revokeOrganizationInvitation({
+            organizationId,
+            invitationId: createdInvitation.clerk_invitation_id,
             requestingUserId: adminUserId,
           })
         }
-        await client.users.deleteUser(user.id)
+      } catch (error) {
+        failures.push(error)
       }
-      const currentInvitation = await client.organizations.getOrganizationInvitation({
-        organizationId,
-        invitationId: createdInvitation.clerk_invitation_id,
-      })
-      if (currentInvitation.status === 'pending') {
-        await client.organizations.revokeOrganizationInvitation({
-          organizationId,
-          invitationId: createdInvitation.clerk_invitation_id,
-          requestingUserId: adminUserId,
-        })
-      }
+    }
+    if (failures.length === 1) throw failures[0]
+    if (failures.length > 1) {
+      throw new globalThis.AggregateError(failures, 'Invitation E2E cleanup failed', { cause: failures[0] })
     }
   })
 
