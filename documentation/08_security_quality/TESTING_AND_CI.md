@@ -115,6 +115,9 @@ Manual dispatch with `mode=diagnose-public` runs an explicit readonly public dia
 It selects only the four `@public-readonly` acceptance cases.
 These cover public routing and canonicals, legal documents, the public 404 and the keyboard validation with zero business writes.
 The runtime fixture refuses any extra, unannotated, identity or contact group before its body starts.
+The runtime observer classifies a CSP-blocked Cloudflare beacon as optional telemetry only after it observes the matching script GET request.
+It attaches a safe snapshot of each ignored event to the signed artifact root.
+Every other console, network, authentication or HTTP failure stays fail-closed.
 It reuses the same Chrome `acceptance` project, reporter, run composition and finalizer.
 It verifies the five deployment components before, per group and after the run.
 It requires the Cloudflare and Railway provider tokens, the evidence and HMAC keys and the private redaction registry.

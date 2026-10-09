@@ -119,6 +119,13 @@ export const test = base.extend({
       const screenshot = testInfo.outputPath('browser-evidence.png')
       await page.screenshot({ path: screenshot, fullPage: true, mask: [page.locator('input, textarea')] })
       await testInfo.attach('browser-evidence', { path: screenshot, contentType: 'image/png' })
+      // W03.7: a zero-error run must stay transparent about ignored optional
+      // telemetry. Record the safe snapshot in the signed artifact root.
+      if (runtime.ignoredOptionalTelemetry.length) {
+        const diagnostics = testInfo.outputPath('optional-telemetry-diagnostics.json')
+        await writeFile(diagnostics, `${JSON.stringify({ schema_version: 1, events: runtime.ignoredOptionalTelemetry }, null, 2)}\n`, { flag: 'wx', mode: 0o600 })
+        await testInfo.attach('optional-telemetry-diagnostics', { path: diagnostics, contentType: 'application/json' })
+      }
       expect(runtime.errors, 'Unanticipated browser runtime failures').toEqual([])
     } finally {
       observeAcceptanceActivity(null)

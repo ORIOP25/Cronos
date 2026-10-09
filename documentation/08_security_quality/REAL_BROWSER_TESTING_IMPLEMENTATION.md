@@ -845,16 +845,17 @@ As chaves existem nos metadados do GitHub; nenhum valor foi lido.
 A variável de repositório `E2E_ACCEPTANCE_ENABLED` está atualmente `false`, confirmada por `gh variable get`.
 O workflow de aceitação permanece inativo para o modo de campanha; a ativação anterior fica como registo cronológico.
 
-A [PR 60](https://github.com/ORIOP25/Cronos/pull/60) permanece não fundida, com head `64e13bd`.
-O lote consolidado corrigido continua local e por publicar como um único checkpoint; a sua publicação repete a CI e a análise Sonar, e a `main` continua em `c850235`.
+A [PR 60](https://github.com/ORIOP25/Cronos/pull/60) foi fundida em 2026-10-09T10:26:52Z como `ec7e2ccf2c3e499ca7eb3a8ed22f2ed84bf6bcbb`.
+A CI final da PR [run 37916132020](https://github.com/ORIOP25/Cronos/actions/runs/37916132020) passou os três jobs, com Sonar e preview Cloudflare aprovados; a CI da `main` [run 37917656713](https://github.com/ORIOP25/Cronos/actions/runs/37917656713) passou.
+A produção ficou alinhada em `ec7e2cc`: frontend e API mais os quatro serviços Railway `SUCCESS`, cada um com uma revisão ativa e não parada.
 Numa repetição independente, os 9 casos reais do worker e os 61 contratos voltaram a passar, com limpeza 0.
 
-A `main` de produção mantém o bug condicional 304 até à fusão.
-O `prepare-history` autenticado continua com código 3 pelo remetente, e os gates de contacto e história continuam em falta.
+Com a fusão, a produção deixou de mostrar o bug condicional 304: os 404 de assets já não aparecem nos erros.
+O `prepare-history` autenticado continua bloqueado com código 3 pelo remetente em falta; os gates de contacto e história continuam por provar.
 W11.4 continua não certificado no Railway.
 Os quatro planos não estão concluídos e W09.5 permanece pendente.
 
-### Estado atual da publicação e da CI
+### Estado anterior à fusão (histórico)
 
 O push anterior `64e13bd` tem Sonar `SUCCESS` com duplicação 1,1 (< 3, inalterada) após o fixture partilhado `scripts/preparation-test-fixture.mjs`, e o preview Cloudflare passou; as CI de backend e E2E passaram no push e na PR.
 A fonte frontend passou no push [run 37863829281](https://github.com/ORIOP25/Cronos/actions/runs/37863829281) mas a PR [run 37863833225](https://github.com/ORIOP25/Cronos/actions/runs/37863833225) falhou 1/592 em `FeedbackContext` por metadados lazy de marketing em falta e `members/me` sem tratamento.
@@ -865,7 +866,14 @@ O novo modo `diagnose-public` corre quatro casos explícitos só de leitura e co
 A avaliação assinada do diagnóstico permanece incompleta e só o resumo derivado seguro é carregado, nunca a execução bruta; os testes locais de modo, leitura e erro de processo passaram (57 focados), sem modo público em produção.
 O trigger da CI foi otimizado para `push` só na `main`, todas as PRs e `workflow_dispatch` manual para branches sem PR, mantendo jobs, auditorias, cobertura e condições de fork.
 
-### Diagnóstico público parcial e correção do 304
+### Estado atual após a fusão da PR 60
+
+O workflow público só de leitura [run 37919213244](https://github.com/ORIOP25/Cronos/actions/runs/37919213244) correu após o alinhamento com quatro casos, um worker e zero retries; as quatro asserções principais e as verificações de fornecedor passaram, mas os testes falharam apenas no script injetado `static.cloudflareinsights.com/beacon.min.js/v...` bloqueado por CSP, os 404 de assets já não aparecem nos erros, e os artefactos protegidos foram carregados com o trace de falha cifrado pelo workflow existente, sem afirmar decifragem manual.
+A correção local de W03.7 restringe a exceção ao script observado com GET, host HTTPS exato, caminho de versão hexadecimal e gramática CSP ancorada, cobre navegação, novos pedidos e invalidação por resposta, e nunca isenta 4xx/5xx servidos, API, Clerk, pedidos não observados ou acrescentos de texto; a telemetria ignorada é só metadados e a CSP não muda.
+Passaram os 19 testes de runtime e os 32 guards determinísticos mais recentes; uma sonda local respondeu 200 ao contacto mas não injetou o beacon, pelo que a ordenação da CI continua por verificar e não há prova falsa.
+A correção atual continua por publicar e aguarda um checkpoint de CI; o remetente E2E em falta mantém o bloqueio total e não há remoção de testes.
+
+### Diagnóstico público parcial e correção do 304 (histórico)
 
 Um diagnóstico público parcial correu num Chrome headless isolado contra a produção `c850235`, com o test HEAD `99d752b` num checkout sujo.
 As asserções de rota pública, canonical, documentos legais, 404 e teclado passaram.
@@ -878,7 +886,7 @@ A revalidação condicional seguinte devolveu 404 na mesma produção.
 O edge worker tratava `304 Not Modified` como `!ok` e servia o documento HTML 404.
 O teste local reproduziu 404 em vez de 304 antes da correção.
 Depois da correção, os 13 testes do edge worker passaram.
-A correção está publicada na PR 60, mas a `main` de produção `c850235` mantém o comportamento até à fusão; não se afirma causa única nem redeploy.
+Com a fusão da PR 60, a correção está em produção; não se afirma causa única nem redeploy.
 
 ### Procedimento de verificação desta continuação
 
