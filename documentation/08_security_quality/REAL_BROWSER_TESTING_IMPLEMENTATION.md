@@ -1028,3 +1028,14 @@ Não se afirma expiração nem revogação de credenciais.
 Uma correção local devolve agora um diagnóstico seguro por operação e código (`oauth_refresh`, `mailbox_profile`, `message_listing`, `message_metadata`), sem corpo, scopes, tokens, URLs ou aliases.
 A observação real do From continua pendente e o plano de fecho permanece aberto.
 Estes testes locais não certificam produção.
+
+### Estado da integração de listagem (pós-PR65)
+
+A [PR 65](https://github.com/ORIOP25/Cronos/pull/65) foi fundida em `main` como `1140ff24`.
+O dispatch real `inspect-code-sender` [run 37985892978](https://github.com/ORIOP25/Cronos/actions/runs/37985892978) devolveu `diagnostic {operation: message_listing, code: invalid_json, http_status: null, reason: invalid_json}`.
+OAuth e perfil passaram; a falha fica confinada à listagem.
+A documentação oficial do Gmail confirma `fields=messages(id),nextPageToken` como válido e `resultSizeEstimate` como campo do resultado vazio.
+A hipótese de uma resposta vazia por máscara de `fields` está por comprovar.
+Uma correção local acrescenta `resultSizeEstimate` à máscara e preserva `http_status` com metadados seguros do corpo (`body_bytes`, `empty_body`, `content_type`), sem nunca interpretar corpo vazio como sucesso.
+A causa permanece apenas observada até uma execução tipada após publicação.
+Nenhum passo deste ciclo certifica produção.

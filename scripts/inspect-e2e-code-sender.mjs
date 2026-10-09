@@ -64,17 +64,24 @@ const SAFE_CODES = new Set([
   'invalid_readonly_scope', 'mailbox_mismatch', 'http_error', 'network_error', 'invalid_json',
 ])
 const SAFE_REASONS = new Set(['oauth_error', 'http', 'network', 'invalid_json', 'scope_mismatch', 'profile_mismatch'])
+const SAFE_CONTENT_TYPES = new Set(['json', 'html', 'text', 'other', 'missing'])
 
 // Keep only known enums and a bounded status. An unknown error never exposes
 // its message, body, scopes, URLs or identifiers.
 function safeDiagnostic(error) {
   const httpStatus = Number.isInteger(error?.httpStatus) && error.httpStatus >= 100 && error.httpStatus <= 599 ? error.httpStatus : null
-  return {
+  const diagnostic = {
     operation: SAFE_OPERATIONS.has(error?.operation) ? error.operation : null,
     code: SAFE_CODES.has(error?.code) ? error.code : 'unknown_error',
     http_status: httpStatus,
     reason: SAFE_REASONS.has(error?.reason) ? error.reason : null,
   }
+  if (error?.code === 'invalid_json' && error.bodyBytes !== undefined) {
+    diagnostic.body_bytes = Number.isSafeInteger(error.bodyBytes) && error.bodyBytes >= 0 ? error.bodyBytes : null
+    diagnostic.empty_body = typeof error.emptyBody === 'boolean' ? error.emptyBody : null
+    diagnostic.content_type = SAFE_CONTENT_TYPES.has(error.contentType) ? error.contentType : 'missing'
+  }
+  return diagnostic
 }
 
 // A safe, secret-free result. Provider and credential failures collapse to a

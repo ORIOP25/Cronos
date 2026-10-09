@@ -9,7 +9,7 @@ const DISCOVERY_SUBJECTS = {
   reset: /^\d{6} is your reset password code$/,
 }
 const DISCOVERY_MAX_WINDOW_MS = 30 * 24 * 60 * 60 * 1000
-const DISCOVERY_LISTING_FIELDS = 'messages(id),nextPageToken'
+const DISCOVERY_LISTING_FIELDS = 'messages(id),nextPageToken,resultSizeEstimate'
 const DISCOVERY_METADATA_FIELDS = 'internalDate,payload(headers(name,value))'
 const DISCOVERY_METADATA_HEADERS = `format=metadata&fields=${DISCOVERY_METADATA_FIELDS}&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Subject`
 
@@ -183,10 +183,21 @@ function safeHttpStatus(value) {
   return Number.isInteger(value) && value >= 100 && value <= 599 ? value : null
 }
 
+const SAFE_CONTENT_TYPES = new Set(['json', 'html', 'text', 'other', 'missing'])
+
+function safeContentType(value) {
+  const type = String(value || '').toLowerCase()
+  if (!type) return 'missing'
+  if (type.includes('json')) return 'json'
+  if (type.includes('html')) return 'html'
+  if (type.startsWith('text/')) return 'text'
+  return 'other'
+}
+
 // A dependency error carries only an operation enum, a safe code, a bounded
 // HTTP status and a reason enum. Provider bodies, descriptions, scopes and
 // messages never reach it.
-function gmailError(code, { operation, httpStatus = null, reason, message }) {
+function gmailError(code, { operation, httpStatus = null, reason, message, bodyBytes, emptyBody, contentType }) {
   const status = safeHttpStatus(httpStatus)
   const error = new Error(message || `Gmail ${operation} failed${status ? `: HTTP ${status}` : ''}`)
   error.name = 'GmailDependencyError'
@@ -194,6 +205,11 @@ function gmailError(code, { operation, httpStatus = null, reason, message }) {
   error.operation = operation
   error.httpStatus = status
   error.reason = reason
+  if (code === 'invalid_json' && (bodyBytes !== undefined || emptyBody !== undefined || contentType !== undefined)) {
+    error.bodyBytes = Number.isSafeInteger(bodyBytes) && bodyBytes >= 0 ? bodyBytes : null
+    error.emptyBody = typeof emptyBody === 'boolean' ? emptyBody : null
+    error.contentType = SAFE_CONTENT_TYPES.has(contentType) ? contentType : 'missing'
+  }
   return error
 }
 
@@ -208,6 +224,31 @@ async function providerErrorCode(response, operation) {
   }
 }
 
+// Read a successful body once and parse it in memory. A blank or malformed body
+// is a fail-closed invalid_json error carrying only size and type metadata.
+async function parseJsonBody(response, operation) {
+  const httpStatus = response.status
+  const contentType = safeContentType(response.headers?.get?.('content-type'))
+  if (typeof response.text === 'function') {
+    let text
+    try {
+      text = await response.text()
+    } catch {
+      throw gmailError('invalid_json', { operation, httpStatus, reason: 'invalid_json', contentType })
+    }
+    try {
+      return JSON.parse(text)
+    } catch {
+      throw gmailError('invalid_json', { operation, httpStatus, reason: 'invalid_json', bodyBytes: Buffer.byteLength(text), emptyBody: text.length === 0, contentType })
+    }
+  }
+  try {
+    return await response.json()
+  } catch {
+    throw gmailError('invalid_json', { operation, httpStatus, reason: 'invalid_json' })
+  }
+}
+
 async function requestJson(fetchImpl, url, { operation, ...options }) {
   let response
   try {
@@ -219,11 +260,7 @@ async function requestJson(fetchImpl, url, { operation, ...options }) {
     const providerCode = await providerErrorCode(response, operation)
     throw gmailError(providerCode || 'http_error', { operation, httpStatus: response.status, reason: providerCode ? 'oauth_error' : 'http' })
   }
-  try {
-    return await response.json()
-  } catch {
-    throw gmailError('invalid_json', { operation, reason: 'invalid_json' })
-  }
+  return parseJsonBody(response, operation)
 }
 
 export async function createGmailReader(credentials, { fetchImpl = fetch } = {}) {

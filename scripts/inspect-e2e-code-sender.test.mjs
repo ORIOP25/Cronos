@@ -18,6 +18,17 @@ function runCli(overrides) {
   return spawnSync(process.execPath, [CLI], { cwd: ROOT, encoding: 'utf8', windowsHide: true, env })
 }
 
+// Drive the real HTTP path with native Response objects so the CLI reads the
+// body once and reports only safe metadata.
+function gmailResponses(listing) {
+  return async url => {
+    const json = body => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
+    if (url.includes('/token')) return json({ access_token: 'private-token', scope: 'https://www.googleapis.com/auth/gmail.readonly' })
+    if (url.endsWith('/profile')) return json({ emailAddress: MAILBOX })
+    return listing
+  }
+}
+
 const READONLY = 'https://www.googleapis.com/auth/gmail.readonly'
 const MAILBOX = 'admincronos100@gmail.com'
 const AFTER = Date.parse('2026-10-01T00:00:00.000Z')
@@ -100,7 +111,7 @@ test('observes the unique production sender with metadata-only requests', async 
   const listing = new URL(calls.find(call => call.url.includes('/messages?')).url)
   assert.equal(listing.searchParams.get('q'), `to:${MAILBOX} after:${AFTER / 1000} before:${BEFORE / 1000}`)
   assert.equal(listing.searchParams.get('maxResults'), '100')
-  assert.equal(listing.searchParams.get('fields'), 'messages(id),nextPageToken')
+  assert.equal(listing.searchParams.get('fields'), 'messages(id),nextPageToken,resultSizeEstimate')
   for (const forbidden of ['snippet', 'body', 'payload']) {
     assert.equal(listing.searchParams.get('fields').includes(forbidden), false, forbidden)
   }
@@ -346,7 +357,7 @@ test('classifies network and malformed JSON without echoing the original message
   assert.deepEqual(network.diagnostic, { operation: 'oauth_refresh', code: 'network_error', http_status: null, reason: 'network' })
   assert.equal(JSON.stringify(network).includes('ENOTFOUND'), false)
   const malformed = await runInspection(environment(), { fetchImpl: async () => ({ ok: true, status: 200, json: async () => { throw new Error('raw body fragment') } }) })
-  assert.deepEqual(malformed.diagnostic, { operation: 'oauth_refresh', code: 'invalid_json', http_status: null, reason: 'invalid_json' })
+  assert.deepEqual(malformed.diagnostic, { operation: 'oauth_refresh', code: 'invalid_json', http_status: 200, reason: 'invalid_json' })
   assert.equal(JSON.stringify(malformed).includes('raw body fragment'), false)
 })
 
@@ -399,4 +410,54 @@ test('the CLI emits one line for a missing-credential dependency without credent
   assert.equal(record.reason, 'missing_credentials')
   for (const text of ['secret', 'token', 'refresh', 'E2E_GMAIL']) assert.equal(cli.stdout.includes(text), false, text)
   assert.equal(cli.stdout.includes('\r'), false)
+})
+
+test('an empty selected listing result is a valid incomplete response', async () => {
+  for (const body of [{ resultSizeEstimate: 0 }, {}]) {
+    const listing = new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
+    const result = await runInspection(environment(), { fetchImpl: gmailResponses(listing) })
+    assert.equal(result.status, 'incomplete')
+    assert.equal(result.reason, 'no_messages')
+  }
+})
+
+test('a blank selected-field listing body fails closed with only safe body metadata', async () => {
+  const listing = new Response('', { status: 200, headers: { 'content-type': 'application/json' } })
+  const result = await runInspection(environment(), { fetchImpl: gmailResponses(listing) })
+  assert.equal(result.status, 'dependency_unavailable')
+  assert.equal(result.reason, 'gmail_unavailable')
+  assert.deepEqual(result.diagnostic, {
+    operation: 'message_listing', code: 'invalid_json', http_status: 200, reason: 'invalid_json',
+    body_bytes: 0, empty_body: true, content_type: 'json',
+  })
+})
+
+test('a non-JSON listing body fails closed without leaking the content', async () => {
+  const html = '<html><body>FORGED_LISTING_SECRET</body></html>'
+  const listing = new Response(html, { status: 200, headers: { 'content-type': 'text/html; charset=utf-8' } })
+  const result = await runInspection(environment(), { fetchImpl: gmailResponses(listing) })
+  assert.equal(result.diagnostic.code, 'invalid_json')
+  assert.equal(result.diagnostic.http_status, 200)
+  assert.equal(result.diagnostic.content_type, 'html')
+  assert.equal(result.diagnostic.empty_body, false)
+  assert.equal(result.diagnostic.body_bytes, Buffer.byteLength(html))
+  assert.equal(JSON.stringify(result).includes('FORGED_LISTING_SECRET'), false)
+})
+
+test('a truncated listing payload retains its HTTP status and content type', async () => {
+  const listing = new Response('{"messages":', { status: 200, headers: { 'content-type': 'application/json' } })
+  const result = await runInspection(environment(), { fetchImpl: gmailResponses(listing) })
+  assert.equal(result.diagnostic.code, 'invalid_json')
+  assert.equal(result.diagnostic.http_status, 200)
+  assert.equal(result.diagnostic.content_type, 'json')
+  assert.equal(result.diagnostic.empty_body, false)
+})
+
+test('a non-success listing response retains its HTTP status without leaking the body', async () => {
+  const listing = new Response('<html>FORGED_UNDERLYING</html>', { status: 400, headers: { 'content-type': 'text/html' } })
+  const result = await runInspection(environment(), { fetchImpl: gmailResponses(listing) })
+  assert.equal(result.diagnostic.operation, 'message_listing')
+  assert.equal(result.diagnostic.code, 'http_error')
+  assert.equal(result.diagnostic.http_status, 400)
+  assert.equal(JSON.stringify(result).includes('FORGED_UNDERLYING'), false)
 })
