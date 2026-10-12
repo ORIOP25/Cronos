@@ -391,3 +391,24 @@ test('a later script GET and CSP failure reconcile both pending console events',
   assert.deepEqual(observer.ignoredOptionalTelemetry.map(item => item.event).sort(), ['console', 'console', 'requestfailed'])
   observer.dispose()
 })
+
+test('an unexpected Clerk failure records only its fixed error codes', async () => {
+  const page = new EventEmitter()
+  const runtime = observeAcceptanceRuntime(page)
+  const create = request('https://clerk.cronos.pt/v1/organizations?__clerk_api_version=2026-05-12', 'POST')
+  page.emit('request', create)
+  page.emit('response', { request: () => create, url: create.url, status: () => 422,
+    json: async () => ({ errors: [{ code: 'form_param_format_invalid', message: 'private text', meta: { param_name: 'name' } }, { code: 'Bad Code!' }] }) })
+  await new Promise(resolve => setImmediate(resolve))
+  assert.ok(runtime.errors.includes('Clerk 422 POST /v1/organizations: form_param_format_invalid'))
+  assert.ok(runtime.errors.every(error => !error.includes('private text')))
+  await runtime.action('expected', [], async () => {
+    const signIn = request('https://clerk.cronos.pt/v1/client/sign_ins', 'POST')
+    page.emit('request', signIn)
+    runtime.allowRequestFailure(signIn, 422)
+    page.emit('response', { request: () => signIn, url: signIn.url, status: () => 422, json: async () => ({ errors: [{ code: 'form_password_incorrect' }] }) })
+  })
+  await new Promise(resolve => setImmediate(resolve))
+  assert.ok(runtime.errors.every(error => !error.includes('sign_ins')))
+  runtime.dispose()
+})
