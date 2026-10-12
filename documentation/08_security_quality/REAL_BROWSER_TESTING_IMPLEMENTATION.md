@@ -1188,3 +1188,21 @@ Não se inventam custos financeiros nem volumes.
 As alterações tocam apenas ferramentas E2E, não o bundle visível da aplicação.
 Não é necessário reconstruir a imagem Docker, porque o código de render não mudou.
 Os planos completos não estão concluídos; esta entrega cobre infraestrutura nativa e uma redução parcial.
+
+## Separação entre registo conhecido e identidade desconhecida
+
+A recuperação no teardown observa a identidade Clerk atual apenas na página principal, uma vez por execução.
+A observação reutiliza `provenance.recordCurrentActor()` e fica limitada por um `expect.poll` explícito de 5 segundos.
+O observador arranca uma só promessa antes do poll; este não volta a chamar o registo.
+
+Registo conhecido: o ator pertence a um alias dedicado criado dentro da execução e a data de criação cai na janela do run.
+Só então o ator é escrito no diário assinado e a intenção de criação correspondente é resolvida.
+O helper devolve `true` apenas quando a sessão ficou com o ator observado.
+
+Identidade desconhecida: sem alias dedicado, sem página secundária ou com o browser fechado, a intenção permanece por resolver.
+Nenhuma identidade desconhecida é procurada, adivinhada ou eliminada por nome.
+Um corpo aprovado com observação falhada falha o teste; um corpo falhado conserva o erro primário mesmo que o marcador auxiliar falhe.
+Esta separação mantém a campanha fail-closed sem provas humanas nem eliminações inferidas.
+
+O recetor do código e os percursos autenticados continuam por observar; nenhuma conta real foi criada nesta fase.
+A prova nativa no pipeline continua pendente; a execução pública `38193441985` não executou este helper.

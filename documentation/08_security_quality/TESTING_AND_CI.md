@@ -278,10 +278,12 @@ Editing the completed summary must preserve its log identity, minute balances an
 Historical preflight requires both passwords; preparation requires neither. The runner and CI sanitizer redact both.
 
 After preflight, the runner creates `.test-artifacts/<run>/ui-run-registry.json` with an authenticated empty actor inventory.
-Acceptance fixtures can record the current Clerk identity through `provenance.recordCurrentActor()` and also observe it during teardown.
-Identity observation reads the session; it does not create users or alter authentication.
-The journal accepts only fresh dedicated aliases and preserves previous data when validation fails.
-Call the recorder immediately after account creation and before logout; teardown alone cannot recover an identity after its session ends.
+Acceptance fixtures record the current Clerk identity through `provenance.recordCurrentActor()` after a passing body.
+The runtime fixture teardown reuses that same strict observation once when the body fails before its own recording.
+The teardown observation runs only on the main page and is bounded by an explicit 5 second native poll.
+It skips an actor already recorded for the session and never creates users or alters authentication.
+The journal accepts only fresh dedicated aliases created within the run and preserves previous data when validation fails.
+A passing body with a failing observation fails the test; a failed body keeps its primary error even when the auxiliary observation or diagnostic fails.
 The plaintext journal stays outside the artifact upload list. The runner encrypts a recovery copy before automatic administrative cleanup.
 
 The `acceptance` project currently implements five public cases, of which four are `@public-readonly`.
