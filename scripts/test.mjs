@@ -41,6 +41,7 @@ Commands:
   setup --scope backend|frontend|all
   doctor --profile fast|integration|e2e|all
   fast --scope backend|frontend|all [-- runner arguments]
+  critical --scope backend
   integration [-- runner arguments]
   e2e [--project public|auth|app|isolated|readonly|provider|capacity]
   capacity
@@ -79,7 +80,7 @@ export function parseArgs(argv) {
   let scopeWasProvided = false
   let profileWasProvided = false
 
-  if (!['setup', 'doctor', 'fast', 'integration', 'e2e', 'capacity', 'capacity-smoke', 'acceptance', 'prepare-history', 'diagnose-public', 'all', 'benchmark', 'campaign'].includes(command)) {
+  if (!['setup', 'doctor', 'fast', 'critical', 'integration', 'e2e', 'capacity', 'capacity-smoke', 'acceptance', 'prepare-history', 'diagnose-public', 'all', 'benchmark', 'campaign'].includes(command)) {
     throw usageError(`Unknown command: ${command}`)
   }
   if (forwarded.length && !['fast', 'integration'].includes(command)) {
@@ -146,8 +147,14 @@ export function parseArgs(argv) {
     throw usageError('campaign options are only valid for campaign.')
   }
 
-  if (['setup', 'fast', 'all'].includes(command) && !SCOPES.has(parsed.scope)) {
+  if (command === 'critical' && !scopeWasProvided) {
+    parsed.scope = 'backend'
+  }
+  if (['setup', 'fast', 'critical', 'all'].includes(command) && !SCOPES.has(parsed.scope)) {
     throw usageError(`Invalid scope: ${parsed.scope}`)
+  }
+  if (command === 'critical' && parsed.scope !== 'backend') {
+    throw usageError('The critical run only supports --scope backend.')
   }
   if (['doctor', 'benchmark'].includes(command) && !PROFILES.has(parsed.profile)) {
     throw usageError(`Invalid profile: ${parsed.profile}`)
@@ -357,6 +364,27 @@ async function readJunitSummary(reportPath) {
   return summarizeJunit(await readFile(reportPath, 'utf8'))
 }
 
+// The long runtime proof must be a real, complete native run: every required
+// case present and passed, none skipped, and at least the expected count. A
+// green pytest exit with skipped cases must never satisfy the gate.
+export function runtimeProofFailures(xml, { minCollected = 10, required = [] } = {}) {
+  const failures = []
+  const cases = [...xml.matchAll(/<testcase\b([^>]*?)(?:\/>|>([\s\S]*?)<\/testcase>)/g)]
+    .map((match) => ({ attrs: match[1] ?? '', body: match[2] ?? '' }))
+  const nameOf = (attrs) => attrs.match(/\bname="([^"]*)"/)?.[1] ?? ''
+  if (!cases.length) failures.push('no test cases')
+  const names = cases.map((testCase) => nameOf(testCase.attrs))
+  for (const requiredName of required) {
+    if (!names.includes(requiredName)) failures.push(`missing case ${requiredName}`)
+  }
+  const skipped = cases.filter((testCase) => /<skipped\b/.test(testCase.body)).length
+  if (skipped) failures.push(`${skipped} skipped case(s)`)
+  const notPassed = cases.filter((testCase) => /<(?:failure|error)\b/.test(testCase.body)).length
+  if (notPassed) failures.push(`${notPassed} failed case(s)`)
+  if (cases.length < minCollected) failures.push(`collected ${cases.length} < ${minCollected}`)
+  return failures
+}
+
 function addPhaseTime(context, phase, durationMs) {
   if (!context || durationMs == null) return
   context.timings[phase] = (context.timings[phase] ?? 0) + durationMs
@@ -529,6 +557,79 @@ export function frontendJunitEnv(kind, reportPath) {
   return kind === 'playwright'
     ? { PLAYWRIGHT_JUNIT_OUTPUT_FILE: reportPath }
     : { VITEST_JUNIT_OUTPUT_FILE: reportPath }
+}
+
+// These per-file gates are protected by policy: the critical manifest must
+// declare them exactly, so a selection change can never silently drop them.
+const CRITICAL_PROTECTED_GATES = Object.freeze([
+  Object.freeze({ path: 'app/scheduler/domain/constraint_policy.py', fail_under: 100 }),
+  Object.freeze({ path: 'app/scheduler/domain/candidate_validation.py', fail_under: 90 }),
+])
+
+// The critical CI selection is a single source of truth owned by the backend
+// policy. The root runner reads it and turns explicit test paths into native
+// pytest arguments, so the fast job never collects the full corpus and never
+// duplicates the list in the workflow.
+export function parseCriticalManifest(value) {
+  const fail = (message) => {
+    throw Object.assign(new Error(`Invalid critical manifest: ${message}`), { runnerCode: 3 })
+  }
+  if (!value || typeof value !== 'object') fail('expected an object')
+  if (!Array.isArray(value.groups) || value.groups.length === 0) fail('expected at least one group')
+  const names = new Set()
+  const seenPaths = new Set()
+  const groups = value.groups.map((group) => {
+    const name = typeof group?.name === 'string' ? group.name : ''
+    if (!/^[a-z][a-z0-9-]*$/.test(name)) fail(`invalid group name: ${JSON.stringify(group?.name)}`)
+    if (names.has(name)) fail(`group names must be unique: ${name}`)
+    names.add(name)
+    if (!Array.isArray(group?.paths) || group.paths.length === 0) fail(`group ${name} needs at least one path`)
+    const paths = group.paths.map((path) => {
+      const value = typeof path === 'string' ? path : ''
+      // A trusted path or pytest node id (`file.py::test_name`). Passed as a
+      // native argument, never evaluated by a shell.
+      if (!/^tests\/[A-Za-z0-9_\-/]+\.py(?:::test_[A-Za-z0-9_]+)?$/.test(value)) {
+        fail(`path is outside tests/: ${JSON.stringify(path)}`)
+      }
+      if (seenPaths.has(value)) fail(`path is duplicated: ${value}`)
+      seenPaths.add(value)
+      return value
+    })
+    const args = Array.isArray(group.args) ? group.args.map(String) : []
+    const workers = group.workers === undefined ? 1 : group.workers
+    if (!Number.isInteger(workers) || workers < 1) fail(`group ${name} has an invalid worker count`)
+    return { name, paths, args, workers }
+  })
+  const coverage = value.coverage ?? {}
+  if (!Array.isArray(coverage.sources) || coverage.sources.length === 0) fail('expected coverage.sources')
+  const seenSources = new Set()
+  const sources = coverage.sources.map((source) => {
+    const value = typeof source === 'string' ? source : ''
+    if (!/^app\/[A-Za-z0-9_\-/]+\.py$/.test(value)) fail(`coverage source is outside app/: ${JSON.stringify(source)}`)
+    if (seenSources.has(value)) fail(`coverage source is duplicated: ${value}`)
+    seenSources.add(value)
+    return value
+  })
+  const failUnder = coverage.fail_under === undefined ? 80 : coverage.fail_under
+  if (!Number.isFinite(failUnder) || failUnder < 0 || failUnder > 100) fail('invalid coverage fail_under')
+  const includes = (Array.isArray(coverage.includes) ? coverage.includes : []).map((entry) => {
+    const path = typeof entry?.path === 'string' ? entry.path : ''
+    const threshold = entry?.fail_under
+    if (!/^app\/[A-Za-z0-9_\-/]+\.py$/.test(path)) fail(`invalid coverage include path: ${JSON.stringify(entry?.path)}`)
+    if (!Number.isFinite(threshold) || threshold < 0 || threshold > 100) fail(`invalid coverage threshold for ${path}`)
+    return { path, fail_under: threshold }
+  })
+  for (const gate of CRITICAL_PROTECTED_GATES) {
+    const match = includes.find((entry) => entry.path === gate.path)
+    if (!match || match.fail_under !== gate.fail_under) {
+      fail(`protected coverage gate is required: ${gate.path} at ${gate.fail_under}`)
+    }
+  }
+  return { groups, coverage: { sources, fail_under: failUnder, includes } }
+}
+
+export function criticalPytestArgs(group, reportPath) {
+  return [...group.paths, ...group.args, `--junitxml=${reportPath}`]
 }
 
 async function runFrontendTests(
@@ -1237,6 +1338,92 @@ async function runAllBackend(context) {
   addPhaseTime(context, 'coverage_ms', Math.round(monotonicMs() - coverageStartedAt))
 }
 
+const CRITICAL_MANIFEST = join(BACKEND, 'tests', 'critical_manifest.json')
+
+async function loadCriticalManifest(path = CRITICAL_MANIFEST) {
+  let raw
+  try {
+    raw = JSON.parse(await readFile(path, 'utf8'))
+  } catch (error) {
+    throw Object.assign(new Error(`Critical manifest unavailable at ${path}: ${error.message}`), { runnerCode: 3 })
+  }
+  return parseCriticalManifest(raw)
+}
+
+// The critical run reuses the CI environment (services, migrations, ephemeral
+// credentials) when present, and falls back to the local test defaults.
+function criticalEnvironment(overrides = {}) {
+  const fromProcess = {}
+  for (const key of ['DATABASE_URL', 'MIGRATION_DATABASE_URL', 'TEST_DATABASE_URL', 'REDIS_URL', 'CELERY_BROKER_URL']) {
+    if (process.env[key]) fromProcess[key] = process.env[key]
+  }
+  return { ...baseTestEnvironment({ ...fromProcess, ...overrides }) }
+}
+
+async function criticalPythonSpec(args, env, context) {
+  if (DOCKER_BACKEND) return backendPythonSpec(args, env, context)
+  if (await access(localPython()).then(() => true).catch(() => false)) return childSpec(localPython(), args)
+  return childSpec(executable('python'), args)
+}
+
+// Runs the critical backend selection in parallel groups, each with its own
+// coverage data file, then combines them. A failure in any group or gate fails
+// the run. The manifest is the one source of truth for the selected paths.
+async function runCriticalBackend(context) {
+  const manifest = await loadCriticalManifest()
+  const coverageStartedAt = monotonicMs()
+  const parallelStartedAt = monotonicMs()
+  const settled = await Promise.allSettled(manifest.groups.map(async (group) => {
+    const reportPath = join(context.artifactDir, `critical-${group.name}.xml`)
+    const coverageFile = join(BACKEND, `.coverage.${group.name}`)
+    const env = criticalEnvironment({ COVERAGE_FILE: coverageFile, RATELIMIT_ENABLED: 'false' })
+    const args = [
+      '-m', 'pytest', '-q', '-c', join(BACKEND, 'pyproject.toml'),
+      ...criticalPytestArgs(group, reportPath),
+      '--cov=app', '--cov-branch', '--cov-report=', '--cov-fail-under=0',
+    ]
+    if (group.workers > 1) args.push('-n', String(group.workers), '--dist=loadscope')
+    const spec = await criticalPythonSpec(args, env, context)
+    return runRecorded(spec, { cwd: BACKEND, env, label: `pytest critical ${group.name}` }, context, {
+      name: `critical-${group.name}`,
+      kind: 'pytest',
+      reportPath,
+      // The groups run in parallel, so record the wall clock under `tests_ms`
+      // instead of summing each group duration.
+      phase: 'critical_groups_ms',
+      workers: group.workers,
+    })
+  }))
+  addPhaseTime(context, 'tests_ms', Math.round(monotonicMs() - parallelStartedAt))
+  const failed = settled.find((result) => result.status === 'rejected')
+  if (failed) throw failed.reason
+  // A group that collected no test must fail: a missing JUnit is not green.
+  let skipped = 0
+  for (const group of manifest.groups) {
+    const summary = await readJunitSummary(join(context.artifactDir, `critical-${group.name}.xml`))
+    if (!Number.isInteger(summary.collected) || summary.collected < 1) {
+      throw Object.assign(new Error(`Critical group ${group.name} produced no test results`), { runnerCode: 1 })
+    }
+    skipped += summary.skipped ?? 0
+  }
+  const env = criticalEnvironment({ COVERAGE_FILE: join(BACKEND, '.coverage') })
+  await runChecked(await criticalPythonSpec(['-m', 'coverage', 'combine'], env, context), {
+    cwd: BACKEND, env, label: 'combine critical coverage',
+  })
+  await runChecked(await criticalPythonSpec([
+    '-m', 'coverage', 'report',
+    `--include=${manifest.coverage.sources.join(',')}`,
+    `--fail-under=${manifest.coverage.fail_under}`,
+  ], env, context), { cwd: BACKEND, env, label: 'critical coverage gate' })
+  for (const include of manifest.coverage.includes) {
+    await runChecked(await criticalPythonSpec([
+      '-m', 'coverage', 'report', `--include=${include.path}`, `--fail-under=${include.fail_under}`,
+    ], env, context), { cwd: BACKEND, env, label: `critical coverage gate ${include.path}` })
+  }
+  addPhaseTime(context, 'coverage_ms', Math.round(monotonicMs() - coverageStartedAt))
+  if (skipped) throw Object.assign(new Error(`${skipped} skipped critical tests are not allowed`), { runnerCode: 1 })
+}
+
 async function runAllFrontend(context) {
   await runFrontendTests(['run', 'lint'], 'ESLint', {}, context, 'eslint')
   await runFrontendTests(['run', 'lint:dead-code'], 'Knip', {}, context, 'knip')
@@ -1469,6 +1656,7 @@ export async function main(argv = process.argv.slice(2)) {
     if (parsed.command === 'setup') await runSetup(parsed.scope, context)
     else if (parsed.command === 'doctor') await runDoctor(parsed.profile, context)
     else if (parsed.command === 'fast') await runFast(parsed.scope, parsed.forwarded, context)
+    else if (parsed.command === 'critical') await runCriticalBackend(context)
     else if (parsed.command === 'integration') await runIntegration(parsed.forwarded, context)
     else if (parsed.command === 'e2e') await runE2e(parsed.project, context)
     else if (parsed.command === 'acceptance') await runProductionCampaign(context, 'acceptance')

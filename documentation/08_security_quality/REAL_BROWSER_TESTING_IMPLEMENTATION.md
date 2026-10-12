@@ -1209,23 +1209,24 @@ A prova nativa no pipeline continua pendente; a execução pública `38193441985
 
 ## Redução consolidada — 2026-10-12
 
-Estado: lote consolidado no ramo `codex/reduce-ci-runtime`, publicado no [PR 72](https://github.com/ORIOP25/Cronos/pull/72) em `1e18315`.
+Estado: ramo `codex/reduce-ci-runtime` no [PR 72](https://github.com/ORIOP25/Cronos/pull/72), HEAD `0fb3594`, público e não fundido.
 A base é `d4f6269` (#71, negociação de conteúdo do edge, sem relação); a referência `fe69` do audit fica preservada.
-O PR é público e não está fundido; a `main` continua em `d4`.
-A libertação na `main` e o desbloqueio dos 69 casos ficam pendentes.
+A `main` continua em `d4`; a libertação e o desbloqueio dos 69 casos ficam pendentes.
+A última execução verde é [run 38269061278](https://github.com/ORIOP25/Cronos/actions/runs/38269061278), no HEAD `0fb3594`.
 
-As contagens locais mantêm-se e variam com a carga e a cache.
-O alvo de 50 por cento ou de cinco minutos não foi atingido na primeira execução; a hipótese passa para a correção seguinte.
+A mudança seguinte introduz a seleção crítica de CI; está por commitar e ainda não foi validada em GHA nem publicada.
+O alvo de 50 por cento foi substituído pela exigência de segundos por job, que a primeira execução não atingiu.
 O checkout original do Desktop fica preservado; o worktree local tem as modificações.
 
-W09.5 e W09.6 permanecem `EM_CURSO`; as metas 8–12 frontend e 30–45 backend não estão atingidas.
+W09.5 e W09.6 permanecem `EM_CURSO`; as quotas antigas 8–12 frontend e 30–45 backend foram retiradas.
+O que decide a conclusão passa a ser o tempo por job e a cobertura crítica.
 Os 69 casos de produção continuam sem campanha completa e inativos, pelo desafio Clerk, fornecedores e datas W07.
-Os estados G1 e G2 são apenas evidência; não se marcam como 100 por cento.
-Os retries continuam 0 e os timeouts e gates não mudaram.
+Os estados G1 e G2 são apenas evidência e não sobem com uma execução local; aguardam as três execuções reais.
+Os retries continuam 0 e os timeouts e gates não mudaram; o cutover W10 continua bloqueado.
 
 ### Contagens observadas
 
-| Medida | `fe69` (audit) | Atual | Variação |
+| Medida | `fe69` (audit) | PR 72 | Variação |
 | :--- | ---: | ---: | ---: |
 | Frontend: casos | 603 | 579 | −24 |
 | Frontend: ficheiros `*.test.*` | 87 | 81 | −6 |
@@ -1333,21 +1334,40 @@ O ganho no caminho crítico é cerca de 7,6 por cento; não é a hipótese de 50
 O frontend piorou face ao baseline `fe69`.
 A referência `fe69` é o pai do audit; o PR 71 (edge) é independente e não se atribui a esta medição.
 
-### Correção pendente de GHA
+### Seleção crítica pendente de GHA
 
-Existe uma correção local por commitar que sequencializa `audit:production` e `verify` no frontend.
-A sobreposição do Knip com a cobertura somou tempo na CI, pelo que a cadeia volta a ser sequencial.
-A correção aumenta o fan-out E2E global para 4, limita `auth` a 2 e mantém `app`, `provider`, `isolated` e `readonly` a 1, com `capacity` a 2.
-Inclui o projeto `dom-network` no comando `fast` e liga o JUnit de cada runner ao caminho que o relatório de execução lê.
-Acrescenta três testes Node (54 no total); a aritmética dá 278 de infraestrutura contra 275, mas o total só se afirma com a execução completa.
+A mudança seguinte, por commitar, retira a maioria do corpus do gate obrigatório e deixa apenas o núcleo crítico, sem apagar testes.
+O backend corre `node scripts/test.mjs critical --scope backend` a partir de `backend/tests/critical_manifest.json`, gerado por `backend/tests/critical_selection.py` e guardado por `backend/tests/unit/test_critical_selection_policy.py`.
+O grupo `unit` tem 23 ficheiros a 2 workers; o grupo `db` tem 9 ficheiros e 2 node IDs exatos de webhook a 4 workers, em PostgreSQL/Redis reais com o schema Alembic.
+A cobertura crítica exige 80 por cento em 18 fontes declaradas, com 100 e 90 nas duas políticas protegidas; `pyproject.toml` mantém o default de 70 por cento para a execução completa opcional.
+Nenhum grupo vazio, JUnit em falta ou teste saltado passa.
 
-O upload de métricas E2E fica atrás da sanitização: `run.json` sempre, `e2e-all.xml` só com o passo E2E verde.
-O upload de falha protegido mantém-se e não se alargam auth state, binários, logs nem ficheiros privados.
-Esta correção é uma hipótese; o próximo SHA deve medi-la, e a libertação exige três execuções equivalentes depois desse SHA.
+A seleção observada no backend é cerca de 225 casos unitários mais 62 de base de dados, ou seja 287; a contagem exata varia com a versão do Python e não se publica como conclusão.
+A contagem completa anterior de 1 416 casos fica como referência histórica.
+
+O frontend corre `npm run verify:critical`; o modo crítico seleciona 24 ficheiros e 254 casos e mede 31 módulos com os floors 45/40/35/45.
+Numa execução local independente, `npm run verify:critical` passou os 254 casos em 20,33 s, com cobertura nativa 67,2/70,65/56,53/69,39.
+A infraestrutura Node local é 281 casos, com 57 no runner após o novo RuntimeGuard, mais edge 22, legal 3 e build 9; o build levou 1,83 s.
+O `vitest run` completo continua opcional sobre 82 ficheiros e 587 casos.
+
+O backend crítico correu localmente em Docker nativo, Linux e Python 3.14: 225 unitários e 62 de base de dados passaram, com 22,26 s e 61,90 s.
+A cobertura do escopo ficou em 81,03 por cento, a política protegida em 100 e o validador de candidato em 90,18.
+A execução completa opcional seria 892 mais a guarda de 10, ou seja 902 unitários; o total inferido de 1 426 não se publica como conclusão.
+
+A CI passa a ter dois jobs E2E: `e2e-runtime`, nativo e sem segredos de Clerk, obrigatório em todos os PR incluindo Dependabot e forks, com 9 casos de recuperação de worker mais a tipologia completa de 48 turmas, 10 recolhidos e zero saltos; e `e2e-browser`, com os 80 casos legacy de UI e 2 de capacidade, retirado só para Dependabot e forks, que precisam do SDK Clerk.
+O job agregado `e2e` falha se o runtime não passar.
+
+O objetivo do utilizador é frontend abaixo de 60 segundos e backend abaixo de 120 segundos.
+Todos estes valores são locais, não GHA; a CI acrescenta o setup e ainda não mediu o novo SHA.
+Esta mudança é uma hipótese; o próximo SHA deve medi-la, e a libertação exige três execuções equivalentes depois desse SHA.
+
+No Windows, o comando crítico força Docker sem rede de stack, pelo que o gate completo não é executável localmente até existir uma base conhecida; a CI fornece os serviços PostgreSQL/Redis e as credenciais efémeras.
 
 ### Fronteiras mantidas
 
 A produção mantém a referência anterior `fe69`, com os cinco componentes válidos; não houve novo deploy.
-Os 69 casos de produção continuam por verificar e inativos.
-O PR 72 é público e não está fundido; a `main` continua em `d4`.
-A libertação na `main` aguarda as três execuções equivalentes depois do SHA corretivo.
+Os 80 casos legacy de UI passaram nativamente na CI no perfil de browser atual, nos runs 38269061278 em `0fb3594` e 38262965438 em `1e18315`.
+Os 69 casos de produção continuam por certificar e bloqueados; não coincidem com os 80 IDs de tarefa do WBS, que permanecem parciais.
+A nova direção permite retirar o não crítico do gate obrigatório, não o apagar.
+O PR 72, em `0fb3594`, é público e não está fundido; a `main` continua em `d4`.
+A libertação na `main` aguarda as três execuções equivalentes depois do SHA da seleção crítica.

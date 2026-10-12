@@ -16,6 +16,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
+    "test:critical": "vitest run --mode critical",
+    "test:critical:coverage": "vitest run --mode critical --coverage",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "test:e2e:public": "playwright test --project=public",
@@ -27,7 +29,8 @@
     "test:legal-contract": "node --test scripts/verify-legal-version-contract.test.mjs && node scripts/verify-legal-version-contract.mjs",
     "legal-manifest:update": "node scripts/verify-legal-version-contract.mjs --write",
     "verify:checks": "npm run lint && npm run lint:dead-code && npm run lint:dead-code:production && npm run test:legal-contract && npm run test:marketing-build && npm run test:acceptance-infrastructure && node --test scripts/edge-worker.test.mjs && npm run test:marketing-assets",
-    "verify": "npm run verify:checks && npm run test:coverage && npm run build"
+    "verify": "npm run verify:checks && npm run test:coverage && npm run build",
+    "verify:critical": "npm run verify:checks && npm run test:critical:coverage && npm run build"
   },
   "dependencies": {
     "@clerk/localizations": "^4.16.1",

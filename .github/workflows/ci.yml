@@ -51,6 +51,11 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
           cache-dependency-path: backend/requirements-dev.txt
+      # The critical runner is a Node CLI. Node ships no npm install here; only
+      # the standard-library runner executes.
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
       - name: Generate ephemeral backend credentials
         shell: bash
         run: |
@@ -112,42 +117,14 @@ jobs:
           python -m scripts.audit_database_integrity
       - name: Verify independent browser campaign expectations
         run: python -m unittest discover -s scripts -p 'test_*e2e*.py'
-      - name: Test backend units
+      # The critical core is the fast required gate. The full corpus stays
+      # available manually; its cases are deselected here, never deleted.
+      # The manifest (backend policy) is the one source of truth for the paths.
+      - name: Test backend critical core
         working-directory: backend
         env:
           RATELIMIT_ENABLED: "false"
-        run: >-
-          pytest -q tests/unit --cov=app --cov-branch --cov-report= --cov-fail-under=0
-          --disable-socket --allow-hosts=127.0.0.1,localhost
-          -n 4 --dist=loadscope
-          --junitxml=test-results-unit.xml
-      - name: Test backend integrations
-        working-directory: backend
-        env:
-          RATELIMIT_ENABLED: "false"
-        run: >-
-          pytest -q tests/integration --cov=app --cov-branch --cov-report= --cov-fail-under=0 --cov-append
-          -n 4 --dist=loadscope --junitxml=test-results-integration.xml
-      - name: Test backend contracts and report coverage
-        working-directory: backend
-        env:
-          RATELIMIT_ENABLED: "true"
-        run: |
-          pytest -q tests/contracts --cov=app --cov-branch --cov-report= --cov-fail-under=0 --cov-append --junitxml=test-results-contracts.xml
-          coverage report --fail-under=70
-          coverage report --include='app/scheduler/domain/constraint_policy.py' --fail-under=100
-          coverage report --include='app/scheduler/domain/candidate_validation.py' --fail-under=90
-          python - <<'PY'
-          import xml.etree.ElementTree as ET
-          files = ("test-results-unit.xml", "test-results-integration.xml", "test-results-contracts.xml")
-          skipped = sum(
-              int(x.attrib.get("skipped", 0))
-              for path in files
-              for x in ET.parse(path).iter("testsuite")
-          )
-          if skipped:
-              raise SystemExit(f"{skipped} skipped tests are not allowed")
-          PY
+        run: node ../scripts/test.mjs critical --scope backend
       - name: Build hardened backend image
         if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
         run: docker build --target runtime -t cronos-backend:test backend
@@ -163,8 +140,11 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: backend-test-artifacts-${{ github.run_id }}-${{ github.run_attempt }}
+          # Only the critical report metadata and coverage data. No broad
+          # `.test-artifacts` folder, no authentication, binary or profile files.
           path: |
-            backend/test-results-*.xml
+            .test-artifacts/**/critical-*.xml
+            .test-artifacts/**/run.json
             backend/htmlcov
             backend/.coverage*
           if-no-files-found: warn
@@ -182,14 +162,16 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - working-directory: frontend
         run: npm ci --ignore-scripts
-      - name: Verify frontend
-        # Knip performs two AST scans and V8 coverage runs four workers, so the
-        # in-job overlap added wall time on the CI host. Keep the mandatory gate
-        # sequential: `verify` is `verify:checks && test:coverage && build`.
+      # The fast required frontend gate. The frontend policy owns the critical
+      # Vitest project/file selection; the full `verify` chain stays available
+      # manually and its cases are deselected here, never deleted.
+      # `audit:production` is a required dependency-security gate and is not
+      # part of `verify:checks`.
+      - name: Verify frontend critical core
         working-directory: frontend
         run: |
           npm run audit:production
-          npm run verify
+          npm run verify:critical
       - name: Report measured LOC
         run: node scripts/loc-report.mjs
       - name: Upload frontend test artifacts
@@ -203,7 +185,9 @@ jobs:
           if-no-files-found: warn
           retention-days: 3
 
-  e2e:
+  # Real browser browser journeys. Needs Clerk test identities, so it is
+  # skipped for Dependabot and fork pull requests.
+  e2e-browser:
     if: >-
       github.actor != 'dependabot[bot]' &&
       (github.event_name != 'pull_request' ||
@@ -497,3 +481,147 @@ jobs:
         run: docker compose -f docker-compose.ci.yml down -v --remove-orphans
         env:
           COMPOSE_PROJECT_NAME: cronos-ci-${{ github.run_id }}-${{ github.run_attempt }}
+
+  # Native cross-layer runtime proof. It needs no Clerk or provider credential,
+  # so it is mandatory on every pull request, including Dependabot and forks.
+  # This carries the real broker/supervisor worker recovery and the full
+  # 48-class validation the fast critical job deliberately does not run.
+  e2e-runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_DB: cronos_test_db
+        ports: ["5432:5432"]
+        options: >-
+          --tmpfs /var/lib/postgresql/data:size=1073741824
+          --health-cmd "pg_isready -U postgres -d cronos_test_db"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine@sha256:ff02b58f971e7d7d156a1267e283fcbbeee91773b6aa36c49dac28ecfe28eadf
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
+      - name: Generate ephemeral runtime credentials
+        shell: bash
+        run: |
+          CI_MIGRATOR_PASSWORD="$(openssl rand -hex 24)"
+          CI_APP_PASSWORD="$(openssl rand -hex 24)"
+          echo "::add-mask::${CI_MIGRATOR_PASSWORD}"
+          echo "::add-mask::${CI_APP_PASSWORD}"
+          echo "CI_MIGRATOR_PASSWORD=${CI_MIGRATOR_PASSWORD}" >> "$GITHUB_ENV"
+          echo "CI_APP_PASSWORD=${CI_APP_PASSWORD}" >> "$GITHUB_ENV"
+          echo "TEST_DATABASE_URL=postgresql+asyncpg://cronos_app:${CI_APP_PASSWORD}@localhost:5432/cronos_test_db" >> "$GITHUB_ENV"
+          echo "DATABASE_URL=postgresql+asyncpg://cronos_app:${CI_APP_PASSWORD}@localhost:5432/cronos_test_db" >> "$GITHUB_ENV"
+          echo "MIGRATION_DATABASE_URL=postgresql+psycopg2://cronos_migrator:${CI_MIGRATOR_PASSWORD}@localhost:5432/cronos_test_db" >> "$GITHUB_ENV"
+      - name: Provision runtime database roles
+        run: |
+          psql postgresql://postgres@localhost/cronos_test_db <<SQL
+          CREATE ROLE cronos_migrator LOGIN NOSUPERUSER BYPASSRLS PASSWORD '${CI_MIGRATOR_PASSWORD}';
+          CREATE ROLE cronos_app LOGIN NOSUPERUSER NOBYPASSRLS PASSWORD '${CI_APP_PASSWORD}';
+          CREATE ROLE cronos_auth_definer NOLOGIN NOSUPERUSER BYPASSRLS;
+          GRANT cronos_auth_definer TO cronos_migrator;
+          ALTER DATABASE cronos_test_db OWNER TO cronos_migrator;
+          GRANT CONNECT ON DATABASE cronos_test_db TO cronos_app;
+          SQL
+      - name: Install locked dependencies
+        working-directory: backend
+        run: >-
+          python -m pip install --require-hashes --only-binary=:all:
+          --no-binary=standardwebhooks -r requirements-dev.txt
+      - name: Test native cross-layer runtime
+        working-directory: backend
+        env:
+          RATELIMIT_ENABLED: "false"
+        run: >-
+          python -m pytest -q
+          tests/integration/committed/test_worker_process_recovery.py
+          tests/unit/test_scheduler_typology_v1.py::test_forty_eight_classes_generate_a_complete_valid_schedule
+          --junitxml=runtime-results.xml
+      # A green pytest exit with skipped or missing cases must never satisfy the
+      # aggregate E2E gate. 0 skips, at least 10 collected, and the three
+      # required native case identities present and passing.
+      - name: Verify the runtime proof is complete
+        working-directory: backend
+        run: |
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+          REQUIRED = (
+              "test_an_owned_worker_never_duplicates_delivery_of_a_queued_job",
+              "test_an_owned_worker_process_loss_is_recovered_by_a_real_supervisor",
+              "test_forty_eight_classes_generate_a_complete_valid_schedule",
+          )
+          MIN_COLLECTED = 10
+          cases = list(ET.parse("runtime-results.xml").getroot().iter("testcase"))
+          names = [case.get("name", "") for case in cases]
+          failures = []
+          if len(cases) < MIN_COLLECTED:
+              failures.append("collected %d < %d" % (len(cases), MIN_COLLECTED))
+          for name in REQUIRED:
+              if name not in names:
+                  failures.append("missing case " + name)
+          for case in cases:
+              label = case.get("name", "?")
+              if case.find("skipped") is not None:
+                  failures.append("skipped case " + label)
+              if case.find("failure") is not None or case.find("error") is not None:
+                  failures.append("failed case " + label)
+          if failures:
+              raise SystemExit("runtime proof incomplete: " + "; ".join(failures))
+          print("runtime proof complete: %d cases" % len(cases))
+          PY
+      - name: Upload runtime proof
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: e2e-runtime-proof-${{ github.run_id }}-${{ github.run_attempt }}
+          path: backend/runtime-results.xml
+          if-no-files-found: warn
+          retention-days: 3
+
+  # Aggregated required status for the E2E group, keeping the branch-protection
+  # name `e2e`. The native runtime proof must always pass; the browser job must
+  # pass unless it was skipped by the Dependabot/fork policy.
+  e2e:
+    if: always()
+    needs: [e2e-runtime, e2e-browser]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify the E2E statuses
+        run: |
+          runtime="${{ needs.e2e-runtime.result }}"
+          browser="${{ needs.e2e-browser.result }}"
+          if [ "$runtime" != "success" ]; then
+            echo "e2e-runtime did not pass: ${runtime}"
+            exit 1
+          fi
+          if [ "$browser" = "success" ]; then
+            echo "e2e statuses are green"
+            exit 0
+          fi
+          if [ "$browser" != "skipped" ]; then
+            echo "e2e-browser did not pass: ${browser}"
+            exit 1
+          fi
+          if [ "${{ github.actor }}" = "dependabot[bot]" ]; then
+            echo "e2e-browser skipped for Dependabot"
+            exit 0
+          fi
+          if [ "${{ github.event_name }}" = "pull_request" ] && [ "${{ github.event.pull_request.head.repo.full_name }}" != "${{ github.repository }}" ]; then
+            echo "e2e-browser skipped for a fork pull request"
+            exit 0
+          fi
+          echo "e2e-browser was unexpectedly skipped"
+          exit 1

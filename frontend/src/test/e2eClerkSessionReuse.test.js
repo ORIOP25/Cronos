@@ -27,6 +27,9 @@ vi.mock('@playwright/test', () => ({
 
 import { loginAsAdminReal } from '../../e2e/utils/clerk-helpers.js'
 
+// Runs in the native node project; the helper only needs a plain window object.
+globalThis.window ??= {}
+
 const ADMIN_EMAIL = 'admin+clerk_test@example.com'
 const ORG_ID = 'org_test'
 
