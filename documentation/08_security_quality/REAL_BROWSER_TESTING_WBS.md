@@ -4,7 +4,7 @@ Revisão: 2026-10-07. Versão: 2.0.
 Main revista: `91a9d28bcb9c9a829a8578872156a6b90fa04bcf`.
 A main remota e o checkout tinham a mesma revisão durante a inspeção.
 Reconciliação W12.4: 2026-10-09. Estado do W12: em curso. Consulte a [reconciliação das 80 tarefas](#reconciliação-w124).
-Estado: 2026-10-12. A `main` publicada é `d4f6269` (#71); o ramo `codex/reduce-ci-runtime` está no [PR 72](https://github.com/ORIOP25/Cronos/pull/72) em `6d861ce`, público e não fundido, com [run 38282501310](https://github.com/ORIOP25/Cronos/actions/runs/38282501310) verde.
+Estado: 2026-10-12. A `main` publicada é `d4f6269` (#71); o ramo `codex/reduce-ci-runtime` está no [PR 72](https://github.com/ORIOP25/Cronos/pull/72) em `878e03b`, público e não fundido; [run 38282501310](https://github.com/ORIOP25/Cronos/actions/runs/38282501310) ficou totalmente verde e a execução mais recente falhou só no browser.
 A referência `fe69` do audit fica preservada, com a execução pública [run 38206152558]; ver o [progresso noturno](REAL_BROWSER_TESTING_IMPLEMENTATION.md#progresso-noturno--2026-10-12).
 Seleção crítica de CI validada em GHA; falta a mediana de três. Ver a [redução consolidada](REAL_BROWSER_TESTING_IMPLEMENTATION.md#redução-consolidada--2026-10-12).
 
@@ -226,7 +226,7 @@ Base histórica e estado atual:
 | :--- | :--- | :--- |
 | Histórico | `91a9d28` | Baseline dos quatro planos; o runner local usava Compose, chaves de teste e `clerk.signIn`. |
 | Intermédio (2026-10-09) | `804a2dd` | Infraestrutura de aceitação implementada; comandos novos coexistem com o legado até ao cutover. |
-| Atual (2026-10-12) | `d4f6269` | A `main` publicada é o #71, uma correção de edge sem relação; a referência de audit `fe69` fica preservada. O lote de redução vive no [PR 72](https://github.com/ORIOP25/Cronos/pull/72), em `6d861ce`, público e não fundido, com a CI verde. A seleção crítica foi validada em GHA; falta a mediana de três. |
+| Atual (2026-10-12) | `d4f6269` | A `main` publicada é o #71, uma correção de edge sem relação; a referência de audit `fe69` fica preservada. O lote de redução vive no [PR 72](https://github.com/ORIOP25/Cronos/pull/72), em `878e03b`, público e não fundido; uma execução ficou totalmente verde e a mais recente falhou só no browser. A seleção crítica foi validada em GHA; falta a mediana de três. |
 
 A tabela não contradiz o registo histórico; marca a evolução.
 
@@ -368,8 +368,8 @@ Execuções citadas:
 | W09.2 | CONCLUÍDO | N/A | Transações, migrations e rollback preservados; [M]. |
 | W09.3 | CONCLUÍDO | N/A | Ocorrências, dívida e fecho preservados no núcleo backend; [O] e [T]. |
 | W09.4 | CONCLUÍDO | N/A | Solver e validador independentes; [S]. |
-| W09.5 | EM_CURSO | N/A | Redução consolidada: sete ficheiros frontend removidos e um novo, saldo menos seis; cinco regressões de domínio backend duplicadas removidas e uma paridade nova. A seleção crítica de CI foi entregue e validada em GHA em `6d861ce`; falta a mediana de três execuções. O cutover da maioria continua bloqueado. Ver a [redução consolidada](REAL_BROWSER_TESTING_IMPLEMENTATION.md#redução-consolidada--2026-10-12). |
-| W09.6 | EM_CURSO | N/A | Medição (estado do PR 72): frontend 579/81; backend 1 416; os 80 casos legacy de UI passam na CI em `0fb3594`. Seleção crítica validada em GHA: backend 225+62 local (22,26 s e 61,90 s; escopo 81,03, política 100, validador 90,18) e frontend 24 ficheiros/254 casos local (20,33 s; cobertura 67,2/70,65/56,53/69,39); full opcional 82/587. Primeira execução completa em `6d861ce`: backend 1 m 55 s, frontend 57 s, `e2e-runtime` 1 m 20 s; objetivo cumprido numa execução, mediana de três pendente. Gates e retries não mudaram. Ver a [redução consolidada](REAL_BROWSER_TESTING_IMPLEMENTATION.md#redução-consolidada--2026-10-12). |
+| W09.5 | EM_CURSO | N/A | Redução consolidada: sete ficheiros frontend removidos e um novo, saldo menos seis; cinco regressões de domínio backend duplicadas removidas e uma paridade nova. A seleção crítica de CI foi entregue e validada em GHA (`6d861ce` verde; `878e03b` falhou só no browser); falta a mediana de três execuções. O cutover da maioria continua bloqueado. Ver a [redução consolidada](REAL_BROWSER_TESTING_IMPLEMENTATION.md#redução-consolidada--2026-10-12). |
+| W09.6 | EM_CURSO | N/A | Medição (estado do PR 72): frontend 579/81; backend 1 416; os 80 casos legacy de UI passam na CI em `0fb3594`. Seleção crítica validada em GHA: backend 225+62 local (22,26 s e 61,90 s; escopo 81,03, política 100, validador 90,18) e frontend 24 ficheiros/254 casos local (20,33 s; cobertura 67,2/70,65/56,53/69,39); full opcional 82/587. Primeira execução completa em `6d861ce`: backend 1 m 55 s, frontend 57 s, `e2e-runtime` 1 m 20 s; a mais recente em `878e03b` deu frontend 73 s e backend 120 s, pelo que a consistência não está provada e a mediana de três continua pendente. Gates e retries não mudaram. Ver a [redução consolidada](REAL_BROWSER_TESTING_IMPLEMENTATION.md#redução-consolidada--2026-10-12). |
 | W09.7 | EM_CURSO | N/A | Knip na CI; remoção de dependências pendente. |
 | W09.8 | EM_CURSO | N/A | Thresholds e gates em conjunto; pendente. |
 | W10.1 | EM_CURSO | DEPENDÊNCIA | `acceptance`, `prepare-history`, `diagnose-public` e `inspect-code-sender` coexistem com o `e2e` legado (Compose e CI legado) até ao cutover W10.8. A campanha está inativa com `E2E_ACCEPTANCE_ENABLED=false`. |

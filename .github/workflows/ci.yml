@@ -91,32 +91,28 @@ jobs:
         run: >-
           python -m pip install --require-hashes --only-binary=:all:
           --no-binary=standardwebhooks -r requirements-dev.txt
-      - name: Verify locked dependencies
+      # The network dependency audit runs in the background while the CPU/DB
+      # gates run in the foreground. A failure in either still fails the job;
+      # migrations and audits stay sequential and use the migrator credential
+      # for the audits only, so Alembic keeps its own settings.
+      - name: Static gates, migrations and dependency audit
         working-directory: backend
         run: |
-          pip check
-          pip-audit -r requirements.txt --progress-spinner off
-      - name: Ruff
-        working-directory: backend
-        run: |
+          set -e
+          ( pip check && pip-audit -r requirements.txt --progress-spinner off ) &
+          audit_pid=$!
+          trap 'kill "$audit_pid" 2>/dev/null || true; wait "$audit_pid" 2>/dev/null || true' EXIT
           ruff format --check .
           ruff check .
-      - name: Verify immutable migration
-        working-directory: backend
-        run: |
           alembic upgrade head
           alembic check
           alembic downgrade base
           alembic upgrade head
-      - name: Audit database constraints
-        working-directory: backend
-        env:
-          DATABASE_URL: ${{ env.MIGRATION_DATABASE_URL }}
-        run: |
-          python -m scripts.audit_triggers
-          python -m scripts.audit_database_integrity
-      - name: Verify independent browser campaign expectations
-        run: python -m unittest discover -s scripts -p 'test_*e2e*.py'
+          DATABASE_URL="$MIGRATION_DATABASE_URL" python -m scripts.audit_triggers
+          DATABASE_URL="$MIGRATION_DATABASE_URL" python -m scripts.audit_database_integrity
+          ( cd .. && python -m unittest discover -s scripts -p 'test_*e2e*.py' )
+          wait "$audit_pid"
+          trap - EXIT
       # The critical core is the fast required gate. The full corpus stays
       # available manually; its cases are deselected here, never deleted.
       # The manifest (backend policy) is the one source of truth for the paths.
@@ -169,13 +165,12 @@ jobs:
       # The fast required frontend gate. The frontend policy owns the critical
       # Vitest project/file selection; the full `verify` chain stays available
       # manually and its cases are deselected here, never deleted.
-      # `audit:production` is a required dependency-security gate and is not
-      # part of `verify:checks`.
+      # `verify:critical:fast` is self-contained (lint, audit:production, legal,
+      # infra, critical coverage); the production build and dead-code checks
+      # stay mandatory in the long e2e-runtime job.
       - name: Verify frontend critical core
         working-directory: frontend
-        run: |
-          npm run audit:production
-          npm run verify:critical
+        run: npm run verify:critical:fast
       - name: Report measured LOC
         run: node scripts/loc-report.mjs
       - name: Upload frontend test artifacts
@@ -391,7 +386,7 @@ jobs:
           # Global fan-out for independent projects only; `app`, `provider`,
           # `isolated`, `readonly` stay at one worker and `auth` is bounded to
           # two in the Playwright config. The runner is authoritative.
-          PLAYWRIGHT_WORKERS: "4"
+          PLAYWRIGHT_WORKERS: "2"
           VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
           E2E_CLERK_ADMIN_EMAIL: ${{ env.CI_E2E_CLERK_ADMIN_EMAIL }}
@@ -521,6 +516,13 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
           cache-dependency-path: backend/requirements-dev.txt
+      # The whole-system frontend production build and dead-code checks are
+      # required on every PR, so they live in this long allowed job.
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
       - name: Generate ephemeral runtime credentials
         shell: bash
         run: |
@@ -548,6 +550,18 @@ jobs:
         run: >-
           python -m pip install --require-hashes --only-binary=:all:
           --no-binary=standardwebhooks -r requirements-dev.txt
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci --ignore-scripts
+      - name: Frontend dead code (default)
+        working-directory: frontend
+        run: npm run lint:dead-code
+      - name: Frontend dead code (production)
+        working-directory: frontend
+        run: npm run lint:dead-code:production
+      - name: Frontend production build
+        working-directory: frontend
+        run: npm run build
       - name: Test native cross-layer runtime
         working-directory: backend
         env:

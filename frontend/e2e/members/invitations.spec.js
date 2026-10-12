@@ -74,12 +74,12 @@ async function completeVisibleInvitationAuth(page, email) {
       await consent.click()
       await expect(consent).toBeChecked()
     }
-    if (/\/(?:foundation|dashboard|my-schedules)(?:[/?#]|$)/.test(page.url())) return
+    if (/\/(?:foundation|dashboard|my-availability|my-schedules|my-progress)(?:[/?#]|$)/.test(page.url())) return
     const continueButton = page.getByRole('button', { name: /continuar|continue|verificar|confirmar|entrar|criar conta/i }).last()
     if (await continueButton.isVisible().catch(() => false)) await continueButton.click()
     await page.waitForTimeout(1000)
   }
-  await expect(page).toHaveURL(/\/(?:foundation|dashboard|my-schedules)(?:[/?#]|$)/, { timeout: 30_000 })
+  await expect(page).toHaveURL(/\/(?:foundation|dashboard|my-availability|my-schedules|my-progress)(?:[/?#]|$)/, { timeout: 30_000 })
 }
 
 test.describe.serial('Member invitations — real Clerk', () => {

@@ -1209,10 +1209,10 @@ A prova nativa no pipeline continua pendente; a execução pública `38193441985
 
 ## Redução consolidada — 2026-10-12
 
-Estado: ramo `codex/reduce-ci-runtime` no [PR 72](https://github.com/ORIOP25/Cronos/pull/72), HEAD `6d861ce`, público e não fundido.
+Estado: ramo `codex/reduce-ci-runtime` no [PR 72](https://github.com/ORIOP25/Cronos/pull/72), HEAD `878e03b`, público e não fundido.
 A base é `d4f6269` (#71, negociação de conteúdo do edge, sem relação); a referência `fe69` do audit fica preservada.
 A `main` continua em `d4`; a libertação e o desbloqueio dos 69 casos ficam pendentes.
-A última execução verde é [run 38282501310](https://github.com/ORIOP25/Cronos/actions/runs/38282501310), no HEAD `6d861ce`.
+A última execução totalmente verde é [run 38282501310](https://github.com/ORIOP25/Cronos/actions/runs/38282501310), em `6d861ce`; a execução mais recente em `878e03b` ([run 38286094914](https://github.com/ORIOP25/Cronos/actions/runs/38286094914)) falhou apenas no browser.
 
 A seleção crítica de CI está entregue e validada em GHA; falta a mediana de três execuções.
 O alvo de 50 por cento foi substituído pela exigência de segundos por job, atingida na primeira execução completa.
@@ -1346,7 +1346,7 @@ Nenhum grupo vazio, JUnit em falta ou teste saltado passa.
 A seleção observada no backend é cerca de 225 casos unitários mais 62 de base de dados, ou seja 287; a contagem exata varia com a versão do Python e não se publica como conclusão.
 A contagem completa anterior de 1 416 casos fica como referência histórica.
 
-O frontend corre `npm run verify:critical`; o modo crítico seleciona 24 ficheiros e 254 casos e mede 31 módulos com os floors 45/40/35/45.
+O frontend corre `npm run verify:critical:fast` na CI; o modo crítico seleciona 24 ficheiros e 254 casos e mede 31 módulos com os floors 45/40/35/45.
 Numa execução local independente, `npm run verify:critical` passou os 254 casos em 20,33 s, com cobertura nativa 67,2/70,65/56,53/69,39.
 A infraestrutura Node local é 281 casos, com 57 no runner após o novo RuntimeGuard, mais edge 22, legal 3 e build 9; o build levou 1,83 s.
 O `vitest run` completo continua opcional sobre 82 ficheiros e 587 casos.
@@ -1364,10 +1364,20 @@ A libertação exige a mediana de três execuções equivalentes depois do SHA d
 
 No Windows, o comando crítico força Docker sem rede de stack, pelo que o gate completo não é executável localmente até existir uma base conhecida; a CI fornece os serviços PostgreSQL/Redis e as credenciais efémeras.
 
-A primeira execução completa do núcleo crítico foi [run 38282501310](https://github.com/ORIOP25/Cronos/actions/runs/38282501310), em `6d861ce`.
-Backend 1 m 55 s, frontend 57 s e `e2e-runtime` 1 m 20 s, com o agregador verde.
-Os orçamentos foram atingidos nessa única execução; falta a mediana de três.
-O upload do backend avisou `No files found` porque `.test-artifacts` e `.coverage*` são ocultos; um patch focado do workflow está pendente.
+A primeira execução completa e a mais recente comparam-se abaixo; são execuções diferentes, não três equivalentes, por isso não se calcula mediana.
+
+| Run | SHA | Frontend | Backend | E2E runtime |
+| :--- | :--- | ---: | ---: | ---: |
+| [38282501310](https://github.com/ORIOP25/Cronos/actions/runs/38282501310) | `6d861ce` | 57 s | 115 s | 80 s |
+| [38286094914](https://github.com/ORIOP25/Cronos/actions/runs/38286094914) | `878e03b` | 73 s | 120 s | browser falhou |
+
+A execução mais recente tem o backend exatamente no limite de 120 s e o frontend acima de 60 s, pelo que a consistência não está provada.
+A falha do browser foi um caso sanitizado de convite: o docente entrou em `/my-availability`, omitido na regex; a correção acrescenta `/my-availability` e `/my-progress`.
+O aviso de upload do backend é corrigido pelo patch `include-hidden-files` pendente.
+
+Correção por publicar: o fan-out E2E global volta a 2 em host de 2 vCPU, o estágio estático/migração/auditoria do backend funde-se com espera obrigatória da auditoria em fundo, e o job longo `e2e-runtime` passa a correr o Knip total e o build de produção.
+O macro rápido `npm run verify:critical:fast` é autocontido; `npm run verify:critical` mantém `verify:checks`, a cobertura crítica e o build, e `npm run verify` continua com 587 casos.
+A poupança esperada do estágio backend é de 8 a 10 s, ainda não medida em GHA.
 
 ### Fronteiras mantidas
 
@@ -1375,5 +1385,5 @@ A produção mantém a referência anterior `fe69`, com os cinco componentes vá
 Os 80 casos legacy de UI passaram nativamente na CI no perfil de browser atual, nos runs 38269061278 em `0fb3594` e 38262965438 em `1e18315`.
 Os 69 casos de produção continuam por certificar e bloqueados; não coincidem com os 80 IDs de tarefa do WBS, que permanecem parciais.
 A nova direção permite retirar o não crítico do gate obrigatório, não o apagar.
-O PR 72, em `6d861ce`, é público e não está fundido; a `main` continua em `d4`.
+O PR 72, em `878e03b`, é público e não está fundido; a `main` continua em `d4`.
 A libertação na `main` aguarda as três execuções equivalentes depois do SHA do patch de artefactos.

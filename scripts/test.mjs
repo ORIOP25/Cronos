@@ -28,7 +28,8 @@ const E2E_PROJECTS = new Set(['public', 'auth', 'app', 'isolated', 'readonly', '
 export const INTEGRATION_WORKERS = 4
 // Global fan-out for independent E2E projects. The shared-organization chain,
 // the fresh-organization chain and the readonly chain keep one worker each.
-export const E2E_WORKERS = 4
+// Restored to 2 after the 4-worker run failed on a 2-vCPU runner.
+export const E2E_WORKERS = 2
 export const E2E_PORT = 5174
 
 export function resolveE2eBaseUrl({ externalStack = false, baseUrl } = {}) {

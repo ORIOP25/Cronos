@@ -59,15 +59,16 @@ The optional full run uses `-n 4 --dist=loadscope` and keeps the rate-limited co
 The 48-class correctness test uses the production 900-second safety budget and stops at the first complete candidate.
 It validates curricular coverage and completion dates. Short optimization deadlines must not make correctness depend on host load.
 
-The fast required frontend gate is `npm run verify:critical`, whose coverage step is `npm run test:critical:coverage`.
+The fast required frontend gate is `npm run verify:critical:fast`, a self-contained macro.
+It runs lint, `audit:production` once, the legal and marketing-build contracts, the acceptance infrastructure, the edge worker, the marketing assets and the critical coverage.
+It does not run Knip or the production build; the whole-system Knip (default and production) and the production build are mandatory in the long `e2e-runtime` job.
+The optional developer `npm run verify:critical` keeps `verify:checks`, the critical coverage and the build; the full `npm run verify` stays at 587 cases.
 Critical mode (`vitest run --mode critical`) selects 24 files and 254 cases from `frontend/src/test/criticalSelection.js`: the node, dom and dom-network projects, the network guard and the selection guard.
-It keeps `envDir: false` and `isolate: true` and the same fail-closed network guard.
-Its coverage measures 31 declared modules with the 45/40/35/45 floors.
-The default `vitest run` keeps the optional full run over 82 files and 587 cases and the whole-application floors.
+It keeps `envDir: false`, `isolate: true`, the fail-closed network guard and 31 declared modules at 45/40/35/45.
 
 Vitest is configured in `frontend/vitest.config.js` with isolated `node`, `dom` and `dom-network` projects and thread pooling. Only the `dom-network` project keeps the MSW server with strict unhandled-request failures. Every other DOM test replaces `fetch` and `XMLHttpRequest` with a fail-closed guard that throws a classified `TestNetworkDeniedError`, so no accidental external request leaves the process. Coverage uses V8 and enforces thresholds of 45 percent statements, 40 percent branches, 35 percent functions, and 45 percent lines. React interactions that cross async boundaries use Testing Library `user-event`.
 
-Playwright is configured in `frontend/playwright.config.js`. The `setup` project feeds `auth` and `auth-state`; the `public` project needs no authentication and no `setup` dependency. The shared chain is `auth-state` → `app` → `provider` → `readonly`. The `isolated` project depends on `setup` and covers fresh-or-existing journeys that create and clean their own user or organization. The `readonly` project depends on `provider` and runs after it, so the tutorial and localStorage-only journeys never race the shared soft-reset. The `app`, `provider`, `isolated` and `readonly` projects use one worker; independent projects receive a global fan-out of four workers, `auth` is bounded to two and `capacity` uses two. The retired `faults` project now maps to the two `isolated` and `readonly` case paths. The `capacity` project runs only when `CAPACITY_ENABLED=1`. The `acceptance` project matches `frontend/e2e/acceptance/*.spec.js`, uses the installed Chrome channel, one worker, no setup dependency and no test credentials. Retries are disabled; traces are retained on failure and screenshots are captured on failure.
+Playwright is configured in `frontend/playwright.config.js`. The `setup` project feeds `auth` and `auth-state`; the `public` project needs no authentication and no `setup` dependency. The shared chain is `auth-state` → `app` → `provider` → `readonly`. The `isolated` project depends on `setup` and covers fresh-or-existing journeys that create and clean their own user or organization. The `readonly` project depends on `provider` and runs after it, so the tutorial and localStorage-only journeys never race the shared soft-reset. The `app`, `provider`, `isolated` and `readonly` projects use one worker; independent projects receive a global fan-out of two workers, `auth` is bounded to two and `capacity` uses two. The retired `faults` project now maps to the two `isolated` and `readonly` case paths. The `capacity` project runs only when `CAPACITY_ENABLED=1`. The `acceptance` project matches `frontend/e2e/acceptance/*.spec.js`, uses the installed Chrome channel, one worker, no setup dependency and no test credentials. Retries are disabled; traces are retained on failure and screenshots are captured on failure.
 
 All projects use the shared `E2E_BASE_URL`, which defaults to `http://127.0.0.1:5174`.
 This address matches the owned Docker stack's IPv4 binding and avoids other processes listening on `localhost` over IPv6.
@@ -83,11 +84,11 @@ Its Nginx application routes include `/imports`. Production keeps its runtime br
 
 GitHub Actions keeps backend, frontend and E2E in separate jobs. The backend job has a 45-minute timeout, the frontend job has a 20-minute timeout, and the E2E job has a 30-minute timeout.
 
-Backend gates use Python 3.14 with `postgres:16` and `redis:7` services. The job provisions `cronos_migrator`, `cronos_app`, and `cronos_auth_definer`, installs locked dependencies with `--require-hashes`, runs `pip check` and `pip-audit`, checks Ruff formatting and linting, runs Alembic upgrade/check/downgrade/upgrade, runs the database integrity audits, and runs the critical core with `node scripts/test.mjs critical --scope backend`. The runner is a Node CLI, so the job sets up Node without installing packages. The job builds the hardened runtime image.
+Backend gates use Python 3.14 with `postgres:16` and `redis:7` services. The job provisions `cronos_migrator`, `cronos_app`, and `cronos_auth_definer` and installs locked dependencies with `--require-hashes`. One merged stage then runs `pip check` and `pip-audit` in the background, Ruff in the foreground, Alembic upgrade/check/downgrade/upgrade, the trigger and integrity audits with the migrator credential, and the independent CSV expectations; both the background audit and the foreground gates must pass. The job then runs the critical core with `node scripts/test.mjs critical --scope backend`. The runner is a Node CLI, so the job sets up Node without installing packages. The job builds the hardened runtime image.
 
-Frontend gates use Node 24 with `npm ci --ignore-scripts` and `npm run audit:production`, a required dependency-security gate. The job then runs `npm run verify:critical`, which is `verify:checks`, the critical coverage run and the build in order. The job also runs `node scripts/loc-report.mjs` against `documentation/08_security_quality/loc-baseline.json`.
+Frontend gates use Node 24 with `npm ci --ignore-scripts` and then the self-contained `npm run verify:critical:fast`, which runs `audit:production` exactly once plus the lint, contract, infrastructure, edge, asset and critical-coverage steps. The job also runs `node scripts/loc-report.mjs` against `documentation/08_security_quality/loc-baseline.json`.
 
-E2E is two jobs plus one aggregate. `e2e-runtime` needs no Clerk or provider credential, so it is mandatory on every pull request, including Dependabot and forks; it runs 9 real worker-recovery cases plus the single full 48-class typology proof, 10 collected with zero skips, against native PostgreSQL/Redis. `e2e-browser` keeps the 80 legacy UI cases and the 2 capacity cases; the Dependabot or fork policy skips only this job, which needs the Clerk SDK. The aggregate `e2e` job fails unless `e2e-runtime` succeeded and `e2e-browser` succeeded or was skipped by that policy. The guarded upload keeps the runner `run.json` metadata always and the Playwright `e2e-all.xml` only when the E2E step passed; it never adds auth state, binaries, logs or private files.
+E2E is two jobs plus one aggregate. `e2e-runtime` needs no Clerk or provider credential, so it is mandatory on every pull request, including Dependabot and forks; it runs 9 real worker-recovery cases plus the single full 48-class typology proof, 10 collected with zero skips, against native PostgreSQL/Redis, and it also runs the whole-system frontend Knip and production build. `e2e-browser` keeps the 80 legacy UI cases and the 2 capacity cases; the Dependabot or fork policy skips only this job, which needs the Clerk SDK. The aggregate `e2e` job fails unless `e2e-runtime` succeeded and `e2e-browser` succeeded or was skipped by that policy. The guarded upload keeps the runner `run.json` metadata always and the Playwright `e2e-all.xml` only when the E2E step passed; it never adds auth state, binaries, logs or private files.
 
 ### Critical and full selections
 
@@ -103,13 +104,20 @@ The local backend critical run reported 81.03 percent scope coverage, 100 percen
 These local timings are not CI. CI setup adds about 69 s.
 Only job seconds and the critical coverage are completion criteria now; the old 30–45 backend and 8–12 frontend file quotas are retired.
 
-The first complete green run on `6d861ce` ([run 38282501310](https://github.com/ORIOP25/Cronos/actions/runs/38282501310)) passed every job and the aggregate: backend 1 m 55 s, frontend 57 s and `e2e-runtime` 1 m 20 s.
-The budgets were met on that single run; they are not yet a three-run median, and `main` stays at `d4`.
-The backend artifact upload warned `No files found` because the hidden `.test-artifacts` and `.coverage` paths need `include-hidden-files`; a focused workflow patch is pending.
+The first complete green run and the latest run are compared below; they are different runs, not three equivalent ones, so no median is computed.
+
+| Run | SHA | Frontend | Backend | E2E runtime |
+| :--- | :--- | ---: | ---: | ---: |
+| [38282501310](https://github.com/ORIOP25/Cronos/actions/runs/38282501310) | `6d861ce` | 57 s | 115 s | 80 s |
+| [38286094914](https://github.com/ORIOP25/Cronos/actions/runs/38286094914) | `878e03b` | 73 s | 120 s | browser failed |
+
+The latest backend equals the 120-second ceiling and the frontend exceeds 60 seconds, so consistency is not proven.
+The browser failure was a sanitized invitation case: the teacher reached `/my-availability`, omitted from the landing regex; the fix adds `/my-availability` and `/my-progress`.
+The pending `include-hidden-files` patch fixes the backend upload warning, and the E2E global worker count returns to two.
 
 The legacy 80 UI browser cases passed natively in CI on the current browser profile: runs 38269061278 on `0fb3594` and 38262965438 on `1e18315`.
 The 69 production acceptance cases stay uncertified and blocked; this is not the same as the 80 WBS task IDs, which stay partial.
-The critical profile and the `e2e-runtime` job are now CI-validated; only the three-run median is pending.
+The critical profile and the `e2e-runtime` job are now CI-validated; only the three-run median is pending, so W09 stays in progress.
 The new direction permits retiring non-critical suites from the required gate, not deleting them.
 On Windows the critical command currently forces Docker without a shared stack network, so the full critical gate is not runnable locally until a known database is provided. The CI job supplies the PostgreSQL/Redis services and the ephemeral credentials.
 
