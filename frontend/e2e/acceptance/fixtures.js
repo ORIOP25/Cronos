@@ -91,7 +91,7 @@ export const test = base.extend({
       },
       // Call after creating the school through visible controls, using its founder's page.
       // The optional creation intent id resolves exactly that write-ahead org intent.
-      async recordCreatedSchool(type, observedPage = page, creationIntentId) {
+      async recordCreatedSchool(type, observedPage, creationIntentId) {
         await this.recordCurrentActor(observedPage)
         const school = await observedPage.evaluate(async () => {
           const clerk = window.Clerk

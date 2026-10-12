@@ -137,13 +137,18 @@ export async function mintClerkTestingToken({ expectedRevision }, environment, {
   return token
 }
 
+function missingAsNull(error) {
+  if (error.code === 'ENOENT') return null
+  throw error
+}
+
 async function inspectArtifactRoot(artifactRoot) {
   for (let parent = dirname(resolve(artifactRoot)); ; parent = dirname(parent)) {
     const parentInfo = await lstat(parent)
     if (!parentInfo.isDirectory() || parentInfo.isSymbolicLink()) throw new Error('Administrative artifact parent is not confined')
     if (parent === dirname(parent)) break
   }
-  const existingRoot = await lstat(resolve(artifactRoot)).catch(error => { if (error.code !== 'ENOENT') throw error; return null })
+  const existingRoot = await lstat(resolve(artifactRoot)).catch(missingAsNull)
   if (existingRoot && (!existingRoot.isDirectory() || existingRoot.isSymbolicLink())) throw new Error('Administrative artifact root is not confined')
   return existingRoot
 }
@@ -154,7 +159,7 @@ async function readPriorExports({ artifactRoot, existingRoot, organizations, run
     for (const local_id of organizations) {
       const name = `organization-${local_id}.zip.enc`
       const path = join(artifactRoot, name)
-      const file = await lstat(path).catch(error => { if (error.code !== 'ENOENT') throw error; return null })
+      const file = await lstat(path).catch(missingAsNull)
       if (!file) continue
       if (!file.isFile() || file.isSymbolicLink() || file.size > 64 * 1024 * 1024) throw new Error('Prior administrative export is not confined')
       const content = await readFile(path)
