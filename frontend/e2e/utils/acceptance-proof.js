@@ -150,6 +150,33 @@ export function noteSchoolObservation(testInfo) {
   if (session) session.school = true
 }
 
+// A runtime group records the actor it created right after a successful body.
+// When the body fails after a native identity creation but before that
+// observation, the write-ahead creation intent stays unresolved and cleanup can
+// no longer remove the account. The fixture teardown reuses the same strict UI
+// observation exactly once so a still-readable page can still resolve it. The
+// session actor flag stops a captured actor from being observed twice. A failed
+// body keeps its primary error even when the observation or the payload-free
+// diagnostic fails; after a passing body a failing observation is a real
+// fixture failure. Only a session actor that was actually recorded proves the
+// matching intent resolved, so a no-op observation never claims a recovery.
+export async function recoverActorObservation(testInfo, { bodyFailed, observe } = {}) {
+  const session = sessions.get(testInfo)
+  if (!session || session.actor) return false
+  try {
+    await observe()
+  } catch {
+    if (!bodyFailed) throw new Error('Acceptance actor recovery observation failed after a passing body')
+    try {
+      await testInfo.attach('actor-recovery-failed', {
+        body: Buffer.from(JSON.stringify({ schema_version: 1, recovered: false })), contentType: 'application/json',
+      })
+    } catch { /* the auxiliary marker must never replace the primary body error */ }
+    return false
+  }
+  return sessions.get(testInfo)?.actor === true
+}
+
 // An existing signed persistent school only grants provenance when the live
 // browser session shows the same Clerk actor that owns it and the same active
 // organization. It never writes the old actor as a freshly created record.

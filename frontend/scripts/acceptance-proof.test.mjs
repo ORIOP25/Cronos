@@ -1,15 +1,16 @@
 import assert from 'node:assert/strict'
-import { randomBytes } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import test from 'node:test'
 import { finalizeRun } from '../../scripts/finalize-real-browser-run.mjs'
+import { createUiRegistryFile, recordUiActorFile, recordUiCreationIntentFile, unresolvedUiCreationIntents, verifyRegistry } from '../../scripts/e2e-run-registry.mjs'
 import {
   beginProofSession, checkpointRecord, evidencePath, finishProofSession, matchCaseProof,
   noteActorObservation, notePageActivity, notePersistentSchoolObservation, noteSchoolObservation,
   persistentSchoolProvenance, proofArtifactRoot, PUBLIC_READONLY_CASES, PUBLIC_READONLY_TAG,
-  publicReadonlySelection, recordCheckpoint, validEvidencePath,
+  publicReadonlySelection, recordCheckpoint, recoverActorObservation, validEvidencePath,
 } from '../e2e/utils/acceptance-proof.js'
 
 function fakeTestInfo(root) {
@@ -312,6 +313,149 @@ test('a signed persistent school grants provenance only for its own live actor a
   } finally { await rm(root, { recursive: true, force: true }) }
 })
 
+// Mirrors the runtime fixture teardown: the recovery runs after the body, then
+// the proof session closes. A body failure must survive both.
+async function runRuntimeTeardown(testInfo, observe) {
+  let recovered, disposed = false
+  await assert.rejects(async () => {
+    try {
+      throw new Error('body failed after provider verification')
+    } finally {
+      disposed = true
+      try {
+        recovered = await recoverActorObservation(testInfo, { bodyFailed: true, observe })
+      } finally {
+        finishProofSession(testInfo)
+      }
+    }
+  })
+  return { recovered, disposed }
+}
+
+test('a failed body still recovers the actual fresh actor exactly once and resolves its intent', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'cronos-recover-'))
+  try {
+    const testInfo = fakeTestInfo(root)
+    beginProofSession(testInfo, root)
+    const key = randomBytes(32)
+    const registryPath = join(root, 'registry.json')
+    await createUiRegistryFile(registryPath, key, 'run-1', '2026-10-08T10:00:00.000Z')
+    await recordUiCreationIntentFile(registryPath, key, 'run-1',
+      { id: randomUUID(), kind: 'actor', alias: 'admincronos100+run-1@gmail.com' }, '2026-10-08T10:00:10.000Z')
+    const actor = { id: 'user_Founder', email: 'admincronos100+run-1@gmail.com', created_at: '2026-10-08T10:00:30.000Z' }
+    let attempts = 0
+    const observe = async () => {
+      attempts += 1
+      await recordUiActorFile(registryPath, key, 'run-1', actor, '2026-10-08T10:01:00.000Z')
+      noteActorObservation(testInfo)
+    }
+    const { recovered, disposed } = await runRuntimeTeardown(testInfo, observe)
+    assert.equal(disposed, true)
+    assert.equal(recovered, true)
+    assert.equal(attempts, 1)
+    const registry = verifyRegistry(JSON.parse(await readFile(registryPath, 'utf8')), key)
+    assert.deepEqual(registry.actors.map(item => item.id), ['user_Founder'])
+    assert.deepEqual(unresolvedUiCreationIntents(registry), [])
+  } finally { await rm(root, { recursive: true, force: true }) }
+})
+
+test('a recorded actor is never observed twice once the body captured it', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'cronos-recover-'))
+  try {
+    const testInfo = fakeTestInfo(root)
+    beginProofSession(testInfo, root)
+    noteActorObservation(testInfo)
+    let attempts = 0
+    assert.equal(await recoverActorObservation(testInfo, { bodyFailed: true, observe: async () => { attempts += 1 } }), false)
+    assert.equal(attempts, 0)
+    finishProofSession(testInfo)
+  } finally { await rm(root, { recursive: true, force: true }) }
+})
+
+test('an observation that records no actor claims no recovery and stays unobserved', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'cronos-recover-'))
+  try {
+    const testInfo = fakeTestInfo(root)
+    beginProofSession(testInfo, root)
+    let attempts = 0
+    assert.equal(await recoverActorObservation(testInfo, { bodyFailed: false, observe: async () => { attempts += 1 } }), false)
+    assert.equal(attempts, 1)
+    assert.equal(testInfo.attachments.some(item => item.name === 'actor-recovery-failed'), false)
+    assert.equal(finishProofSession(testInfo).length, 0)
+  } finally { await rm(root, { recursive: true, force: true }) }
+})
+
+test('a failed body keeps its primary error even when the auxiliary observation and marker fail', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'cronos-recover-'))
+  try {
+    const testInfo = fakeTestInfo(root)
+    testInfo.attach = async () => { throw new Error('marker attach failed') }
+    beginProofSession(testInfo, root)
+    const primaryError = new Error('body failed after provider verification')
+    let recovered, disposed = false
+    await assert.rejects(async () => {
+      try {
+        throw primaryError
+      } finally {
+        disposed = true
+        try {
+          recovered = await recoverActorObservation(testInfo, { bodyFailed: true, observe: async () => { throw new Error('page crashed') } })
+        } finally {
+          finishProofSession(testInfo)
+        }
+      }
+    }, error => error === primaryError)
+    assert.equal(disposed, true)
+    assert.equal(recovered, false)
+  } finally { await rm(root, { recursive: true, force: true }) }
+})
+
+test('a failing recovery after a passing body throws a fixed safe error and cannot stay green', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'cronos-recover-'))
+  try {
+    const testInfo = fakeTestInfo(root)
+    beginProofSession(testInfo, root)
+    const payload = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyIn0.signature'
+    await assert.rejects(
+      recoverActorObservation(testInfo, { bodyFailed: false, observe: async () => { throw new Error(`provider payload ${payload}`) } }),
+      error => {
+        assert.match(error.message, /actor recovery observation failed/)
+        assert.equal(String(error.message).includes(payload), false)
+        return true
+      },
+    )
+    finishProofSession(testInfo)
+  } finally { await rm(root, { recursive: true, force: true }) }
+})
+
+test('a failed body surfaces a payload-free diagnostic without replacing the primary body error', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'cronos-recover-'))
+  try {
+    const testInfo = fakeTestInfo(root)
+    beginProofSession(testInfo, root)
+    const payload = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyIn0.signature'
+    const primaryError = new Error('body failed')
+    let recovered, disposed = false
+    await assert.rejects(async () => {
+      try {
+        throw primaryError
+      } finally {
+        disposed = true
+        try {
+          recovered = await recoverActorObservation(testInfo, { bodyFailed: true, observe: async () => { throw new Error(`provider payload ${payload}`) } })
+        } finally {
+          finishProofSession(testInfo)
+        }
+      }
+    }, error => error === primaryError)
+    assert.equal(disposed, true)
+    assert.equal(recovered, false)
+    const diagnostic = testInfo.attachments.find(item => item.name === 'actor-recovery-failed')
+    assert.ok(diagnostic, 'a failed recovery must be surfaced')
+    assert.equal(Buffer.from(diagnostic.body).toString('utf8').includes(payload), false)
+  } finally { await rm(root, { recursive: true, force: true }) }
+})
+
 // Mirrors the runtime fixture order: a refused group never reaches its body.
 function runGuardedGroup({ mode, annotations }, body) {
   const selection = publicReadonlySelection({ mode, annotations })
@@ -350,4 +494,23 @@ test('the runtime fixture guards the readonly selection before any group body', 
   const body = source.indexOf('runFixture(runtime)')
   assert.ok(guard !== -1, 'the runtime fixture must call the readonly selection guard')
   assert.ok(body !== -1 && guard < body, 'the guard must run before the group body')
+})
+
+// Source-ordering guard only. It proves the fixture wires the teardown contract;
+// it is not a native runtime proof, which the shared expect.poll already gives.
+test('the runtime teardown starts one explicitly bounded observation and always closes the proof session', async () => {
+  const source = await readFile(new URL('../e2e/acceptance/fixtures.js', import.meta.url), 'utf8')
+  const starts = source.match(/const observation = provenance\.recordCurrentActor\(\)/g) || []
+  assert.equal(starts.length, 1, 'the teardown must start exactly one current-actor observation')
+  const poll = source.match(/expect\.poll\(\(\) => observation, \{([^}]*)\}\)/)
+  assert.ok(poll, 'the poll must re-read the single started observation promise')
+  assert.match(poll[1], /timeout:\s*5000\b/, 'the poll must carry an explicit native bound instead of the project expect timeout')
+  const observed = source.indexOf('const observation = provenance.recordCurrentActor()')
+  const polled = source.indexOf('expect.poll(() => observation')
+  assert.ok(observed !== -1 && polled !== -1 && observed < polled, 'the observation must start before the poll')
+  const recover = source.indexOf('recoverActorObservation(testInfo')
+  const closed = source.indexOf('finishProofSession(testInfo)', recover)
+  assert.ok(recover !== -1 && closed !== -1 && recover < closed, 'the recovery must run before closing the proof session')
+  const guardedByFinally = source.indexOf('} finally {', recover)
+  assert.ok(guardedByFinally !== -1 && guardedByFinally < closed, 'the proof session must close in a finally after recovery')
 })

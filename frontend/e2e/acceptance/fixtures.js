@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { observeAcceptanceActivity, observeAcceptanceRuntime } from '../utils/acceptance-runtime.js'
-import { beginProofSession, finishProofSession, noteActorObservation, notePageActivity, notePersistentSchoolObservation, noteSchoolObservation, proofArtifactRoot, publicReadonlySelection } from '../utils/acceptance-proof.js'
+import { beginProofSession, finishProofSession, noteActorObservation, notePageActivity, notePersistentSchoolObservation, noteSchoolObservation, proofArtifactRoot, publicReadonlySelection, recoverActorObservation } from '../utils/acceptance-proof.js'
 import { recordGroupRevisionSnapshot } from '../utils/deployments.js'
 import { recordSecretFile, recordUiActorFile, recordUiCreationIntentFile, recordUiSchoolFile, signRegistry, verifyRegistry } from '../../../scripts/e2e-run-registry.mjs'
 import { cleanupProductionCampaign } from '../../../scripts/cleanup-production-campaign.mjs'
@@ -135,6 +135,15 @@ export const test = base.extend({
     beginProofSession(testInfo, proofArtifactRoot(testInfo))
     observeAcceptanceActivity(() => notePageActivity(testInfo))
     const runtime = observeAcceptanceRuntime(page)
+    // Start one strict observation and bound it explicitly with the native poll
+    // so a stalled page cannot hold the teardown open (the project expect
+    // timeout is larger). The recorder starts exactly once; the poll only
+    // re-reads that single promise.
+    const observeActor = async () => {
+      const observation = provenance.recordCurrentActor()
+      await expect.poll(() => observation, { message: 'Actor recovery observation must settle', timeout: 5000 }).toBeUndefined()
+    }
+    let bodyFailed = false
     try {
       // W04.6: a publication during the campaign invalidates the previous
       // revision. Verify the live production revision and materialize its proof
@@ -154,10 +163,21 @@ export const test = base.extend({
         await testInfo.attach('optional-telemetry-diagnostics', { path: diagnostics, contentType: 'application/json' })
       }
       expect(runtime.errors, 'Unanticipated browser runtime failures').toEqual([])
+    } catch (error) {
+      bodyFailed = true
+      throw error
     } finally {
       observeAcceptanceActivity(null)
       runtime.dispose()
-      finishProofSession(testInfo)
+      try {
+        // A body that failed after a native identity creation but before its own
+        // observation leaves the write-ahead intent unresolved. Reuse the same
+        // strict observation once, bounded by the native poll deadline, so a
+        // still-readable page can still resolve it without changing the outcome.
+        await recoverActorObservation(testInfo, { bodyFailed, observe: observeActor })
+      } finally {
+        finishProofSession(testInfo)
+      }
     }
   }, { auto: true }],
 })
