@@ -1396,3 +1396,21 @@ Os 69 casos de produção continuam por certificar e bloqueados; não coincidem 
 A nova direção permite retirar o não crítico do gate obrigatório, não o apagar.
 O PR 72 foi fundido na `main` por squash em `46a7aef`.
 O alvo de runtime ficou cumprido na `1457d74`; a conclusão deste alvo de CI não certifica o cutover W09 nem a campanha de produção de 69 casos, que permanecem frentes independentes e abertas.
+
+## Revalidação externa — 2026-10-12 (b5beeb7)
+
+A [CI da `main`](https://github.com/ORIOP25/Cronos/actions/runs/38305414872) em `b5beeb7` passou os cinco jobs.
+O frontend (`revision.json`, `verifiable=true`), a API (`/health/ready`), o worker, o supervisor e o Beat estão todos em `b5beeb7`, com os deployments Railway `SUCCESS` e PostgreSQL e Redis ligados.
+A variável `E2E_ACCEPTANCE_ENABLED` continua `false`.
+`E2E_GMAIL_CODE_SENDER`, `E2E_CONTACT_SENDER`, `E2E_HISTORY_TEACHER_PASSWORD` e `E2E_HISTORY_ADMIN_PASSWORD` continuam por configurar.
+
+O `inspect-code-sender` real passou OAuth, perfil e listagem nas duas caixas e terminou `incomplete` com `no_messages`, numa janela de sete dias:
+[admin, `verification`](https://github.com/ORIOP25/Cronos/actions/runs/38308630919) e [teacher, `reset`](https://github.com/ORIOP25/Cronos/actions/runs/38308634273).
+Nenhum código foi entregue, pelo que o remetente continua por observar e a dependência circular com o preflight mantém-se.
+
+A [documentação Clerk](https://clerk.com/docs/security/bot-protection) confirma que os registos automatizados ou vindos de proxies recebem o desafio Turnstile e que só um Testing Token ou a desativação de "Challenge suspicious sign-ups" o evitam.
+O titular autorizou um Testing Token limitado ao desafio do registo, mantendo a proteção de produção ativa e reais todos os outros passos.
+Nessa campanha, o desafio anti-bot do registo fica explicitamente fora da certificação.
+O token ainda não foi implementado: falta um canal autorizado para o emitir e para ler o remetente nas definições Clerk de produção.
+W11.4 tem autorização para um ambiente Railway temporário, ainda não criado.
+Nenhum passo desta revalidação certifica produção.
