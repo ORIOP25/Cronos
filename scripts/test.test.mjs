@@ -13,14 +13,19 @@ import { preparationFixture } from './preparation-test-fixture.mjs'
 import {
   childSpec,
   cleanupOwnedResources,
+  criticalPytestArgs,
   displayArgs,
   finalizePreparation,
+  frontendFastArgs,
+  frontendJunitEnv,
   isOwnedResource,
   parseArgs,
+  parseCriticalManifest,
   preservePrimaryFailure,
   productionCampaignMode,
   ROOT,
   resolveE2eBaseUrl,
+  runtimeProofFailures,
   summarizeJunit,
   validateDatabaseTargets,
   verifiedResultGuard,
@@ -206,6 +211,127 @@ test('keeps capacity as an explicit E2E gate', () => {
   assert.equal(parseArgs(['capacity']).command, 'capacity')
   assert.equal(parseArgs(['capacity-smoke']).command, 'capacity-smoke')
   assert.equal(parseArgs(['e2e', '--project', 'capacity']).project, 'capacity')
+})
+
+test('selects the isolated and readonly projects and retires the faults alias', () => {
+  assert.equal(parseArgs(['e2e', '--project', 'isolated']).project, 'isolated')
+  assert.equal(parseArgs(['e2e', '--project', 'readonly']).project, 'readonly')
+  assert.throws(() => parseArgs(['e2e', '--project', 'faults']), /Invalid E2E project/)
+})
+
+test('the fast frontend run selects every Vitest project, including dom-network data hooks', () => {
+  assert.deepEqual(
+    frontendFastArgs(['-t', 'getWeekSubmissionBlockers']),
+    [
+      'test', '--',
+      '--project=node', '--project=dom', '--project=dom-network',
+      '-t', 'getWeekSubmissionBlockers',
+    ],
+  )
+})
+
+test('each frontend runner wires its own JUnit report for truthful suite counts', () => {
+  assert.deepEqual(frontendJunitEnv('vitest', 'frontend-fast.xml'), { VITEST_JUNIT_OUTPUT_FILE: 'frontend-fast.xml' })
+  assert.deepEqual(frontendJunitEnv('playwright', 'e2e-all.xml'), { PLAYWRIGHT_JUNIT_OUTPUT_FILE: 'e2e-all.xml' })
+  assert.deepEqual(frontendJunitEnv('vitest', null), {})
+})
+
+test('the critical manifest accepts explicit test paths and fails closed on invalid selections', () => {
+  const valid = () => ({
+    groups: [
+      {
+        name: 'unit',
+        paths: [
+          'tests/unit/test_scheduler_constraint_policy.py',
+          'tests/unit/test_scheduler_typology_v1.py::test_forty_eight_classes_generate_a_complete_valid_schedule',
+        ],
+        args: ['--disable-socket'],
+        workers: 4,
+      },
+      { name: 'db', paths: ['tests/integration/committed/test_worker_process_recovery.py'], workers: 1 },
+    ],
+    coverage: {
+      sources: ['app/scheduler/domain/constraint_policy.py', 'app/scheduler/domain/candidate_validation.py'],
+      fail_under: 80,
+      includes: [
+        { path: 'app/scheduler/domain/constraint_policy.py', fail_under: 100 },
+        { path: 'app/scheduler/domain/candidate_validation.py', fail_under: 90 },
+      ],
+    },
+  })
+
+  const manifest = parseCriticalManifest(valid())
+  assert.deepEqual(manifest.groups.map((group) => group.name), ['unit', 'db'])
+  assert.deepEqual(manifest.groups[0].args, ['--disable-socket'])
+  assert.equal(manifest.groups[0].paths[1], 'tests/unit/test_scheduler_typology_v1.py::test_forty_eight_classes_generate_a_complete_valid_schedule')
+  assert.equal(manifest.groups[1].workers, 1)
+  assert.equal(manifest.coverage.fail_under, 80)
+  assert.deepEqual(manifest.coverage.sources, [
+    'app/scheduler/domain/constraint_policy.py',
+    'app/scheduler/domain/candidate_validation.py',
+  ])
+
+  assert.throws(() => parseCriticalManifest(null), /object/)
+  assert.throws(() => parseCriticalManifest({ groups: [] }), /at least one group/)
+  assert.throws(() => parseCriticalManifest({ ...valid(), coverage: { ...valid().coverage, sources: [] } }), /coverage.sources/)
+  assert.throws(() => parseCriticalManifest({ ...valid(), coverage: { ...valid().coverage, sources: ['app/a.py', 'app/a.py'] } }), /duplicated/)
+  assert.throws(
+    () => parseCriticalManifest({ ...valid(), coverage: { sources: ['app/a.py'], includes: [{ path: 'app/scheduler/domain/constraint_policy.py', fail_under: 100 }] } }),
+    /protected coverage gate/,
+  )
+  {
+    const missing = valid()
+    missing.coverage.includes = missing.coverage.includes.filter((entry) => !entry.path.endsWith('candidate_validation.py'))
+    assert.throws(() => parseCriticalManifest(missing), /protected coverage gate/)
+  }
+  {
+    const wrong = valid()
+    wrong.coverage.includes = wrong.coverage.includes.map((entry) => (
+      entry.path.endsWith('constraint_policy.py') ? { ...entry, fail_under: 99 } : entry
+    ))
+    assert.throws(() => parseCriticalManifest(wrong), /protected coverage gate/)
+  }
+  {
+    const duplicate = valid()
+    duplicate.groups = [{ name: 'unit', paths: ['tests/unit/a.py'] }, { name: 'unit', paths: ['tests/unit/b.py'] }]
+    assert.throws(() => parseCriticalManifest(duplicate), /unique/)
+  }
+  assert.throws(() => parseCriticalManifest({ ...valid(), groups: [{ name: 'unit', paths: ['app/main.py'] }] }), /outside tests/)
+  assert.throws(() => parseCriticalManifest({ ...valid(), groups: [{ name: 'Unit', paths: ['tests/unit/a.py'] }] }), /name/)
+
+  assert.equal(parseArgs(['critical']).scope, 'backend')
+  assert.equal(parseArgs(['critical', '--scope', 'backend']).command, 'critical')
+  assert.throws(() => parseArgs(['critical', '--scope', 'all']), /backend/)
+  assert.throws(() => parseArgs(['critical', '--scope', 'frontend']), /backend/)
+})
+
+test('the runtime proof guard fails closed on missing, skipped or wrong proof cases', () => {
+  const required = [
+    'test_an_owned_worker_never_duplicates_delivery_of_a_queued_job',
+    'test_an_owned_worker_process_loss_is_recovered_by_a_real_supervisor',
+    'test_forty_eight_classes_generate_a_complete_valid_schedule',
+  ]
+  const passed = `<testsuite tests="3">${
+    required.map((name) => `<testcase classname="x" name="${name}" />`).join('')
+  }</testsuite>`
+  assert.deepEqual(runtimeProofFailures(passed, { minCollected: 3, required }), [])
+  assert.ok(runtimeProofFailures('', { minCollected: 3, required }).includes('no test cases'))
+
+  const skipped = `<testsuite tests="3">${
+    required.map((name, index) => `<testcase classname="x" name="${name}">${index === 0 ? '<skipped />' : ''}</testcase>`).join('')
+  }</testsuite>`
+  assert.ok(runtimeProofFailures(skipped, { minCollected: 3, required }).some((failure) => /skipped/.test(failure)))
+
+  const wrong = `<testsuite tests="3"><testcase classname="x" name="test_other" /></testsuite>`
+  assert.ok(runtimeProofFailures(wrong, { minCollected: 3, required }).some((failure) => /missing case/.test(failure)))
+  assert.ok(runtimeProofFailures(wrong, { minCollected: 3, required }).some((failure) => /collected 1 < 3/.test(failure)))
+})
+
+test('critical pytest arguments keep every manifest path as a separate native argument', () => {
+  assert.deepEqual(
+    criticalPytestArgs({ name: 'unit', paths: ['tests/unit/a.py', 'tests/unit/b.py'], args: ['--disable-socket'] }, 'report.xml'),
+    ['tests/unit/a.py', 'tests/unit/b.py', '--disable-socket', '--junitxml=report.xml'],
+  )
 })
 
 test('parses scheduler lab campaign options and rejects them elsewhere', () => {

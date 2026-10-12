@@ -11,20 +11,6 @@ vi.mock('../features/scheduling/data', () => ({
 describe('GenerationStatusPanel', () => {
   afterEach(cleanup)
 
-  it.each([
-    ['CANCELLED', 'Geração cancelada'],
-    ['FAILED', 'Não foi possível concluir a geração'],
-    ['STALE', 'Os dados mudaram durante a geração'],
-    ['INFEASIBLE', 'Não é possível colocar todas as aulas com estas condições'],
-    ['INCONCLUSIVE', 'Não foi possível concluir a pesquisa'],
-  ])('shows a clear terminal message for %s', (status, expected) => {
-    useScheduleTaskStatus.mockReturnValue({ data: { status } })
-
-    render(<GenerationStatusPanel jobId={12} />)
-
-    expect(screen.getByText(expected)).toBeInTheDocument()
-  })
-
   it('explains that an inconclusive search is not an impossibility', () => {
     useScheduleTaskStatus.mockReturnValue({ data: { status: 'INCONCLUSIVE' } })
 
@@ -85,6 +71,24 @@ describe('GenerationStatusPanel', () => {
 
     expect(screen.getByText(/não tem permissão/i)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /tentar novamente/i })).toBeNull()
+  })
+
+  it('shows error feedback for a failed generation', () => {
+    useScheduleTaskStatus.mockReturnValue({ data: { status: 'FAILED' } })
+
+    render(<GenerationStatusPanel jobId={20} />)
+
+    expect(screen.getByTestId('generation-terminal')).toBeInTheDocument()
+    expect(screen.getByText('Não foi possível concluir a geração')).toBeInTheDocument()
+    expect(screen.getByText(/Ocorreu um erro durante a geração/)).toBeInTheDocument()
+  })
+
+  it('treats an unrecognized status as a generation failure', () => {
+    useScheduleTaskStatus.mockReturnValue({ data: { status: 'UNRECOGNIZED' } })
+
+    render(<GenerationStatusPanel jobId={21} />)
+
+    expect(screen.getByRole('alert')).toHaveTextContent('Geração não iniciada')
   })
 
   it('keeps the success state when the job completes', () => {

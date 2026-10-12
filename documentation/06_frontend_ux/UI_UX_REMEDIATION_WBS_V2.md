@@ -510,6 +510,8 @@ node scripts/test.mjs e2e --project faults
 git diff --check
 ```
 
+O comando `e2e --project faults` fica histórico: o projeto `faults` foi retirado e os seus dois casos passaram para os projetos `isolated` e `readonly`. O equivalente atual é `node scripts/test.mjs e2e --project isolated` seguido de `node scripts/test.mjs e2e --project readonly`.
+
 Execute os restantes gates, migrations e audits definidos no [workflow de CI](../../.github/workflows/ci.yml).
 Execute os projetos E2E adicionais exigidos pelos fluxos alterados e pelas dependências do Playwright.
 Execute regressões e campanhas do solver adequadas a R05.

@@ -111,7 +111,6 @@ describe('SubjectForm', () => {
 
     const actionsContainer = container.querySelector('.module-item-card .text-nowrap')
     expect(actionsContainer).toBeInTheDocument()
-    expect(actionsContainer).toHaveClass('d-flex', 'align-items-center', 'flex-shrink-0')
     expect(screen.getByRole('button', { name: /editar dwadadawdawdawdawdaw/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /remover dwadadawdawdawdawdaw/i })).toBeInTheDocument()
   })

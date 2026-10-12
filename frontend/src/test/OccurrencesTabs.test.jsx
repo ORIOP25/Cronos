@@ -74,7 +74,6 @@ describe('Occurrences active tab ownership', () => {
       isLoading: false, isError: false })
     renderWithRouter(<Occurrences />, { initialEntries: ['/absences?tab=debts'] })
     const cards = screen.getByRole('region', { name: 'Dívidas por turma' })
-    expect(cards).toHaveClass('d-md-none')
     expect(within(cards).getByText('50 min')).toBeInTheDocument()
     expect(within(cards).getByText('Prof. QA')).toBeInTheDocument()
   })

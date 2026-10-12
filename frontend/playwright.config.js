@@ -13,7 +13,13 @@ const authStateMatch = /auth\.state\.setup\.js/
 const publicMatch = /e2e[\\/]marketing-public\.spec\.js/
 const authMatch = /e2e[\\/]auth[\\/].*\.spec\.js/
 const providerMatch = /e2e[\\/]members[\\/]invitations\.spec\.js/
-const faultsMatch = /e2e[\\/](?:foundation[\\/]operational-gate-409|tutorial[\\/]tutorial-network-boundary)\.spec\.js/
+// Fresh-organization journeys: each spec creates and deletes its own Clerk
+// organization, so it never touches the single shared E2E organization and is
+// independent of the serialized shared-organization chain.
+const isolatedMatch = /e2e[\\/]foundation[\\/](?:foundation|foundation-24h-time|foundation-conflict-recovery|internship-flow|onboarding-foundation-10steps|first-schedule-approval-dashboard|operational-gate-409)\.spec\.js/
+// Tutorial/localStorage-only journeys: no business writes; they assert only on
+// per-context storage, so they never race the shared-organization chain.
+const readonlyMatch = /e2e[\\/](?:tutorial[\\/](?:tutorial-local|tutorial-network-boundary)|foundation[\\/]tutorial-13steps-navigation)\.spec\.js/
 const capacityMatch = /e2e[\\/]capacity[\\/]capacity\.spec\.js/
 const acceptanceMatch = /e2e[\\/]acceptance[\\/].*\.spec\.js/
 const preparationMatch = /e2e[\\/]preparation[\\/].*\.spec\.js/
@@ -61,10 +67,12 @@ export default defineConfig({
       workers: 1,
     },
     {
+      // The public marketing routes are readonly and hit no Clerk API, so this
+      // project keeps the real browser without the global Clerk testing-token
+      // setup. It must not depend on signed-in state or `setup`.
       name: 'public',
       testMatch: publicMatch,
       use: { ...devices['Desktop Chrome'] },
-      dependencies: ['setup'],
     },
     {
       name: 'auth-state',
@@ -77,11 +85,35 @@ export default defineConfig({
       name: 'auth',
       testMatch: authMatch,
       use: { ...devices['Desktop Chrome'] },
+      // Bound genuine Clerk sign-ins to the existing concurrency.
+      workers: 2,
       dependencies: ['setup'],
     },
     {
+      // Fresh Clerk organizations owned by each spec. These never read or
+      // write the shared organization, so they run in parallel with the
+      // shared-organization chain instead of behind it.
+      name: 'isolated',
+      testMatch: isolatedMatch,
+      use: { ...devices['Desktop Chrome'] },
+      workers: 1,
+      dependencies: ['setup'],
+    },
+    {
+      // Tutorial/localStorage journeys. The saved admin session is enough and
+      // the cases assert only per-context storage, but the app shell reads
+      // shared-organization state, and the mutating chain soft-resets the
+      // school year (`/school/settings/soft-reset`). Serialize after the whole
+      // mutating chain instead of racing it.
+      name: 'readonly',
+      testMatch: readonlyMatch,
+      use: { ...devices['Desktop Chrome'] },
+      workers: 1,
+      dependencies: ['provider'],
+    },
+    {
       name: 'app',
-      testIgnore: [setupMatch, authStateMatch, publicMatch, authMatch, providerMatch, faultsMatch, capacityMatch, acceptanceMatch, preparationMatch],
+      testIgnore: [setupMatch, authStateMatch, publicMatch, authMatch, providerMatch, isolatedMatch, readonlyMatch, capacityMatch, acceptanceMatch, preparationMatch],
       use: { ...devices['Desktop Chrome'] },
       // These tests mutate the single disposable E2E organization.
       workers: 1,
@@ -93,13 +125,6 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'] },
       workers: 1,
       dependencies: ['app'],
-    },
-    {
-      name: 'faults',
-      testMatch: faultsMatch,
-      use: { ...devices['Desktop Chrome'] },
-      workers: 1,
-      dependencies: ['app', 'provider'],
     },
     ...(acceptanceReport ? [{
       name: 'acceptance',

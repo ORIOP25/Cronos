@@ -36,9 +36,9 @@ from tests._support.scheduler_v1 import (
     V1Seed,
     add_lesson,
     add_version,
-    publish_schedule,
     run_generation,
     seed_generatable_school,
+    seed_published_baseline,
 )
 
 pytestmark = pytest.mark.postgresql
@@ -59,7 +59,7 @@ async def test_premature_historical_credit_is_visible_and_reversible(
 ):
     seed = await _school(db_session, suffix="_historical")
     await db_session.commit()
-    await publish_schedule(db_session, monkeypatch, seed)
+    await seed_published_baseline(db_session, seed)
     lesson = (await _lessons(db_session, seed))[0]
     if provisional_debt:
         await record_debt(
@@ -314,7 +314,7 @@ async def _decide(db_session, seed: V1Seed, item, status, *, now, **extra):
 async def test_future_gap_history_does_not_overlap_repaired_lessons(db_session, monkeypatch):
     seed = await _school(db_session, suffix="_future_history")
     await db_session.commit()
-    await publish_schedule(db_session, monkeypatch, seed)
+    await seed_published_baseline(db_session, seed)
     missed = (await _lessons(db_session, seed))[0]
     previous_by_key = {row.stable_key: row.id for row in await _lessons(db_session, seed)}
     now = missed.starts_at - timedelta(days=1)
@@ -373,7 +373,7 @@ async def test_a_missed_past_lesson_leaves_its_minutes_to_recover(
         )
     )
     await db_session.commit()
-    await publish_schedule(db_session, monkeypatch, seed)
+    await seed_published_baseline(db_session, seed)
     lessons = await _lessons(db_session, seed)
     missed = lessons[0]
     now = missed.ends_at + timedelta(minutes=1)
@@ -484,7 +484,7 @@ async def test_execution_after_a_missed_lesson_keeps_history_out_of_frozen_credi
         )
     )
     await db_session.commit()
-    await publish_schedule(db_session, monkeypatch, seed)
+    await seed_published_baseline(db_session, seed)
     missed, completed, frozen = await _lessons(db_session, seed)
     now = completed.ends_at + timedelta(minutes=1)
     for row, status in ((missed, "OCCURRENCE"), (completed, "COMPLETED")):
@@ -519,7 +519,7 @@ async def test_execution_after_a_missed_lesson_keeps_history_out_of_frozen_credi
 async def test_a_v1_occurrence_is_listed_and_decided_as_given(db_session, monkeypatch):
     seed = await _school(db_session)
     await db_session.commit()
-    await publish_schedule(db_session, monkeypatch, seed)
+    await seed_published_baseline(db_session, seed)
     lessons = await _lessons(db_session, seed)
     await _occurrence(db_session, seed, lessons[0])
 
@@ -562,7 +562,7 @@ async def test_a_substitution_credits_the_substitute_subject_and_keeps_the_debt(
 
     seed = await _school(db_session, suffix="_sub")
     await db_session.commit()
-    await publish_schedule(db_session, monkeypatch, seed)
+    await seed_published_baseline(db_session, seed)
     lessons = await _lessons(db_session, seed)
     subject, _module, teacher, assignment = await _second_assignment(db_session, seed)
     await _occurrence(db_session, seed, lessons[0])
@@ -701,7 +701,7 @@ async def test_a_substitution_credits_the_substitute_subject_and_keeps_the_debt(
 async def test_open_debts_aggregate_occurrence_claims(db_session, monkeypatch):
     seed = await _school(db_session, suffix="_debts")
     await db_session.commit()
-    await publish_schedule(db_session, monkeypatch, seed)
+    await seed_published_baseline(db_session, seed)
     lessons = await _lessons(db_session, seed)
     await _occurrence(db_session, seed, lessons[0])
     await _occurrence(db_session, seed, lessons[1])
@@ -731,7 +731,7 @@ async def test_open_debts_aggregate_occurrence_claims(db_session, monkeypatch):
 async def test_teacher_progress_reads_v1_execution_and_open_debt(db_session, monkeypatch):
     seed = await _school(db_session, suffix="_teacher_progress")
     await db_session.commit()
-    await publish_schedule(db_session, monkeypatch, seed)
+    await seed_published_baseline(db_session, seed)
     lessons = await _lessons(db_session, seed)
     missed, completed = lessons[:2]
     await _occurrence(db_session, seed, missed)
@@ -780,7 +780,7 @@ async def test_v1_stale_decision_has_no_effects_and_matching_retry_is_idempotent
 ):
     seed = await _school(db_session, suffix="_stale_decision")
     await db_session.commit()
-    await publish_schedule(db_session, monkeypatch, seed)
+    await seed_published_baseline(db_session, seed)
     lesson = (await _lessons(db_session, seed))[0]
     subject, _module, teacher, _assignment = await _second_assignment(db_session, seed)
     await _occurrence(db_session, seed, lesson)
@@ -827,7 +827,7 @@ async def test_v1_stale_decision_has_no_effects_and_matching_retry_is_idempotent
 async def test_recommendations_exclude_the_planned_teacher_and_subject(db_session, monkeypatch):
     seed = await _school(db_session, suffix="_recs")
     await db_session.commit()
-    await publish_schedule(db_session, monkeypatch, seed)
+    await seed_published_baseline(db_session, seed)
     lessons = await _lessons(db_session, seed)
     await _second_assignment(db_session, seed)
     await _occurrence(db_session, seed, lessons[0])
@@ -849,7 +849,7 @@ async def test_given_before_the_lesson_end_is_rejected_without_persisted_effects
 
     seed = await _school(db_session, suffix="_guard")
     await db_session.commit()
-    await publish_schedule(db_session, monkeypatch, seed)
+    await seed_published_baseline(db_session, seed)
     lessons = await _lessons(db_session, seed)
     await _occurrence(db_session, seed, lessons[0])
     item = (await occurrences_v1.list_occurrences(db_session, seed.organization.id))["items"][0]
@@ -904,7 +904,7 @@ async def test_a_closed_week_blocks_occurrence_changes_and_reopening_allows_them
 
     seed = await _school(db_session, suffix="_closed")
     await db_session.commit()
-    await publish_schedule(db_session, monkeypatch, seed)
+    await seed_published_baseline(db_session, seed)
     lesson = (await _lessons(db_session, seed))[0]
     await _occurrence(db_session, seed, lesson)
     item = (await occurrences_v1.list_occurrences(db_session, seed.organization.id))["items"][0]
@@ -968,7 +968,7 @@ async def _decide_locked(db_session, seed, item, status, *, now):
 async def test_the_given_gap_cycle_compensates_and_recreates_the_debt(db_session, monkeypatch):
     seed = await _school(db_session, suffix="_cycle")
     await db_session.commit()
-    await publish_schedule(db_session, monkeypatch, seed)
+    await seed_published_baseline(db_session, seed)
     lesson = (await _lessons(db_session, seed))[0]
     await _occurrence(db_session, seed, lesson)
     item = (await occurrences_v1.list_occurrences(db_session, seed.organization.id))["items"][0]
@@ -1040,7 +1040,7 @@ async def test_the_normal_summary_log_cannot_change_a_decided_occurrence(db_sess
 
     seed = await _school(db_session, suffix="_summary")
     await db_session.commit()
-    await publish_schedule(db_session, monkeypatch, seed)
+    await seed_published_baseline(db_session, seed)
     lesson = (await _lessons(db_session, seed))[0]
     await _occurrence(db_session, seed, lesson)
     item = (await occurrences_v1.list_occurrences(db_session, seed.organization.id))["items"][0]
@@ -1081,7 +1081,7 @@ async def test_the_normal_summary_log_cannot_change_a_decided_occurrence(db_sess
 async def test_a_revoked_occurrence_can_start_a_new_cycle(db_session, monkeypatch):
     seed = await _school(db_session, suffix="_reopen")
     await db_session.commit()
-    await publish_schedule(db_session, monkeypatch, seed)
+    await seed_published_baseline(db_session, seed)
     lesson = (await _lessons(db_session, seed))[0]
     await _occurrence(db_session, seed, lesson)
     item = (await occurrences_v1.list_occurrences(db_session, seed.organization.id))["items"][0]
@@ -1145,7 +1145,7 @@ async def test_a_revoked_occurrence_can_start_a_new_cycle(db_session, monkeypatc
 async def test_substitution_diagnostics_explain_the_excluded_candidate(db_session, monkeypatch):
     seed = await _school(db_session, suffix="_diag")
     await db_session.commit()
-    await publish_schedule(db_session, monkeypatch, seed)
+    await seed_published_baseline(db_session, seed)
     lesson = (await _lessons(db_session, seed))[0]
     _subject, _module, teacher, _assignment = await _second_assignment(db_session, seed)
     await _occurrence(db_session, seed, lesson)
@@ -1182,7 +1182,7 @@ async def test_a_planned_substitution_reserves_resources_and_demand(db_session, 
 
     seed = await _school(db_session, suffix="_reserve")
     await db_session.commit()
-    await publish_schedule(db_session, monkeypatch, seed)
+    await seed_published_baseline(db_session, seed)
     lesson = (await _lessons(db_session, seed))[0]
     subject, module, teacher, assignment = await _second_assignment(db_session, seed)
     await _occurrence(db_session, seed, lesson)

@@ -12,9 +12,9 @@ from app.scheduler.infrastructure.snapshot import load_snapshot
 from app.services import room_service, schedule_service, settings_service
 from tests._support.scheduler_v1 import (
     MOMENT,
-    publish_schedule,
     run_generation,
     seed_generatable_school,
+    seed_published_baseline,
 )
 
 
@@ -56,7 +56,7 @@ async def test_published_schedule_can_be_regenerated_after_configuration_changes
         module_minutes=150,
     )
     await db_session.commit()
-    await publish_schedule(db_session, monkeypatch, seed)
+    await seed_published_baseline(db_session, seed)
     previous = await active_lessons(db_session, seed)
     changed_date = previous[0].school_date
     if change in ("holiday", "pause"):
@@ -183,7 +183,7 @@ async def test_manual_reduction_of_progress_restores_the_new_debt_in_the_future(
         module_minutes=150,
     )
     await db_session.commit()
-    await publish_schedule(db_session, monkeypatch, seed)
+    await seed_published_baseline(db_session, seed)
     for minutes in (50, 0):
         await adjust_class_progress(
             db_session,

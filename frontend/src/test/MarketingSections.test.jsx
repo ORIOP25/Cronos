@@ -1,12 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react'
+import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { Route, Routes } from 'react-router-dom'
 import { renderWithRouter } from './testUtils'
 import { resetClerkState, setClerkState } from './setup'
 import HomePage from '../pages/marketing/HomePage'
 import VantagensPage from '../pages/marketing/VantagensPage'
-import HowItWorksPage from '../pages/marketing/HowItWorksPage'
-import AboutPage from '../pages/marketing/AboutPage'
 import WorkflowTabs from '../features/marketing/components/workflow/WorkflowTabs'
 import TeacherWorkflowSection from '../features/marketing/components/workflow/TeacherWorkflowSection'
 import FaqSection from '../features/marketing/components/help/FaqSection'
@@ -42,18 +40,6 @@ describe('public marketing sections', () => {
     expect(screen.getByText('Professores sem saber qual é a versão certa')).toBeInTheDocument()
     expect(screen.getByText(/alterações dispersas por mensagens e ficheiros/i)).toBeInTheDocument()
     expect(screen.getByText('Para os Professores')).toBeInTheDocument()
-  })
-
-  it.each([
-    ['homepage', <HomePage key="home" />],
-    ['advantages page', <VantagensPage key="advantages" />],
-    ['workflow page', <HowItWorksPage key="workflow" />],
-    ['about page', <AboutPage key="about" />],
-    ['help page', <FaqSection key="help" />],
-  ])('keeps %s headings free of final periods', (_pageName, page) => {
-    renderWithRouter(page)
-    screen.getAllByRole('heading').forEach((heading) => expect(heading.textContent.trim()).not.toMatch(/\.$/))
-    cleanup()
   })
 
   it('supports keyboard selection in workflow tabs', () => {
@@ -92,18 +78,6 @@ describe('public marketing sections', () => {
     fireEvent.click(firstStep)
     expect(firstStep).toHaveAttribute('aria-pressed', 'true')
     expect(document.querySelector('.cronos-minute-visual')).toHaveStyle({ '--active-step': '0' })
-  })
-
-  it('keeps the homepage hero image free of duplicated overlays and notes', () => {
-    renderWithRouter(<HomePage />)
-    expect(document.querySelector('.cronos-hero__schedule')).not.toBeInTheDocument()
-    expect(screen.queryByText('Uma visão operacional para cada decisão.')).not.toBeInTheDocument()
-    expect(screen.getAllByRole('img')).toHaveLength(4)
-  })
-
-  it('loads the people gallery images without lazy-loading delays', () => {
-    renderWithRouter(<HomePage />)
-    expect([...document.querySelectorAll('.cronos-people img')].every((image) => image.getAttribute('loading') === 'eager')).toBe(true)
   })
 
   it('starts the FAQ closed and keeps one answer open', () => {

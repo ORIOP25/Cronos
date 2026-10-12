@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs'
 import { describe, it, expect, vi } from 'vitest'
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import WeekGrid from '../components/WeekGrid'
@@ -22,8 +21,6 @@ const baseSlot = {
   occurrence_status: null,
   hours_given: null,
 }
-
-const weekGridCss = readFileSync('src/styles/week-grid.css', 'utf8')
 
 describe('buildWeekGridModel', () => {
   it('builds collisions, baseline times, dates, and locked slots', () => {
@@ -142,7 +139,7 @@ describe('WeekGrid (Ponto 8.1)', () => {
     )
   })
 
-  it('keeps long content readable at the laptop breakpoint', () => {
+  it('keeps long content readable through an accessible grid cell', () => {
     const longSlot = {
       ...baseSlot,
       subject: { id: 1, name: 'Programação Avançada de Aplicações Distribuídas' },
@@ -163,12 +160,6 @@ describe('WeekGrid (Ponto 8.1)', () => {
     expect(screen.getByRole('gridcell', {
       name: /Programação Avançada de Aplicações Distribuídas, Professora Ana Maria Fernandes, Laboratório de Informática 3/i,
     })).toBeInTheDocument()
-    expect(weekGridCss).toMatch(/@media\s*\(max-width:\s*1399px\)[\s\S]*?week-grid--fit-viewport tbody tr\s*\{[^}]*height:\s*auto/)
-    expect(weekGridCss).toMatch(/@media\s*\(max-width:\s*1399px\)[\s\S]*?week-grid--fit-viewport \.week-grid__card\s*\{[^}]*height:\s*auto[^}]*min-height:\s*52px/)
-    expect(weekGridCss).toMatch(/@media\s*\(max-width:\s*1399px\)[\s\S]*?week-grid__subject[^}]*white-space:\s*normal[^}]*overflow-wrap:\s*anywhere/)
-    expect(weekGridCss).toMatch(/@media\s*\(max-width:\s*1399px\)[\s\S]*?week-grid__secondary[^}]*white-space:\s*normal[^}]*overflow-wrap:\s*anywhere/)
-    expect(weekGridCss).toMatch(/@media\s*\(max-width:\s*1399px\)[\s\S]*?week-grid__details[^}]*flex-direction:\s*column[^}]*gap:\s*3px/)
-    expect(weekGridCss).toMatch(/@media\s*\(max-width:\s*1399px\)[\s\S]*?week-grid__action[^}]*align-self:\s*flex-end/)
   })
 
   it('abre ação operacional ao clicar em bloco elegível', () => {

@@ -51,6 +51,11 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
           cache-dependency-path: backend/requirements-dev.txt
+      # The critical runner is a Node CLI. Node ships no npm install here; only
+      # the standard-library runner executes.
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
       - name: Generate ephemeral backend credentials
         shell: bash
         run: |
@@ -83,70 +88,43 @@ jobs:
           done
       - name: Install locked dependencies
         working-directory: backend
+        # The fast job skips eager bytecode compilation of the full dev corpus;
+        # imported critical modules still compile normally. It keeps the locked
+        # hashes, wheel verification, install, pip check, audit, Ruff, Alembic
+        # and integrity gates unchanged.
         run: >-
-          python -m pip install --require-hashes --only-binary=:all:
+          python -m pip install --no-compile --require-hashes --only-binary=:all:
           --no-binary=standardwebhooks -r requirements-dev.txt
-      - name: Verify locked dependencies
+      # The network dependency audit runs in the background while the CPU/DB
+      # gates run in the foreground. A failure in either still fails the job;
+      # migrations and audits stay sequential and use the migrator credential
+      # for the audits only, so Alembic keeps its own settings.
+      - name: Static gates, migrations and dependency audit
         working-directory: backend
         run: |
-          pip check
-          pip-audit -r requirements.txt --progress-spinner off
-      - name: Ruff
-        working-directory: backend
-        run: |
+          set -e
+          ( pip check && pip-audit -r requirements.txt --progress-spinner off ) &
+          audit_pid=$!
+          trap 'kill "$audit_pid" 2>/dev/null || true; wait "$audit_pid" 2>/dev/null || true' EXIT
           ruff format --check .
           ruff check .
-      - name: Verify immutable migration
-        working-directory: backend
-        run: |
           alembic upgrade head
           alembic check
           alembic downgrade base
           alembic upgrade head
-      - name: Audit database constraints
-        working-directory: backend
-        env:
-          DATABASE_URL: ${{ env.MIGRATION_DATABASE_URL }}
-        run: |
-          python -m scripts.audit_triggers
-          python -m scripts.audit_database_integrity
-      - name: Verify independent browser campaign expectations
-        run: python -m unittest discover -s scripts -p 'test_*e2e*.py'
-      - name: Test backend units
-        working-directory: backend
-        env:
-          RATELIMIT_ENABLED: "false"
-        run: >-
-          pytest -q tests/unit --cov=app --cov-branch --cov-report= --cov-fail-under=0
-          --disable-socket --allow-hosts=127.0.0.1,localhost
-          --junitxml=test-results-unit.xml
-      - name: Test backend integrations
+          DATABASE_URL="$MIGRATION_DATABASE_URL" python -m scripts.audit_triggers
+          DATABASE_URL="$MIGRATION_DATABASE_URL" python -m scripts.audit_database_integrity
+          ( cd .. && python -m unittest discover -s scripts -p 'test_*e2e*.py' )
+          wait "$audit_pid"
+          trap - EXIT
+      # The critical core is the fast required gate. The full corpus stays
+      # available manually; its cases are deselected here, never deleted.
+      # The manifest (backend policy) is the one source of truth for the paths.
+      - name: Test backend critical core
         working-directory: backend
         env:
           RATELIMIT_ENABLED: "false"
-        run: >-
-          pytest -q tests/integration --cov=app --cov-branch --cov-report= --cov-fail-under=0 --cov-append
-          -n 4 --dist=loadscope --junitxml=test-results-integration.xml
-      - name: Test backend contracts and report coverage
-        working-directory: backend
-        env:
-          RATELIMIT_ENABLED: "true"
-        run: |
-          pytest -q tests/contracts --cov=app --cov-branch --cov-report= --cov-fail-under=0 --cov-append --junitxml=test-results-contracts.xml
-          coverage report --fail-under=70
-          coverage report --include='app/scheduler/domain/constraint_policy.py' --fail-under=100
-          coverage report --include='app/scheduler/domain/candidate_validation.py' --fail-under=90
-          python - <<'PY'
-          import xml.etree.ElementTree as ET
-          files = ("test-results-unit.xml", "test-results-integration.xml", "test-results-contracts.xml")
-          skipped = sum(
-              int(x.attrib.get("skipped", 0))
-              for path in files
-              for x in ET.parse(path).iter("testsuite")
-          )
-          if skipped:
-              raise SystemExit(f"{skipped} skipped tests are not allowed")
-          PY
+        run: node ../scripts/test.mjs critical --scope backend
       - name: Build hardened backend image
         if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
         run: docker build --target runtime -t cronos-backend:test backend
@@ -162,11 +140,18 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: backend-test-artifacts-${{ github.run_id }}-${{ github.run_attempt }}
+          # Only the critical report metadata and coverage data. No broad
+          # `.test-artifacts` folder, no authentication, binary or profile files.
+          # `include-hidden-files` is required because both `.test-artifacts/`
+          # and `.coverage*` start with a dot. A missing expected report is a
+          # failure, not a warning (htmlcov stays optional).
           path: |
-            backend/test-results-*.xml
+            .test-artifacts/**/critical-*.xml
+            .test-artifacts/**/run.json
             backend/htmlcov
             backend/.coverage*
-          if-no-files-found: warn
+          include-hidden-files: true
+          if-no-files-found: error
           retention-days: 3
 
   frontend:
@@ -181,11 +166,15 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - working-directory: frontend
         run: npm ci --ignore-scripts
-      - name: Verify frontend
+      # The fast required frontend gate. The frontend policy owns the critical
+      # Vitest project/file selection; the full `verify` chain stays available
+      # manually and its cases are deselected here, never deleted.
+      # `verify:critical:fast` is self-contained (lint, audit:production, legal,
+      # infra, critical coverage); the production build and dead-code checks
+      # stay mandatory in the long e2e-runtime job.
+      - name: Verify frontend critical core
         working-directory: frontend
-        run: |
-          npm run audit:production
-          npm run verify
+        run: npm run verify:critical:fast
       - name: Report measured LOC
         run: node scripts/loc-report.mjs
       - name: Upload frontend test artifacts
@@ -199,7 +188,9 @@ jobs:
           if-no-files-found: warn
           retention-days: 3
 
-  e2e:
+  # Real browser browser journeys. Needs Clerk test identities, so it is
+  # skipped for Dependabot and fork pull requests.
+  e2e-browser:
     if: >-
       github.actor != 'dependabot[bot]' &&
       (github.event_name != 'pull_request' ||
@@ -275,8 +266,10 @@ jobs:
             echo "${credential_name}=${credential_value}" >> "$GITHUB_ENV"
           done
 
-      - name: Build CI backend image
-        run: docker compose -f docker-compose.ci.yml build backend
+      - name: Build CI application images
+        # Compose builds both services in parallel, so the frontend image no
+        # longer waits for the backend image before `up` starts.
+        run: docker compose -f docker-compose.ci.yml build backend frontend
         env:
           COMPOSE_PROJECT_NAME: cronos-ci-${{ github.run_id }}-${{ github.run_attempt }}
           CRONOS_MIGRATOR_PASSWORD: ${{ env.CI_MIGRATOR_PASSWORD }}
@@ -384,6 +377,7 @@ jobs:
           E2E_CLERK_CREATE_ORGANIZATION: ${{ env.CI_E2E_CLERK_CREATE_ORGANIZATION }}
 
       - name: Run E2E Tests
+        id: e2e_tests
         run: node scripts/test.mjs e2e
         env:
           CI: "true"
@@ -393,6 +387,9 @@ jobs:
           E2E_EXTERNAL_STACK: "1"
           BASE_URL: http://localhost:5173
           PLAYWRIGHT_SKIP_WEB_SERVER: "1"
+          # Global fan-out for independent projects only; `app`, `provider`,
+          # `isolated`, `readonly` stay at one worker and `auth` is bounded to
+          # two in the Playwright config. The runner is authoritative.
           PLAYWRIGHT_WORKERS: "2"
           VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
@@ -423,8 +420,29 @@ jobs:
         run: cat frontend/playwright-report/capacity-report.json || true
 
       - name: Sanitize test artifacts
+        id: sanitize
         if: always()
         run: node scripts/sanitize-test-artifacts.mjs .test-artifacts frontend/playwright-report frontend/test-results
+
+      # Timing telemetry must survive a green run. It uploads only sanitized
+      # files: the runner `run.json` metadata always, and the Playwright JUnit
+      # (`e2e-all.xml`, the same report the runner reads for its truthful suite
+      # counts) only when the E2E step passed (no exception bodies). The
+      # capacity JUnit stays a separate `.test-artifacts` path. Raw logs,
+      # storage state, keys and private profiles stay out.
+      - name: Upload E2E metrics
+        if: always() && steps.sanitize.outcome == 'success'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: e2e-metrics-${{ github.run_id }}-${{ github.run_attempt }}
+          # `.test-artifacts/` is hidden, so the glob needs include-hidden-files.
+          # A missing run.json (always written) is a failure, not a warning.
+          path: |
+            .test-artifacts/**/run.json
+            ${{ steps.e2e_tests.outcome == 'success' && '.test-artifacts/**/e2e-all.xml' || '' }}
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 3
 
       - name: Upload Playwright artifacts
         if: failure()
@@ -469,3 +487,166 @@ jobs:
         run: docker compose -f docker-compose.ci.yml down -v --remove-orphans
         env:
           COMPOSE_PROJECT_NAME: cronos-ci-${{ github.run_id }}-${{ github.run_attempt }}
+
+  # Native cross-layer runtime proof. It needs no Clerk or provider credential,
+  # so it is mandatory on every pull request, including Dependabot and forks.
+  # This carries the real broker/supervisor worker recovery and the full
+  # 48-class validation the fast critical job deliberately does not run.
+  e2e-runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_DB: cronos_test_db
+        ports: ["5432:5432"]
+        options: >-
+          --tmpfs /var/lib/postgresql/data:size=1073741824
+          --health-cmd "pg_isready -U postgres -d cronos_test_db"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine@sha256:ff02b58f971e7d7d156a1267e283fcbbeee91773b6aa36c49dac28ecfe28eadf
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
+      # The whole-system frontend production build and dead-code checks are
+      # required on every PR, so they live in this long allowed job.
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Generate ephemeral runtime credentials
+        shell: bash
+        run: |
+          CI_MIGRATOR_PASSWORD="$(openssl rand -hex 24)"
+          CI_APP_PASSWORD="$(openssl rand -hex 24)"
+          echo "::add-mask::${CI_MIGRATOR_PASSWORD}"
+          echo "::add-mask::${CI_APP_PASSWORD}"
+          echo "CI_MIGRATOR_PASSWORD=${CI_MIGRATOR_PASSWORD}" >> "$GITHUB_ENV"
+          echo "CI_APP_PASSWORD=${CI_APP_PASSWORD}" >> "$GITHUB_ENV"
+          echo "TEST_DATABASE_URL=postgresql+asyncpg://cronos_app:${CI_APP_PASSWORD}@localhost:5432/cronos_test_db" >> "$GITHUB_ENV"
+          echo "DATABASE_URL=postgresql+asyncpg://cronos_app:${CI_APP_PASSWORD}@localhost:5432/cronos_test_db" >> "$GITHUB_ENV"
+          echo "MIGRATION_DATABASE_URL=postgresql+psycopg2://cronos_migrator:${CI_MIGRATOR_PASSWORD}@localhost:5432/cronos_test_db" >> "$GITHUB_ENV"
+      - name: Provision runtime database roles
+        run: |
+          psql postgresql://postgres@localhost/cronos_test_db <<SQL
+          CREATE ROLE cronos_migrator LOGIN NOSUPERUSER BYPASSRLS PASSWORD '${CI_MIGRATOR_PASSWORD}';
+          CREATE ROLE cronos_app LOGIN NOSUPERUSER NOBYPASSRLS PASSWORD '${CI_APP_PASSWORD}';
+          CREATE ROLE cronos_auth_definer NOLOGIN NOSUPERUSER BYPASSRLS;
+          GRANT cronos_auth_definer TO cronos_migrator;
+          ALTER DATABASE cronos_test_db OWNER TO cronos_migrator;
+          GRANT CONNECT ON DATABASE cronos_test_db TO cronos_app;
+          SQL
+      - name: Install locked dependencies
+        working-directory: backend
+        run: >-
+          python -m pip install --require-hashes --only-binary=:all:
+          --no-binary=standardwebhooks -r requirements-dev.txt
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci --ignore-scripts
+      - name: Frontend dead code (default)
+        working-directory: frontend
+        run: npm run lint:dead-code
+      - name: Frontend dead code (production)
+        working-directory: frontend
+        run: npm run lint:dead-code:production
+      - name: Frontend production build
+        working-directory: frontend
+        run: npm run build
+      - name: Test native cross-layer runtime
+        working-directory: backend
+        env:
+          RATELIMIT_ENABLED: "false"
+        run: >-
+          python -m pytest -q
+          tests/integration/committed/test_worker_process_recovery.py
+          tests/unit/test_scheduler_typology_v1.py::test_forty_eight_classes_generate_a_complete_valid_schedule
+          --junitxml=runtime-results.xml
+      # A green pytest exit with skipped or missing cases must never satisfy the
+      # aggregate E2E gate. 0 skips, at least 10 collected, and the three
+      # required native case identities present and passing.
+      - name: Verify the runtime proof is complete
+        working-directory: backend
+        run: |
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+          REQUIRED = (
+              "test_an_owned_worker_never_duplicates_delivery_of_a_queued_job",
+              "test_an_owned_worker_process_loss_is_recovered_by_a_real_supervisor",
+              "test_forty_eight_classes_generate_a_complete_valid_schedule",
+          )
+          MIN_COLLECTED = 10
+          cases = list(ET.parse("runtime-results.xml").getroot().iter("testcase"))
+          names = [case.get("name", "") for case in cases]
+          failures = []
+          if len(cases) < MIN_COLLECTED:
+              failures.append("collected %d < %d" % (len(cases), MIN_COLLECTED))
+          for name in REQUIRED:
+              if name not in names:
+                  failures.append("missing case " + name)
+          for case in cases:
+              label = case.get("name", "?")
+              if case.find("skipped") is not None:
+                  failures.append("skipped case " + label)
+              if case.find("failure") is not None or case.find("error") is not None:
+                  failures.append("failed case " + label)
+          if failures:
+              raise SystemExit("runtime proof incomplete: " + "; ".join(failures))
+          print("runtime proof complete: %d cases" % len(cases))
+          PY
+      - name: Upload runtime proof
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: e2e-runtime-proof-${{ github.run_id }}-${{ github.run_attempt }}
+          path: backend/runtime-results.xml
+          if-no-files-found: warn
+          retention-days: 3
+
+  # Aggregated required status for the E2E group, keeping the branch-protection
+  # name `e2e`. The native runtime proof must always pass; the browser job must
+  # pass unless it was skipped by the Dependabot/fork policy.
+  e2e:
+    if: always()
+    needs: [e2e-runtime, e2e-browser]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify the E2E statuses
+        run: |
+          runtime="${{ needs.e2e-runtime.result }}"
+          browser="${{ needs.e2e-browser.result }}"
+          if [ "$runtime" != "success" ]; then
+            echo "e2e-runtime did not pass: ${runtime}"
+            exit 1
+          fi
+          if [ "$browser" = "success" ]; then
+            echo "e2e statuses are green"
+            exit 0
+          fi
+          if [ "$browser" != "skipped" ]; then
+            echo "e2e-browser did not pass: ${browser}"
+            exit 1
+          fi
+          if [ "${{ github.actor }}" = "dependabot[bot]" ]; then
+            echo "e2e-browser skipped for Dependabot"
+            exit 0
+          fi
+          if [ "${{ github.event_name }}" = "pull_request" ] && [ "${{ github.event.pull_request.head.repo.full_name }}" != "${{ github.repository }}" ]; then
+            echo "e2e-browser skipped for a fork pull request"
+            exit 0
+          fi
+          echo "e2e-browser was unexpectedly skipped"
+          exit 1

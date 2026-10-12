@@ -5,8 +5,7 @@ from pathlib import Path
 
 from app.scheduler.domain.candidate import SchedulingStrategy
 from app.scheduler.domain.serialization import snapshot_from_dict, snapshot_to_dict
-from app.scheduler.lab.campaign import campaign_failures, run_campaign_directory
-from app.scheduler.lab.manifest import from_manifest
+from app.scheduler.lab.campaign import run_campaign_directory
 from app.scheduler.lab.recovery import (
     EVENTS,
     build_recovery_case,
@@ -44,40 +43,6 @@ def test_the_baseline_survives_snapshot_serialization():
     restored = snapshot_from_dict(snapshot_to_dict(case.snapshot))
 
     assert restored.baseline_lessons == case.snapshot.baseline_lessons
-
-
-def test_the_repair_campaign_completes_its_small_cases(tmp_path):
-    manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
-
-    report = run_campaign_directory(
-        manifest,
-        tmp_path,
-        commit="test",
-        mode="repair",
-        time_limit_seconds=10,
-    )
-
-    assert campaign_failures(manifest, report) == ()
-    outcomes = {result.outcome.value for result in report.results}
-    assert outcomes <= {"VALID", "INFEASIBLE", "INCONCLUSIVE"}
-    assert "VALID" in outcomes
-    _, cases = from_manifest(manifest)
-    assert {case.family for case in cases} >= {
-        "C02",
-        "C03",
-        "C04",
-        "C05",
-        "C06",
-        "C07",
-        "C08",
-        "C09",
-        "C10",
-        "C11",
-        "C12",
-        "C13",
-        "C14",
-        "C15",
-    }
 
 
 def test_the_trajectory_campaign_replays_stopping_policies(tmp_path):

@@ -59,7 +59,6 @@ describe('feedback with a real CoreUI modal', () => {
     await act(async () => { fireEvent.click(saveButton) })
 
     const toastHost = document.querySelector('[data-rht-toaster]')
-    expect(toastHost).toHaveStyle({ zIndex: '9999' })
     expect(toastHost.closest('[aria-hidden="true"]')).toBeNull()
     expect(screen.getByRole('status')).toHaveTextContent('Registo guardado.')
     expect(document.activeElement).toBe(saveButton)

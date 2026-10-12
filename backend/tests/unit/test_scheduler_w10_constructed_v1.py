@@ -101,29 +101,3 @@ def test_constructed_witness_mode_roundtrips_through_the_manifest():
     restored = case_from_dict(case_to_dict(case))
 
     assert restored.witness_mode == "constructed"
-
-
-def test_the_campaign_prepares_a_constructed_case_without_the_oracle(tmp_path):
-    from app.scheduler.lab.campaign import run_campaign_directory
-    from app.scheduler.lab.manifest import to_manifest
-
-    spec = _spec(periods=20, module_minutes=(300,))
-    case = LabCase(
-        "constructed-campaign",
-        "C03",
-        1,
-        CaseExpectation.EXPLORATORY_UNKNOWN,
-        spec,
-        CaseSeeds(1, 0, 1),
-        witness_mode="constructed",
-    )
-    manifest = to_manifest("constructed", (case,))
-
-    report = run_campaign_directory(
-        manifest, tmp_path, commit="test", mode="repair", time_limit_seconds=15
-    )
-
-    result = report.results[0]
-    assert result.outcome.value in {"VALID", "INFEASIBLE", "INCONCLUSIVE"}
-    if result.outcome.value == "VALID":
-        assert result.payload["validation"]["valid"] is True

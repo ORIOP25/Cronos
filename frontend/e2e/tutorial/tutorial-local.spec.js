@@ -27,13 +27,17 @@ test.describe('Tutorial — cenário local v3', () => {
   test('completa os 13 passos através do avanço do guia e guarda apenas o checkpoint mínimo', async ({ page }) => {
     test.setTimeout(120_000)
     await goTo(page, '/guide')
+    await expect(page.getByTestId('guide-landing')).toBeVisible()
     await page.getByRole('button', { name: /conhecer o guia/i }).click()
+    await expect(page.getByTestId('tutorial-workspace')).toBeVisible()
+    await expect(page.getByTestId('tutorial-step-counter')).toHaveText('Passo 1 de 13')
 
     for (let stepNumber = 1; stepNumber <= 13; stepNumber += 1) {
       await expect(page.getByTestId('tutorial-step-counter')).toHaveText(`Passo ${stepNumber} de 13`)
       await page.getByTestId('tutorial-advance-button').click()
     }
 
+    await expect(page.getByTestId('tutorial-workspace')).toBeHidden()
     await expect(page.getByTestId('guide-landing')).toBeVisible()
     await expect(page.getByRole('button', { name: /repetir guia/i })).toBeVisible()
     await expect(page.getByRole('img', { name: 'Cronos' })).toHaveAttribute('src', new RegExp(`\\/logo\\.png\\?v=${PUBLIC_ASSET_REVISION}$`))

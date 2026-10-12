@@ -1206,3 +1206,184 @@ Esta separação mantém a campanha fail-closed sem provas humanas nem eliminaç
 
 O recetor do código e os percursos autenticados continuam por observar; nenhuma conta real foi criada nesta fase.
 A prova nativa no pipeline continua pendente; a execução pública `38193441985` não executou este helper.
+
+## Redução consolidada — 2026-10-12
+
+Estado: ramo `codex/reduce-ci-runtime` no [PR 72](https://github.com/ORIOP25/Cronos/pull/72), HEAD `878e03b`, público e não fundido.
+A base é `d4f6269` (#71, negociação de conteúdo do edge, sem relação); a referência `fe69` do audit fica preservada.
+A `main` continua em `d4`; a libertação e o desbloqueio dos 69 casos ficam pendentes.
+A última execução totalmente verde é [run 38282501310](https://github.com/ORIOP25/Cronos/actions/runs/38282501310), em `6d861ce`; a execução mais recente em `878e03b` ([run 38286094914](https://github.com/ORIOP25/Cronos/actions/runs/38286094914)) falhou apenas no browser.
+
+A seleção crítica de CI está entregue e validada em GHA; falta a mediana de três execuções.
+O alvo de 50 por cento foi substituído pela exigência de segundos por job, atingida na primeira execução completa.
+O checkout original do Desktop fica preservado; o worktree local tem as modificações.
+
+W09.5 e W09.6 permanecem `EM_CURSO`; as quotas antigas 8–12 frontend e 30–45 backend foram retiradas.
+O que decide a conclusão passa a ser o tempo por job e a cobertura crítica.
+Os 69 casos de produção continuam sem campanha completa e inativos, pelo desafio Clerk, fornecedores e datas W07.
+Os estados G1 e G2 são apenas evidência e não sobem com uma execução local; aguardam as três execuções reais.
+Os retries continuam 0 e os timeouts e gates não mudaram; o cutover W10 continua bloqueado.
+
+### Contagens observadas
+
+| Medida | `fe69` (audit) | PR 72 | Variação |
+| :--- | ---: | ---: | ---: |
+| Frontend: casos | 603 | 579 | −24 |
+| Frontend: ficheiros `*.test.*` | 87 | 81 | −6 |
+| Backend: unitários | 911 | 892 | −19 |
+| Backend: integração | 462 | 463 | +1 |
+| Backend: contratos | 61 | 61 | 0 |
+| Backend: total | 1 434 | 1 416 | −18 |
+| Backend: ficheiros `test_*` | 165 | 165 | 0 |
+| E2E local: casos | 88 | 80 | −8 |
+
+Face a `91a9d28`: frontend 571 casos e 87 ficheiros; backend 1 370 casos e 162 ficheiros.
+O lote tem agora 579 casos e 81 ficheiros frontend, e 1 416 casos e 165 ficheiros backend.
+Está, portanto, +8 casos frontend e +46 casos backend face ao baseline.
+As metas 30–45 e 8–12 continuam por atingir; não são quotas.
+A contagem de ficheiros frontend foi confirmada por glob; não se somam totais globais sem a fonte do resumo real.
+
+### Reduções frontend
+
+Foram removidos sete ficheiros inteiros: `BrandPanel.test.jsx`, `Guide.test.jsx`, `MarketingMetadata.test.jsx`, `MarketingResponsiveCss.test.js`, `PageHeader.test.jsx`, `PublicIdentity.test.js` e `presentation.test.js`.
+Foi acrescentado `networkGuard.test.js`, com um caso, pelo que o saldo é menos seis ficheiros.
+Regressões críticas foram repostas: a reutilização de sessão Clerk, com 3 casos únicos, e o `GenerationStatusPanel` para `FAILED` e estados desconhecidos.
+Não há remoções inseguras.
+
+O MSW ficou confinado ao projeto `dom-network`, com 2 ficheiros (`featureDataHooks` e `schoolConfigData`).
+Todos os outros testes DOM usam `fetch` e `XHR` nativos com falha fechada via `installNetworkDeny`.
+O erro é classificado como `TestNetworkDeniedError`; a evidência RED foi provada e não ocorrem pedidos externos.
+
+Tokens, cache, datas, erros de CSV, contexto assíncrono e o chamador `Schedules` mantêm os 25 casos.
+`internshipDays` e `vitePreloadRecovery` não foram removidos; passaram para o projeto `node`.
+A infraestrutura do runner ganhou 1 caso (52 contra 51), elevando a infraestrutura de aceitação de 275 para 276.
+A verificação `npm run verify` de hoje confirma este total.
+O worker de edge remoto acrescentou 79 linhas e elevou a contagem de edge do baseline, sem relação com este lote.
+
+`npm run verify` mantém os mesmos gates.
+`verify:checks` separa a cadeia de verificações da cobertura e do build.
+O workflow corre verificações e cobertura em paralelo, espera por ambas e só depois faz o build.
+
+### Reduções backend
+
+Os 19 locais de publicação em ocorrências e alterações adaptativas usam agora `seed_published_baseline`.
+O helper carrega o snapshot, corre o `construct_schedule` de produção e valida nativamente.
+Escreve uma versão `ACTIVE` genuína, linhas de aula e fatia com commits nativos de PostgreSQL, e um ponteiro de estado com o `bundle.digest` nativo.
+O ciclo real posterior de reparação, integração, geração e aprovação fica inalterado.
+
+Um caso de paridade solver contra construct em `test_scheduler_v1_baseline_seed.py` usa base de dados real.
+Uma restrição RED, após mutar o ponteiro de estado, prova que o helper é realmente aplicado.
+`test_scheduler_domain_campaigns_v1.py` foi removido com cinco regressões de domínio duplicadas; os 15 testes de laboratório únicos foram repostos, não removidos.
+
+O longitudinal desceu de 10 para 6 casos: 4 consolidados e 2 para o encaminhamento e o valor por omissão.
+Um parâmetro nativo opcional `stop_at_first_complete` no laboratório Python tem por omissão `False`.
+Um encaminhamento de duas linhas reutiliza a política nativa do worker, com `True` apenas no teste de correção funcional.
+Essa prova cobre 3 eventos, válidos e conservados, com candidato final e validador independente.
+Os orçamentos 900 e 10 mantêm-se; o ficheiro do laboratório mudou, pelo que a fonte do motor de unidade não está intocada.
+
+### Verificação local observada
+
+A execução backend completa está em `.test-artifacts/1791812229807-32048/run.json`.
+Registra 892 unitários, 463 integrações e 61 contratos, com cobertura 82, 100 e 92 por cento.
+Os tempos locais em série foram 83,23s unitários, 165,39s integrações e 35,11s contratos.
+A medição unitária anterior era 145,73s e a execução unitária original de GHA era 144s.
+O host é diferente, pelo que não se afirma uma percentagem remota.
+
+O modo paralelo `-n 4 --dist=loadscope` foi validado antes da contagem 892 final.
+A execução de CI continua necessária; não se afirma uma regressão de xdist.
+Os gates não mudaram.
+
+### E2E
+
+A suite passou de 88 para 80 casos em 28 ficheiros.
+Saem seis viewports de marketing de 1440, porque o contentor limita a 1180 e o 1280 já prova o layout de desktop.
+A prova mantém 3 viewports (375, 768 e 1280), com axe, overflow e contraste nas 6 rotas.
+O subconjunto exato do marcador HTTP 200 do dashboard já passou; o caso de secção fica como a única prova viva.
+
+O duplicado dos 13 passos do tutorial foi removido; o caso nativo restante é um superconjunto estrito de todos os campos de checkpoint de estado.
+O helper e o analisador do E2E e os seletores do runner mudaram; o trabalho seguiu TDD, com RED em 52 casos e depois GREEN.
+Os retries são 0 e os timeouts e gates mantêm-se.
+
+A suite E2E local mantém o `capacity-smoke` com 2 casos.
+
+### Grafo de CI e execução
+
+O runner aceita `e2e --project public|auth|app|isolated|readonly|provider|capacity`; os comandos e recursos são protegidos.
+`public` não precisa de autenticação nem de `setup`; o `setup` alimenta `auth` e `auth-state`.
+`isolated` cobre sete percursos novos ou existentes, cada um a criar e limpar o seu próprio utilizador ou organização.
+Esse projeto usa um worker, é independente da cadeia partilhada e não cria contagens extra de organizações.
+A cadeia partilhada é `auth-state` → `app` (12) → `provider` (4) → `readonly` (4).
+`readonly` é serial depois de `provider`, para evitar a corrida do soft-reset da escola partilhada.
+
+O projeto `faults` foi retirado e mapeia nos 2 caminhos de caso de `isolated` e `readonly`.
+O backend unitário usa `-n 4 --dist=loadscope` e a integração já usava 4.
+O frontend corre `audit:production` e a verificação completa em sequência; a sobreposição anterior de verificações e cobertura foi revertida por somar tempo na CI.
+O E2E constrói as imagens Docker de backend e frontend em paralelo; o gate da imagem de privacidade mantém-se.
+
+### Primeira execução de CI medida (perfil amplo, fase 1) — run 38262965438
+
+A execução [run 38262965438](https://github.com/ORIOP25/Cronos/actions/runs/38262965438) correu no SHA `1e18315`, com CI, Sonar e Cloudflare Pages verdes.
+
+| Job | `1e18315` | Referência |
+| :--- | ---: | ---: |
+| Backend | 6m12 (unit 61s, integração 213s, contratos 26s, setup 69s) | unit 144s (GHA original) |
+| Frontend | 2m32 (verificação 125s) | 1m44 (`fe69`) |
+| E2E | 9m09 (teste 345s; preparação 142s, imagem 75s; capacidade 52s; limpeza 10s) | 9m54 (`fe69`) |
+
+O ganho no caminho crítico é cerca de 7,6 por cento; não é a hipótese de 50 por cento e o alvo de cinco minutos não foi atingido.
+O frontend piorou face ao baseline `fe69`.
+A referência `fe69` é o pai do audit; o PR 71 (edge) é independente e não se atribui a esta medição.
+Esta tabela mede o perfil amplo anterior, não o núcleo crítico, e mantém-se como histórico.
+
+### Seleção crítica validada em GHA
+
+A mudança entregue retira a maioria do corpus do gate obrigatório e deixa apenas o núcleo crítico, sem apagar testes.
+O backend corre `node scripts/test.mjs critical --scope backend` a partir de `backend/tests/critical_manifest.json`, gerado por `backend/tests/critical_selection.py` e guardado por `backend/tests/unit/test_critical_selection_policy.py`.
+O grupo `unit` tem 23 ficheiros a 2 workers; o grupo `db` tem 9 ficheiros e 2 node IDs exatos de webhook a 4 workers, em PostgreSQL/Redis reais com o schema Alembic.
+A cobertura crítica exige 80 por cento em 18 fontes declaradas, com 100 e 90 nas duas políticas protegidas; `pyproject.toml` mantém o default de 70 por cento para a execução completa opcional.
+Nenhum grupo vazio, JUnit em falta ou teste saltado passa.
+
+A seleção observada no backend é cerca de 225 casos unitários mais 62 de base de dados, ou seja 287; a contagem exata varia com a versão do Python e não se publica como conclusão.
+A contagem completa anterior de 1 416 casos fica como referência histórica.
+
+O frontend corre `npm run verify:critical:fast` na CI; o modo crítico seleciona 24 ficheiros e 254 casos e mede 31 módulos com os floors 45/40/35/45.
+Numa execução local independente, `npm run verify:critical` passou os 254 casos em 20,33 s, com cobertura nativa 67,2/70,65/56,53/69,39.
+A infraestrutura Node local é 281 casos, com 57 no runner após o novo RuntimeGuard, mais edge 22, legal 3 e build 9; o build levou 1,83 s.
+O `vitest run` completo continua opcional sobre 82 ficheiros e 587 casos.
+
+O backend crítico correu localmente em Docker nativo, Linux e Python 3.14: 225 unitários e 62 de base de dados passaram, com 22,26 s e 61,90 s.
+A cobertura do escopo ficou em 81,03 por cento, a política protegida em 100 e o validador de candidato em 90,18.
+A execução completa opcional seria 892 mais a guarda de 10, ou seja 902 unitários; o total inferido de 1 426 não se publica como conclusão.
+
+A CI passa a ter dois jobs E2E: `e2e-runtime`, nativo e sem segredos de Clerk, obrigatório em todos os PR incluindo Dependabot e forks, com 9 casos de recuperação de worker mais a tipologia completa de 48 turmas, 10 recolhidos e zero saltos; e `e2e-browser`, com os 80 casos legacy de UI e 2 de capacidade, retirado só para Dependabot e forks, que precisam do SDK Clerk.
+O job agregado `e2e` falha se o runtime não passar.
+
+O objetivo do utilizador é frontend abaixo de 60 segundos e backend abaixo de 120 segundos.
+Os valores locais acima não substituem a CI.
+A libertação exige a mediana de três execuções equivalentes depois do SHA do patch de artefactos.
+
+No Windows, o comando crítico força Docker sem rede de stack, pelo que o gate completo não é executável localmente até existir uma base conhecida; a CI fornece os serviços PostgreSQL/Redis e as credenciais efémeras.
+
+A primeira execução completa e a mais recente comparam-se abaixo; são execuções diferentes, não três equivalentes, por isso não se calcula mediana.
+
+| Run | SHA | Frontend | Backend | E2E runtime |
+| :--- | :--- | ---: | ---: | ---: |
+| [38282501310](https://github.com/ORIOP25/Cronos/actions/runs/38282501310) | `6d861ce` | 57 s | 115 s | 80 s |
+| [38286094914](https://github.com/ORIOP25/Cronos/actions/runs/38286094914) | `878e03b` | 73 s | 120 s | browser falhou |
+
+A execução mais recente tem o backend exatamente no limite de 120 s e o frontend acima de 60 s, pelo que a consistência não está provada.
+A falha do browser foi um caso sanitizado de convite: o docente entrou em `/my-availability`, omitido na regex; a correção acrescenta `/my-availability` e `/my-progress`.
+O aviso de upload do backend é corrigido pelo patch `include-hidden-files` pendente.
+
+Correção por publicar: o fan-out E2E global volta a 2 em host de 2 vCPU, o estágio estático/migração/auditoria do backend funde-se com espera obrigatória da auditoria em fundo, e o job longo `e2e-runtime` passa a correr o Knip total e o build de produção.
+O macro rápido `npm run verify:critical:fast` é autocontido; `npm run verify:critical` mantém `verify:checks`, a cobertura crítica e o build, e `npm run verify` continua com 587 casos.
+A poupança esperada do estágio backend é de 8 a 10 s, ainda não medida em GHA.
+
+### Fronteiras mantidas
+
+A produção mantém a referência anterior `fe69`, com os cinco componentes válidos; não houve novo deploy.
+Os 80 casos legacy de UI passaram nativamente na CI no perfil de browser atual, nos runs 38269061278 em `0fb3594` e 38262965438 em `1e18315`.
+Os 69 casos de produção continuam por certificar e bloqueados; não coincidem com os 80 IDs de tarefa do WBS, que permanecem parciais.
+A nova direção permite retirar o não crítico do gate obrigatório, não o apagar.
+O PR 72, em `878e03b`, é público e não está fundido; a `main` continua em `d4`.
+A libertação na `main` aguarda as três execuções equivalentes depois do SHA do patch de artefactos.

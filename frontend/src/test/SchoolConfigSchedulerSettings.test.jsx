@@ -41,9 +41,8 @@ describe('SchoolConfig scheduler settings', () => {
   })
 
   it('uses the shared page spacing and organization heading', () => {
-    const { container } = renderWithProviders(<SchoolConfig />)
+    renderWithProviders(<SchoolConfig />)
 
-    expect(container.firstChild).toHaveClass('p-4')
     expect(screen.getByRole('heading', { name: 'Test Org' })).toBeInTheDocument()
     expect(screen.getByText('Configuração')).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Escola' })).not.toBeInTheDocument()

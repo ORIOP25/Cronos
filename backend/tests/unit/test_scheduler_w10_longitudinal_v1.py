@@ -1,8 +1,6 @@
 """W10 longitudinal annual replays: events accumulated over an approved baseline."""
 
-import json
-from functools import lru_cache
-
+from app.scheduler.domain.candidate_validation import validate_candidate
 from app.scheduler.lab.annual import build_annual_fixture
 from app.scheduler.lab.longitudinal import (
     AnnualReplay,
@@ -11,65 +9,83 @@ from app.scheduler.lab.longitudinal import (
 )
 
 
-@lru_cache(maxsize=1)
-def _replay(time_limit_seconds: float = 10.0) -> AnnualReplay:
-    fixture = build_annual_fixture(4, profile="loose", seed=1)
+def _replay() -> AnnualReplay:
+    fixture = build_annual_fixture(2, profile="loose", seed=1)
     return replay_annual_events(
+        fixture,
+        event_count=3,
+        event_seed=1,
+        step_days=14,
+        time_limit_seconds=10.0,
+        solver_seed=3,
+        stop_at_first_complete=True,
+    )
+
+
+def test_a_completed_replay_validates_every_event_and_conserves_minutes():
+    replay = _replay()
+
+    assert replay.completed is True
+    assert len(replay.steps) == 3
+    assert replay.stopped_reason == ""
+    assert replay.conserved is True
+    assert replay.final_candidate is not None
+    assert validate_candidate(replay.snapshot, replay.final_candidate).valid is True
+
+    for step in replay.steps:
+        assert step.outcome == "COMPLETE"
+        assert step.applied is True
+        assert step.affected_lessons >= 1
+        assert step.valid is True
+        assert step.conserved is True
+
+    first = replay.steps[0]
+    assert first.executed_minutes > 0
+    assert first.planned_minutes > 0
+    assert replay.steps[-1].executed_minutes > first.executed_minutes
+
+    payload = replay_to_dict(replay)
+    assert payload["completed"] is True
+    assert len(payload["steps"]) == 3
+    assert {"step", "event", "outcome", "valid", "conserved"} <= set(payload["steps"][0])
+
+
+def test_replay_forwards_the_native_stop_at_first_complete_flag(monkeypatch):
+    import app.scheduler.lab.longitudinal as longitudinal
+
+    seen: list[bool | None] = []
+    real = longitudinal.repair_published_schedule
+
+    def spy(*args, **kwargs):
+        seen.append(kwargs.get("stop_at_first_complete"))
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(longitudinal, "repair_published_schedule", spy)
+    fixture = build_annual_fixture(2, profile="loose", seed=1)
+
+    replay_annual_events(
         fixture,
         event_count=2,
         event_seed=1,
         step_days=14,
-        time_limit_seconds=time_limit_seconds,
+        time_limit_seconds=10.0,
         solver_seed=3,
+        stop_at_first_complete=True,
     )
 
-
-def test_every_step_is_validated_and_conserves_minutes():
-    replay = _replay()
-
-    assert replay.steps, "The replay must record at least one step."
-    for step in replay.steps:
-        if step.outcome == "COMPLETE":
-            assert step.valid
-            assert step.conserved
-            assert step.planned_minutes + step.executed_minutes >= 0
-    if replay.completed:
-        assert len(replay.steps) == 2
-        assert replay.stopped_reason == ""
+    assert seen == [True, True]
 
 
-def test_execution_advances_the_clock_and_reduces_the_plannable_baseline():
-    replay = _replay()
+def test_replay_default_keeps_the_optimized_mode():
+    import inspect
 
-    first = replay.steps[0]
-    assert first.executed_minutes > 0, "The first step must consume executed lessons."
-    assert first.planned_minutes > 0
+    parameter = inspect.signature(replay_annual_events).parameters["stop_at_first_complete"]
 
-
-def test_a_completed_replay_keeps_all_assignments_covered():
-    replay = _replay()
-
-    if replay.completed:
-        assert replay.final_candidate is not None
-        assert replay.conserved
-
-
-def test_replay_serializes_steps_and_conservation_for_the_campaign():
-    replay = _replay()
-
-    data = replay_to_dict(replay)
-
-    assert data["case_id"] == replay.case_id
-    assert data["completed"] is replay.completed
-    assert len(data["steps"]) == len(replay.steps)
-    for row in data["steps"]:
-        assert {"step", "event", "outcome", "valid", "conserved"} <= set(row)
-    assert "executed_minutes" in data
-    assert "planned_minutes" in data
+    assert parameter.default is False
 
 
 def test_an_event_free_replay_is_valid_and_reports_no_steps():
-    fixture = build_annual_fixture(4, profile="loose", seed=1)
+    fixture = build_annual_fixture(2, profile="loose", seed=1)
 
     replay = replay_annual_events(
         fixture,
@@ -86,15 +102,8 @@ def test_an_event_free_replay_is_valid_and_reports_no_steps():
     assert replay.conserved
 
 
-def test_a_later_step_never_loses_the_conservation_invariant():
-    replay = _replay()
-
-    for step in replay.steps:
-        assert step.conserved or step.outcome != "COMPLETE"
-
-
 def test_a_clock_that_consumes_the_year_before_events_is_incomplete():
-    fixture = build_annual_fixture(4, profile="loose", seed=1)
+    fixture = build_annual_fixture(2, profile="loose", seed=1)
 
     replay = replay_annual_events(
         fixture,
@@ -110,37 +119,6 @@ def test_a_clock_that_consumes_the_year_before_events_is_incomplete():
     assert replay.conserved is False
     assert replay.steps == ()
     assert "consumed" in replay.stopped_reason.lower()
-
-
-def test_every_declared_event_must_be_applied_to_future_lessons():
-    fixture = build_annual_fixture(4, profile="loose", seed=1)
-
-    replay = replay_annual_events(
-        fixture,
-        event_count=3,
-        event_seed=1,
-        step_days=14,
-        time_limit_seconds=10.0,
-        solver_seed=3,
-    )
-
-    assert replay.steps
-    for step in replay.steps:
-        assert step.applied is True
-        assert step.affected_lessons >= 1
-    if replay.completed:
-        assert len(replay.steps) == 3
-        assert all(step.outcome == "COMPLETE" for step in replay.steps)
-        assert replay.conserved is True
-        assert replay.final_candidate is not None
-
-
-def test_replay_payload_roundtrips_as_json():
-    replay = _replay()
-
-    encoded = json.dumps(replay_to_dict(replay), sort_keys=True)
-
-    assert "steps" in encoded
 
 
 def test_the_campaign_exposes_the_longitudinal_mode(tmp_path):
@@ -164,7 +142,15 @@ def test_the_campaign_exposes_the_longitudinal_mode(tmp_path):
     )
 
     result = report.results[0]
-    assert result.outcome.value in {"VALID", "INCONCLUSIVE"}
-    assert result.payload["replay"]["event_count"] == 1
-    if result.outcome.value == "VALID":
-        assert result.payload["replay"]["conserved"] is True
+    outcome = result.outcome.value
+    replay = result.payload["replay"]
+    # This certifies the longitudinal campaign plumbing and payload, not generation
+    # quality: the bounded campaign may legitimately settle as INCONCLUSIVE.
+    assert outcome in {"VALID", "INCONCLUSIVE"}
+    assert replay["event_count"] == 1
+    if outcome == "VALID":
+        assert replay["completed"] is True
+        assert replay["conserved"] is True
+        assert replay["stopped_reason"] == ""
+    else:
+        assert replay["completed"] is False
