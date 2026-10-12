@@ -169,9 +169,11 @@ jobs:
       # The fast required frontend gate. The frontend policy owns the critical
       # Vitest project/file selection; the full `verify` chain stays available
       # manually and its cases are deselected here, never deleted.
-      # `verify:critical:fast` is self-contained (lint, audit:production, legal,
-      # infra, critical coverage); the production build and dead-code checks
-      # stay mandatory in the long e2e-runtime job.
+      # `verify:critical:fast` runs the legal, marketing-build and edge
+      # contracts, the marketing assets and the critical coverage. The
+      # whole-source lint, the production dependency audit, the
+      # acceptance-infrastructure tests, the production build and the dead-code
+      # checks stay mandatory in the long e2e-runtime job.
       - name: Verify frontend critical core
         working-directory: frontend
         run: npm run verify:critical:fast
@@ -520,8 +522,10 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
           cache-dependency-path: backend/requirements-dev.txt
-      # The whole-system frontend production build and dead-code checks are
-      # required on every PR, so they live in this long allowed job.
+      # The whole-source frontend lint, production build and dead-code checks
+      # are required on every PR, so they live in this long allowed job. The
+      # production dependency audit and the acceptance-infrastructure tests
+      # also run here, condition-free, after the frontend install.
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -557,6 +561,20 @@ jobs:
       - name: Install frontend dependencies
         working-directory: frontend
         run: npm ci --ignore-scripts
+      # The whole-source frontend lint, the production dependency audit and the
+      # acceptance-infrastructure Node tests are mandatory, but they no longer
+      # belong to the fast frontend gate. They run here, unconditionally, in the
+      # long job that every pull request (including Dependabot and forks)
+      # already runs.
+      - name: Lint frontend
+        working-directory: frontend
+        run: npm run lint
+      - name: Audit production dependencies
+        working-directory: frontend
+        run: npm run audit:production
+      - name: Test acceptance infrastructure
+        working-directory: frontend
+        run: npm run test:acceptance-infrastructure
       - name: Frontend dead code (default)
         working-directory: frontend
         run: npm run lint:dead-code

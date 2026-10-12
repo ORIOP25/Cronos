@@ -388,6 +388,51 @@ test('root CI keeps push on main while pull requests and manual dispatch run ful
   )
 })
 
+test('the frontend fast macro stays narrow and e2e-runtime owns the relocated mandatory checks', () => {
+  const scripts = JSON.parse(readFileSync(join(ROOT, 'frontend/package.json'), 'utf8')).scripts
+  const fast = scripts['verify:critical:fast']
+  assert.ok(fast, 'verify:critical:fast must remain a developer macro')
+  assert.match(fast, /npm run test:critical:coverage/, 'the critical coverage gate must stay in the fast macro')
+  assert.doesNotMatch(fast, /npm run lint/, 'the full-source frontend lint belongs to e2e-runtime')
+  assert.doesNotMatch(fast, /audit:production/, 'the production dependency audit belongs to e2e-runtime')
+  assert.doesNotMatch(fast, /test:acceptance-infrastructure/, 'the acceptance infrastructure belongs to e2e-runtime')
+
+  const lines = readFileSync(join(ROOT, '.github/workflows/ci.yml'), 'utf8').split(/\r?\n/)
+  const runtimeStart = lines.indexOf('  e2e-runtime:')
+  const aggregateStart = lines.indexOf('  e2e:')
+  assert.notEqual(runtimeStart, -1, 'the e2e-runtime job must exist')
+  assert.notEqual(aggregateStart, -1, 'the aggregate e2e job must exist')
+  const runtime = lines.slice(runtimeStart, aggregateStart)
+  // The YAML step block that owns a run line, from its `- name:` marker to the
+  // next one. It lets the guard reject a step-level `if:` on the step itself,
+  // not only a job-level condition.
+  const stepBlock = (runLine) => {
+    let start = runLine
+    while (start > 0 && !/^      - /.test(runtime[start])) start -= 1
+    let end = start + 1
+    while (end < runtime.length && !/^      - /.test(runtime[end])) end += 1
+    return runtime.slice(start, end)
+  }
+  const install = runtime.findIndex((line) => line.includes('Install frontend dependencies'))
+  const lint = runtime.indexOf('        run: npm run lint')
+  const audit = runtime.indexOf('        run: npm run audit:production')
+  const infrastructure = runtime.indexOf('        run: npm run test:acceptance-infrastructure')
+  assert.ok(
+    install !== -1 && install < lint && lint < audit && install < infrastructure,
+    'the relocated commands run after the frontend install',
+  )
+  assert.equal(runtime.some((line) => /^    if:/.test(line)), false, 'the e2e-runtime job must stay unconditional')
+  for (const [label, runLine] of [['frontend lint', lint], ['production dependency audit', audit], ['acceptance infrastructure', infrastructure]]) {
+    const block = stepBlock(runLine)
+    assert.ok(block.includes('        working-directory: frontend'), `${label} runs in the frontend directory`)
+    assert.equal(block.some((line) => /^        if:/.test(line)), false, `${label} step must stay unconditional`)
+  }
+
+  const aggregate = lines.slice(aggregateStart).join('\n')
+  assert.match(aggregate, /needs: \[e2e-runtime, e2e-browser\]/)
+  assert.match(aggregate, /if \[ "\$runtime" != "success" \]; then/)
+})
+
 test('exposes production acceptance as its own command', () => {
   assert.equal(parseArgs(['acceptance']).command, 'acceptance')
   assert.throws(() => parseArgs(['acceptance', '--project', 'acceptance']), /only valid for e2e/)

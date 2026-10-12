@@ -1209,12 +1209,12 @@ A prova nativa no pipeline continua pendente; a execução pública `38193441985
 
 ## Redução consolidada — 2026-10-12
 
-Estado: ramo `codex/reduce-ci-runtime` no [PR 72](https://github.com/ORIOP25/Cronos/pull/72), HEAD `878e03b`, público e não fundido.
+Estado: o [PR 72](https://github.com/ORIOP25/Cronos/pull/72) foi fundido na `main` por squash em `46a7aef`.
 A base é `d4f6269` (#71, negociação de conteúdo do edge, sem relação); a referência `fe69` do audit fica preservada.
-A `main` continua em `d4`; a libertação e o desbloqueio dos 69 casos ficam pendentes.
-A última execução totalmente verde é [run 38282501310](https://github.com/ORIOP25/Cronos/actions/runs/38282501310), em `6d861ce`; a execução mais recente em `878e03b` ([run 38286094914](https://github.com/ORIOP25/Cronos/actions/runs/38286094914)) falhou apenas no browser.
+A libertação e o desbloqueio dos 69 casos ficam pendentes.
+A execução [run 38295681535](https://github.com/ORIOP25/Cronos/actions/runs/38295681535), tentativa 1 em `46a7aef`, ficou com os cinco jobs verdes.
 
-A seleção crítica de CI está entregue e validada em GHA; falta a mediana de três execuções.
+A seleção crítica de CI está entregue e validada em GHA; as execuções frontend em `46a7aef` deram mediana 66 s e `1486691` mediu 60 s e 64 s, perfis históricos. O SHA de runtime `1457d74` cumpriu o objetivo na [run 38301804176](https://github.com/ORIOP25/Cronos/actions/runs/38301804176).
 O alvo de 50 por cento foi substituído pela exigência de segundos por job, atingida na primeira execução completa.
 O checkout original do Desktop fica preservado; o worktree local tem as modificações.
 
@@ -1317,7 +1317,7 @@ A cadeia partilhada é `auth-state` → `app` (12) → `provider` (4) → `reado
 
 O projeto `faults` foi retirado e mapeia nos 2 caminhos de caso de `isolated` e `readonly`.
 O backend unitário usa `-n 4 --dist=loadscope` e a integração já usava 4.
-O frontend corre `audit:production` e a verificação completa em sequência; a sobreposição anterior de verificações e cobertura foi revertida por somar tempo na CI.
+O macro rápido do frontend corre a verificação e a cobertura crítica em sequência; `lint`, `audit:production` e a infraestrutura de aceitação passam a passos obrigatórios do job `e2e-runtime`, depois da instalação das dependências frontend; a sobreposição anterior de verificações e cobertura foi revertida por somar tempo na CI.
 O E2E constrói as imagens Docker de backend e frontend em paralelo; o gate da imagem de privacidade mantém-se.
 
 ### Primeira execução de CI medida (perfil amplo, fase 1) — run 38262965438
@@ -1347,8 +1347,9 @@ A seleção observada no backend é cerca de 225 casos unitários mais 62 de bas
 A contagem completa anterior de 1 416 casos fica como referência histórica.
 
 O frontend corre `npm run verify:critical:fast` na CI; o modo crítico seleciona 24 ficheiros e 254 casos e mede 31 módulos com os floors 45/40/35/45.
+O macro rápido deixou de correr `npm run lint`, `audit:production` e `test:acceptance-infrastructure`; os três passam a passos obrigatórios e incondicionais do job longo `e2e-runtime`, depois da instalação das dependências frontend.
 Numa execução local independente, `npm run verify:critical` passou os 254 casos em 20,33 s, com cobertura nativa 67,2/70,65/56,53/69,39.
-A infraestrutura Node local é 281 casos, com 57 no runner após o novo RuntimeGuard, mais edge 22, legal 3 e build 9; o build levou 1,83 s.
+A infraestrutura Node local é 282 casos após o novo guard, com 58 no runner após o novo RuntimeGuard, mais edge 22, legal 3 e build 9; o build levou 1,83 s.
 O `vitest run` completo continua opcional sobre 82 ficheiros e 587 casos.
 
 O backend crítico correu localmente em Docker nativo, Linux e Python 3.14: 225 unitários e 62 de base de dados passaram, com 22,26 s e 61,90 s.
@@ -1364,26 +1365,34 @@ A libertação exige a mediana de três execuções equivalentes depois do SHA d
 
 No Windows, o comando crítico força Docker sem rede de stack, pelo que o gate completo não é executável localmente até existir uma base conhecida; a CI fornece os serviços PostgreSQL/Redis e as credenciais efémeras.
 
-A primeira execução completa e a mais recente comparam-se abaixo; são execuções diferentes, não três equivalentes, por isso não se calcula mediana.
+A `main` fundida em `46a7aef` mediu três execuções frontend, hoje históricas: 71 s, 51 s e 66 s; a mediana foi 66 s, acima do objetivo de 60 s.
+A tentativa 1 completa ([run 38295681535](https://github.com/ORIOP25/Cronos/actions/runs/38295681535)) teve os cinco jobs verdes: frontend 71 s, backend 101 s, `e2e-runtime` 122 s e `e2e-browser` 560 s.
+`46a7aef` tem as três execuções frontend, pelo que a mediana histórica é 66 s.
+A revisão posterior `1486691` (PR 74) mede uma execução completa ([run 38299733416](https://github.com/ORIOP25/Cronos/actions/runs/38299733416)) com os cinco jobs verdes: frontend 60 s, backend 85 s, `e2e-runtime` 124 s e `e2e-browser` 478 s; uma repetição distinta do frontend deu 64 s.
+As duas execuções frontend em `1486691` (60 s e 64 s) já fixam uma mediana de pelo menos 60 s independentemente de uma terceira, pelo que `1486691` não foi repetida uma terceira vez.
 
-| Run | SHA | Frontend | Backend | E2E runtime |
-| :--- | :--- | ---: | ---: | ---: |
-| [38282501310](https://github.com/ORIOP25/Cronos/actions/runs/38282501310) | `6d861ce` | 57 s | 115 s | 80 s |
-| [38286094914](https://github.com/ORIOP25/Cronos/actions/runs/38286094914) | `878e03b` | 73 s | 120 s | browser falhou |
+| Tentativa frontend | `46a7aef` | `1486691` |
+| :--- | ---: | ---: |
+| 1 | 71 s | 60 s |
+| 2 | 51 s | 64 s |
+| 3 | 66 s | — |
+| Mediana | 66 s | — |
 
-A execução mais recente tem o backend exatamente no limite de 120 s e o frontend acima de 60 s, pelo que a consistência não está provada.
-A falha do browser foi um caso sanitizado de convite: o docente entrou em `/my-availability`, omitido na regex; a correção acrescenta `/my-availability` e `/my-progress`.
-O aviso de upload do backend é corrigido pelo patch `include-hidden-files` pendente.
-
-Correção por publicar: o fan-out E2E global volta a 2 em host de 2 vCPU, o estágio estático/migração/auditoria do backend funde-se com espera obrigatória da auditoria em fundo, e o job longo `e2e-runtime` passa a correr o Knip total e o build de produção.
-O macro rápido `npm run verify:critical:fast` é autocontido; `npm run verify:critical` mantém `verify:checks`, a cobertura crítica e o build, e `npm run verify` continua com 587 casos.
-A poupança esperada do estágio backend é de 8 a 10 s, ainda não medida em GHA.
+O SHA de runtime `1457d74945e4d62ca45922ff418c08f662faf296` (branch do PR 74) cumpriu o objetivo na [run 38301804176](https://github.com/ORIOP25/Cronos/actions/runs/38301804176), com as cinco tentativas verdes no mesmo SHA.
+A [tentativa 1](https://github.com/ORIOP25/Cronos/actions/runs/38301804176/attempts/1) correu o pipeline completo com os cinco jobs verdes: frontend 38 s, backend 99 s, `e2e-runtime` 134 s, `e2e-browser` 560 s e agregado 4 s.
+As tentativas [2](https://github.com/ORIOP25/Cronos/actions/runs/38301804176/attempts/2) e [3](https://github.com/ORIOP25/Cronos/actions/runs/38301804176/attempts/3) repetiram só o frontend (47 s e 40 s); as tentativas [4](https://github.com/ORIOP25/Cronos/actions/runs/38301804176/attempts/4) e [5](https://github.com/ORIOP25/Cronos/actions/runs/38301804176/attempts/5) repetiram só o backend (101 s e 114 s).
+As três execuções distintas de frontend dão mediana 40 s (38 a 47 s); as três de backend dão mediana 101 s (99 a 114 s), pelo que cada execução distinta fica abaixo de 60 s e 120 s.
+Só a tentativa 1 é um pipeline completo; as tentativas seletivas reutilizam os outros jobs, pelo que não são três execuções E2E completas.
+O gargalo medido é o ESLint de árvore completa (`npm run lint`, cerca de 16 s), pelo que esta correção o move para o job `e2e-runtime`.
+A correção de margem retira `npm run lint`, `audit:production` e `test:acceptance-infrastructure` do macro rápido e passa-os para o job `e2e-runtime`, sem baixar cobertura nem retirar testes críticos.
+O alvo de runtime ficou cumprido na `1457d74`; nenhum resultado alvo foi inventado. A verificação completa da `main` publicada ocorre depois da fusão do PR 74.
+O macro `npm run verify:critical:fast` mantém contratos, assets e cobertura crítica; `npm run verify:critical` mantém `verify:checks`, a cobertura crítica e o build, e `npm run verify` continua com 587 casos.
 
 ### Fronteiras mantidas
 
-A produção mantém a referência anterior `fe69`, com os cinco componentes válidos; não houve novo deploy.
+A última verificação dos cinco componentes em conjunto é `fe69`. O frontend público e a API estão em `46a7aef`, e a prontidão de PostgreSQL/Redis foi observada; os restantes fornecedores e workers não foram reinspecionados. Não se afirmam os cinco componentes em `46a7aef`.
 Os 80 casos legacy de UI passaram nativamente na CI no perfil de browser atual, nos runs 38269061278 em `0fb3594` e 38262965438 em `1e18315`.
 Os 69 casos de produção continuam por certificar e bloqueados; não coincidem com os 80 IDs de tarefa do WBS, que permanecem parciais.
 A nova direção permite retirar o não crítico do gate obrigatório, não o apagar.
-O PR 72, em `878e03b`, é público e não está fundido; a `main` continua em `d4`.
-A libertação na `main` aguarda as três execuções equivalentes depois do SHA do patch de artefactos.
+O PR 72 foi fundido na `main` por squash em `46a7aef`.
+O alvo de runtime ficou cumprido na `1457d74`; a conclusão deste alvo de CI não certifica o cutover W09 nem a campanha de produção de 69 casos, que permanecem frentes independentes e abertas.
