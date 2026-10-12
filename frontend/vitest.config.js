@@ -14,8 +14,7 @@ const nodeTestFiles = [
   'src/test/favicon.test.js',
   'src/test/formatUtils.test.js',
   'src/test/foundationModel.test.js',
-  'src/test/MarketingResponsiveCss.test.js',
-  'src/test/presentation.test.js',
+  'src/test/internshipDays.test.js',
   'src/test/queryKeys.test.js',
   'src/test/roleAccess.test.js',
   'src/test/schoolConfigPayloads.test.js',
@@ -25,15 +24,25 @@ const nodeTestFiles = [
   'src/test/timeOfDay.test.js',
   'src/test/tutorialApiAdapter.test.js',
   'src/test/tutorialEngine.test.js',
+  'src/test/vitePreloadRecovery.test.js',
   'src/test/weekSubmission.test.js',
 ]
 
 const supportFiles = [
   'src/test/streams.setup.js',
   'src/test/setup.js',
+  'src/test/networkGuard.js',
+  'src/test/networkDeny.setup.js',
   'src/test/msw.setup.js',
   'src/test/msw/**',
   'src/test/testUtils.jsx',
+]
+
+// Tests that exercise the real data layer close to the network boundary keep the
+// fail-closed MSW guard. Every other DOM test uses vi.mock and does not pay for it.
+const networkTestFiles = [
+  'src/test/featureDataHooks.test.jsx',
+  'src/test/schoolConfigData.test.jsx',
 ]
 
 const common = {
@@ -91,9 +100,9 @@ export default defineConfig({
           setupFiles: [
             './src/test/streams.setup.js',
             './src/test/setup.js',
-            './src/test/msw.setup.js',
+            './src/test/networkDeny.setup.js',
           ],
-          exclude: [...common.exclude, ...nodeTestFiles],
+          exclude: [...common.exclude, ...nodeTestFiles, ...networkTestFiles],
           include: ['src/test/**/*.{js,jsx}'],
           deps: {
             optimizer: {
@@ -107,6 +116,21 @@ export default defineConfig({
               },
             },
           },
+        },
+      },
+      {
+        test: {
+          ...common,
+          name: 'dom-network',
+          environment: 'jsdom',
+          pool: 'threads',
+          setupFiles: [
+            './src/test/streams.setup.js',
+            './src/test/setup.js',
+            './src/test/msw.setup.js',
+          ],
+          exclude: [...common.exclude],
+          include: networkTestFiles,
         },
       },
     ],

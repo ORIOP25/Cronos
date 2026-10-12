@@ -4,11 +4,14 @@ import { PUBLIC_ASSET_REVISION } from '../src/utils/publicAsset.js'
 
 const publicRoutes = ['/', '/vantagens', '/como-funciona', '/sobre', '/ajuda', '/contacto']
 const trustRoutes = ['/sobre', '/about', '/contacto', '/contact', '/privacidade', '/privacy']
+// One viewport per real layout class. The marketing container is capped at
+// 1180px (--marketing-container), so 1440 and 1280 share the desktop layout;
+// keeping only the desktop case preserves the overflow and CTA-contrast proof
+// without repeating the same page load. The essential mobile breakpoint stays.
 const publicViewports = [
   { width: 375, height: 812, name: 'mobile' },
   { width: 768, height: 1024, name: 'tablet' },
   { width: 1280, height: 900, name: 'desktop' },
-  { width: 1440, height: 900, name: 'wide' },
 ]
 
 function relativeLuminance([red, green, blue]) {

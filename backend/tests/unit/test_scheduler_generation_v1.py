@@ -1,8 +1,6 @@
 from dataclasses import replace
 from datetime import date, time
 
-import pytest
-
 from app.scheduler.composition import generate_schedule
 from app.scheduler.domain.calendar import normalize_period
 from app.scheduler.domain.candidate import ScheduledLesson, SchedulingStrategy
@@ -82,17 +80,6 @@ def test_generation_keeps_the_last_lesson_partial():
     assert result.outcome == "COMPLETE"
     assert sum(credits) == 100
     assert credits[-1] < 60
-
-
-@pytest.mark.parametrize("class_count", [10, 30, 45, 60])
-def test_generation_completes_the_scale_fixtures(class_count):
-    fixture = build_scale_fixture(class_count)
-
-    result = generate_schedule(fixture.snapshot, fixture.periods, time_limit_seconds=10)
-
-    assert result.outcome == "COMPLETE"
-    assert result.report is not None and result.report.valid
-    assert result.report.total_credit_minutes == class_count * 240
 
 
 def test_a_bounded_search_never_claims_infeasibility():

@@ -208,6 +208,12 @@ test('keeps capacity as an explicit E2E gate', () => {
   assert.equal(parseArgs(['e2e', '--project', 'capacity']).project, 'capacity')
 })
 
+test('selects the isolated and readonly projects and retires the faults alias', () => {
+  assert.equal(parseArgs(['e2e', '--project', 'isolated']).project, 'isolated')
+  assert.equal(parseArgs(['e2e', '--project', 'readonly']).project, 'readonly')
+  assert.throws(() => parseArgs(['e2e', '--project', 'faults']), /Invalid E2E project/)
+})
+
 test('parses scheduler lab campaign options and rejects them elsewhere', () => {
   const parsed = parseArgs([
     'campaign',

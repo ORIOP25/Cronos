@@ -35,18 +35,9 @@ test.describe('Dashboard real backend', () => {
     await ensureFoundationComplete(page)
   })
 
-  test('loads dashboard command center from the live API', async ({ page }) => {
-    const dashboardResponse = page.waitForResponse(
-      (response) => response.url().includes('/api/v1/dashboard') && response.status() === 200,
-      { timeout: 15000 },
-    )
-
-    await goTo(page, '/dashboard')
-    await dashboardResponse
-
-    await expectRouteReady(page, '/dashboard')
-  })
-
+  // The live-API status is already enforced: the shared runtime guards fail on
+  // any non-200 /api/v1/dashboard response and `expectRouteReady` waits for the
+  // data-backed marker, so the section case below is the single live proof.
   test('renders dashboard resource and operational sections without API mocks', async ({ page }) => {
     await goTo(page, '/dashboard')
     await expectRouteReady(page, '/dashboard')

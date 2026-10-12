@@ -26,7 +26,7 @@ node scripts/test.mjs benchmark --profile fast
 node scripts/test.mjs campaign --manifest backend/tests/scheduler_lab/manifest.json
 ```
 
-The runner exposes `setup`, `doctor`, `fast`, `integration`, `e2e`, `capacity`, `capacity-smoke`, `acceptance`, `prepare-history`, `diagnose-public`, `all`, `benchmark`, and `campaign`. The `e2e` command accepts `--project public|auth|app|provider|faults|capacity`. E2E starts its own stack on port `5174`.
+The runner exposes `setup`, `doctor`, `fast`, `integration`, `e2e`, `capacity`, `capacity-smoke`, `acceptance`, `prepare-history`, `diagnose-public`, `all`, `benchmark`, and `campaign`. The `e2e` command accepts `--project public|auth|app|isolated|readonly|provider|capacity`. E2E starts its own stack on port `5174`.
 
 `fast` never starts Docker or installs packages. Forwarded arguments are accepted only after `--` by `fast` and `integration`, and are passed as separate process arguments. Run artefacts are written to `.test-artifacts/`.
 
@@ -48,9 +48,9 @@ Integration runs with `-n 4 --dist=loadscope`. Contracts run serially with rate 
 The 48-class correctness test uses the production 900-second safety budget and stops at the first complete candidate.
 It validates curricular coverage and completion dates. Short optimization deadlines must not make correctness depend on host load.
 
-Vitest is configured in `frontend/vitest.config.js` with isolated `node` and `dom` projects, thread pooling, MSW server setup and strict unhandled-request failures. Coverage uses V8 and enforces thresholds of 45 percent statements, 40 percent branches, 35 percent functions, and 45 percent lines. React interactions that cross async boundaries use Testing Library `user-event`.
+Vitest is configured in `frontend/vitest.config.js` with isolated `node`, `dom` and `dom-network` projects and thread pooling. Only the `dom-network` project keeps the MSW server with strict unhandled-request failures. Every other DOM test replaces `fetch` and `XMLHttpRequest` with a fail-closed guard that throws a classified `TestNetworkDeniedError`, so no accidental external request leaves the process. Coverage uses V8 and enforces thresholds of 45 percent statements, 40 percent branches, 35 percent functions, and 45 percent lines. React interactions that cross async boundaries use Testing Library `user-event`.
 
-Playwright is configured in `frontend/playwright.config.js`. The `setup` project feeds `public`, `auth`, and `auth-state`. The `app` project depends on `auth-state`, the `provider` project depends on `app`, and the `faults` project depends on `app` and `provider`. The `capacity` project runs only when `CAPACITY_ENABLED=1`. The `acceptance` project matches `frontend/e2e/acceptance/*.spec.js`, uses the installed Chrome channel, one worker, no setup dependency and no test credentials. The `app`, `provider`, and `faults` projects use one worker because they mutate shared E2E state. Retries are disabled; traces are retained on failure and screenshots are captured on failure.
+Playwright is configured in `frontend/playwright.config.js`. The `setup` project feeds `auth` and `auth-state`; the `public` project needs no authentication and no `setup` dependency. The shared chain is `auth-state` → `app` → `provider` → `readonly`. The `isolated` project depends on `setup` and covers fresh-or-existing journeys that create and clean their own user or organization. The `readonly` project depends on `provider` and runs after it, so the tutorial and localStorage-only journeys never race the shared soft-reset. The `app`, `provider`, `isolated` and `readonly` projects use one worker. The retired `faults` project now maps to the two `isolated` and `readonly` case paths. The `capacity` project runs only when `CAPACITY_ENABLED=1`. The `acceptance` project matches `frontend/e2e/acceptance/*.spec.js`, uses the installed Chrome channel, one worker, no setup dependency and no test credentials. Retries are disabled; traces are retained on failure and screenshots are captured on failure.
 
 All projects use the shared `E2E_BASE_URL`, which defaults to `http://127.0.0.1:5174`.
 This address matches the owned Docker stack's IPv4 binding and avoids other processes listening on `localhost` over IPv6.
@@ -66,11 +66,11 @@ Its Nginx application routes include `/imports`. Production keeps its runtime br
 
 GitHub Actions keeps backend, frontend and E2E in separate jobs. The backend job has a 45-minute timeout, the frontend job has a 20-minute timeout, and the E2E job has a 30-minute timeout.
 
-Backend gates use Python 3.14 with `postgres:16` and `redis:7` services. The job provisions `cronos_migrator`, `cronos_app`, and `cronos_auth_definer`, installs locked dependencies with `--require-hashes`, runs `pip check` and `pip-audit`, checks Ruff formatting and linting, runs Alembic upgrade/check/downgrade/upgrade, runs the database integrity audits, runs unit then integration then contract tests, applies the coverage gates, and builds the hardened runtime image.
+Backend gates use Python 3.14 with `postgres:16` and `redis:7` services. The job provisions `cronos_migrator`, `cronos_app`, and `cronos_auth_definer`, installs locked dependencies with `--require-hashes`, runs `pip check` and `pip-audit`, checks Ruff formatting and linting, runs Alembic upgrade/check/downgrade/upgrade, runs the database integrity audits, runs unit tests with `-n 4 --dist=loadscope`, then integration tests, then contract tests, applies the coverage gates, and builds the hardened runtime image.
 
-Frontend gates use Node 24 with `npm ci --ignore-scripts`, `npm run audit:production`, and `npm run verify`. The job also runs `node scripts/loc-report.mjs` against `documentation/08_security_quality/loc-baseline.json`.
+Frontend gates use Node 24 with `npm ci --ignore-scripts` and `npm run audit:production`. The job runs `npm run verify:checks` and `npm run test:coverage` in parallel, waits for both, then runs `npm run build`. The job also runs `node scripts/loc-report.mjs` against `documentation/08_security_quality/loc-baseline.json`.
 
-E2E uses `docker-compose.ci.yml`. The job prepares dedicated Clerk test identities, runs `node scripts/test.mjs e2e` and `node scripts/test.mjs capacity-smoke`, sanitizes `.test-artifacts/` and Playwright output, and always cleans Compose resources and revokes Clerk invitations. The E2E job is skipped for Dependabot.
+E2E uses `docker-compose.ci.yml`. The stack builds the backend and frontend images in parallel before it starts. The job prepares dedicated Clerk test identities, runs `node scripts/test.mjs e2e` and `node scripts/test.mjs capacity-smoke`, sanitizes `.test-artifacts/` and Playwright output, and always cleans Compose resources and revokes Clerk invitations. The E2E job is skipped for Dependabot.
 
 Skipped tests, retries, missing artifacts and migration drift are release failures. E2E credentials must be dedicated Clerk test identities; they are not generated or persisted by local test setup.
 

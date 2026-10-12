@@ -119,6 +119,7 @@ jobs:
         run: >-
           pytest -q tests/unit --cov=app --cov-branch --cov-report= --cov-fail-under=0
           --disable-socket --allow-hosts=127.0.0.1,localhost
+          -n 4 --dist=loadscope
           --junitxml=test-results-unit.xml
       - name: Test backend integrations
         working-directory: backend
@@ -185,7 +186,13 @@ jobs:
         working-directory: frontend
         run: |
           npm run audit:production
-          npm run verify
+          # Static checks and Knip are CPU-light compared with Vitest coverage,
+          # so they overlap the coverage run. The build stays after both.
+          npm run verify:checks &
+          checks_pid=$!
+          npm run test:coverage
+          wait "$checks_pid"
+          npm run build
       - name: Report measured LOC
         run: node scripts/loc-report.mjs
       - name: Upload frontend test artifacts
@@ -275,8 +282,10 @@ jobs:
             echo "${credential_name}=${credential_value}" >> "$GITHUB_ENV"
           done
 
-      - name: Build CI backend image
-        run: docker compose -f docker-compose.ci.yml build backend
+      - name: Build CI application images
+        # Compose builds both services in parallel, so the frontend image no
+        # longer waits for the backend image before `up` starts.
+        run: docker compose -f docker-compose.ci.yml build backend frontend
         env:
           COMPOSE_PROJECT_NAME: cronos-ci-${{ github.run_id }}-${{ github.run_attempt }}
           CRONOS_MIGRATOR_PASSWORD: ${{ env.CI_MIGRATOR_PASSWORD }}

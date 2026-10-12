@@ -3,6 +3,7 @@ from uuid import uuid4
 
 import pytest
 from httpx import AsyncClient
+from limits import parse
 
 from app import models
 from app.config import settings
@@ -86,14 +87,16 @@ async def _patch_and_call(cid, headers, endpoint, async_client, method="GET", **
     return await async_client.post(endpoint, headers=headers, **kwargs)
 
 
-async def _patch_loop(cid, headers, endpoint, async_client, count, **kwargs):
-    for index in range(count):
-        request_headers = {
-            **headers,
-            "x-real-ip": f"198.51.100.{(index % 254) + 1}",
-        }
-        response = await async_client.get(endpoint, headers=request_headers, **kwargs)
-        assert response.status_code == 200
+def _seed_rate_limit(limit: str, *, ip: str, path: str, count: int) -> None:
+    """Consume real Redis counters so the next request sits at the threshold.
+
+    The seed uses the production limiter strategy and the exact ``(ip, path)``
+    identifiers the endpoint decorator uses, so the seeded bucket is the one the
+    real HTTP request observes.
+    """
+    item = parse(limit)
+    for _ in range(count):
+        assert limiter._limiter.hit(item, ip, path)
 
 
 @pytest.fixture
@@ -237,7 +240,7 @@ class TestTeacherRoleRegressionContracts:
         assert not_found_resp.status_code == 404
 
     @pytest.mark.xdist_group("rate-limit-volume")
-    async def test_teacher_horizon_polling_volume_does_not_trip_old_global_limit(
+    async def test_teacher_horizon_volume_proves_override_above_old_global_limit(
         self,
         async_client: AsyncClient,
         clerk_admin_headers: dict,
@@ -254,13 +257,29 @@ class TestTeacherRoleRegressionContracts:
             db_session, organization_id=1, name="Prof. Horizon Polling"
         )
         await db_session.commit()
-        teacher_headers, cid = await _create_teacher_auth_headers(
+        teacher_headers, _ = await _create_teacher_auth_headers(
             db_session, organization_id=1, teacher_id=teacher.id
         )
-        await _patch_loop(cid, teacher_headers, f"{API}/schedule/me/horizon", async_client, 55)
+        ip = "198.51.100.51"
+        path = f"{API}/schedule/me/horizon"
+        # Seed both the registered 300/hour route bucket and the retired default
+        # 50/hour bucket on the exact same ``(ip, path)`` identifiers. A correctly
+        # registered override ignores the default, so the 51st request still passes.
+        _seed_rate_limit("300/hour", ip=ip, path=path, count=50)
+        _seed_rate_limit("50/hour", ip=ip, path=path, count=50)
+
+        response = await async_client.get(path, headers={**teacher_headers, "x-real-ip": ip})
+
+        assert response.status_code == 200
+        route = limiter._limiter.get_window_stats(parse("300/hour"), ip, path)
+        assert route.remaining == 249
+        # The default bucket is untouched by the request. If the override broke and
+        # the default 50/hour also applied, this request would have returned 429.
+        default = limiter._limiter.get_window_stats(parse("50/hour"), ip, path)
+        assert default.remaining == 0
 
     @pytest.mark.xdist_group("rate-limit-volume")
-    async def test_teacher_week_navigation_volume_does_not_trip_old_global_limit(
+    async def test_teacher_week_volume_enforces_the_real_minute_limit(
         self,
         async_client: AsyncClient,
         clerk_admin_headers: dict,
@@ -271,17 +290,27 @@ class TestTeacherRoleRegressionContracts:
             db_session, organization_id=1, name="Prof. Week Navigation"
         )
         await db_session.commit()
-        teacher_headers, cid = await _create_teacher_auth_headers(
+        teacher_headers, _ = await _create_teacher_auth_headers(
             db_session, organization_id=1, teacher_id=teacher.id
         )
-        await _patch_loop(
-            cid,
-            teacher_headers,
-            f"{API}/schedule/week",
-            async_client,
-            70,
-            params={"week_start": "2026-04-20"},
+        ip = "198.51.100.60"
+        path = f"{API}/schedule/week"
+        params = {"week_start": "2026-04-20"}
+        _seed_rate_limit("60/minute", ip=ip, path=path, count=59)
+
+        allowed = await async_client.get(
+            path, headers={**teacher_headers, "x-real-ip": ip}, params=params
         )
+        assert allowed.status_code == 200
+        exceeded = await async_client.get(
+            path, headers={**teacher_headers, "x-real-ip": ip}, params=params
+        )
+        # The 61st request in the same minute hits the real configured 60/minute limit.
+        assert exceeded.status_code == 429
+        assert exceeded.headers.get("Retry-After") == "60"
+        minute = parse("60/minute")
+        assert limiter._storage.get(minute.key_for(ip, path)) == 61
+        assert limiter._limiter.get_window_stats(minute, ip, path).remaining == 0
 
     async def test_teacher_week_schedule_contract_403_and_422(
         self, async_client: AsyncClient, clerk_admin_headers: dict, db_session

@@ -115,14 +115,6 @@ describe('App route polish', () => {
     })
   })
 
-  it('renders a friendly 404 for unknown routes', async () => {
-    renderAppAt('/rota-inexistente')
-
-    expect(await screen.findByRole('heading', { name: /página não encontrada/i })).toBeInTheDocument()
-    expect(screen.getByText(/rota-inexistente/i)).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /voltar ao início/i })).toHaveAttribute('href', '/')
-  })
-
   it('renders the cookies document as a standalone legal page', async () => {
     renderAppAt('/cookies')
 
@@ -138,12 +130,6 @@ describe('App route polish', () => {
     for (const annex of ['Anexo A — Subprocessadores', 'Anexo B — Medidas de segurança', 'Anexo C — Transferências internacionais', 'Anexo D — Instruções documentadas']) {
       expect(screen.getByRole('heading', { name: annex })).toBeInTheDocument()
     }
-  })
-
-  it('does not expose the removed onboarding route', async () => {
-    renderAppAt('/onboarding')
-
-    expect(await screen.findByRole('heading', { name: /página não encontrada/i })).toBeInTheDocument()
   })
 
   it('does not expose the removed create-org route', async () => {

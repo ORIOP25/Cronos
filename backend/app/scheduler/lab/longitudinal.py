@@ -119,6 +119,7 @@ def replay_annual_events(
     time_limit_seconds: float = 10.0,
     solver_seed: int = 1,
     workers: int = 1,
+    stop_at_first_complete: bool = False,
     policy: RecoveryPolicy | None = None,
     case_id: str | None = None,
 ) -> AnnualReplay:
@@ -187,6 +188,7 @@ def replay_annual_events(
             time_limit_seconds=time_limit_seconds,
             num_workers=workers,
             random_seed=solver_seed + index,
+            stop_at_first_complete=stop_at_first_complete,
         )
         candidate = repaired.candidate
         problems = _conservation_problems(perturbed, candidate)

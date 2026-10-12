@@ -24,7 +24,7 @@ const BACKEND_TEST_IMAGE = 'cronos-backend-test:local'
 const DOCKER_BACKEND = process.platform === 'win32'
 const SCOPES = new Set(['backend', 'frontend', 'all'])
 const PROFILES = new Set(['fast', 'integration', 'e2e', 'all'])
-const E2E_PROJECTS = new Set(['public', 'auth', 'app', 'provider', 'faults', 'capacity'])
+const E2E_PROJECTS = new Set(['public', 'auth', 'app', 'isolated', 'readonly', 'provider', 'capacity'])
 export const INTEGRATION_WORKERS = 4
 export const E2E_WORKERS = 2
 export const E2E_PORT = 5174
@@ -40,7 +40,7 @@ Commands:
   doctor --profile fast|integration|e2e|all
   fast --scope backend|frontend|all [-- runner arguments]
   integration [-- runner arguments]
-  e2e [--project public|auth|app|provider|faults|capacity]
+  e2e [--project public|auth|app|isolated|readonly|provider|capacity]
   capacity
   capacity-smoke
   acceptance

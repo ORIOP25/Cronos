@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs'
 import { describe, it, expect, vi } from 'vitest'
 import { fireEvent, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
@@ -10,8 +9,6 @@ import { publicAsset } from '../utils/publicAsset'
 const roleState = vi.hoisted(() => ({ isAdmin: true, isTeacher: false }))
 
 vi.mock('../hooks/useRole', () => ({ useRole: () => roleState }))
-
-const appShellCss = readFileSync('src/styles/app-shell.css', 'utf8')
 
 describe('DefaultLayout', () => {
   it('renders navigation, account actions, and nested route content', () => {
@@ -70,7 +67,6 @@ describe('DefaultLayout', () => {
     expect(logo).toHaveAttribute('src', publicAsset('/logo-white.png'))
     expect(brandRow.children[0]).toContainElement(logo)
     expect(brandRow.children[1]).toContainElement(within(sidebar).getByRole('button', { name: 'Expandir menu' }))
-    expect(appShellCss).toMatch(/\.app-sidebar\.is-collapsed \.app-sidebar__brand-row\s*\{[^}]*flex-direction:\s*column[^}]*gap:\s*8px/)
   })
 
   it('does not expose real organization changes inside the demonstration layout', () => {

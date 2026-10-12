@@ -502,7 +502,7 @@ Não teste detalhes internos de animação da biblioteca.
 | Configuração | Sucessos temporários e bloqueios persistentes seguem canais diferentes. | `SchoolConfigSchedulerSettings.test.jsx`, `SchoolConfigInternshipFlows.test.jsx`. |
 | Autosave e conflito | Estado de erro permanece; recuperação não elimina rascunho indevidamente. | `Foundation.test.jsx` e testes E2E existentes de conflitos. |
 | Contacto e acesso | Associação local e alternativas de recuperação continuam disponíveis. | `TurnstileWidget.test.jsx`, `PasswordRecovery.test.jsx`, `AppRouteGuards.test.jsx` e testes DOM dos campos sem cobertura existente. |
-| Contexto | Mudança de utilizador, organização ou simulação remove mensagens incompatíveis. | `AppRoutes.test.jsx`, `Guide.test.jsx` e teste de conclusão atrasada. |
+| Contexto | Mudança de utilizador, organização ou simulação remove mensagens incompatíveis. | `AppRoutes.test.jsx`, `TutorialWorkspace.test.jsx` e o caso nativo dos 13 passos; o antigo `Guide.test.jsx` foi retirado e a sua cobertura passou para o caso nativo. |
 
 Crie apenas testes novos que cubram contratos sem cobertura existente.
 Use testes de componentes para semântica e dados.

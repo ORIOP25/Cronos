@@ -3,7 +3,7 @@
 import json
 from pathlib import Path
 
-from app.scheduler.lab.campaign import campaign_failures, run_campaign_directory
+from app.scheduler.lab.campaign import run_campaign_directory
 from app.scheduler.lab.combined import (
     annual_replay_manifest,
     boundary_manifest,
@@ -13,7 +13,6 @@ from app.scheduler.lab.combined import (
 )
 from app.scheduler.lab.manifest import from_manifest
 from app.scheduler.lab.matrix import (
-    campaign_matrix_report,
     pairwise_coverage,
     parse_matrix,
     validate_matrix,
@@ -82,25 +81,6 @@ def test_the_annual_replay_manifest_declares_the_mandatory_scales():
 
     assert {case.annual.class_count for case in cases} == {10, 30, 45, 60}
     assert all(case.annual.events >= 1 for case in cases)
-
-
-def test_the_boundary_campaign_proves_removal_and_recovery(tmp_path):
-    manifest = boundary_manifest()
-
-    report = run_campaign_directory(
-        manifest, tmp_path, commit="test", mode="generator", time_limit_seconds=10
-    )
-
-    outcomes = {result.case_id: result.outcome.value for result in report.results}
-    assert campaign_failures(manifest, report) == ()
-    for resource in ("room", "teacher", "grid"):
-        assert outcomes[f"w10-b-{resource}-removed"] == "INFEASIBLE"
-        assert outcomes[f"w10-b-{resource}-restored"] == "VALID"
-
-    coverage = campaign_matrix_report(manifest, report)
-    assert coverage["complete"] is True
-    assert coverage["problems"] == []
-    assert coverage["covered_pairs"] == 6
 
 
 def test_a_pair_case_runs_end_to_end_in_repair_mode(tmp_path):

@@ -398,6 +398,8 @@ node scripts/test.mjs e2e --project app
 node scripts/test.mjs e2e --project faults
 ```
 
+O comando `e2e --project faults` fica histórico: o projeto `faults` foi retirado e os seus dois casos passaram para `isolated` e `readonly`. O equivalente atual é `node scripts/test.mjs e2e --project isolated` seguido de `node scripts/test.mjs e2e --project readonly`.
+
 Os projetos E2E executam as dependências definidas no Playwright.
 A CI final também deve manter os restantes gates existentes, incluindo provider e capacidade.
 Não inicie estas suites sobre a stack partilhada sem verificar o isolamento definido pelo runner.

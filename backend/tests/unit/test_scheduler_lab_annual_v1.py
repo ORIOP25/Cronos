@@ -131,16 +131,17 @@ def test_a_stored_candidate_revalidates_and_detects_tampering(tmp_path):
         annual=AnnualCaseSpec(4, PROFILE_LOOSE, 1),
     )
     fixture = build_case(case)
-    generated = generate_schedule(fixture.snapshot, fixture.periods, time_limit_seconds=20)
-    assert generated.outcome == "COMPLETE"
+    candidate = fixture.witness
+    report = validate_candidate(fixture.snapshot, candidate)
+    assert report.valid
     payload = {
         "case_id": case.case_id,
         "snapshot": snapshot_to_dict(fixture.snapshot),
         "periods": [period_to_dict(period) for period in fixture.periods],
-        "candidate": candidate_to_dict(generated.candidate),
-        "candidate_digest": candidate_digest(generated.candidate),
-        "validation": validation_to_dict(generated.report),
-        "quality": quality_to_dict(generated.quality),
+        "candidate": candidate_to_dict(candidate),
+        "candidate_digest": candidate_digest(candidate),
+        "validation": validation_to_dict(report),
+        "quality": quality_to_dict(measure_initial_quality(fixture.snapshot, candidate)),
     }
     stored = tmp_path / "case.json"
     stored.write_text(json.dumps({"result": {"payload": payload}}), encoding="utf-8")

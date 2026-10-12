@@ -258,3 +258,73 @@ async def publish_schedule(db_session, monkeypatch, seed: V1Seed) -> None:
         seed,
         key=f"publish:{seed.organization.id}",
     )
+
+
+async def seed_published_baseline(
+    db_session,
+    seed: V1Seed,
+    *,
+    now_utc: datetime = MOMENT,
+) -> SchedulerVersionV1:
+    """Persist the native constructive candidate as the active published baseline.
+
+    Reuses the production constructive generator and validator, then writes the
+    version/lesson/slice rows the publisher would. Later ``load_snapshot``
+    (ADAPTIVE_RECOVERY) and real repair/approval cycles run unchanged.
+    """
+    from app.scheduler.domain.candidate import SchedulingStrategy
+    from app.scheduler.domain.candidate_validation import validate_candidate
+    from app.scheduler.infrastructure.constructive import construct_schedule
+    from app.scheduler.infrastructure.models import SchedulerLessonSliceV1
+    from app.scheduler.infrastructure.snapshot import load_snapshot
+
+    bundle = await load_snapshot(
+        db_session,
+        seed.organization.id,
+        strategy=SchedulingStrategy.COMPLETE_GENERATION,
+        now_utc=now_utc,
+        school_year_id=seed.year.id,
+    )
+    candidate = construct_schedule(bundle.snapshot, bundle.periods)
+    if candidate is None:
+        raise ValueError("The native constructive generator produced no baseline.")
+    if not validate_candidate(bundle.snapshot, candidate).valid:
+        raise ValueError("The native constructive baseline failed validation.")
+
+    version = await add_version(
+        db_session, seed, status="ACTIVE", digest=bundle.digest, approved_at=now_utc
+    )
+    for lesson in candidate.lessons:
+        row = SchedulerLessonV1(
+            organization_id=seed.organization.id,
+            school_year_id=seed.year.id,
+            version_id=version.id,
+            assignment_id=lesson.assignment_id,
+            stable_key=str(lesson.lesson_id),
+            school_date=lesson.period.school_date,
+            starts_at=lesson.period.start_utc,
+            ends_at=lesson.period.end_utc,
+            room_id=lesson.room_id,
+            physical_minutes=lesson.period.duration_minutes,
+            credit_minutes=lesson.credit_minutes,
+        )
+        db_session.add(row)
+        await db_session.flush()
+        for slice_ in lesson.slices:
+            db_session.add(
+                SchedulerLessonSliceV1(
+                    organization_id=seed.organization.id,
+                    school_year_id=seed.year.id,
+                    lesson_id=row.id,
+                    module_id=slice_.module_id,
+                    offset_minutes=slice_.offset_minutes,
+                    minutes=slice_.credit_minutes,
+                )
+            )
+    seed.state.active_schedule_version_id = str(version.id)
+    seed.state.school_year_publication_state = models.SchoolYearPublicationState.PUBLISHED
+    seed.state.lock_version += 1
+    if seed.organization.first_real_schedule_approved_at is None:
+        seed.organization.first_real_schedule_approved_at = now_utc
+    await db_session.commit()
+    return version

@@ -4,7 +4,9 @@ Revisão: 2026-10-07. Versão: 2.0.
 Main revista: `91a9d28bcb9c9a829a8578872156a6b90fa04bcf`.
 A main remota e o checkout tinham a mesma revisão durante a inspeção.
 Reconciliação W12.4: 2026-10-09. Estado do W12: em curso. Consulte a [reconciliação das 80 tarefas](#reconciliação-w124).
-Atualização noturna: 2026-10-12. A `main` publicada é `6140da6`. Ver o [progresso noturno](REAL_BROWSER_TESTING_IMPLEMENTATION.md#progresso-noturno--2026-10-12).
+Estado: 2026-10-12. A `main` publicada é `d4f6269` (#71); o ramo de implementação é `codex/reduce-ci-runtime`, ainda por publicar.
+A referência `fe69` do audit fica preservada, com a execução pública [run 38206152558]; ver o [progresso noturno](REAL_BROWSER_TESTING_IMPLEMENTATION.md#progresso-noturno--2026-10-12).
+Redução consolidada por publicar: ver a [redução consolidada](REAL_BROWSER_TESTING_IMPLEMENTATION.md#redução-consolidada-por-publicar--2026-10-12).
 
 ## Objetivo e leitor
 
@@ -224,7 +226,7 @@ Base histórica e estado atual:
 | :--- | :--- | :--- |
 | Histórico | `91a9d28` | Baseline dos quatro planos; o runner local usava Compose, chaves de teste e `clerk.signIn`. |
 | Intermédio (2026-10-09) | `804a2dd` | Infraestrutura de aceitação implementada; comandos novos coexistem com o legado até ao cutover. |
-| Atual (2026-10-12) | `6140da6` | Infraestrutura publicada e verificada; o diagnóstico público passa à primeira tentativa e uma redução unitária parcial foi executada. |
+| Atual (2026-10-12) | `d4f6269` | A `main` publicada é o #71, uma correção de edge sem relação; a referência de audit `fe69` fica preservada. Um lote de redução de testes consolidado no ramo `codex/reduce-ci-runtime` permanece local, por publicar e por medir em GHA. |
 
 A tabela não contradiz o registo histórico; marca a evolução.
 
@@ -272,7 +274,8 @@ Execuções citadas:
 - [run 37998099499](https://github.com/ORIOP25/Cronos/actions/runs/37998099499): CI da `main` em `4e62573`; backend, frontend, E2E e capacidade passaram (histórico).
 - [run 38191885411](https://github.com/ORIOP25/Cronos/actions/runs/38191885411): CI da PR 68; todos os jobs passaram, incluindo o Sonar.
 - [run 38192706792](https://github.com/ORIOP25/Cronos/actions/runs/38192706792): CI da `main` em `6140da6`; backend, frontend, E2E e capacidade passaram.
-- [run 38193441985](https://github.com/ORIOP25/Cronos/actions/runs/38193441985): `diagnose-public` nativo em `6140da6`; quatro casos públicos passaram à primeira tentativa.
+- [run 38193441985](https://github.com/ORIOP25/Cronos/actions/runs/38193441985): `diagnose-public` nativo em `6140da6`; quatro casos públicos passaram à primeira tentativa (histórico).
+- [run 38206152558](https://github.com/ORIOP25/Cronos/actions/runs/38206152558): `diagnose-public` nativo em `fe69`; quatro casos públicos passaram à primeira tentativa com os cinco SHAs iguais.
 
 [run 37951385146]: https://github.com/ORIOP25/Cronos/actions/runs/37951385146
 [run 37985882509]: https://github.com/ORIOP25/Cronos/actions/runs/37985882509
@@ -284,6 +287,7 @@ Execuções citadas:
 [run 38191885411]: https://github.com/ORIOP25/Cronos/actions/runs/38191885411
 [run 38192706792]: https://github.com/ORIOP25/Cronos/actions/runs/38192706792
 [run 38193441985]: https://github.com/ORIOP25/Cronos/actions/runs/38193441985
+[run 38206152558]: https://github.com/ORIOP25/Cronos/actions/runs/38206152558
 
 ### Parte 1 — W00–W03
 
@@ -364,8 +368,8 @@ Execuções citadas:
 | W09.2 | CONCLUÍDO | N/A | Transações, migrations e rollback preservados; [M]. |
 | W09.3 | CONCLUÍDO | N/A | Ocorrências, dívida e fecho preservados no núcleo backend; [O] e [T]. |
 | W09.4 | CONCLUÍDO | N/A | Solver e validador independentes; [S]. |
-| W09.5 | EM_CURSO | N/A | Redução parcial: um ficheiro unitário removido após prova nativa autorizada. O cutover da maioria continua bloqueado. |
-| W09.6 | EM_CURSO | N/A | Medição parcial: 604 aplicação + 216 infraestrutura (820) antes; 603 + 268 (871) depois. O total sobe 51. |
+| W09.5 | EM_CURSO | N/A | Redução consolidada local: sete ficheiros frontend removidos e um novo, saldo menos seis; cinco regressões de domínio backend duplicadas removidas e uma paridade nova. O cutover da maioria continua bloqueado. Ver a [redução consolidada](REAL_BROWSER_TESTING_IMPLEMENTATION.md#redução-consolidada-por-publicar--2026-10-12). |
+| W09.6 | EM_CURSO | N/A | Medição local por publicar: frontend 579 casos em 81 ficheiros (de 603 em 87); backend 892 unitários, 463 integrações e 61 contratos, total 1 416 (de 1 434); 165 ficheiros backend; E2E 80 casos. Face a `91a9d28`, +8 casos frontend e +46 backend. Gates e retries não mudaram. Ver a [redução consolidada](REAL_BROWSER_TESTING_IMPLEMENTATION.md#redução-consolidada-por-publicar--2026-10-12). |
 | W09.7 | EM_CURSO | N/A | Knip na CI; remoção de dependências pendente. |
 | W09.8 | EM_CURSO | N/A | Thresholds e gates em conjunto; pendente. |
 | W10.1 | EM_CURSO | DEPENDÊNCIA | `acceptance`, `prepare-history`, `diagnose-public` e `inspect-code-sender` coexistem com o `e2e` legado (Compose e CI legado) até ao cutover W10.8. A campanha está inativa com `E2E_ACCEPTANCE_ENABLED=false`. |
@@ -417,8 +421,11 @@ Está na [tabela de baseline](#baseline-e-componentes).
 Não é a contagem atual e não mede casos recolhidos.
 As reduções não são quotas.
 A primeira redução parcial removeu um ficheiro unitário.
-A contagem total subiu 51, porque a infraestrutura aumentou de 216 para 268.
+Na altura, a contagem total subiu 51, porque a infraestrutura aumentou de 216 para 268.
+O lote consolidado posterior, por publicar, tem agora frontend 579 casos em 81 ficheiros e backend 1 416 casos.
+Face a `91a9d28`, mantêm-se +8 casos frontend e +46 casos backend.
 As metas 30–45 e 8–12 não foram atingidas nos percursos de negócio.
+Nenhuma contagem é uma quota nem certifica a execução em GHA.
 
 ## Fontes e documentos relacionados
 

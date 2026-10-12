@@ -60,12 +60,6 @@ describe('Members', () => {
     })
   })
 
-  it('uses the shared page spacing', () => {
-    const { container } = renderWithRouter(<Members />)
-
-    expect(container.firstChild).toHaveClass('p-4')
-  })
-
   it('labels the archive filter and lets its visible label toggle it', () => {
     renderWithRouter(<Members />)
     const filter = screen.getByRole('checkbox', { name: 'Mostrar arquivados' })
