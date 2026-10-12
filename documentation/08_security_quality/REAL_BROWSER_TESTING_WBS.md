@@ -4,9 +4,9 @@ Revisão: 2026-10-07. Versão: 2.0.
 Main revista: `91a9d28bcb9c9a829a8578872156a6b90fa04bcf`.
 A main remota e o checkout tinham a mesma revisão durante a inspeção.
 Reconciliação W12.4: 2026-10-09. Estado do W12: em curso. Consulte a [reconciliação das 80 tarefas](#reconciliação-w124).
-Estado: 2026-10-12. A `main` publicada é `d4f6269` (#71); o ramo `codex/reduce-ci-runtime` está no [PR 72](https://github.com/ORIOP25/Cronos/pull/72) em `0fb3594`, público e não fundido, com [run 38269061278](https://github.com/ORIOP25/Cronos/actions/runs/38269061278) verde.
+Estado: 2026-10-12. A `main` publicada é `d4f6269` (#71); o ramo `codex/reduce-ci-runtime` está no [PR 72](https://github.com/ORIOP25/Cronos/pull/72) em `6d861ce`, público e não fundido, com [run 38282501310](https://github.com/ORIOP25/Cronos/actions/runs/38282501310) verde.
 A referência `fe69` do audit fica preservada, com a execução pública [run 38206152558]; ver o [progresso noturno](REAL_BROWSER_TESTING_IMPLEMENTATION.md#progresso-noturno--2026-10-12).
-Seleção crítica de CI por commitar: ver a [redução consolidada](REAL_BROWSER_TESTING_IMPLEMENTATION.md#redução-consolidada--2026-10-12).
+Seleção crítica de CI validada em GHA; falta a mediana de três. Ver a [redução consolidada](REAL_BROWSER_TESTING_IMPLEMENTATION.md#redução-consolidada--2026-10-12).
 
 ## Objetivo e leitor
 
@@ -226,7 +226,7 @@ Base histórica e estado atual:
 | :--- | :--- | :--- |
 | Histórico | `91a9d28` | Baseline dos quatro planos; o runner local usava Compose, chaves de teste e `clerk.signIn`. |
 | Intermédio (2026-10-09) | `804a2dd` | Infraestrutura de aceitação implementada; comandos novos coexistem com o legado até ao cutover. |
-| Atual (2026-10-12) | `d4f6269` | A `main` publicada é o #71, uma correção de edge sem relação; a referência de audit `fe69` fica preservada. O lote de redução vive no [PR 72](https://github.com/ORIOP25/Cronos/pull/72), em `0fb3594`, público e não fundido, com a última CI verde. Uma seleção crítica de CI está por commitar e aguarda GHA. |
+| Atual (2026-10-12) | `d4f6269` | A `main` publicada é o #71, uma correção de edge sem relação; a referência de audit `fe69` fica preservada. O lote de redução vive no [PR 72](https://github.com/ORIOP25/Cronos/pull/72), em `6d861ce`, público e não fundido, com a CI verde. A seleção crítica foi validada em GHA; falta a mediana de três. |
 
 A tabela não contradiz o registo histórico; marca a evolução.
 
@@ -368,8 +368,8 @@ Execuções citadas:
 | W09.2 | CONCLUÍDO | N/A | Transações, migrations e rollback preservados; [M]. |
 | W09.3 | CONCLUÍDO | N/A | Ocorrências, dívida e fecho preservados no núcleo backend; [O] e [T]. |
 | W09.4 | CONCLUÍDO | N/A | Solver e validador independentes; [S]. |
-| W09.5 | EM_CURSO | N/A | Redução consolidada: sete ficheiros frontend removidos e um novo, saldo menos seis; cinco regressões de domínio backend duplicadas removidas e uma paridade nova. O cutover da maioria continua bloqueado. Ver a [redução consolidada](REAL_BROWSER_TESTING_IMPLEMENTATION.md#redução-consolidada--2026-10-12). |
-| W09.6 | EM_CURSO | N/A | Medição (estado do PR 72): frontend 579/81; backend 1 416; os 80 casos legacy de UI passam na CI em `0fb3594`. Seleção crítica por commitar: backend 225+62 local (22,26 s e 61,90 s; escopo 81,03, política 100, validador 90,18) e frontend 24 ficheiros/254 casos local (20,33 s; cobertura 67,2/70,65/56,53/69,39); full opcional 82/587; objetivo 60 s frontend e 120 s backend ainda sem medição de CI. Gates e retries não mudaram. Ver a [redução consolidada](REAL_BROWSER_TESTING_IMPLEMENTATION.md#redução-consolidada--2026-10-12). |
+| W09.5 | EM_CURSO | N/A | Redução consolidada: sete ficheiros frontend removidos e um novo, saldo menos seis; cinco regressões de domínio backend duplicadas removidas e uma paridade nova. A seleção crítica de CI foi entregue e validada em GHA em `6d861ce`; falta a mediana de três execuções. O cutover da maioria continua bloqueado. Ver a [redução consolidada](REAL_BROWSER_TESTING_IMPLEMENTATION.md#redução-consolidada--2026-10-12). |
+| W09.6 | EM_CURSO | N/A | Medição (estado do PR 72): frontend 579/81; backend 1 416; os 80 casos legacy de UI passam na CI em `0fb3594`. Seleção crítica validada em GHA: backend 225+62 local (22,26 s e 61,90 s; escopo 81,03, política 100, validador 90,18) e frontend 24 ficheiros/254 casos local (20,33 s; cobertura 67,2/70,65/56,53/69,39); full opcional 82/587. Primeira execução completa em `6d861ce`: backend 1 m 55 s, frontend 57 s, `e2e-runtime` 1 m 20 s; objetivo cumprido numa execução, mediana de três pendente. Gates e retries não mudaram. Ver a [redução consolidada](REAL_BROWSER_TESTING_IMPLEMENTATION.md#redução-consolidada--2026-10-12). |
 | W09.7 | EM_CURSO | N/A | Knip na CI; remoção de dependências pendente. |
 | W09.8 | EM_CURSO | N/A | Thresholds e gates em conjunto; pendente. |
 | W10.1 | EM_CURSO | DEPENDÊNCIA | `acceptance`, `prepare-history`, `diagnose-public` e `inspect-code-sender` coexistem com o `e2e` legado (Compose e CI legado) até ao cutover W10.8. A campanha está inativa com `E2E_ACCEPTANCE_ENABLED=false`. |
@@ -404,7 +404,7 @@ Execuções citadas:
 ### Fronteiras abertas
 
 - Os 80 IDs deste WBS são tarefas; os 80 casos legacy de UI browser são uma suite distinta e já passam nativamente na CI no perfil atual (`38269061278` em `0fb3594` e `38262965438` em `1e18315`).
-- Uma seleção crítica de CI, com o job `e2e-runtime` e a matriz reduzida, está por commitar e ainda não foi validada em GHA.
+- Uma seleção crítica de CI, com o job `e2e-runtime` e a matriz reduzida, foi entregue e validada em GHA; falta a mediana de três execuções.
 - O remetente do código Clerk não está observado; `E2E_GMAIL_CODE_SENDER` não está configurada.
 - O encaminhamento de contacto na Hostinger não está provado.
 - O desafio anti-bot Cloudflare não é resolúvel por browser automatizado.
@@ -427,7 +427,7 @@ Na altura, a contagem total subiu 51, porque a infraestrutura aumentou de 216 pa
 O lote consolidado no PR 72 tem agora frontend 579 casos em 81 ficheiros e backend 1 416 casos.
 Face a `91a9d28`, mantêm-se +8 casos frontend e +46 casos backend.
 As metas 30–45 e 8–12 foram retiradas; passa a contar o tempo por job e a cobertura crítica.
-Nenhuma contagem é uma quota nem certifica a libertação; a última CI ficou verde e a seleção crítica aguarda GHA.
+Nenhuma contagem é uma quota nem certifica a libertação; a última CI ficou verde e a seleção crítica foi validada; falta a mediana de três.
 
 ## Fontes e documentos relacionados
 

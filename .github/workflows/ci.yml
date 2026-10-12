@@ -142,12 +142,16 @@ jobs:
           name: backend-test-artifacts-${{ github.run_id }}-${{ github.run_attempt }}
           # Only the critical report metadata and coverage data. No broad
           # `.test-artifacts` folder, no authentication, binary or profile files.
+          # `include-hidden-files` is required because both `.test-artifacts/`
+          # and `.coverage*` start with a dot. A missing expected report is a
+          # failure, not a warning (htmlcov stays optional).
           path: |
             .test-artifacts/**/critical-*.xml
             .test-artifacts/**/run.json
             backend/htmlcov
             backend/.coverage*
-          if-no-files-found: warn
+          include-hidden-files: true
+          if-no-files-found: error
           retention-days: 3
 
   frontend:
@@ -432,10 +436,13 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: e2e-metrics-${{ github.run_id }}-${{ github.run_attempt }}
+          # `.test-artifacts/` is hidden, so the glob needs include-hidden-files.
+          # A missing run.json (always written) is a failure, not a warning.
           path: |
             .test-artifacts/**/run.json
             ${{ steps.e2e_tests.outcome == 'success' && '.test-artifacts/**/e2e-all.xml' || '' }}
-          if-no-files-found: warn
+          include-hidden-files: true
+          if-no-files-found: error
           retention-days: 3
 
       - name: Upload Playwright artifacts

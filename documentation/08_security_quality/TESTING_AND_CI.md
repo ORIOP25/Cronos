@@ -95,16 +95,21 @@ E2E is two jobs plus one aggregate. `e2e-runtime` needs no Clerk or provider cre
 | :--- | :--- | :--- | :--- |
 | Critical CI (fast, required) | 23 unit files + 9 database files + 2 webhook node IDs | 24 files, 254 cases | 18 declared sources at 80 percent, with 100 and 90 for the two protected modules; 31 declared modules at 45/40/35/45 |
 | Full (optional, manual) | full unit, integration and contract corpus | `vitest run`, 82 files, 587 cases | whole application: 70 percent backend and 45/40/35/45 frontend |
+| Observed limits | core 287 (225 unit + 62 db) from the native Linux 3.14 run | critical 254 cases in 24 files | three equivalent runs still pending after the artifact SHA |
 
 The user goal is a frontend job under 60 seconds and a backend job under 120 seconds.
 Local native Linux timings are about 22.26 s for the critical unit group and 61.90 s for the database group; the frontend critical run passed 24 files and 254 cases in 20.33 s with 67.2/70.65/56.53/69.39 coverage.
 The local backend critical run reported 81.03 percent scope coverage, 100 percent for the protected policy and 90.18 for the candidate validator.
-These are local, not CI. CI setup adds about 69 s, so the backend goal may still be missed; the first green run on the new SHA must measure it.
+These local timings are not CI. CI setup adds about 69 s.
 Only job seconds and the critical coverage are completion criteria now; the old 30–45 backend and 8–12 frontend file quotas are retired.
+
+The first complete green run on `6d861ce` ([run 38282501310](https://github.com/ORIOP25/Cronos/actions/runs/38282501310)) passed every job and the aggregate: backend 1 m 55 s, frontend 57 s and `e2e-runtime` 1 m 20 s.
+The budgets were met on that single run; they are not yet a three-run median, and `main` stays at `d4`.
+The backend artifact upload warned `No files found` because the hidden `.test-artifacts` and `.coverage` paths need `include-hidden-files`; a focused workflow patch is pending.
 
 The legacy 80 UI browser cases passed natively in CI on the current browser profile: runs 38269061278 on `0fb3594` and 38262965438 on `1e18315`.
 The 69 production acceptance cases stay uncertified and blocked; this is not the same as the 80 WBS task IDs, which stay partial.
-The new critical profile and the `e2e-runtime` job are new and are not yet CI-validated.
+The critical profile and the `e2e-runtime` job are now CI-validated; only the three-run median is pending.
 The new direction permits retiring non-critical suites from the required gate, not deleting them.
 On Windows the critical command currently forces Docker without a shared stack network, so the full critical gate is not runnable locally until a known database is provided. The CI job supplies the PostgreSQL/Redis services and the ephemeral credentials.
 

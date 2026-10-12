@@ -1209,13 +1209,13 @@ A prova nativa no pipeline continua pendente; a execução pública `38193441985
 
 ## Redução consolidada — 2026-10-12
 
-Estado: ramo `codex/reduce-ci-runtime` no [PR 72](https://github.com/ORIOP25/Cronos/pull/72), HEAD `0fb3594`, público e não fundido.
+Estado: ramo `codex/reduce-ci-runtime` no [PR 72](https://github.com/ORIOP25/Cronos/pull/72), HEAD `6d861ce`, público e não fundido.
 A base é `d4f6269` (#71, negociação de conteúdo do edge, sem relação); a referência `fe69` do audit fica preservada.
 A `main` continua em `d4`; a libertação e o desbloqueio dos 69 casos ficam pendentes.
-A última execução verde é [run 38269061278](https://github.com/ORIOP25/Cronos/actions/runs/38269061278), no HEAD `0fb3594`.
+A última execução verde é [run 38282501310](https://github.com/ORIOP25/Cronos/actions/runs/38282501310), no HEAD `6d861ce`.
 
-A mudança seguinte introduz a seleção crítica de CI; está por commitar e ainda não foi validada em GHA nem publicada.
-O alvo de 50 por cento foi substituído pela exigência de segundos por job, que a primeira execução não atingiu.
+A seleção crítica de CI está entregue e validada em GHA; falta a mediana de três execuções.
+O alvo de 50 por cento foi substituído pela exigência de segundos por job, atingida na primeira execução completa.
 O checkout original do Desktop fica preservado; o worktree local tem as modificações.
 
 W09.5 e W09.6 permanecem `EM_CURSO`; as quotas antigas 8–12 frontend e 30–45 backend foram retiradas.
@@ -1320,7 +1320,7 @@ O backend unitário usa `-n 4 --dist=loadscope` e a integração já usava 4.
 O frontend corre `audit:production` e a verificação completa em sequência; a sobreposição anterior de verificações e cobertura foi revertida por somar tempo na CI.
 O E2E constrói as imagens Docker de backend e frontend em paralelo; o gate da imagem de privacidade mantém-se.
 
-### Primeira execução de CI medida — run 38262965438
+### Primeira execução de CI medida (perfil amplo, fase 1) — run 38262965438
 
 A execução [run 38262965438](https://github.com/ORIOP25/Cronos/actions/runs/38262965438) correu no SHA `1e18315`, com CI, Sonar e Cloudflare Pages verdes.
 
@@ -1333,10 +1333,11 @@ A execução [run 38262965438](https://github.com/ORIOP25/Cronos/actions/runs/38
 O ganho no caminho crítico é cerca de 7,6 por cento; não é a hipótese de 50 por cento e o alvo de cinco minutos não foi atingido.
 O frontend piorou face ao baseline `fe69`.
 A referência `fe69` é o pai do audit; o PR 71 (edge) é independente e não se atribui a esta medição.
+Esta tabela mede o perfil amplo anterior, não o núcleo crítico, e mantém-se como histórico.
 
-### Seleção crítica pendente de GHA
+### Seleção crítica validada em GHA
 
-A mudança seguinte, por commitar, retira a maioria do corpus do gate obrigatório e deixa apenas o núcleo crítico, sem apagar testes.
+A mudança entregue retira a maioria do corpus do gate obrigatório e deixa apenas o núcleo crítico, sem apagar testes.
 O backend corre `node scripts/test.mjs critical --scope backend` a partir de `backend/tests/critical_manifest.json`, gerado por `backend/tests/critical_selection.py` e guardado por `backend/tests/unit/test_critical_selection_policy.py`.
 O grupo `unit` tem 23 ficheiros a 2 workers; o grupo `db` tem 9 ficheiros e 2 node IDs exatos de webhook a 4 workers, em PostgreSQL/Redis reais com o schema Alembic.
 A cobertura crítica exige 80 por cento em 18 fontes declaradas, com 100 e 90 nas duas políticas protegidas; `pyproject.toml` mantém o default de 70 por cento para a execução completa opcional.
@@ -1358,10 +1359,15 @@ A CI passa a ter dois jobs E2E: `e2e-runtime`, nativo e sem segredos de Clerk, o
 O job agregado `e2e` falha se o runtime não passar.
 
 O objetivo do utilizador é frontend abaixo de 60 segundos e backend abaixo de 120 segundos.
-Todos estes valores são locais, não GHA; a CI acrescenta o setup e ainda não mediu o novo SHA.
-Esta mudança é uma hipótese; o próximo SHA deve medi-la, e a libertação exige três execuções equivalentes depois desse SHA.
+Os valores locais acima não substituem a CI.
+A libertação exige a mediana de três execuções equivalentes depois do SHA do patch de artefactos.
 
 No Windows, o comando crítico força Docker sem rede de stack, pelo que o gate completo não é executável localmente até existir uma base conhecida; a CI fornece os serviços PostgreSQL/Redis e as credenciais efémeras.
+
+A primeira execução completa do núcleo crítico foi [run 38282501310](https://github.com/ORIOP25/Cronos/actions/runs/38282501310), em `6d861ce`.
+Backend 1 m 55 s, frontend 57 s e `e2e-runtime` 1 m 20 s, com o agregador verde.
+Os orçamentos foram atingidos nessa única execução; falta a mediana de três.
+O upload do backend avisou `No files found` porque `.test-artifacts` e `.coverage*` são ocultos; um patch focado do workflow está pendente.
 
 ### Fronteiras mantidas
 
@@ -1369,5 +1375,5 @@ A produção mantém a referência anterior `fe69`, com os cinco componentes vá
 Os 80 casos legacy de UI passaram nativamente na CI no perfil de browser atual, nos runs 38269061278 em `0fb3594` e 38262965438 em `1e18315`.
 Os 69 casos de produção continuam por certificar e bloqueados; não coincidem com os 80 IDs de tarefa do WBS, que permanecem parciais.
 A nova direção permite retirar o não crítico do gate obrigatório, não o apagar.
-O PR 72, em `0fb3594`, é público e não está fundido; a `main` continua em `d4`.
-A libertação na `main` aguarda as três execuções equivalentes depois do SHA da seleção crítica.
+O PR 72, em `6d861ce`, é público e não está fundido; a `main` continua em `d4`.
+A libertação na `main` aguarda as três execuções equivalentes depois do SHA do patch de artefactos.
