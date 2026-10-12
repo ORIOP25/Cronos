@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
-import { classifyTransportFailure, cleanupProductionCampaign, mintClerkTestingToken } from './cleanup-production-campaign.mjs'
+import { classifyTransportFailure, cleanupProductionCampaign, mintClerkTestingToken, sshIdentityFile } from './cleanup-production-campaign.mjs'
 import { createUiRegistry, recordUiActor, recordUiCreationIntent, recordUiSchool, signRegistry, verifyRegistry } from './e2e-run-registry.mjs'
 import { protectEvidence, recoverEvidence } from './protect-test-evidence.mjs'
 
@@ -285,4 +285,12 @@ test('administrative transport failures are reported only as fixed classes', () 
   assert.equal(classifyTransportFailure('Service not found'), 'target_not_found')
   assert.equal(classifyTransportFailure('sk_live_secret leaked text'), 'unknown')
   assert.equal(classifyTransportFailure(''), 'unknown')
+})
+
+test('the administrative SSH identity is written in the format OpenSSH loads', () => {
+  const key = '-----BEGIN OPENSSH PRIVATE KEY-----\nAAAA\n-----END OPENSSH PRIVATE KEY-----'
+  assert.equal(sshIdentityFile(key), `${key}\n`)
+  assert.equal(sshIdentityFile(`${key.replaceAll('\n', '\r\n')}\r\n\r\n`), `${key}\n`)
+  assert.equal(classifyTransportFailure('Load key "/tmp/identity": error in libcrypto'), 'ssh_key_unreadable')
+  assert.equal(classifyTransportFailure('{"status":"no_ssh_key"}'), 'ssh_key_unreadable')
 })

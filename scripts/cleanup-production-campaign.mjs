@@ -75,17 +75,24 @@ async function railwayExecutable(environment) {
 // Fixed, secret-free classes of the native client's stderr; the text never leaves.
 export function classifyTransportFailure(stderr) {
   if (/Host key verification failed/i.test(stderr)) return 'ssh_host_key'
+  if (/Load key|no_ssh_key/i.test(stderr)) return 'ssh_key_unreadable'
   if (/Permission denied \(publickey/i.test(stderr)) return 'ssh_key_rejected'
   if (/unauthori[sz]ed|not authorized|invalid token|railway login/i.test(stderr)) return 'railway_auth'
   if (/not found/i.test(stderr)) return 'target_not_found'
   return 'unknown'
 }
 
+// OpenSSH rejects a key without its final newline or with CRLF line endings,
+// both common when a secret is pasted.
+export function sshIdentityFile(value) {
+  return `${value.replaceAll('\r\n', '\n').trimEnd()}\n`
+}
+
 async function nativeTransport(packet, environment, code = remoteCode) {
   const temporary = await mkdtemp(join(tmpdir(), 'cronos-admin-ssh-'))
   try {
     const keyPath = join(temporary, 'identity')
-    await writeFile(keyPath, environment.E2E_ADMIN_SSH_KEY, { mode: 0o600, flag: 'wx' })
+    await writeFile(keyPath, sshIdentityFile(environment.E2E_ADMIN_SSH_KEY), { mode: 0o600, flag: 'wx' })
     const executable = await railwayExecutable(environment)
     const command = `python -c 'exec(__import__("base64").b64decode("${Buffer.from(code).toString('base64')}"))'`
     const args = ['ssh', '--project', environment.E2E_RAILWAY_PROJECT_ID,
