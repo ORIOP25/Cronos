@@ -16,6 +16,21 @@ function requestMethod(request) {
   try { return typeof request.method === 'function' ? String(request.method()).toUpperCase() : '' } catch { return '' }
 }
 
+// An unexpected Clerk failure keeps only Clerk's fixed error codes, never its
+// messages, so a provider rejection is diagnosable from the safe evidence.
+async function clerkErrorCodes(response) {
+  try {
+    const body = await response.json()
+    return (body?.errors || []).map(item => item?.code).filter(code => /^[a-z0-9_]{1,64}$/.test(code || ''))
+  } catch { return [] }
+}
+
+function isExpectedFailure(observed, allowed) {
+  const url = new URL(observed.url)
+  return allowed.some(item => item.origin === url.origin && item.pathname === url.pathname
+    && item.method === observed.method && item.status === observed.status)
+}
+
 export function observeAcceptanceRuntime(page) {
   const confirmedErrors = []
   const requests = new WeakMap()
@@ -114,6 +129,9 @@ export function observeAcceptanceRuntime(page) {
       const scope = requests.get(request) ?? { action: null, allowed: [] }
       const observed = { url: response.url(), method: request.method(), status: response.status() }
       if (observed.status >= 400) failedResponses.set(observed.url, { ...observed, scope })
+      if (observed.status >= 400 && new URL(observed.url).origin === 'https://clerk.cronos.pt' && !isExpectedFailure(observed, scope.allowed)) {
+        void clerkErrorCodes(response).then(codes => record(`Clerk ${observed.status} ${observed.method} ${new URL(observed.url).pathname}: ${codes.join(',') || 'no_code'}`))
+      }
       record(servedBeaconError)
       record(getApiResponseError(observed, scope.allowed, { baseUrl, action: scope.action }))
     },
