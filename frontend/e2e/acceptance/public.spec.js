@@ -101,8 +101,12 @@ test('contact validation is reachable by keyboard and announces errors without s
     await expect(name).toBeFocused()
     await expect(name).toHaveAttribute('aria-invalid', 'true')
     await expect(name).toHaveAttribute('aria-describedby', 'name-error')
+    await expect(name).toHaveAccessibleDescription('Indique o seu nome.')
     await expect(page.getByRole('alert').filter({ hasText: /^Indique o seu nome\.$/ })).toBeVisible()
     await expect(page.getByRole('alert').filter({ hasText: /^Indique o seu email\.$/ })).toBeVisible()
+    await expect(page.getByRole('alert')).toHaveText(['Indique o seu nome.', 'Indique o seu email.'])
+    const initialAnnouncements = await page.getByRole('alert').allTextContents()
+    const nameDescribedByText = await page.locator('#name-error').innerText()
     await name.pressSequentially('Cronos Aceitação')
     await page.keyboard.press('Tab')
     await expect(email).toBeFocused()
@@ -112,7 +116,9 @@ test('contact validation is reachable by keyboard and announces errors without s
     await expect(email).toBeFocused()
     await expect(email).toHaveAttribute('aria-invalid', 'true')
     await expect(email).toHaveAttribute('aria-describedby', 'email-error')
+    await expect(email).toHaveAccessibleDescription('Indique um email válido.')
     await expect(page.getByRole('alert')).toHaveText('Indique um email válido.')
+    const emailDescribedByText = await page.locator('#email-error').innerText()
     await expect(name).toHaveAttribute('aria-invalid', 'false')
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
     expect(writes, 'Invalid contact details must not send any request').toEqual([])
@@ -122,6 +128,9 @@ test('contact validation is reachable by keyboard and announces errors without s
       email_aria_invalid: await email.getAttribute('aria-invalid'),
       email_aria_describedby: await email.getAttribute('aria-describedby'),
       announcements: await page.getByRole('alert').allTextContents(),
+      initial_announcements: initialAnnouncements,
+      name_describedby_text: nameDescribedByText,
+      email_describedby_text: emailDescribedByText,
       writes: writes.length,
     }
     await testInfo.attach('keyboard-contact-validation', {

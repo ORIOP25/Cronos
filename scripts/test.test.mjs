@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import test from 'node:test'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -12,6 +12,7 @@ import { evaluatePreparation } from './prepare-history.mjs'
 import { preparationFixture } from './preparation-test-fixture.mjs'
 import {
   childSpec,
+  cleanupOwnedResources,
   displayArgs,
   finalizePreparation,
   isOwnedResource,
@@ -22,8 +23,9 @@ import {
   resolveE2eBaseUrl,
   summarizeJunit,
   validateDatabaseTargets,
+  verifiedResultGuard,
 } from './test.mjs'
-import { redactSecrets, sanitizeDirectory } from './sanitize-test-artifacts.mjs'
+import { redactSecrets, sanitizeCampaignDiagnostics, sanitizeDirectory } from './sanitize-test-artifacts.mjs'
 import { classifyPath, collectFiles, countNonBlankLines, measureFiles } from './loc-report.mjs'
 
 test('sanitizer CLI redacts separate campaign keys, OAuth identity and dynamic codes', () => {
@@ -61,6 +63,124 @@ test('sanitizer CLI rejects an invalid secret registry before touching evidence'
     assert.notEqual(result.status, 0)
     assert.equal(readFileSync(source, 'utf8'), 'private trace')
     assert.equal(existsSync(`${source}.enc`), false)
+  } finally { rmSync(directory, { recursive: true, force: true }) }
+})
+
+test('campaign diagnostics sanitize only the allowlisted JSON files and leave the sealed result untouched', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'cronos-diag-sanitize-'))
+  try {
+    const sealed = JSON.stringify({ run: { failures: ['delivered code 123456'] } })
+    writeFileSync(join(directory, 'acceptance-result.json'), sealed)
+    writeFileSync(join(directory, 'acceptance-plan.json'), `${JSON.stringify({ missing: ['none'], note: 'delivered code 123456' })}\n`)
+    writeFileSync(join(directory, 'acceptance-cleanup.json'), '{"status":"completed"}\n')
+    writeFileSync(join(directory, 'diagnostic-assessment.json'), '{"certifies_production":false}\n')
+    writeFileSync(join(directory, 'artifact-verification.json'), '{"integrity":"verified","reason":null,"certifies_production":false}\n')
+    writeFileSync(join(directory, 'ui-run-registry.json'), '{"actors":["user_x"],"secret":"123456"}\n')
+    writeFileSync(join(directory, 'persistent-registry.json'), '{"key":"123456"}\n')
+    await sanitizeCampaignDiagnostics(directory, ['123456'])
+    assert.deepEqual(JSON.parse(readFileSync(join(directory, 'acceptance-plan.json'), 'utf8')), { missing: ['none'], note: 'delivered code [REDACTED]' })
+    assert.equal(readFileSync(join(directory, 'acceptance-result.json'), 'utf8'), sealed)
+    assert.equal(readFileSync(join(directory, 'acceptance-cleanup.json'), 'utf8'), '{"status":"completed"}\n')
+    assert.equal(readFileSync(join(directory, 'diagnostic-assessment.json'), 'utf8'), '{"certifies_production":false}\n')
+    assert.equal(readFileSync(join(directory, 'artifact-verification.json'), 'utf8'), '{"integrity":"verified","reason":null,"certifies_production":false}\n')
+    assert.equal(readFileSync(join(directory, 'ui-run-registry.json'), 'utf8'), '{"actors":["user_x"],"secret":"123456"}\n')
+    assert.equal(readFileSync(join(directory, 'persistent-registry.json'), 'utf8'), '{"key":"123456"}\n')
+  } finally { rmSync(directory, { recursive: true, force: true }) }
+})
+
+test('campaign diagnostics refuse a non-regular allowlisted path', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'cronos-diag-sanitize-'))
+  try {
+    mkdirSync(join(directory, 'acceptance-plan.json'))
+    await assert.rejects(sanitizeCampaignDiagnostics(directory, []), /regular file/)
+  } finally { rmSync(directory, { recursive: true, force: true }) }
+})
+
+test('the sanitizer CLI redacts campaign diagnostics by allowlist and keeps the sealed result', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'cronos-diag-cli-'))
+  try {
+    const registry = join(directory, 'private-secrets.json')
+    writeFileSync(registry, JSON.stringify(['452391']))
+    writeFileSync(join(directory, 'acceptance-result.json'), '{"note":"code 452391"}\n')
+    writeFileSync(join(directory, 'acceptance-plan.json'), '{"note":"code 452391"}\n')
+    writeFileSync(join(directory, 'ui-run-registry.json'), '{"secret":"452391"}\n')
+    const result = spawnSync(process.execPath, [join(ROOT, 'scripts/sanitize-test-artifacts.mjs'), '--diagnostics', directory], {
+      encoding: 'utf8',
+      env: { ...process.env, E2E_RUN_ID: 'run-1', E2E_SECRET_REGISTRY: registry },
+    })
+    assert.equal(result.status, 0, result.stderr)
+    assert.deepEqual(JSON.parse(readFileSync(join(directory, 'acceptance-plan.json'), 'utf8')), { note: 'code [REDACTED]' })
+    assert.equal(readFileSync(join(directory, 'acceptance-result.json'), 'utf8'), '{"note":"code 452391"}\n')
+    assert.equal(readFileSync(join(directory, 'ui-run-registry.json'), 'utf8'), '{"secret":"452391"}\n')
+  } finally { rmSync(directory, { recursive: true, force: true }) }
+})
+
+test('campaign diagnostics redact JSON values with finalizer semantics and stay well-formed', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'cronos-diag-json-'))
+  try {
+    const weird = 'x"y\\z\n'
+    writeFileSync(join(directory, 'acceptance-plan.json'), `${JSON.stringify({ note: weird, code: 123456, total: 1234567 })}\n`)
+    await sanitizeCampaignDiagnostics(directory, [weird, '123456', '234567'])
+    assert.deepEqual(JSON.parse(readFileSync(join(directory, 'acceptance-plan.json'), 'utf8')), {
+      note: '[REDACTED]', code: '[REDACTED]', total: 1234567,
+    })
+  } finally { rmSync(directory, { recursive: true, force: true }) }
+})
+
+test('campaign diagnostics fail closed on malformed JSON without touching bytes', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'cronos-diag-bad-'))
+  try {
+    const path = join(directory, 'acceptance-plan.json')
+    writeFileSync(path, '{"note":"code 123456"')
+    await assert.rejects(sanitizeCampaignDiagnostics(directory, ['123456']))
+    assert.equal(readFileSync(path, 'utf8'), '{"note":"code 123456"')
+  } finally { rmSync(directory, { recursive: true, force: true }) }
+})
+
+test('campaign diagnostics reject a junction that redirects outside the owned root', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'cronos-diag-root-'))
+  const target = mkdtempSync(join(tmpdir(), 'cronos-diag-target-'))
+  try {
+    writeFileSync(join(target, 'acceptance-plan.json'), JSON.stringify({ note: 'code 123456' }))
+    writeFileSync(join(target, 'ui-run-registry.json'), JSON.stringify({ secret: '123456' }))
+    const link = join(root, 'linked')
+    symlinkSync(target, link, 'junction')
+    await assert.rejects(sanitizeCampaignDiagnostics(link, ['123456']), /confined/)
+    assert.equal(readFileSync(join(target, 'acceptance-plan.json'), 'utf8'), JSON.stringify({ note: 'code 123456' }))
+    assert.equal(readFileSync(join(target, 'ui-run-registry.json'), 'utf8'), JSON.stringify({ secret: '123456' }))
+    rmSync(link, { force: true })
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+    rmSync(target, { recursive: true, force: true })
+  }
+})
+
+test('the diagnostics sanitizer CLI refuses an empty directory list', () => {
+  const result = spawnSync(process.execPath, [join(ROOT, 'scripts/sanitize-test-artifacts.mjs'), '--diagnostics'], {
+    encoding: 'utf8',
+    env: { ...process.env, E2E_RUN_ID: 'run-1', E2E_SECRET_REGISTRY: '' },
+  })
+  assert.notEqual(result.status, 0)
+})
+
+test('production JSON evidence uses the shared tree redaction and stays byte-exact when clean', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'cronos-prod-json-'))
+  try {
+    const key = randomBytes(32)
+    const weird = 'pw"q\\r\ns'
+    const clean = join(directory, 'clean.json')
+    const dirty = join(directory, 'dirty.json')
+    writeFileSync(clean, `${JSON.stringify({ ok: true, label: '€ café' })}\n`)
+    const cleanBefore = readFileSync(clean, 'utf8')
+    writeFileSync(dirty, `${JSON.stringify({ password: weird, code: 123456, total: 1234567, nested: { password: weird } })}\n`)
+    await sanitizeDirectory(directory, [weird, '123456', '234567'], { key, runId: 'run-1' })
+    assert.equal(readFileSync(clean, 'utf8'), cleanBefore)
+    const value = JSON.parse(readFileSync(dirty, 'utf8'))
+    assert.deepEqual(value, { password: '[REDACTED]', code: '[REDACTED]', total: 1234567, nested: { password: '[REDACTED]' } })
+    const dirtyAfter = readFileSync(dirty, 'utf8')
+    await sanitizeDirectory(directory, [weird, '123456', '234567'], { key, runId: 'run-1' })
+    assert.equal(readFileSync(dirty, 'utf8'), dirtyAfter)
+    assert.equal(readFileSync(clean, 'utf8'), cleanBefore)
   } finally { rmSync(directory, { recursive: true, force: true }) }
 })
 
@@ -167,6 +287,32 @@ test('manual public diagnosis is allowed only on main without enabling the full 
   assert.match(workflow, /- diagnose-public/)
   assert.ok(lines.includes('            .test-artifacts/${{ env.E2E_RUN_ID }}/diagnostic-assessment.json'))
   assert.equal(lines.some(line => /run\.json/.test(line)), false, 'the raw run report must stay outside the upload allowlist')
+})
+
+test('the workflow verifies the sealed result before upload and keeps only safe diagnostics', () => {
+  const workflow = readFileSync(join(ROOT, '.github/workflows/acceptance.yml'), 'utf8')
+  const lines = workflow.split(/\r?\n/)
+  const blockAfter = (start) => {
+    const rest = lines.slice(start + 1)
+    const next = rest.findIndex(line => /^      - name:/.test(line))
+    return (next === -1 ? rest : rest.slice(0, next)).join('\n')
+  }
+  assert.ok(lines.includes('        run: node scripts/sanitize-test-artifacts.mjs --diagnostics ".test-artifacts/${E2E_RUN_ID}"'))
+  assert.ok(lines.includes('        run: node scripts/finalize-real-browser-run.mjs verify ".test-artifacts/${E2E_RUN_ID}/acceptance-result.json" ".test-artifacts/${E2E_RUN_ID}/acceptance-artifacts" ".test-artifacts/${E2E_RUN_ID}/artifact-verification.json"'))
+  assert.ok(lines.includes("        if: always() && steps.sanitize.outcome == 'success' && steps.verify.outcome == 'success'"))
+  assert.ok(lines.includes("        if: always() && steps.sanitize_diagnostics.outcome == 'success'"))
+  assert.match(workflow, /steps\.sanitize\.outcome == 'success' && hashFiles\(format\('\.test-artifacts\/\{0\}\/acceptance-result\.json', env\.E2E_RUN_ID\)\)/)
+  const rootStart = lines.indexOf('      - name: Upload protected acceptance artifacts')
+  assert.notEqual(rootStart, -1, 'the protected upload must exist')
+  assert.ok(blockAfter(rootStart).includes('acceptance-result.json'), 'the sealed result uploads with the verified root')
+  const start = lines.indexOf('      - name: Upload sanitized acceptance diagnostics')
+  assert.notEqual(start, -1, 'the safe diagnostics upload must exist')
+  const diagnostics = blockAfter(start)
+  assert.ok(diagnostics.includes('acceptance-plan.json'))
+  assert.ok(diagnostics.includes("${{ steps.verify.outputs.receipt_available == 'true' && format('.test-artifacts/{0}/artifact-verification.json', env.E2E_RUN_ID) || '' }}"))
+  assert.equal(diagnostics.includes('            .test-artifacts/${{ env.E2E_RUN_ID }}/artifact-verification.json'), false, 'the receipt uploads only through the availability flag')
+  assert.equal(diagnostics.includes('acceptance-result.json'), false, 'the sealed result must not upload with unverified diagnostics')
+  assert.equal(diagnostics.includes('acceptance-artifacts'), false, 'diagnostics must not upload the protected root')
 })
 
 test('manual code-sender inspection is a readonly workflow that cannot start the campaign', () => {
@@ -416,6 +562,69 @@ test('uses one E2E base URL in Playwright, setup, helpers and URL-building specs
 test('keeps the primary failure when cleanup also fails', () => {
   assert.equal(preservePrimaryFailure(1, 3), 1)
   assert.equal(preservePrimaryFailure(0, 3), 3)
+  assert.equal(preservePrimaryFailure(7, 3), 7)
+})
+
+test('owned cleanup runs every cleaner once and labels every failed cleaner', async () => {
+  const calls = []
+  const healthy = await cleanupOwnedResources({}, [
+    ['clerk', async () => { calls.push('clerk'); return 0 }],
+    ['stack', async () => { calls.push('stack'); return 0 }],
+  ])
+  assert.deepEqual(calls, ['clerk', 'stack'])
+  assert.deepEqual(healthy, { code: 0, failures: [] })
+
+  const mixed = await cleanupOwnedResources({}, [
+    ['clerk', async () => { calls.push('clerk'); return 3 }],
+    ['stack', async () => { calls.push('stack'); return 1 }],
+  ])
+  assert.deepEqual(calls, ['clerk', 'stack', 'clerk', 'stack'])
+  assert.equal(mixed.code, 3)
+  assert.deepEqual(mixed.failures, ['clerk: failed (3)', 'stack: failed (1)'])
+})
+
+test('a throwing first cleaner never prevents stopping the owned test stack', async () => {
+  const calls = []
+  const result = await cleanupOwnedResources({}, [
+    ['clerk', async () => { calls.push('clerk'); throw undefined }],
+    ['stack', async () => { calls.push('stack'); throw new Error('raw provider payload secret') }],
+  ])
+  assert.deepEqual(calls, ['clerk', 'stack'])
+  assert.equal(result.code, 3)
+  assert.deepEqual(result.failures, ['clerk: failed (3)', 'stack: failed (3)'])
+  assert.equal(JSON.stringify(result.failures).includes('raw provider payload'), false)
+
+  calls.length = 0
+  const preserved = await cleanupOwnedResources({}, [
+    ['clerk', async () => { calls.push('clerk'); throw null }],
+    ['stack', async () => { calls.push('stack'); return 1 }],
+  ])
+  assert.deepEqual(calls, ['clerk', 'stack'])
+  assert.equal(preserved.code, 3)
+  assert.deepEqual(preserved.failures, ['clerk: failed (3)', 'stack: failed (1)'])
+})
+
+test('the verified result guard fails closed without leaking raw reasons and keeps the primary failure class', async () => {
+  const key = randomBytes(32)
+  const signingKey = randomBytes(32)
+  let verified = 0
+  await verifiedResultGuard({ result: {}, artifactRoot: 'root', key, signingKey, verify: async () => { verified += 1 } })
+  assert.equal(verified, 1)
+  await assert.rejects(
+    verifiedResultGuard({ result: {}, artifactRoot: 'root', key, signingKey, verify: async () => { throw new Error('raw secret xyz') } }),
+    error => error.runnerCode === 1
+      && error.message === 'Signed artifact integrity verification failed'
+      && error.cause?.message === 'raw secret xyz'
+      && !/raw secret/.test(error.message),
+  )
+  await assert.rejects(
+    verifiedResultGuard({
+      result: {}, artifactRoot: 'root', key, signingKey,
+      primaryError: Object.assign(new Error('playwright primary'), { runnerCode: 3 }),
+      verify: async () => { throw new Error('auxiliary') },
+    }),
+    error => error.runnerCode === 3,
+  )
 })
 
 test('refuses resources that are not owned by the current run', () => {

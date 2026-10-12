@@ -194,27 +194,46 @@ async function materialize(testInfo, artifactRoot, attachment) {
   return evidencePath(artifactRoot, testInfo.attachments.at(-1).path)
 }
 
+const RESERVED_EVIDENCE_NAME = 'acceptance-proof'
+
+// A required name must belong to the claimed evidence window and materialize
+// into it. The claim loop never consumes the reserved proof attachment, a path
+// outside the artifact root never claims the name, and a non-claiming
+// checkpoint has no claimed window at all.
+function missingRequiredEvidence(pending, requiredEvidence, { artifactRoot, claim }) {
+  if (!requiredEvidence || !requiredEvidence.length) return []
+  const claimable = name => name !== RESERVED_EVIDENCE_NAME && claim && pending.some(attachment => attachment.name === name
+    && (attachment.path ? evidencePath(artifactRoot, attachment.path) !== null : Boolean(attachment.body)))
+  return requiredEvidence.filter(name => !claimable(name))
+}
+
+// Claim the pending evidence for one checkpoint. The reserved proof attachment
+// is never claimed. A path inside the artifact root is claimed as-is; a body is
+// materialized into the artifact root. This is the only materialization site.
+async function collectClaimedEvidence(testInfo, session, pending) {
+  const evidence = []
+  for (const attachment of pending) {
+    if (attachment.name === RESERVED_EVIDENCE_NAME) continue
+    if (attachment.path) {
+      const path = evidencePath(session.artifactRoot, attachment.path)
+      if (path) evidence.push(path)
+      continue
+    }
+    if (attachment.body) {
+      const path = await materialize(testInfo, session.artifactRoot, attachment)
+      if (path) evidence.push(path)
+    }
+  }
+  return evidence
+}
+
 export async function recordCheckpoint(testInfo, caseIds, { requires = 'page', startedAt, observation, requiredEvidence, claim = true } = {}) {
   const session = sessions.get(testInfo)
   if (!session) throw new Error('Acceptance checkpoints require an active proof session')
   const pending = testInfo.attachments.slice(session.cursor)
-  const missing = (requiredEvidence || []).filter(name => !pending.some(attachment => attachment.name === name))
+  const missing = missingRequiredEvidence(pending, requiredEvidence, { artifactRoot: session.artifactRoot, claim })
   if (missing.length) throw new Error(`A checkpoint requires completed evidence: ${missing.join(', ')}`)
-  const evidence = []
-  if (claim) {
-    for (const attachment of pending) {
-      if (attachment.name === 'acceptance-proof') continue
-      if (attachment.path) {
-        const path = evidencePath(session.artifactRoot, attachment.path)
-        if (path) evidence.push(path)
-        continue
-      }
-      if (attachment.body) {
-        const path = await materialize(testInfo, session.artifactRoot, attachment)
-        if (path) evidence.push(path)
-      }
-    }
-  }
+  const evidence = claim ? await collectClaimedEvidence(testInfo, session, pending) : []
   if (!evidence.length) {
     if (observation === undefined) throw new Error('A checkpoint requires at least one materialized evidence attachment')
     const path = await materialize(testInfo, session.artifactRoot, {

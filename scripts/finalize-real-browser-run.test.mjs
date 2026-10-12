@@ -2,8 +2,11 @@ import assert from 'node:assert/strict'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { spawnSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 import test from 'node:test'
-import { finalizeRun, verifyRunArtifacts } from './finalize-real-browser-run.mjs'
+import { finalizeRun, verifyRunArtifacts, verifySignedResult } from './finalize-real-browser-run.mjs'
+import { sanitizeCampaignDiagnostics } from './sanitize-test-artifacts.mjs'
 import { retainPersistentSchoolFile, signRegistry, verifyRegistry } from './e2e-run-registry.mjs'
 import { protectEvidence, recoverEvidence } from './protect-test-evidence.mjs'
 import { evaluatePreparation } from './prepare-history.mjs'
@@ -203,5 +206,175 @@ test('preparation promotion signs both updated registries before the delivered m
     await rm(join(artifactRoot, 'preparation', 'extra.json.enc'))
     await rm(join(artifactRoot, 'preparation', 'persistent-registry.json.enc'))
     await assert.rejects(verifyRunArtifacts(result.envelope, artifactRoot, { key, signingKey }))
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})
+
+const finalizerCli = fileURLToPath(new URL('./finalize-real-browser-run.mjs', import.meta.url))
+const cliEnv = () => ({ ...process.env, E2E_ARTIFACT_KEY: key.toString('base64'), E2E_REGISTRY_HMAC_KEY: signingKey.toString('base64') })
+
+async function finalizedFixture() {
+  const directory = await mkdtemp(join(tmpdir(), 'cronos-verify-cli-'))
+  const artifactRoot = join(directory, 'acceptance-artifacts')
+  await mkdir(artifactRoot)
+  await writeFile(join(artifactRoot, 'output.log'), 'OTP 123456')
+  await writeFile(join(artifactRoot, 'trace.zip'), 'private OTP 123456')
+  const result = await finalizeRun(campaign(), artifactRoot, { key, signingKey, secrets: ['123456'] })
+  const resultPath = join(directory, 'acceptance-result.json')
+  await writeFile(resultPath, `${JSON.stringify(result, null, 2)}\n`)
+  return { directory, artifactRoot, resultPath }
+}
+
+test('verifySignedResult rejects an altered wrapper and accepts an intact signed result', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'cronos-verify-lib-'))
+  try {
+    await writeFile(join(directory, 'trace.zip'), 'private OTP 123456')
+    const result = await finalizeRun(campaign(), directory, { key, signingKey, secrets: ['123456'] })
+    const manifest = await verifySignedResult(result, directory, { key, signingKey })
+    assert.equal(manifest.assessment.status, 'validated')
+    await assert.rejects(
+      verifySignedResult({ ...result, assessment: { status: 'failed', failures: ['tampered'] } }, directory, { key, signingKey }),
+      /mirror/i,
+    )
+    await assert.rejects(verifySignedResult({ ...result, envelope: null }, directory, { key, signingKey }), /envelope/i)
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})
+
+test('the finalizer redacts production JSON evidence as a tree and verifies the signed root', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'cronos-json-evidence-'))
+  try {
+    const weird = 'pw"q\\r\ns'
+    await writeFile(join(directory, 'assertion.json'), `${JSON.stringify({ password: weird, code: 123456 })}\n`)
+    const run = campaign()
+    run.cases = run.cases.map(item => ({ ...item, evidence: ['assertion.json'] }))
+    const result = await finalizeRun(run, directory, { key, signingKey, secrets: [weird, '123456'] })
+    assert.equal(result.assessment.status, 'validated')
+    const value = JSON.parse(await readFile(join(directory, 'assertion.json'), 'utf8'))
+    assert.deepEqual(value, { password: '[REDACTED]', code: '[REDACTED]' })
+    assert.equal(JSON.stringify(value).includes('123456'), false)
+    await verifySignedResult(result, directory, { key, signingKey })
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})
+
+test('diagnostics never re-redact a sealed signed result even when a secret matches a digest', async () => {
+  const { directory, artifactRoot, resultPath } = await finalizedFixture()
+  try {
+    const before = await readFile(resultPath, 'utf8')
+    const parsed = JSON.parse(before)
+    const digest = parsed.artifacts[0].sha256
+    assert.match(digest, /^[a-f0-9]{64}$/)
+    const colliding = digest.slice(0, 6)
+    await sanitizeCampaignDiagnostics(directory, [colliding])
+    assert.equal(await readFile(resultPath, 'utf8'), before)
+    await verifySignedResult(JSON.parse(before), artifactRoot, { key, signingKey })
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})
+
+test('diagnostics never mutate the sealed result and a tampered wrapper stays rejected', async () => {
+  const { directory, artifactRoot, resultPath } = await finalizedFixture()
+  try {
+    const before = await readFile(resultPath, 'utf8')
+    await sanitizeCampaignDiagnostics(directory, ['123456'])
+    assert.equal(await readFile(resultPath, 'utf8'), before)
+    await verifySignedResult(JSON.parse(before), artifactRoot, { key, signingKey })
+    const tampered = JSON.parse(before)
+    tampered.run.failures = ['leaked OTP 123456']
+    await writeFile(resultPath, `${JSON.stringify(tampered, null, 2)}\n`)
+    const tamperedBytes = await readFile(resultPath, 'utf8')
+    await sanitizeCampaignDiagnostics(directory, ['123456'])
+    assert.equal(await readFile(resultPath, 'utf8'), tamperedBytes)
+    await assert.rejects(verifySignedResult(JSON.parse(tamperedBytes), artifactRoot, { key, signingKey }), /mirror/i)
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})
+
+test('the verify CLI reports receipt availability and never presents a stale receipt as current', async () => {
+  const { directory, artifactRoot, resultPath } = await finalizedFixture()
+  try {
+    const output = join(directory, 'github-output.txt')
+    const receiptPath = join(directory, 'artifact-verification.json')
+    const verified = spawnSync(process.execPath, [finalizerCli, 'verify', resultPath, artifactRoot, receiptPath], { encoding: 'utf8', env: { ...cliEnv(), GITHUB_OUTPUT: output } })
+    assert.equal(verified.status, 0)
+    assert.deepEqual(JSON.parse(await readFile(receiptPath, 'utf8')), { integrity: 'verified', reason: null, certifies_production: false })
+    assert.equal(await readFile(output, 'utf8'), 'receipt_available=true\n')
+
+    // A tampered rerun on the SAME path preserves the old bytes, reports a fixed conflict and emits no availability.
+    const signed = await readFile(resultPath, 'utf8')
+    await writeFile(resultPath, JSON.stringify({ ...JSON.parse(signed), assessment: { status: 'failed', failures: ['tampered'] } }))
+    const conflictOutput = join(directory, 'conflict-output.txt')
+    const conflict = spawnSync(process.execPath, [finalizerCli, 'verify', resultPath, artifactRoot, receiptPath], { encoding: 'utf8', env: { ...cliEnv(), GITHUB_OUTPUT: conflictOutput } })
+    assert.equal(conflict.status, 1)
+    assert.equal(conflict.stderr.trim(), 'Artifact integrity: receipt unavailable (conflict)')
+    assert.deepEqual(JSON.parse(await readFile(receiptPath, 'utf8')), { integrity: 'verified', reason: null, certifies_production: false })
+    await assert.rejects(readFile(conflictOutput), { code: 'ENOENT' })
+
+    // A fresh path on the rejected verification writes a rejected receipt and reports availability, still exiting one.
+    const freshReceipt = join(directory, 'fresh-receipt.json')
+    const freshOutput = join(directory, 'fresh-output.txt')
+    const freshRejected = spawnSync(process.execPath, [finalizerCli, 'verify', resultPath, artifactRoot, freshReceipt], { encoding: 'utf8', env: { ...cliEnv(), GITHUB_OUTPUT: freshOutput } })
+    assert.equal(freshRejected.status, 1)
+    const receipt = await readFile(freshReceipt, 'utf8')
+    assert.deepEqual(JSON.parse(receipt), { integrity: 'rejected', reason: 'integrity', certifies_production: false })
+    assert.equal(receipt.includes('tampered'), false)
+    assert.equal(receipt.includes(artifactRoot), false)
+    assert.equal(await readFile(freshOutput, 'utf8'), 'receipt_available=true\n')
+
+    // The legacy two-argument form never emits an availability flag.
+    await writeFile(resultPath, signed)
+    const legacyOutput = join(directory, 'legacy-output.txt')
+    const legacy = spawnSync(process.execPath, [finalizerCli, 'verify', resultPath, artifactRoot], { encoding: 'utf8', env: { ...cliEnv(), GITHUB_OUTPUT: legacyOutput } })
+    assert.equal(legacy.status, 0)
+    await assert.rejects(readFile(legacyOutput), { code: 'ENOENT' })
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})
+
+test('the verify CLI accepts a real signed result and rejects every post-sign mutation with a safe enum', async () => {
+  const { directory, artifactRoot, resultPath } = await finalizedFixture()
+  const run = () => spawnSync(process.execPath, [finalizerCli, 'verify', resultPath, artifactRoot], { encoding: 'utf8', env: cliEnv() })
+  try {
+    const signed = await readFile(resultPath, 'utf8')
+    const verified = run()
+    assert.equal(verified.status, 0)
+    assert.equal(verified.stdout.trim(), 'Artifact integrity: verified')
+    assert.equal(verified.stdout.includes(key.toString('base64')), false)
+    assert.equal(verified.stderr, '')
+
+    await writeFile(resultPath, JSON.stringify({ ...JSON.parse(signed), assessment: { status: 'failed', failures: ['tampered'] } }))
+    const altered = run()
+    assert.equal(altered.status, 1)
+    assert.equal(altered.stdout, '')
+    assert.equal(altered.stderr.trim(), 'Artifact integrity: rejected (integrity)')
+    assert.equal(altered.stderr.includes(signingKey.toString('base64')), false)
+    await writeFile(resultPath, signed)
+
+    const outputLog = join(artifactRoot, 'output.log')
+    const originalLog = await readFile(outputLog)
+    const originalEnc = await readFile(join(artifactRoot, 'trace.zip.enc'))
+    await writeFile(join(artifactRoot, 'extra.log'), 'extra')
+    assert.equal(run().status, 1)
+    await rm(join(artifactRoot, 'extra.log'))
+
+    await rm(outputLog)
+    assert.equal(run().status, 1)
+    await writeFile(outputLog, originalLog)
+
+    await writeFile(outputLog, 'changed after signing')
+    assert.equal(run().status, 1)
+    await writeFile(outputLog, originalLog)
+
+    const encPath = join(artifactRoot, 'trace.zip.enc')
+    await writeFile(encPath, Buffer.concat([Buffer.from('x'), originalEnc.subarray(1)]))
+    assert.equal(run().status, 1)
+    await writeFile(encPath, originalEnc)
+
+    await rm(encPath)
+    assert.equal(run().status, 1)
+    await writeFile(encPath, originalEnc)
+
+    await writeFile(resultPath, JSON.stringify({ ...JSON.parse(signed), envelope: null }))
+    const unsigned = run()
+    assert.equal(unsigned.status, 1)
+    assert.equal(unsigned.stderr.trim(), 'Artifact integrity: rejected (unsigned)')
+    await writeFile(resultPath, signed)
+
+    assert.equal(run().status, 0)
   } finally { await rm(directory, { recursive: true, force: true }) }
 })

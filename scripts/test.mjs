@@ -8,7 +8,7 @@ import { spawn } from 'node:child_process'
 import { performance } from 'node:perf_hooks'
 import { acceptanceExitCode, acceptancePlan, acceptanceSecrets, assembleCampaign, evaluatePublicDiagnosis, publicDiagnosisPlan, publicDiagnosisRecord, publicReadonlyCleanup } from './acceptance-run.mjs'
 import { preflight, publicPreflight } from './real-browser-preflight.mjs'
-import { finalizeRun } from './finalize-real-browser-run.mjs'
+import { finalizeRun, verifySignedResult } from './finalize-real-browser-run.mjs'
 import { createUiRegistryFile, retainPersistentSchoolFile, verifyRegistry } from './e2e-run-registry.mjs'
 import { evaluatePreparation } from './prepare-history.mjs'
 import { cleanupProductionCampaign } from './cleanup-production-campaign.mjs'
@@ -847,6 +847,31 @@ async function stopTestStack(context) {
   return result.code
 }
 
+// The owned cleanup steps are independent. A failure in one must not stop the
+// other, so an owned test stack always stops even when Clerk cleanup fails.
+const OWNED_CLEANUP_STEPS = Object.freeze([
+  ['clerk', cleanupE2eClerkState],
+  ['stack', stopTestStack],
+])
+
+export async function cleanupOwnedResources(context, steps = OWNED_CLEANUP_STEPS) {
+  let code = 0
+  const failures = []
+  for (const [label, cleanup] of steps) {
+    try {
+      const result = await cleanup(context)
+      if (result) {
+        code = code || result
+        failures.push(`${label}: failed (${result})`)
+      }
+    } catch {
+      code = code || 3
+      failures.push(`${label}: failed (3)`)
+    }
+  }
+  return { code, failures }
+}
+
 async function runIntegration(forwarded = [], context, { coverage = false } = {}) {
   const preparationStartedAt = monotonicMs()
   const stack = await startTestStack(context)
@@ -992,6 +1017,19 @@ export function productionCampaignMode(mode) {
   return PRODUCTION_CAMPAIGN_MODES[mode]
 }
 
+// The runner never exits zero on an unverified signed result. The signed result
+// stays untouched; the failure is a separate classified runner stage that keeps
+// the first Playwright failure class when that primary failure already exists.
+export async function verifiedResultGuard({ result, artifactRoot, key, signingKey, primaryError = null, verify = verifySignedResult }) {
+  try {
+    await verify(result, artifactRoot, { key, signingKey })
+  } catch (cause) {
+    throw Object.assign(new Error('Signed artifact integrity verification failed', { cause }), {
+      runnerCode: primaryError ? (primaryError.runnerCode === 3 ? 3 : 1) : 1,
+    })
+  }
+}
+
 async function runProductionCampaign(context, mode) {
   const spec = productionCampaignMode(mode)
   const plan = spec.diagnosis
@@ -1100,7 +1138,10 @@ async function runProductionCampaign(context, mode) {
     context.preparation = prepared ? 'prepared' : 'failed'
     await writeFile(join(context.artifactDir, 'preparation-assessment.json'), `${JSON.stringify(assessment, null, 2)}\n`)
     await writeFile(plan.resultPath, `${JSON.stringify(result, null, 2)}\n`)
-    if (prepared) return
+    if (prepared) {
+      await verifiedResultGuard({ result, artifactRoot: plan.artifactRoot, key, signingKey })
+      return
+    }
     throw Object.assign(new Error(`Preparation failed: ${assessment.failures.slice(0, 5).join('; ')}`), { runnerCode: 1 })
   }
   const result = await finalizeRun(run, plan.artifactRoot, { key, signingKey, secrets })
@@ -1117,11 +1158,15 @@ async function runProductionCampaign(context, mode) {
     if (diagnosis.status !== 'passed') {
       throw Object.assign(new Error(`Public diagnosis failed: ${diagnosis.failures.slice(0, 5).join('; ')}`), { runnerCode: 1 })
     }
+    await verifiedResultGuard({ result, artifactRoot: plan.artifactRoot, key, signingKey, primaryError: playwrightError })
     return
   }
   context.acceptance = result.assessment.status
   const code = acceptanceExitCode(result.assessment.status)
-  if (code === 0) return
+  if (code === 0) {
+    await verifiedResultGuard({ result, artifactRoot: plan.artifactRoot, key, signingKey, primaryError: playwrightError })
+    return
+  }
   const reasons = [...result.assessment.failures, ...result.assessment.incomplete, ...result.assessment.dependencies].slice(0, 5).join('; ')
   throw Object.assign(new Error(`Acceptance ${result.assessment.status}: ${reasons}`), {
     runnerCode: playwrightError ? (playwrightError.runnerCode === 3 ? 3 : code) : code,
@@ -1419,14 +1464,9 @@ export async function main(argv = process.argv.slice(2)) {
   }
   let cleanupCode = 0
   const cleanupStartedAt = monotonicMs()
-  try {
-    const clerkCleanupCode = await cleanupE2eClerkState(context)
-    cleanupCode = await stopTestStack(context)
-    cleanupCode = cleanupCode || clerkCleanupCode
-  } catch (error) {
-    cleanupCode = 3
-    console.error(`[test] cleanup failed: ${error.message}`)
-  }
+  const cleanup = await cleanupOwnedResources(context)
+  cleanupCode = cleanup.code
+  for (const failure of cleanup.failures) console.error(`[test] cleanup failed: ${failure}`)
   context.timings.cleanup_ms = Math.round(monotonicMs() - cleanupStartedAt)
   const exitCode = preservePrimaryFailure(primaryCode, cleanupCode ? 3 : 0)
   await writeRunReport(context, parsed, exitCode, cleanupCode)

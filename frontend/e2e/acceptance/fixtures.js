@@ -1,10 +1,11 @@
 import { test as base, expect } from '@playwright/test'
+import { randomUUID } from 'node:crypto'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { observeAcceptanceActivity, observeAcceptanceRuntime } from '../utils/acceptance-runtime.js'
 import { beginProofSession, finishProofSession, noteActorObservation, notePageActivity, notePersistentSchoolObservation, noteSchoolObservation, proofArtifactRoot, publicReadonlySelection } from '../utils/acceptance-proof.js'
 import { recordGroupRevisionSnapshot } from '../utils/deployments.js'
-import { recordSecretFile, recordUiActorFile, recordUiSchoolFile, signRegistry, verifyRegistry } from '../../../scripts/e2e-run-registry.mjs'
+import { recordSecretFile, recordUiActorFile, recordUiCreationIntentFile, recordUiSchoolFile, signRegistry, verifyRegistry } from '../../../scripts/e2e-run-registry.mjs'
 import { cleanupProductionCampaign } from '../../../scripts/cleanup-production-campaign.mjs'
 import { createGmailReader, deliveredMessageSecrets } from '../utils/gmail.js'
 
@@ -32,7 +33,32 @@ export const test = base.extend({
     await runFixture(value => recordSecretFile(process.env.E2E_SECRET_REGISTRY, value))
   },
   provenance: async ({ page }, runFixture, testInfo) => {
+    // A creation risk cannot be honestly recorded without the signed journal, so
+    // the write-ahead helpers fail closed before any native provider effect.
+    const creationJournal = () => {
+      const registryPath = process.env.E2E_RUN_REGISTRY
+      const key = Buffer.from(process.env.E2E_REGISTRY_HMAC_KEY || '', 'base64')
+      const runId = process.env.E2E_RUN_ID
+      if (!registryPath || key.length !== 32 || !/^[a-z0-9-]+$/.test(runId || '')) {
+        throw new Error('A signed campaign journal is required before any identity creation effect')
+      }
+      return { registryPath, key, runId }
+    }
     await runFixture({
+      // Write-ahead the exact actor alias before the UI can create the account.
+      async beginActorCreation(email) {
+        const { registryPath, key, runId } = creationJournal()
+        const id = randomUUID()
+        await recordUiCreationIntentFile(registryPath, key, runId, { id, kind: 'actor', alias: email }, new Date().toISOString())
+        return id
+      },
+      // Write-ahead an identity-free organization intent before Clerk creates it.
+      async beginOrganizationCreation() {
+        const { registryPath, key, runId } = creationJournal()
+        const id = randomUUID()
+        await recordUiCreationIntentFile(registryPath, key, runId, { id, kind: 'org' }, new Date().toISOString())
+        return id
+      },
       async exportBeforeDeletion(testInfo, selected) {
         if (process.env.E2E_PREPARATION_REPORT) throw new Error('Preparation cannot delete its retained school')
         const key = Buffer.from(process.env.E2E_REGISTRY_HMAC_KEY || '', 'base64')
@@ -64,7 +90,8 @@ export const test = base.extend({
         noteActorObservation(testInfo)
       },
       // Call after creating the school through visible controls, using its founder's page.
-      async recordCreatedSchool(type, observedPage = page) {
+      // The optional creation intent id resolves exactly that write-ahead org intent.
+      async recordCreatedSchool(type, observedPage = page, creationIntentId) {
         await this.recordCurrentActor(observedPage)
         const school = await observedPage.evaluate(async () => {
           const clerk = window.Clerk
@@ -82,7 +109,7 @@ export const test = base.extend({
             actors: memberships.data.map(item => ({ id: item.publicUserData.userId, email: item.publicUserData.identifier })),
           }
         })
-        await recordUiSchoolFile(process.env.E2E_RUN_REGISTRY, Buffer.from(process.env.E2E_REGISTRY_HMAC_KEY || '', 'base64'), process.env.E2E_RUN_ID, school, type, new Date().toISOString())
+        await recordUiSchoolFile(process.env.E2E_RUN_REGISTRY, Buffer.from(process.env.E2E_REGISTRY_HMAC_KEY || '', 'base64'), process.env.E2E_RUN_ID, school, type, new Date().toISOString(), creationIntentId)
         noteSchoolObservation(testInfo)
       },
       // Observe an already signed persistent school through the live UI session.

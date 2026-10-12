@@ -130,6 +130,8 @@ export async function exerciseSchoolIsolation(page, testInfo, provenance, origin
   await expect(dialog.getByRole('heading', { name: 'Criar organização', exact: true })).toBeVisible()
   const secondName = `Cronos Isolamento ${runId}`
   await dialog.getByLabel('Nome da organização', { exact: true }).fill(secondName)
+  // Signed write-ahead organization intent before the second Clerk school exists.
+  const creationIntentId = await provenance.beginOrganizationCreation()
   await dialog.getByRole('button', { name: 'Criar organização', exact: true }).click()
   const skipInvitations = page.getByRole('button', { name: 'Ignorar', exact: true })
   const legal = page.getByRole('checkbox', { name: 'Confirmo a aceitação dos documentos legais atuais pela organização.', exact: true })
@@ -149,7 +151,7 @@ export async function exerciseSchoolIsolation(page, testInfo, provenance, origin
   }
   await expect(foundationStart).toBeEnabled()
   await expect(page).toHaveURL(/\/foundation$/)
-  await provenance.recordCreatedSchool('disposable', page)
+  await provenance.recordCreatedSchool('disposable', page, creationIntentId)
   const second = await page.evaluate(() => ({ name: window.Clerk.organization.name, clerk_id: window.Clerk.organization.id }))
   expect(second.name).toBe(secondName)
   expect(second.clerk_id).not.toBe(first.clerk_id)

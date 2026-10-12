@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { randomBytes } from 'node:crypto'
-import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import test from 'node:test'
@@ -202,6 +202,57 @@ test('a resource CRUD checkpoint requires every completed catalog observation', 
     })
     assert.equal(record.eligible, true)
     assert.equal(record.evidence.length, 3)
+  } finally { await rm(root, { recursive: true, force: true }) }
+})
+
+test('a required evidence name outside the artifact root cannot fall back to an observation', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'cronos-proof-'))
+  const outside = await mkdtemp(join(tmpdir(), 'cronos-outside-'))
+  try {
+    const testInfo = fakeTestInfo(root)
+    beginProofSession(testInfo, root)
+    const external = join(outside, 'room-crud-observation.json')
+    await writeFile(external, '{}')
+    await testInfo.attach('room-crud-observation', { path: external, contentType: 'application/json' })
+    notePageActivity(testInfo)
+    await assert.rejects(() => recordCheckpoint(testInfo, 'E2E-06/resource-crud', {
+      requires: 'school', observation: { class_id: 7 }, requiredEvidence: ['room-crud-observation'],
+    }), /room-crud-observation/)
+    assert.equal(testInfo.attachments.some(item => item.name === 'acceptance-proof'), false)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+    await rm(outside, { recursive: true, force: true })
+  }
+})
+
+test('a required evidence name cannot be proven by a non-claiming checkpoint without a claimed window', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'cronos-proof-'))
+  try {
+    const testInfo = fakeTestInfo(root)
+    beginProofSession(testInfo, root)
+    await testInfo.attach('room-crud-observation', { body: Buffer.from('{"room":true}'), contentType: 'application/json' })
+    notePageActivity(testInfo)
+    await assert.rejects(() => recordCheckpoint(testInfo, 'E2E-06/resource-crud', {
+      requires: 'school', claim: false, observation: { class_id: 7 }, requiredEvidence: ['room-crud-observation'],
+    }), /room-crud-observation/)
+    assert.equal(testInfo.attachments.some(item => item.name === 'acceptance-proof'), false)
+  } finally { await rm(root, { recursive: true, force: true }) }
+})
+
+test('the reserved acceptance-proof attachment cannot satisfy required evidence', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'cronos-proof-'))
+  try {
+    const testInfo = fakeTestInfo(root)
+    beginProofSession(testInfo, root)
+    await testInfo.attach('subject-crud-observation', { body: Buffer.from('{"subject":true}'), contentType: 'application/json' })
+    notePageActivity(testInfo)
+    // A non-claiming checkpoint leaves its own acceptance-proof attachment in the shared window.
+    await recordCheckpoint(testInfo, 'E2E-06/initial-class', { requires: 'school', claim: false, observation: { class_id: 1 } })
+    assert.equal(testInfo.attachments.some(item => item.name === 'acceptance-proof'), true)
+    notePageActivity(testInfo)
+    await assert.rejects(() => recordCheckpoint(testInfo, 'E2E-06/resource-crud', {
+      requires: 'school', observation: { class_id: 7 }, requiredEvidence: ['acceptance-proof'],
+    }), /acceptance-proof/)
   } finally { await rm(root, { recursive: true, force: true }) }
 })
 
