@@ -164,6 +164,12 @@ export function extractMessage(message, criteria) {
       reply_to: reply[0], marker: criteria.marker }
   }
   if (criteria.purpose === 'code') {
+    // Clerk puts the code first in the subject; its HTML also holds six-digit colours.
+    const subjectCode = /^(\d{6}) /.exec(header('subject'))?.[1]
+    if (subjectCode) {
+      if (!new RegExp(`(?<!\\d)${subjectCode}(?!\\d)`).test(text)) return null
+      return { id: message.id, delivered_at: new Date(delivered).toISOString(), code: subjectCode }
+    }
     const codes = [...new Set(text.match(/(?<!\d)\d{6}(?!\d)/g) || [])]
     if (!codes.length) return null
     if (codes.length !== 1) throw new Error('Ambiguous verification codes in delivered message')
