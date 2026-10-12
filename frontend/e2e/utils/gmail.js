@@ -54,12 +54,13 @@ function addresses(value) {
 const DEADLINE_ERROR = 'Gmail delivery deadline exceeded'
 
 function compareStrings(a, b) {
-  return a < b ? -1 : a > b ? 1 : 0
+  if (a === b) return 0
+  return a < b ? -1 : 1
 }
 
 function listingQuery({ recipient, marker = '', after, before, fields }) {
   const params = new URLSearchParams({
-    q: `to:${recipient}${marker ? ` "${marker}"` : ''} after:${Math.floor(after / 1000)} before:${Math.ceil(before / 1000)}`,
+    q: [`to:${recipient}`, marker && `"${marker}"`, `after:${Math.floor(after / 1000)}`, `before:${Math.ceil(before / 1000)}`].filter(Boolean).join(' '),
     maxResults: '100',
   })
   if (fields) params.set('fields', fields)
@@ -154,27 +155,38 @@ export function extractMessage(message, criteria) {
   criteria.subject.lastIndex = 0
   if (!criteria.subject.test(header('subject'))) return null
   const text = textParts(message.payload).join('\n').replaceAll('&amp;', '&')
-  if (criteria.purpose === 'contact') {
-    const recipients = addresses(header('to')), reply = addresses(header('reply-to'))
-    const lines = text.split(/\r?\n/)
-    if (recipients.length !== 1 || reply.length !== 1 || reply[0] !== criteria.replyTo
-      || !addresses(header('delivered-to')).includes(criteria.forwardedMailbox)
-      || Object.entries(criteria.fields).some(([label, value]) => !lines.includes(`${label}: ${value}`))) return null
-    return { id: message.id, delivered_at: new Date(delivered).toISOString(), recipient: recipients[0],
-      reply_to: reply[0], marker: criteria.marker }
-  }
-  if (criteria.purpose === 'code') {
-    const codes = [...new Set(text.match(/(?<!\d)\d{6}(?!\d)/g) || [])]
-    if (!codes.length) return null
-    if (codes.length !== 1) throw new Error('Ambiguous verification codes in delivered message')
-    return { id: message.id, delivered_at: new Date(delivered).toISOString(), code: codes[0] }
-  }
+  const found = { id: message.id, delivered_at: new Date(delivered).toISOString() }
+  if (criteria.purpose === 'contact') return contactFields(header, text, criteria, found)
+  if (criteria.purpose === 'code') return deliveredCode(header('subject'), text, found)
+  return invitationLink(text, criteria, found)
+}
+
+function contactFields(header, text, criteria, found) {
+  const recipients = addresses(header('to')), reply = addresses(header('reply-to'))
+  const lines = new Set(text.split(/\r?\n/))
+  if (recipients.length !== 1 || reply.length !== 1 || reply[0] !== criteria.replyTo
+    || !addresses(header('delivered-to')).includes(criteria.forwardedMailbox)
+    || Object.entries(criteria.fields).some(([label, value]) => !lines.has(`${label}: ${value}`))) return null
+  return { ...found, recipient: recipients[0], reply_to: reply[0], marker: criteria.marker }
+}
+
+function deliveredCode(subject, text, found) {
+  // Clerk puts the code first in the subject; its HTML also holds six-digit colours.
+  const subjectCode = /^(\d{6}) /.exec(subject)?.[1]
+  if (subjectCode) return new RegExp(String.raw`(?<!\d)${subjectCode}(?!\d)`).test(text) ? { ...found, code: subjectCode } : null
+  const codes = [...new Set(text.match(/(?<!\d)\d{6}(?!\d)/g) || [])]
+  if (!codes.length) return null
+  if (codes.length !== 1) throw new Error('Ambiguous verification codes in delivered message')
+  return { ...found, code: codes[0] }
+}
+
+function invitationLink(text, criteria, found) {
   const links = [...new Set(text.match(/https?:\/\/[^\s<>"']+/g) || [])]
     .filter(value => new URL(value).pathname === criteria.linkPath)
     .map(value => validateDeliveredLink(value, criteria.linkHosts).href)
   if (!links.length) return null
   if (links.length !== 1) throw new Error('Ambiguous invitation links in delivered message')
-  return { id: message.id, delivered_at: new Date(delivered).toISOString(), link: links[0] }
+  return { ...found, link: links[0] }
 }
 
 const OAUTH_ERRORS = new Set(['invalid_grant', 'invalid_client', 'unauthorized_client', 'access_denied'])
@@ -199,7 +211,8 @@ function safeContentType(value) {
 // messages never reach it.
 function gmailError(code, { operation, httpStatus = null, reason, message, bodyBytes, emptyBody, contentType }) {
   const status = safeHttpStatus(httpStatus)
-  const error = new Error(message || `Gmail ${operation} failed${status ? `: HTTP ${status}` : ''}`)
+  const suffix = status ? `: HTTP ${status}` : ''
+  const error = new Error(message || `Gmail ${operation} failed${suffix}`)
   error.name = 'GmailDependencyError'
   error.code = code
   error.operation = operation

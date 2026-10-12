@@ -206,3 +206,13 @@ test('a blank successful Gmail body fails closed with safe body metadata', async
   assert.equal(error.emptyBody, true)
   assert.equal(error.contentType, 'json')
 })
+
+test('a Clerk code is taken from its subject when the HTML also carries six-digit colours', () => {
+  const clerk = { ...criteria, senders: ['notifications@cronos.pt'], subject: /^\d{6} is your verification code$/ }
+  const delivered = message('<td style="color:#000000;background:#333333">482913</td>')
+  delivered.payload.headers = [{ name: 'To', value: criteria.recipient }, { name: 'From', value: 'Cronos <notifications@cronos.pt>' },
+    { name: 'Subject', value: '482913 is your verification code' }]
+  assert.equal(extractMessage(delivered, clerk).code, '482913')
+  delivered.payload.headers[2].value = '111111 is your verification code'
+  assert.equal(extractMessage(delivered, clerk), null)
+})
