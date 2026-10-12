@@ -60,19 +60,56 @@ export function normalizePathname(pathname) {
   return pathname.length > 1 ? pathname.replace(/\/$/, '') : pathname
 }
 
-function qualityValue(parameters) {
-  const match = parameters.match(/(?:^|;)\s*q\s*=\s*([0-9.]+)/i)
-  return match ? Number(match[1]) : 1
+const HTML_MEDIA_TYPES = ['text/html', 'application/xhtml+xml']
+
+const QUALITY_PATTERN = /^(?:0(?:\.\d{0,3})?|1(?:\.0{0,3})?)$/
+
+function mediaRangeQuality(parameters) {
+  for (const parameter of parameters) {
+    const match = parameter.match(/^\s*q\s*=\s*(.*)$/i)
+    if (!match) continue
+    const value = match[1].trim()
+    return QUALITY_PATTERN.test(value) ? Number(value) : 0
+  }
+  return 1
+}
+
+function effectiveQuality(qualities, mediaType) {
+  const exact = qualities.get(mediaType)
+  if (exact !== undefined) return { quality: exact, explicit: true }
+  const subtype = qualities.get(`${mediaType.split('/')[0]}/*`)
+  if (subtype !== undefined) return { quality: subtype, explicit: false }
+  const wildcard = qualities.get('*/*')
+  if (wildcard !== undefined) return { quality: wildcard, explicit: false }
+  return null
 }
 
 export function acceptsMarkdown(acceptHeader = '') {
+  const qualities = new Map()
   for (const value of acceptHeader.split(',')) {
     const [mediaType, ...parameters] = value.trim().toLowerCase().split(';')
-    if (mediaType !== 'text/markdown') continue
-    const quality = qualityValue(parameters.join(';'))
-    if (quality > 0) return true
+    const type = mediaType.trim()
+    if (!type) continue
+    const quality = mediaRangeQuality(parameters)
+    qualities.set(type, qualities.has(type) ? Math.max(qualities.get(type), quality) : quality)
   }
-  return false
+
+  const markdown = qualities.get('text/markdown')
+  if (markdown === undefined || markdown <= 0) return false
+
+  let html = null
+  for (const mediaType of HTML_MEDIA_TYPES) {
+    const match = effectiveQuality(qualities, mediaType)
+    if (!match) continue
+    if (!html || match.quality > html.quality || (match.quality === html.quality && match.explicit && !html.explicit)) {
+      html = match
+    }
+  }
+  if (!html) return true
+  if (markdown !== html.quality) return markdown > html.quality
+
+  // An explicit HTML type wins a tie; an explicit Markdown range wins against a wildcard.
+  return !html.explicit
 }
 
 export function isKnownApplicationRoute(pathname) {

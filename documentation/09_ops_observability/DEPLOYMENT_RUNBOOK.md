@@ -80,7 +80,15 @@ Build from `frontend` with `npm ci && npm run build`.
 Publish `dist`.
 Set `VITE_API_BASE_URL`, `VITE_CLERK_PUBLISHABLE_KEY`, and `VITE_TURNSTILE_SITE_KEY` as public build variables.
 Nginx serves public routes with `try_files $uri $uri.html =404` and application routes with `app-shell.html`.
+The nginx runtime does not execute `_worker.js`; content negotiation applies to the Pages deployment only.
 Cloudflare Pages uses `public/_worker.js` to route public, application, and static paths.
+Content negotiation reads the `Accept` quality values in the edge handler.
+HTML is the default. Markdown is served when `text/markdown` outranks every supported HTML alternative.
+Markdown also wins a quality tie against a wildcard fallback, but not against an explicit HTML type.
+The supported HTML alternatives are `text/html` and `application/xhtml+xml`.
+Each alternative matches its exact type first, then its subtype wildcard, then `*/*`.
+A missing `Accept` header, a `q=0` Markdown range, or a malformed quality value yields HTML.
+Unknown paths keep the `404` status and negotiate the same preference.
 Asset lookups remove query parameters before calling the Pages asset binding.
 Versioned image URLs therefore resolve the same physical files.
 The browser keeps the original URL and its query parameters.
@@ -89,6 +97,15 @@ Missing files still return `404` with `Cache-Control: no-store`.
 Unknown HTML routes fetch the canonical `/404` asset and preserve the HTTP `404` status.
 Fetching `/404.html` can return an empty canonical redirect. Never re-label that redirect as a `404` response.
 Test every client route on the hosting provider before domain cutover.
+
+### Domain accessibility
+
+Verify the apex host serves the site over HTTPS with a `200` response.
+Verify `www` permanently redirects to the apex and preserves the path and query.
+Verify plain HTTP redirects to HTTPS.
+Verify the `A` and `AAAA` records resolve on at least two public resolvers.
+Verify `robots.txt` still allows public crawling.
+Do not weaken TLS, security headers, or bot rules to satisfy a client tool.
 
 ### Secrets and environment
 
@@ -152,7 +169,12 @@ downgrade the additive database migration during rollback.
    justify failing a job.
 6. Test contact delivery, authentication, invitations, schedule approval, occurrence decisions, and timesheets.
 7. Test `/`, `/login`, `/register`, `/dashboard`, `/schedules`, `/my-schedules`, `/absences`, and `/cookies` after refresh.
-8. Record deployment IDs, backup IDs, restore evidence, and the previous rollback target.
+8. Verify content negotiation on the Pages host with `curl`.
+   - `curl -sI -H 'Accept: text/html;q=1,text/markdown;q=0.1' https://cronos.pt/` returns `text/html`.
+   - `curl -sI -H 'Accept: text/markdown' https://cronos.pt/` returns `text/markdown`.
+   - `curl -sI -H 'Accept: text/markdown;q=0' https://cronos.pt/` returns `text/html`.
+   - Confirm GET and HEAD return the same media type for each header.
+9. Record deployment IDs, backup IDs, restore evidence, and the previous rollback target.
 
 ## Source Map
 

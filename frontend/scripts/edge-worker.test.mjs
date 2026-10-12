@@ -53,10 +53,57 @@ async function request(pathname, init = {}) {
   return { response, calls }
 }
 
-test('parses explicit Markdown acceptance and rejects q=0', () => {
+test('prefers HTML when the client gives it a higher quality value', () => {
+  assert.equal(acceptsMarkdown('text/html;q=1,text/markdown;q=0.1'), false)
+  assert.equal(acceptsMarkdown('text/html;q=0.9,text/markdown;q=0.8'), false)
+  assert.equal(acceptsMarkdown('application/xhtml+xml;q=1,text/markdown;q=0.5'), false)
+})
+
+test('selects Markdown only when the client prefers it', () => {
+  assert.equal(acceptsMarkdown('text/markdown'), true)
   assert.equal(acceptsMarkdown('text/markdown, text/html;q=0.9'), true)
+  assert.equal(acceptsMarkdown('text/markdown;q=0.9,*/*;q=0.1'), true)
+})
+
+test('resolves equal quality values deterministically', () => {
+  assert.equal(acceptsMarkdown('text/html;q=1,text/markdown;q=1'), false)
+  assert.equal(acceptsMarkdown('text/markdown;q=1,*/*;q=1'), true)
+})
+
+test('rejects q=0, malformed, and out-of-range Markdown quality values', () => {
   assert.equal(acceptsMarkdown('text/markdown;q=0, text/html;q=1'), false)
+  assert.equal(acceptsMarkdown('text/markdown;q=2'), false)
+  assert.equal(acceptsMarkdown('text/markdown;q=-1'), false)
+  assert.equal(acceptsMarkdown('text/markdown;q=abc'), false)
+  assert.equal(acceptsMarkdown('text/markdown;q=1.5,text/html;q=0.5'), false)
+})
+
+test('rejects JavaScript number formats that are not valid HTTP quality values', () => {
+  assert.equal(acceptsMarkdown('text/markdown;q=1e0,text/html;q=0.5'), false)
+  assert.equal(acceptsMarkdown('text/markdown;q=0x1,text/html;q=0.5'), false)
+  assert.equal(acceptsMarkdown('text/markdown;q=1.0000'), false)
+  assert.equal(acceptsMarkdown('text/markdown;q=0.1234'), false)
+  assert.equal(acceptsMarkdown('text/markdown;q=.5'), false)
+})
+
+test('applies wildcard fallback to each supported HTML alternative', () => {
+  assert.equal(acceptsMarkdown('text/markdown;q=0.5,application/xhtml+xml;q=0.1,text/*;q=1'), false)
+  assert.equal(acceptsMarkdown('text/markdown;q=0.5,text/*;q=1'), false)
+  assert.equal(acceptsMarkdown('text/markdown;q=0.5,application/*;q=1'), false)
+  assert.equal(acceptsMarkdown('text/markdown;q=1,text/*;q=0.5'), true)
+  assert.equal(acceptsMarkdown('text/markdown;q=1,text/*;q=1'), true)
+  assert.equal(acceptsMarkdown('text/markdown;q=1,text/html;q=0'), true)
+})
+
+test('treats missing, wildcard, and non-Markdown headers as HTML', () => {
+  assert.equal(acceptsMarkdown(''), false)
+  assert.equal(acceptsMarkdown('*/*'), false)
+  assert.equal(acceptsMarkdown('text/html'), false)
   assert.equal(acceptsMarkdown('text/html, */*;q=0.8'), false)
+})
+
+test('parses Markdown acceptance case-insensitively with surrounding whitespace', () => {
+  assert.equal(acceptsMarkdown('  TEXT/MARKDOWN ; Q=1 , text/html;q=0.5 '), true)
 })
 
 test('classifies only declared application routes', () => {
@@ -83,6 +130,36 @@ test('returns the llms file for Markdown homepage requests', async () => {
   assert.equal(response.status, 200)
   assert.equal(response.headers.get('Content-Type'), 'text/markdown; charset=utf-8')
   assert.equal(await response.text(), '# Cronos')
+})
+
+test('serves the HTML homepage when HTML outranks Markdown for GET and HEAD', async () => {
+  const html = await request('/', { headers: { Accept: 'text/html;q=1,text/markdown;q=0.1' } })
+  assert.equal(html.response.status, 200)
+  assert.equal(html.response.headers.get('Content-Type'), 'text/html; charset=utf-8')
+  assert.match(html.response.headers.get('Vary'), /Accept/)
+  assert.match(await html.response.text(), /cronos-hero/)
+
+  const head = await request('/', { method: 'HEAD', headers: { Accept: 'text/html;q=1,text/markdown;q=0.1' } })
+  assert.equal(head.response.status, 200)
+  assert.equal(head.response.headers.get('Content-Type'), 'text/html; charset=utf-8')
+  assert.equal(await head.response.text(), '')
+})
+
+test('negotiates 404 bodies from the same preference without masking the status', async () => {
+  const html = await request('/missing-page', { headers: { Accept: 'text/html;q=1,text/markdown;q=0.1' } })
+  assert.equal(html.response.status, 404)
+  assert.equal(html.response.headers.get('Content-Type'), 'text/html; charset=utf-8')
+  assert.equal(html.response.headers.get('Cache-Control'), 'no-store')
+  assert.match(await html.response.text(), /Voltar ao início/)
+
+  const head = await request('/missing-page', { method: 'HEAD', headers: { Accept: 'text/html;q=1,text/markdown;q=0.1' } })
+  assert.equal(head.response.status, 404)
+  assert.equal(head.response.headers.get('Content-Type'), 'text/html; charset=utf-8')
+  assert.equal(await head.response.text(), '')
+
+  const excluded = await request('/missing-page', { headers: { Accept: 'text/markdown;q=0,text/html;q=1' } })
+  assert.equal(excluded.response.status, 404)
+  assert.equal(excluded.response.headers.get('Content-Type'), 'text/html; charset=utf-8')
 })
 
 test('passes static assets and known public pages through unchanged', async () => {
