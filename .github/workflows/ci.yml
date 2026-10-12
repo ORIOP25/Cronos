@@ -183,16 +183,13 @@ jobs:
       - working-directory: frontend
         run: npm ci --ignore-scripts
       - name: Verify frontend
+        # Knip performs two AST scans and V8 coverage runs four workers, so the
+        # in-job overlap added wall time on the CI host. Keep the mandatory gate
+        # sequential: `verify` is `verify:checks && test:coverage && build`.
         working-directory: frontend
         run: |
           npm run audit:production
-          # Static checks and Knip are CPU-light compared with Vitest coverage,
-          # so they overlap the coverage run. The build stays after both.
-          npm run verify:checks &
-          checks_pid=$!
-          npm run test:coverage
-          wait "$checks_pid"
-          npm run build
+          npm run verify
       - name: Report measured LOC
         run: node scripts/loc-report.mjs
       - name: Upload frontend test artifacts
@@ -393,6 +390,7 @@ jobs:
           E2E_CLERK_CREATE_ORGANIZATION: ${{ env.CI_E2E_CLERK_CREATE_ORGANIZATION }}
 
       - name: Run E2E Tests
+        id: e2e_tests
         run: node scripts/test.mjs e2e
         env:
           CI: "true"
@@ -402,7 +400,10 @@ jobs:
           E2E_EXTERNAL_STACK: "1"
           BASE_URL: http://localhost:5173
           PLAYWRIGHT_SKIP_WEB_SERVER: "1"
-          PLAYWRIGHT_WORKERS: "2"
+          # Global fan-out for independent projects only; `app`, `provider`,
+          # `isolated`, `readonly` stay at one worker and `auth` is bounded to
+          # two in the Playwright config. The runner is authoritative.
+          PLAYWRIGHT_WORKERS: "4"
           VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
           E2E_CLERK_ADMIN_EMAIL: ${{ env.CI_E2E_CLERK_ADMIN_EMAIL }}
@@ -432,8 +433,26 @@ jobs:
         run: cat frontend/playwright-report/capacity-report.json || true
 
       - name: Sanitize test artifacts
+        id: sanitize
         if: always()
         run: node scripts/sanitize-test-artifacts.mjs .test-artifacts frontend/playwright-report frontend/test-results
+
+      # Timing telemetry must survive a green run. It uploads only sanitized
+      # files: the runner `run.json` metadata always, and the Playwright JUnit
+      # (`e2e-all.xml`, the same report the runner reads for its truthful suite
+      # counts) only when the E2E step passed (no exception bodies). The
+      # capacity JUnit stays a separate `.test-artifacts` path. Raw logs,
+      # storage state, keys and private profiles stay out.
+      - name: Upload E2E metrics
+        if: always() && steps.sanitize.outcome == 'success'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: e2e-metrics-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            .test-artifacts/**/run.json
+            ${{ steps.e2e_tests.outcome == 'success' && '.test-artifacts/**/e2e-all.xml' || '' }}
+          if-no-files-found: warn
+          retention-days: 3
 
       - name: Upload Playwright artifacts
         if: failure()

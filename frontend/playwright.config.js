@@ -85,6 +85,8 @@ export default defineConfig({
       name: 'auth',
       testMatch: authMatch,
       use: { ...devices['Desktop Chrome'] },
+      // Bound genuine Clerk sign-ins to the existing concurrency.
+      workers: 2,
       dependencies: ['setup'],
     },
     {

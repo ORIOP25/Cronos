@@ -1207,15 +1207,15 @@ Esta separação mantém a campanha fail-closed sem provas humanas nem eliminaç
 O recetor do código e os percursos autenticados continuam por observar; nenhuma conta real foi criada nesta fase.
 A prova nativa no pipeline continua pendente; a execução pública `38193441985` não executou este helper.
 
-## Redução consolidada por publicar — 2026-10-12
+## Redução consolidada — 2026-10-12
 
-Estado: lote local consolidado no ramo `codex/reduce-ci-runtime`, ainda por publicar.
+Estado: lote consolidado no ramo `codex/reduce-ci-runtime`, publicado no [PR 72](https://github.com/ORIOP25/Cronos/pull/72) em `1e18315`.
 A base é `d4f6269` (#71, negociação de conteúdo do edge, sem relação); a referência `fe69` do audit fica preservada.
-Nenhuma execução de GHA mediu o lote; as três execuções equivalentes não foram feitas.
-Não ocorreu commit, push, PR ou deploy; estes documentos também não estão publicados.
+O PR é público e não está fundido; a `main` continua em `d4`.
+A libertação na `main` e o desbloqueio dos 69 casos ficam pendentes.
 
-As contagens e os tempos são locais e variam com a carga e a cache.
-O alvo de 50 por cento ou de cinco minutos é uma hipótese; a primeira execução de GHA deve prová-la.
+As contagens locais mantêm-se e variam com a carga e a cache.
+O alvo de 50 por cento ou de cinco minutos não foi atingido na primeira execução; a hipótese passa para a correção seguinte.
 O checkout original do Desktop fica preservado; o worktree local tem as modificações.
 
 W09.5 e W09.6 permanecem `EM_CURSO`; as metas 8–12 frontend e 30–45 backend não estão atingidas.
@@ -1316,12 +1316,38 @@ A cadeia partilhada é `auth-state` → `app` (12) → `provider` (4) → `reado
 
 O projeto `faults` foi retirado e mapeia nos 2 caminhos de caso de `isolated` e `readonly`.
 O backend unitário usa `-n 4 --dist=loadscope` e a integração já usava 4.
-O frontend corre verificações estáticas e cobertura em paralelo.
+O frontend corre `audit:production` e a verificação completa em sequência; a sobreposição anterior de verificações e cobertura foi revertida por somar tempo na CI.
 O E2E constrói as imagens Docker de backend e frontend em paralelo; o gate da imagem de privacidade mantém-se.
+
+### Primeira execução de CI medida — run 38262965438
+
+A execução [run 38262965438](https://github.com/ORIOP25/Cronos/actions/runs/38262965438) correu no SHA `1e18315`, com CI, Sonar e Cloudflare Pages verdes.
+
+| Job | `1e18315` | Referência |
+| :--- | ---: | ---: |
+| Backend | 6m12 (unit 61s, integração 213s, contratos 26s, setup 69s) | unit 144s (GHA original) |
+| Frontend | 2m32 (verificação 125s) | 1m44 (`fe69`) |
+| E2E | 9m09 (teste 345s; preparação 142s, imagem 75s; capacidade 52s; limpeza 10s) | 9m54 (`fe69`) |
+
+O ganho no caminho crítico é cerca de 7,6 por cento; não é a hipótese de 50 por cento e o alvo de cinco minutos não foi atingido.
+O frontend piorou face ao baseline `fe69`.
+A referência `fe69` é o pai do audit; o PR 71 (edge) é independente e não se atribui a esta medição.
+
+### Correção pendente de GHA
+
+Existe uma correção local por commitar que sequencializa `audit:production` e `verify` no frontend.
+A sobreposição do Knip com a cobertura somou tempo na CI, pelo que a cadeia volta a ser sequencial.
+A correção aumenta o fan-out E2E global para 4, limita `auth` a 2 e mantém `app`, `provider`, `isolated` e `readonly` a 1, com `capacity` a 2.
+Inclui o projeto `dom-network` no comando `fast` e liga o JUnit de cada runner ao caminho que o relatório de execução lê.
+Acrescenta três testes Node (54 no total); a aritmética dá 278 de infraestrutura contra 275, mas o total só se afirma com a execução completa.
+
+O upload de métricas E2E fica atrás da sanitização: `run.json` sempre, `e2e-all.xml` só com o passo E2E verde.
+O upload de falha protegido mantém-se e não se alargam auth state, binários, logs nem ficheiros privados.
+Esta correção é uma hipótese; o próximo SHA deve medi-la, e a libertação exige três execuções equivalentes depois desse SHA.
 
 ### Fronteiras mantidas
 
 A produção mantém a referência anterior `fe69`, com os cinco componentes válidos; não houve novo deploy.
 Os 69 casos de produção continuam por verificar e inativos.
-O PR de deployment e o publisher de CI ficam depois destes documentos, que não estão publicados agora.
-A publicação na `main` é acompanhada até ficar verde, como gate obrigatório.
+O PR 72 é público e não está fundido; a `main` continua em `d4`.
+A libertação na `main` aguarda as três execuções equivalentes depois do SHA corretivo.

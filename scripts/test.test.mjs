@@ -15,6 +15,8 @@ import {
   cleanupOwnedResources,
   displayArgs,
   finalizePreparation,
+  frontendFastArgs,
+  frontendJunitEnv,
   isOwnedResource,
   parseArgs,
   preservePrimaryFailure,
@@ -212,6 +214,23 @@ test('selects the isolated and readonly projects and retires the faults alias', 
   assert.equal(parseArgs(['e2e', '--project', 'isolated']).project, 'isolated')
   assert.equal(parseArgs(['e2e', '--project', 'readonly']).project, 'readonly')
   assert.throws(() => parseArgs(['e2e', '--project', 'faults']), /Invalid E2E project/)
+})
+
+test('the fast frontend run selects every Vitest project, including dom-network data hooks', () => {
+  assert.deepEqual(
+    frontendFastArgs(['-t', 'getWeekSubmissionBlockers']),
+    [
+      'test', '--',
+      '--project=node', '--project=dom', '--project=dom-network',
+      '-t', 'getWeekSubmissionBlockers',
+    ],
+  )
+})
+
+test('each frontend runner wires its own JUnit report for truthful suite counts', () => {
+  assert.deepEqual(frontendJunitEnv('vitest', 'frontend-fast.xml'), { VITEST_JUNIT_OUTPUT_FILE: 'frontend-fast.xml' })
+  assert.deepEqual(frontendJunitEnv('playwright', 'e2e-all.xml'), { PLAYWRIGHT_JUNIT_OUTPUT_FILE: 'e2e-all.xml' })
+  assert.deepEqual(frontendJunitEnv('vitest', null), {})
 })
 
 test('parses scheduler lab campaign options and rejects them elsewhere', () => {

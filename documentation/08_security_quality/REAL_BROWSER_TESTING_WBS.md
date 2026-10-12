@@ -4,9 +4,9 @@ Revisão: 2026-10-07. Versão: 2.0.
 Main revista: `91a9d28bcb9c9a829a8578872156a6b90fa04bcf`.
 A main remota e o checkout tinham a mesma revisão durante a inspeção.
 Reconciliação W12.4: 2026-10-09. Estado do W12: em curso. Consulte a [reconciliação das 80 tarefas](#reconciliação-w124).
-Estado: 2026-10-12. A `main` publicada é `d4f6269` (#71); o ramo de implementação é `codex/reduce-ci-runtime`, ainda por publicar.
+Estado: 2026-10-12. A `main` publicada é `d4f6269` (#71); o ramo `codex/reduce-ci-runtime` está no [PR 72](https://github.com/ORIOP25/Cronos/pull/72) em `1e18315`, público e não fundido.
 A referência `fe69` do audit fica preservada, com a execução pública [run 38206152558]; ver o [progresso noturno](REAL_BROWSER_TESTING_IMPLEMENTATION.md#progresso-noturno--2026-10-12).
-Redução consolidada por publicar: ver a [redução consolidada](REAL_BROWSER_TESTING_IMPLEMENTATION.md#redução-consolidada-por-publicar--2026-10-12).
+Redução consolidada: ver a [redução consolidada](REAL_BROWSER_TESTING_IMPLEMENTATION.md#redução-consolidada--2026-10-12).
 
 ## Objetivo e leitor
 
@@ -226,7 +226,7 @@ Base histórica e estado atual:
 | :--- | :--- | :--- |
 | Histórico | `91a9d28` | Baseline dos quatro planos; o runner local usava Compose, chaves de teste e `clerk.signIn`. |
 | Intermédio (2026-10-09) | `804a2dd` | Infraestrutura de aceitação implementada; comandos novos coexistem com o legado até ao cutover. |
-| Atual (2026-10-12) | `d4f6269` | A `main` publicada é o #71, uma correção de edge sem relação; a referência de audit `fe69` fica preservada. Um lote de redução de testes consolidado no ramo `codex/reduce-ci-runtime` permanece local, por publicar e por medir em GHA. |
+| Atual (2026-10-12) | `d4f6269` | A `main` publicada é o #71, uma correção de edge sem relação; a referência de audit `fe69` fica preservada. O lote de redução vive no [PR 72](https://github.com/ORIOP25/Cronos/pull/72), em `1e18315`, público e não fundido; a primeira CI ficou verde e a correção seguinte aguarda GHA. |
 
 A tabela não contradiz o registo histórico; marca a evolução.
 
@@ -368,8 +368,8 @@ Execuções citadas:
 | W09.2 | CONCLUÍDO | N/A | Transações, migrations e rollback preservados; [M]. |
 | W09.3 | CONCLUÍDO | N/A | Ocorrências, dívida e fecho preservados no núcleo backend; [O] e [T]. |
 | W09.4 | CONCLUÍDO | N/A | Solver e validador independentes; [S]. |
-| W09.5 | EM_CURSO | N/A | Redução consolidada local: sete ficheiros frontend removidos e um novo, saldo menos seis; cinco regressões de domínio backend duplicadas removidas e uma paridade nova. O cutover da maioria continua bloqueado. Ver a [redução consolidada](REAL_BROWSER_TESTING_IMPLEMENTATION.md#redução-consolidada-por-publicar--2026-10-12). |
-| W09.6 | EM_CURSO | N/A | Medição local por publicar: frontend 579 casos em 81 ficheiros (de 603 em 87); backend 892 unitários, 463 integrações e 61 contratos, total 1 416 (de 1 434); 165 ficheiros backend; E2E 80 casos. Face a `91a9d28`, +8 casos frontend e +46 backend. Gates e retries não mudaram. Ver a [redução consolidada](REAL_BROWSER_TESTING_IMPLEMENTATION.md#redução-consolidada-por-publicar--2026-10-12). |
+| W09.5 | EM_CURSO | N/A | Redução consolidada: sete ficheiros frontend removidos e um novo, saldo menos seis; cinco regressões de domínio backend duplicadas removidas e uma paridade nova. O cutover da maioria continua bloqueado. Ver a [redução consolidada](REAL_BROWSER_TESTING_IMPLEMENTATION.md#redução-consolidada--2026-10-12). |
+| W09.6 | EM_CURSO | N/A | Medição: frontend 579 casos em 81 ficheiros (de 603 em 87); backend 892 unitários, 463 integrações e 61 contratos, total 1 416 (de 1 434); 165 ficheiros backend; E2E 80 casos. Face a `91a9d28`, +8 casos frontend e +46 backend. A primeira execução de CI foi verde em `1e18315`; o caminho crítico ganhou cerca de 7,6 por cento e o frontend piorou. Gates e retries não mudaram. Ver a [redução consolidada](REAL_BROWSER_TESTING_IMPLEMENTATION.md#redução-consolidada--2026-10-12). |
 | W09.7 | EM_CURSO | N/A | Knip na CI; remoção de dependências pendente. |
 | W09.8 | EM_CURSO | N/A | Thresholds e gates em conjunto; pendente. |
 | W10.1 | EM_CURSO | DEPENDÊNCIA | `acceptance`, `prepare-history`, `diagnose-public` e `inspect-code-sender` coexistem com o `e2e` legado (Compose e CI legado) até ao cutover W10.8. A campanha está inativa com `E2E_ACCEPTANCE_ENABLED=false`. |
@@ -422,10 +422,10 @@ Não é a contagem atual e não mede casos recolhidos.
 As reduções não são quotas.
 A primeira redução parcial removeu um ficheiro unitário.
 Na altura, a contagem total subiu 51, porque a infraestrutura aumentou de 216 para 268.
-O lote consolidado posterior, por publicar, tem agora frontend 579 casos em 81 ficheiros e backend 1 416 casos.
+O lote consolidado no PR 72 tem agora frontend 579 casos em 81 ficheiros e backend 1 416 casos.
 Face a `91a9d28`, mantêm-se +8 casos frontend e +46 casos backend.
 As metas 30–45 e 8–12 não foram atingidas nos percursos de negócio.
-Nenhuma contagem é uma quota nem certifica a execução em GHA.
+Nenhuma contagem é uma quota nem certifica a libertação; a primeira execução de CI ficou verde e a correção seguinte aguarda GHA.
 
 ## Fontes e documentos relacionados
 

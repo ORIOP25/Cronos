@@ -26,7 +26,9 @@ const SCOPES = new Set(['backend', 'frontend', 'all'])
 const PROFILES = new Set(['fast', 'integration', 'e2e', 'all'])
 const E2E_PROJECTS = new Set(['public', 'auth', 'app', 'isolated', 'readonly', 'provider', 'capacity'])
 export const INTEGRATION_WORKERS = 4
-export const E2E_WORKERS = 2
+// Global fan-out for independent E2E projects. The shared-organization chain,
+// the fresh-organization chain and the readonly chain keep one worker each.
+export const E2E_WORKERS = 4
 export const E2E_PORT = 5174
 
 export function resolveE2eBaseUrl({ externalStack = false, baseUrl } = {}) {
@@ -509,6 +511,26 @@ async function runBackendTests(paths, forwarded = [], overrides = {}, context, n
   })
 }
 
+// The fast frontend run must cover every Vitest project. `dom-network` owns
+// the critical data hooks, so omitting it silently drops those regressions.
+export function frontendFastArgs(forwarded = []) {
+  return [
+    'test', '--',
+    '--project=node', '--project=dom', '--project=dom-network',
+    ...forwarded,
+  ]
+}
+
+// Each runner writes its own JUnit report. The caller report path is the same
+// path `runRecorded` reads, so the run report carries the real suite counts
+// instead of zero. Vitest and Playwright use different environment keys.
+export function frontendJunitEnv(kind, reportPath) {
+  if (!reportPath) return {}
+  return kind === 'playwright'
+    ? { PLAYWRIGHT_JUNIT_OUTPUT_FILE: reportPath }
+    : { VITEST_JUNIT_OUTPUT_FILE: reportPath }
+}
+
 async function runFrontendTests(
   args,
   label,
@@ -516,12 +538,13 @@ async function runFrontendTests(
   context,
   name = label.toLowerCase().replaceAll(' ', '-'),
   phase = 'tests_ms',
+  kind = 'vitest',
 ) {
   const reportPath = context ? join(context.artifactDir, `${name}.xml`) : null
   const testEnv = {
     ...process.env,
     VITE_API_BASE_URL: '/api/v1',
-    ...(reportPath ? { VITEST_JUNIT_OUTPUT_FILE: reportPath } : {}),
+    ...frontendJunitEnv(kind, reportPath),
     ...env,
   }
   return runRecorded(npmSpec(args), {
@@ -530,7 +553,7 @@ async function runFrontendTests(
     label,
   }, context, context ? {
     name,
-    kind: 'vitest',
+    kind,
     reportPath,
     phase,
   } : {})
@@ -546,7 +569,7 @@ async function runFast(scope, forwarded, context) {
   }
   if (scope === 'frontend' || scope === 'all') {
     await runFrontendTests(
-      ['test', '--', '--project=node', '--project=dom', ...forwarded],
+      frontendFastArgs(forwarded),
       'Vitest fast',
       {},
       context,
@@ -925,15 +948,16 @@ async function runIntegration(forwarded = [], context, { coverage = false } = {}
 
 async function runE2e(project, context, extraEnv = {}) {
   const externalStack = process.env.E2E_EXTERNAL_STACK === '1'
+  // The bounded capacity gate keeps its own explicit concurrency.
+  const e2eWorkers = project === 'capacity' ? 2 : E2E_WORKERS
   const preparationStartedAt = monotonicMs()
   if (externalStack) {
     validateE2eEnvironment()
-    context.e2eWorkers = E2E_WORKERS
   } else {
     await startTestStack(context, { full: true })
     await prepareE2eClerkState(context)
-    context.e2eWorkers = E2E_WORKERS
   }
+  context.e2eWorkers = e2eWorkers
   addPhaseTime(context, 'preparation_ms', Math.round(monotonicMs() - preparationStartedAt))
   const args = ['run', 'test:e2e', '--']
   if (project) args.push('--project', project)
@@ -951,22 +975,27 @@ async function runE2e(project, context, extraEnv = {}) {
         E2E_COMPOSE_FILE: join(ROOT, 'docker-compose.ci.yml'),
         BASE_URL: resolveE2eBaseUrl({ externalStack: true, baseUrl: process.env.BASE_URL }),
         PLAYWRIGHT_SKIP_WEB_SERVER: '1',
-        PLAYWRIGHT_WORKERS: String(E2E_WORKERS),
+        PLAYWRIGHT_WORKERS: String(e2eWorkers),
         ...capacityEnv,
         ...extraEnv,
       }
     : {
         ...context.stack.env,
         E2E_COMPOSE_FILE: COMPOSE_FILE,
+        PLAYWRIGHT_WORKERS: String(e2eWorkers),
         ...capacityEnv,
         ...extraEnv,
       }
+  // The Playwright runner writes its JUnit to the same `e2e-<project>.xml`
+  // report the run report reads, so suite counts are the real case counts.
   await runFrontendTests(
     args,
     `Playwright ${project || 'all'}`,
     e2eEnv,
     context,
     `e2e-${project || 'all'}`,
+    undefined,
+    'playwright',
   )
   context.e2e = project || 'all'
 }
