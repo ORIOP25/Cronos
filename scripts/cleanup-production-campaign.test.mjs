@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
-import { cleanupProductionCampaign, mintClerkTestingToken } from './cleanup-production-campaign.mjs'
+import { classifyTransportFailure, cleanupProductionCampaign, mintClerkTestingToken } from './cleanup-production-campaign.mjs'
 import { createUiRegistry, recordUiActor, recordUiCreationIntent, recordUiSchool, signRegistry, verifyRegistry } from './e2e-run-registry.mjs'
 import { protectEvidence, recoverEvidence } from './protect-test-evidence.mjs'
 
@@ -276,4 +276,13 @@ test('testing token minting fails closed on configuration and malformed response
       await assert.rejects(mintClerkTestingToken({ expectedRevision: f.options.expectedRevision }, f.environment, { execute: async () => response }), /Testing token unavailable/)
     }
   } finally { await rm(f.root, { recursive: true, force: true }) }
+})
+
+test('administrative transport failures are reported only as fixed classes', () => {
+  assert.equal(classifyTransportFailure('Host key verification failed.\r\n'), 'ssh_host_key')
+  assert.equal(classifyTransportFailure('git@ssh: Permission denied (publickey).'), 'ssh_key_rejected')
+  assert.equal(classifyTransportFailure('Unauthorized. Please login with `railway login`'), 'railway_auth')
+  assert.equal(classifyTransportFailure('Service not found'), 'target_not_found')
+  assert.equal(classifyTransportFailure('sk_live_secret leaked text'), 'unknown')
+  assert.equal(classifyTransportFailure(''), 'unknown')
 })

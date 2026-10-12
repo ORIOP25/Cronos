@@ -1,7 +1,6 @@
 import { test as base, expect } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
 import { readFile, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
 import { observeAcceptanceActivity, observeAcceptanceRuntime } from '../utils/acceptance-runtime.js'
 import { beginProofSession, finishProofSession, noteActorObservation, notePageActivity, notePersistentSchoolObservation, noteSchoolObservation, proofArtifactRoot, publicReadonlySelection, recoverActorObservation } from '../utils/acceptance-proof.js'
 import { recordGroupRevisionSnapshot } from '../utils/deployments.js'
@@ -73,8 +72,9 @@ export const test = base.extend({
           expectedRevision: process.env.E2E_EXPECTED_REVISION, artifactRoot: process.env.PLAYWRIGHT_OUTPUT_DIR }, process.env, { exportOnly: true })
         expect(result.status, 'Authenticated administrative export must precede native UI deletion').toBe('exported')
         expect(result.exported).toEqual([school.local_id])
+        // Reference, not a copy: a Playwright copy would carry a different authenticated path.
         await testInfo.attach('pre-ui-deletion-protected-backup', {
-          path: join(process.env.PLAYWRIGHT_OUTPUT_DIR, `organization-${school.local_id}.zip.enc`), contentType: 'application/octet-stream',
+          body: Buffer.from(JSON.stringify({ protected_path: `organization-${school.local_id}.zip.enc` })), contentType: 'application/json',
         })
         return result
       },
