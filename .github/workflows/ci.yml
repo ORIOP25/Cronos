@@ -283,13 +283,13 @@ jobs:
           E2E_CLERK_INVITE_CREATE_EMAIL: ${{ env.E2E_CLERK_INVITE_CREATE_EMAIL }}
           E2E_CLERK_INVITE_CONVERT_EMAIL: ${{ env.E2E_CLERK_INVITE_CONVERT_EMAIL }}
 
-      - name: Verify privacy maintenance task in production image
+      - name: Verify privacy maintenance task and administrative cleanup in production image
         run: |
           docker build --target runtime -t cronos-backend:test backend
           docker run --rm \
             -e DATABASE_URL=postgresql+asyncpg://ci:ci@localhost:5432/cronos_test_db \
             cronos-backend:test python -c \
-            "from app.celery_worker import celery_app; import app.privacy_maintenance_worker; assert 'privacy.run_maintenance' in celery_app.tasks"
+            "from app.celery_worker import celery_app; import app.privacy_maintenance_worker; import scripts.cleanup_e2e_run; assert 'privacy.run_maintenance' in celery_app.tasks"
 
       - name: Start CI infrastructure
         run: docker compose -f docker-compose.ci.yml up -d --wait db redis

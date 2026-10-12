@@ -1419,5 +1419,8 @@ O painel Clerk de produção (instância `ins_3HjskMD24ZJIRVqZCWHCfMZPTiz`), lid
 `notifications@cronos.pt` para `{{otp_code}} is your verification code` e `noreply@cronos.pt` para `{{otp_code}} is your reset password code`.
 Como os remetentes diferem, a recuperação passa a usar `E2E_GMAIL_RESET_SENDER`, exigida e validada no preflight como `E2E_GMAIL_CODE_SENDER`.
 As duas variáveis GitHub foram configuradas com esses valores.
+A inspeção do container de produção mostrou só `app`, `alembic` e `alembic.ini` em `/app`: a imagem `runtime` não incluía `scripts/`.
+O transporte SSH importa `scripts.cleanup_e2e_run`, pelo que a limpeza administrativa real terminaria sempre `failed`.
+A imagem passa a copiar apenas `scripts/__init__.py`, `privacy.py`, `e2e_cleanup_policy.py` e `cleanup_e2e_run.py`; o gate da imagem no job `e2e-runtime` importa agora `scripts.cleanup_e2e_run` (RED antes, GREEN depois, em Docker local).
 W11.4 tem autorização para um ambiente Railway temporário, ainda não criado.
 Nenhum passo desta revalidação certifica produção.

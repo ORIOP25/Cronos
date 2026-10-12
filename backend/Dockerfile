@@ -40,6 +40,9 @@ ENV PATH=/opt/venv/bin:$PATH
 COPY app ./app
 COPY alembic ./alembic
 COPY alembic.ini .
+# The administrative campaign cleanup runs over Railway SSH with its own
+# credential; the image ships only its code.
+COPY scripts/__init__.py scripts/privacy.py scripts/e2e_cleanup_policy.py scripts/cleanup_e2e_run.py ./scripts/
 
 RUN addgroup --system cronos && adduser --system --ingroup cronos cronos \
     && chown -R cronos:cronos /app
