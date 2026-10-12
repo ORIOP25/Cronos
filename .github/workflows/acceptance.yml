@@ -84,6 +84,15 @@ jobs:
           echo "$railway_dir" >> "$GITHUB_PATH"
           "$railway_dir/railway" --version
 
+      # Pinned Railway SSH host key (SHA256:+S1xg92FrnHz6pY3bpkmh1OGtWQGNANXilPzlxA7B1g),
+      # so the administrative transport verifies the host on a clean runner.
+      - name: Pin Railway SSH host key
+        shell: bash
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' 'ssh.railway.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJ8X3z81/tuP7CvmK3ZqWgwEvHUR6b04oi2lQJGld2C1' >> ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
       - name: Materialize protected campaign registries
         shell: bash
         env:

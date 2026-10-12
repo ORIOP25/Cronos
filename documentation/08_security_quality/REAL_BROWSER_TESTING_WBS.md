@@ -385,7 +385,7 @@ Execuções citadas:
 | W11.1 | CONCLUÍDO | N/A | Recursos e nomes de base de teste exatos; [M]. |
 | W11.2 | CONCLUÍDO | CONCLUÍDO | Recuperação real do worker com PostgreSQL e Redis; [W]. |
 | W11.3 | CONCLUÍDO | CONCLUÍDO | Idempotência com serviços reais; [W]. |
-| W11.4 | PENDENTE | DEPENDÊNCIA | O ambiente Railway isolado não existe nem foi ensaiado. Qualquer recurso depende de planeamento isolado, sem novos custos. A integridade e a privacidade mantêm-se mesmo sem clientes. |
+| W11.4 | CONCLUÍDO | CONCLUÍDO | Projeto Railway temporário e isolado (2026-10-12), autorizado pelo titular e apagado no fim: worker real reiniciado pelo Railway com o job bloqueado antes do commit, supervisor Railway marcou `WORKER_STALLED` sem escrita parcial, e o worker reiniciado concluiu uma entrega duplicada uma única vez; ver o registo de implementação. |
 | W12.1 | PENDENTE | DEPENDÊNCIA | Campanha completa não executada. |
 | W12.2 | EM_CURSO | DEPENDÊNCIA | A CI da `main` em `6140da6` ([run 38192706792]) e a CI da PR 68 ([run 38191885411]) estão verdes, incluindo o Sonar. A campanha completa e a maioria dos percursos de negócio continuam pendentes. |
 | W12.3 | PENDENTE | DEPENDÊNCIA | Antes/depois, duração, fila e custos pendentes. |
@@ -415,7 +415,6 @@ Execuções citadas:
 - O registo assinado de escolas do teste está vazio; não há prova de escola persistente, aula terminada ou semana elegível.
 - A campanha está inativa com `E2E_ACCEPTANCE_ENABLED=false`.
 - A exportação e a eliminação reais de produção não estão verificadas.
-- O ambiente Railway isolado de W11.4 não existe nem foi ensaiado; qualquer recurso depende de planeamento isolado.
 - A campanha completa e a maioria dos percursos de negócio continuam nativos por provar; a redução W09 é parcial.
 
 ### Métricas históricas

@@ -16,7 +16,8 @@ test('prepare a persistent full school through native UI for future historical c
       credentialsPath = relative(process.env.PLAYWRIGHT_OUTPUT_DIR, path).split(sep).join('/')
       await writeFile(path, protectEvidence(Buffer.from(JSON.stringify(credentials)), Buffer.from(process.env.E2E_ARTIFACT_KEY, 'base64'),
         { run_id: process.env.E2E_RUN_ID, path: credentialsPath.slice(0, -4) }), { flag: 'wx', mode: 0o600 })
-      await testInfo.attach('protected-persistent-login-recovery', { path, contentType: 'application/octet-stream' })
+      // Reference, not a copy: a Playwright copy would carry a different authenticated path.
+      await testInfo.attach('protected-persistent-login-recovery', { body: Buffer.from(JSON.stringify({ protected_path: credentialsPath })), contentType: 'application/json' })
     },
     async onPrepared({ page, original, converted, generated, schoolPeriod }) {
       const registry = verifyRegistry(JSON.parse(await readFile(process.env.E2E_RUN_REGISTRY, 'utf8')),

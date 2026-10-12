@@ -72,6 +72,15 @@ async function railwayExecutable(environment) {
   throw new Error('Native Railway executable unavailable')
 }
 
+// Fixed, secret-free classes of the native client's stderr; the text never leaves.
+export function classifyTransportFailure(stderr) {
+  if (/Host key verification failed/i.test(stderr)) return 'ssh_host_key'
+  if (/Permission denied \(publickey/i.test(stderr)) return 'ssh_key_rejected'
+  if (/unauthori[sz]ed|not authorized|invalid token|railway login/i.test(stderr)) return 'railway_auth'
+  if (/not found/i.test(stderr)) return 'target_not_found'
+  return 'unknown'
+}
+
 async function nativeTransport(packet, environment, code = remoteCode) {
   const temporary = await mkdtemp(join(tmpdir(), 'cronos-admin-ssh-'))
   try {
@@ -87,17 +96,17 @@ async function nativeTransport(packet, environment, code = remoteCode) {
     const output = await new Promise((accept, reject) => {
       const child = spawn(executable, args, { windowsHide: true, shell: false,
         env: { ...inherited, [tokenName]: environment.E2E_RAILWAY_TOKEN }, stdio: ['pipe', 'pipe', 'pipe'] })
-      let stdout = '', bytes = 0
+      let stdout = '', stderr = '', bytes = 0
       const timeout = setTimeout(() => { child.kill(); reject(new Error('Administrative transport timeout')) }, 300_000)
       child.stdout.on('data', chunk => {
         bytes += chunk.length
         if (bytes > 64 * 1024 * 1024) { child.kill(); reject(new Error('Administrative response exceeds limit')); return }
         stdout += chunk
       })
-      child.stderr.on('data', () => {})
+      child.stderr.on('data', chunk => { if (stderr.length < 64 * 1024) stderr += chunk })
       child.stdin.on('error', () => {})
       child.once('error', () => { clearTimeout(timeout); reject(new Error('Administrative transport unavailable')) })
-      child.once('close', code => { clearTimeout(timeout); code === 0 ? accept(stdout) : reject(new Error('Administrative transport failed')) })
+      child.once('close', code => { clearTimeout(timeout); code === 0 ? accept(stdout) : reject(new Error(`Administrative transport failed: ${classifyTransportFailure(stderr)}`)) })
       child.stdin.end(JSON.stringify(packet))
     })
     return JSON.parse(output)
@@ -128,13 +137,18 @@ export async function mintClerkTestingToken({ expectedRevision }, environment, {
   return token
 }
 
+function missingAsNull(error) {
+  if (error.code === 'ENOENT') return null
+  throw error
+}
+
 async function inspectArtifactRoot(artifactRoot) {
   for (let parent = dirname(resolve(artifactRoot)); ; parent = dirname(parent)) {
     const parentInfo = await lstat(parent)
     if (!parentInfo.isDirectory() || parentInfo.isSymbolicLink()) throw new Error('Administrative artifact parent is not confined')
     if (parent === dirname(parent)) break
   }
-  const existingRoot = await lstat(resolve(artifactRoot)).catch(error => { if (error.code !== 'ENOENT') throw error; return null })
+  const existingRoot = await lstat(resolve(artifactRoot)).catch(missingAsNull)
   if (existingRoot && (!existingRoot.isDirectory() || existingRoot.isSymbolicLink())) throw new Error('Administrative artifact root is not confined')
   return existingRoot
 }
@@ -145,7 +159,7 @@ async function readPriorExports({ artifactRoot, existingRoot, organizations, run
     for (const local_id of organizations) {
       const name = `organization-${local_id}.zip.enc`
       const path = join(artifactRoot, name)
-      const file = await lstat(path).catch(error => { if (error.code !== 'ENOENT') throw error; return null })
+      const file = await lstat(path).catch(missingAsNull)
       if (!file) continue
       if (!file.isFile() || file.isSymbolicLink() || file.size > 64 * 1024 * 1024) throw new Error('Prior administrative export is not confined')
       const content = await readFile(path)

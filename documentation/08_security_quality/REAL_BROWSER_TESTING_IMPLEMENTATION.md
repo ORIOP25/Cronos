@@ -1422,5 +1422,36 @@ As duas variáveis GitHub foram configuradas com esses valores.
 A inspeção do container de produção mostrou só `app`, `alembic` e `alembic.ini` em `/app`: a imagem `runtime` não incluía `scripts/`.
 O transporte SSH importa `scripts.cleanup_e2e_run`, pelo que a limpeza administrativa real terminaria sempre `failed`.
 A imagem passa a copiar apenas `scripts/__init__.py`, `privacy.py`, `e2e_cleanup_policy.py` e `cleanup_e2e_run.py`; o gate da imagem no job `e2e-runtime` importa agora `scripts.cleanup_e2e_run` (RED antes, GREEN depois, em Docker local).
-W11.4 tem autorização para um ambiente Railway temporário, ainda não criado.
 Nenhum passo desta revalidação certifica produção.
+
+## Primeira preparação em `e94cb12` — 2026-10-12
+
+A [PR 75](https://github.com/ORIOP25/Cronos/pull/75) foi fundida como `e94cb12`, com a CI verde e as cinco componentes alinhadas.
+O [`prepare-history` 38314022584](https://github.com/ORIOP25/Cronos/actions/runs/38314022584) falhou em 3,4 s, antes de qualquer registo: `Administrative transport failed` ao emitir o token.
+O transporte SSH nunca tinha corrido num runner limpo; o host `ssh.railway.com` não estava em `known_hosts` e o stderr era descartado.
+O workflow fixa agora a chave ED25519 de `ssh.railway.com` (`SHA256:+S1xg92FrnHz6pY3bpkmh1OGtWQGNANXilPzlxA7B1g`, igual à observada localmente e por `ssh-keyscan`), e o erro passa a ter uma classe fixa sem texto bruto (`ssh_host_key`, `ssh_key_rejected`, `railway_auth`, `target_not_found`, `unknown`).
+A sanitização falhou depois a autenticar um `.enc`: `testInfo.attach({ path })` copia o ficheiro para `attachments/<nome>-<sha1>.enc`, com um caminho diferente do autenticado.
+As credenciais persistentes e o backup anterior à eliminação passam a ser anexados como referência JSON ao caminho protegido, sem cópia.
+Nenhuma conta, escola ou intenção foi criada nesta execução.
+
+## Recuperação Railway isolada (W11.4) — 2026-10-12
+
+O titular autorizou um ambiente Railway temporário.
+Foi criado um projeto separado, `cronos-w11-isolated`, sem ligação ao projeto de produção, com Postgres e Redis próprios.
+Os serviços `worker` e `supervisor` foram publicados a partir do `backend` desta branch, com os `startCommand` exatos de `backend/railway/*.json` e a rede privada Railway.
+A base isolada chamou-se `cronos_test_db`, o nome aceite pela guarda de bases de teste; os papéis foram criados por `app.ops.provision_database` e o schema por `alembic upgrade head`.
+As definições exclusivas de produção (Clerk, Resend, Turnstile, origens) tinham valores inertes, porque os workers não os usam.
+
+O ensaio reutilizou os auxiliares de `test_worker_process_recovery.py`, sem processos próprios: os únicos executores foram os serviços Railway.
+
+| Passo | Observação |
+| :--- | :--- |
+| Bloqueio antes do commit | O worker Railway recebeu `run_next_job` às 22:00:57Z e ficou bloqueado no lock de persistência (job 2, `attempt_token=2`). |
+| Perda do processo | `railway restart` às 22:01:02Z; o worker voltou a `ready.` às 22:01:24Z. |
+| Reconciliação | O supervisor Railway (fila `scheduler-supervisor`) marcou `FAILED` / `WORKER_STALLED` com `finished_at`; 0 propostas, 0 versões, 0 aulas e 0 registos. |
+| Idempotência | O worker reiniciado recebeu duas entregas do mesmo job: `SUCCEEDED` com 1 proposta; o job de descarga seguinte ficou `SUCCEEDED` com 1 proposta. |
+
+Uma primeira tentativa esperou que o backend bloqueado desaparecesse, o que não acontece: o PostgreSQL só deteta o cliente morto depois de libertado o lock, e então aborta sem COMMIT.
+A segunda tentativa usou a confirmação do novo `ready.` pelo host; a ausência de escrita parcial confirma o aborto.
+O projeto temporário foi apagado no fim e os ficheiros locais de credenciais descartáveis foram removidos.
+A produção não foi interrompida nem lida por este ensaio.
