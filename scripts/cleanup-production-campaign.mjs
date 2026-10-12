@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process'
 import { access, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { delimiter, dirname, join, resolve } from 'node:path'
-import { verifyRegistry } from './e2e-run-registry.mjs'
+import { unresolvedUiCreationIntents, verifyRegistry } from './e2e-run-registry.mjs'
 import { recoverEvidence } from './protect-test-evidence.mjs'
 
 // Static code only: credentials and the signed registry travel through SSH stdin.
@@ -181,8 +181,31 @@ async function persistAdministrativeExports(artifactRoot, authenticated, prior, 
   }
 }
 
+// A resolved intent is gone from the journal; anything left is an unobserved
+// creation that the remote wrapper must never guess at. A malformed array is
+// treated as unresolved rather than ignored.
+function unresolvedIntentReport(registry) {
+  try { return { intents: unresolvedUiCreationIntents(registry), invalid: false } }
+  catch { return { intents: [], invalid: true } }
+}
+
+function hasUnresolvedUiCreation({ intents, invalid }) {
+  return Boolean(intents.length || invalid)
+}
+
+// Confirmed removals and backups are preserved, but an unresolved creation
+// keeps the whole campaign failed. An existing remote failure class stays first.
+function withUnresolvedUiCreation(outcome, { intents, invalid }) {
+  if (!intents.length && !invalid) return outcome
+  outcome.status = 'failed'
+  outcome.failure_type = outcome.failure_type ?? 'UnresolvedUiCreation'
+  outcome.unresolved_intents = intents
+  return outcome
+}
+
 export async function cleanupProductionCampaign({ registryPath, runId, expectedRevision, artifactRoot }, environment, { execute = nativeTransport, exportOnly = false, usePriorExports = false } = {}) {
   const failure = { run_id: runId, status: 'failed', completed: [], removed_actors: [], pending: [], pending_actors: [], failure_type: 'AdministrativeCleanupFailed' }
+  let unresolved = { intents: [], invalid: false }
   try {
     validateAdministrativeConfiguration({ runId, expectedRevision, exportOnly, usePriorExports }, environment)
     const info = await lstat(registryPath)
@@ -191,12 +214,17 @@ export async function cleanupProductionCampaign({ registryPath, runId, expectedR
     const registry = verifyRegistry(envelope, Buffer.from(environment.E2E_REGISTRY_HMAC_KEY, 'base64'))
     if (registry.schema_version !== 1 || registry.run_id !== runId || !Array.isArray(registry.organizations) || !Array.isArray(registry.actors)) throw new Error('Administrative registry identity mismatch')
     if (registry.organizations.some(item => !Number.isSafeInteger(item.local_id) || item.local_id <= 0 || !['disposable', 'persistent'].includes(item.type)) || registry.actors.some(item => !/^user_[a-zA-Z0-9]+$/.test(item.id || ''))) throw new Error('Invalid administrative target identity')
+    unresolved = unresolvedIntentReport(registry)
+    if (hasUnresolvedUiCreation(unresolved)) failure.unresolved_intents = unresolved.intents
     const organizations = registry.organizations.filter(item => item.type === 'disposable').map(item => item.local_id)
     const actors = registry.actors.map(item => item.id)
     failure.pending = [...organizations]
     failure.pending_actors = [...actors]
     if (new Set(organizations).size !== organizations.length || new Set(actors).size !== actors.length) throw new Error('Duplicate administrative identity')
-    if (!organizations.length && !actors.length) return { ...failure, status: exportOnly ? 'exported' : 'completed', exports: [], ...(exportOnly ? { exported: [] } : {}), failure_type: undefined }
+    if (!organizations.length && !actors.length) {
+      const empty = { ...failure, status: exportOnly ? 'exported' : 'completed', exports: [], ...(exportOnly ? { exported: [] } : {}), failure_type: undefined }
+      return hasUnresolvedUiCreation(unresolved) ? withUnresolvedUiCreation(empty, unresolved) : empty
+    }
     const existingRoot = await inspectArtifactRoot(artifactRoot)
     const prior = await readPriorExports({ artifactRoot, existingRoot, organizations, runId, usePriorExports }, environment)
     const response = await execute({ run_id: runId, expected_revision: expectedRevision, registry: envelope, mode: exportOnly ? 'export' : 'cleanup',
@@ -210,10 +238,11 @@ export async function cleanupProductionCampaign({ registryPath, runId, expectedR
     Object.assign(failure, { completed: [...result.completed], removed_actors: [...result.removed_actors],
       pending: [...result.pending], pending_actors: [...result.pending_actors], exports: [] })
     await persistAdministrativeExports(artifactRoot, authenticated, prior, failure)
-    return { run_id: runId, status: result.status, completed: result.completed, removed_actors: result.removed_actors,
+    const outcome = { run_id: runId, status: result.status, completed: result.completed, removed_actors: result.removed_actors,
       pending: result.pending, pending_actors: result.pending_actors, exports: [...names],
       ...(exportOnly ? { exported: [...result.exported] } : {}),
       ...(failure.remote_export_directory ? { remote_export_directory: failure.remote_export_directory } : {}),
       ...(result.status === 'failed' ? { failure_type: 'AdministrativeCleanupFailed' } : {}) }
+    return withUnresolvedUiCreation(outcome, unresolved)
   } catch { return failure }
 }

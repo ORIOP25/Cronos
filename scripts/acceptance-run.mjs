@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { evaluateAcceptance, validateProductionConfig } from '../frontend/e2e/utils/acceptance-policy.js'
 import { PUBLIC_READONLY_CASES, PUBLIC_READONLY_TAG } from '../frontend/e2e/utils/acceptance-proof.js'
 import { productionDependencies, publicDiagnosticDependencies } from './real-browser-preflight.mjs'
-import { verifyRegistry } from './e2e-run-registry.mjs'
+import { unresolvedUiCreationIntents, verifyRegistry } from './e2e-run-registry.mjs'
 
 export const ACCEPTANCE_PROJECT = 'acceptance'
 export const ACCEPTANCE_WORKERS = 1
@@ -81,9 +81,15 @@ export async function publicReadonlyCleanup({ registryPath, runId, signingKey })
       || !Array.isArray(registry.organizations) || !Array.isArray(registry.actors)) {
       throw new Error('Public diagnosis registry identity mismatch')
     }
+    // A write-ahead intent is possible orphaned identity even with no observed
+    // actor or school. It fails closed and only reports a safe projection.
+    let unresolved = [], invalid = false
+    try { unresolved = unresolvedUiCreationIntents(registry) } catch { invalid = true }
     const pending = registry.organizations.map(item => item.local_id)
     const pendingActors = registry.actors.map(item => item.id)
-    if (pending.length || pendingActors.length) return { ...failure, pending, pending_actors: pendingActors }
+    if (pending.length || pendingActors.length || unresolved.length || invalid) {
+      return { ...failure, pending, pending_actors: pendingActors, ...(unresolved.length || invalid ? { unresolved_intents: unresolved } : {}) }
+    }
     return {
       run_id: runId, status: 'completed', scope: 'public_readonly', not_needed: true,
       completed: [], removed_actors: [], pending: [], pending_actors: [], exports: [],

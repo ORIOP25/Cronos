@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { randomUUID } from 'node:crypto'
 import test from 'node:test'
 import { evaluatePreparation } from './prepare-history.mjs'
 import { COMPONENTS, evaluateAcceptance } from '../frontend/e2e/utils/acceptance-policy.js'
@@ -23,6 +24,13 @@ test('preparation can prove a published UI school without certifying the accepta
   const f = fixture()
   assert.equal(evaluatePreparation(f.run, f.registry, f.artifacts).status, 'prepared')
   assert.equal(evaluateAcceptance(f.run).status, 'incomplete')
+})
+
+test('preparation refuses a registry that still has unresolved creation intents', () => {
+  const f = fixture()
+  f.registry = { ...f.registry, schema_version: 1, started_at: '2026-10-08T10:00:00.000Z', finished_at: '2026-10-08T10:06:00.000Z',
+    intents: [{ id: randomUUID(), kind: 'org', attempted_at: '2026-10-08T10:05:00.000Z' }] }
+  assert.equal(evaluatePreparation(f.run, f.registry, f.artifacts).status, 'failed')
 })
 
 test('preparation refuses incomplete UI evidence, mixed campaigns and unprotected credentials', () => {

@@ -8,7 +8,7 @@ import { completeAndResumeGuide } from '../utils/ui-guide.js'
 import { restartDisposableSchoolYear } from '../utils/ui-year.js'
 import { exerciseSchoolIsolation } from '../utils/ui-isolation.js'
 import { exercisePendingOccurrenceAndGap } from '../utils/ui-occurrences.js'
-import { expectIdentity, login, freshSession } from '../utils/ui-auth.js'
+import { awaitAuthStage, expectIdentity, login, freshSession } from '../utils/ui-auth.js'
 import { validateCodeSender } from './acceptance-policy.js'
 import { test, expect } from '@playwright/test'
 
@@ -99,8 +99,14 @@ export async function runIdentityCampaign({ page, browser, provenance, delivered
   const consent = page.getByRole('checkbox', { name: /poderes para a vincular/ })
   await expect(consent).not.toBeChecked()
   await consent.check()
+  // Signed write-ahead intent: the exact founder alias is recorded before the
+  // first registration request can create an unverified provider account.
+  await provenance.beginActorCreation(email)
   const registrationRequestedAt = Date.now()
   await page.getByRole('button', { name: 'Continuar', exact: true }).click()
+  // The founder's delivered-code poll starts only after the real verification
+  // UI is visible; a persistent provider challenge fails here, not after 120s.
+  await awaitAuthStage(page, { stage: 'code', testInfo })
   const verification = await deliveredMail('admin', criteria(registrationRequestedAt, /^\d{6} is your verification code$/))
   const codeInput = page.locator('input[autocomplete="one-time-code"]').first()
   await expect(codeInput).toBeVisible()
@@ -124,10 +130,12 @@ export async function runIdentityCampaign({ page, browser, provenance, delivered
   const schoolName = page.locator('input[name="name"]')
   await expect(schoolName).toBeVisible()
   await schoolName.fill(`Cronos Aceitação ${runId}`)
+  // Signed write-ahead organization intent before Clerk creates the school.
+  const organizationIntentId = await provenance.beginOrganizationCreation()
   await page.getByRole('button', { name: /^(continuar|continue)$/i }).click()
   await expect(page).toHaveURL(/\/foundation$/)
   await expect(page.locator('#school_start_date')).toBeEnabled()
-  await provenance.recordCreatedSchool(schoolType)
+  await provenance.recordCreatedSchool(schoolType, page, organizationIntentId)
   const schoolPeriod = futureSchoolPeriod()
   await completeFoundation(page, schoolPeriod, testInfo)
   await testInfo.attach('foundation-browser-evidence', {
@@ -190,7 +198,12 @@ export async function runIdentityCampaign({ page, browser, provenance, delivered
       await teacherPage.getByLabel('Palavra-passe', { exact: true }).fill(teacherPassword)
       const consent = teacherPage.getByRole('checkbox', { name: /poderes para a vincular/ })
       if (await consent.isVisible()) await consent.check()
+      // Signed write-ahead intent before the invited teacher account is created.
+      await provenance.beginActorCreation(teacherEmail)
       await teacherPage.getByRole('button', { name: 'Continuar', exact: true }).click()
+      // The invited teacher waits for the authenticated session or a persistent
+      // provider challenge before the exact-email identity assertion.
+      await awaitAuthStage(teacherPage, { stage: 'authenticated', testInfo })
       await expectIdentity(teacherPage, teacherEmail)
       await provenance.recordCurrentActor(teacherPage)
       await teacherPage.goto('/my-schedules')

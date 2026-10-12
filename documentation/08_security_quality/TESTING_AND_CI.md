@@ -102,8 +102,48 @@ Acceptance rejects cleanup from another `run_id` and requires empty `pending` an
 The legacy local `e2e` command remains a diagnostic until each substituted group has real proof.
 
 `.github/workflows/acceptance.yml` runs the same command on the `main` SHA, serialized without automatic cancellation.
-After success or failure, it uploads only the protected evidence directory, final result and dependency plan, provided sanitization succeeds.
-Raw Playwright reports, JUnit output and other files outside this upload list remain excluded.
+The finalizer already redacts the run before it signs, so `acceptance-result.json` is sealed and immutable after the signature.
+The workflow never re-redacts its envelope, digests or wrapper; a registered secret that matches a digest substring cannot invalidate a legitimate sealed result.
+The artifact-root sanitizer runs first and applies the shared tree policy to production `.json` evidence, so an escaped secret is redacted and the document stays well formed.
+Other text artifacts (`.xml`, `.log`, `.html`) keep raw text redaction.
+The legacy mode without a protection key keeps its raw text behaviour until cutover.
+A malformed production JSON fails closed before the inventory and signature.
+Then a dedicated verify step reuses the finalizer in the same CLI as `verify <result.json> <artifactRoot> [<verification-receipt.json>]`.
+The verify step validates the signed envelope, the current artifact inventory and the wrapper `run`, `assessment` and `artifacts` mirror of the signed manifest.
+Verification exits zero for artifact integrity only; it never certifies production.
+The signed assessment stays incomplete or partial for preparation and diagnosis.
+It rejects an altered result, an extra file, a tampered envelope, a missing file and a null envelope.
+It prints a fixed status enum and never echoes a key or raw exception text.
+The receipt is a fixed JSON document outside the artifact root with only `integrity`, `reason` and `certifies_production: false`.
+It never contains a URL, file path, key or secret.
+An existing receipt is never overwritten.
+A conflicting path reports `receipt unavailable (conflict)` and exits nonzero without an availability flag.
+The step writes one fixed boolean to the standard `GITHUB_OUTPUT`: `receipt_available=true` only when it created a new receipt in this execution.
+An absent output means false.
+A verify failure exits one after it writes the rejected receipt.
+The diagnostics upload includes `artifact-verification.json` only when `receipt_available` is true, so a stale receipt is never published as the current verification.
+The legacy two-argument verify form emits no availability flag and keeps its integrity exit code.
+A later diagnostics step redacts only four allowlisted JSON files with the registered secrets: `acceptance-plan.json`, `acceptance-cleanup.json`, `diagnostic-assessment.json` and `artifact-verification.json`.
+The step and the finalizer share one pure report-redaction policy.
+It walks the parsed JSON tree: a decoded string leaf is redacted with the raw secret, an exact numeric secret becomes the redacted string, and field names stay unchanged.
+It never rewrites escaped JSON text, so the document stays well formed.
+A malformed document fails closed before any write.
+A document whose parsed value is unchanged keeps its exact bytes.
+The step rejects a non-regular path and never touches the private UI journal or secret registries that share the parent directory.
+It also requires the directory and every ancestor to be a real directory, never a symbolic link or junction.
+An empty diagnostics directory list is a usage error with a nonzero exit.
+It uses the existing sanitizer secret and dynamic-registry logic and never prints a value.
+The protected artifact root and the sealed result upload only when the verify step succeeds.
+The diagnostic allowlist uploads only when the diagnostics step succeeds, so a failed job keeps a safe failure receipt.
+When the verify step rejects, the sealed result and the protected root stay offline; only the redacted diagnostics and the rejected receipt upload.
+When the campaign fails before a signed result exists, the dependency plan still uploads as a safe diagnostic and the verify step is skipped.
+The derived diagnosis status describes the selected cases only; the receipt records the integrity outcome, so a failed integrity check is never labelled as a production certificate.
+The mandatory CI exit status and the integrity receipt together govern the run outcome.
+The runner also calls the verified-result guard after it writes the result and before any zero exit in the acceptance, preparation and diagnosis modes.
+A guard failure is a separate classified runner stage; it never mutates the signed run or envelope.
+It keeps the original verification error as a safe cause and never prints it.
+The guard keeps the first Playwright failure class when that primary failure already exists.
+Raw Playwright reports, JUnit output, private registries, storage state and other files outside this upload list remain excluded.
 The sanitizer reads separated environment credentials and the private dynamic registry; an invalid registry prevents artifact changes and upload.
 Both workflow modes require the `main` ref; PRs never receive these credentials.
 The complete matrix runs only when `E2E_ACCEPTANCE_ENABLED` is `true`.

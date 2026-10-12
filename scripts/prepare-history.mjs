@@ -1,5 +1,6 @@
 import { isDeepStrictEqual } from 'node:util'
 import { evaluateAcceptance } from '../frontend/e2e/utils/acceptance-policy.js'
+import { unresolvedUiCreationIntents } from './e2e-run-registry.mjs'
 
 export function evaluatePreparation(run, registry, artifacts) {
   const failures = [...evaluateAcceptance(run).failures]
@@ -22,6 +23,13 @@ export function evaluatePreparation(run, registry, artifacts) {
     || !Number.isSafeInteger(school?.local_id) || school.local_id <= 0 || !/^org_[a-zA-Z0-9]+$/.test(school?.clerk_id || '')
     || school?.actors?.length !== 2 || !['admincronos100', 'professorcronos100'].every(base => school.actors.some(actor => actor.email === `${base}+${run.run_id}@gmail.com`))) {
     failures.push('Persistent UI ownership is unconfirmed')
+  }
+  // A promotion cannot claim a persistent school while a write-ahead intent
+  // still describes an unobserved actor or organization.
+  try {
+    if (unresolvedUiCreationIntents(registry ?? {}).length) failures.push('Unresolved UI creation intents remain')
+  } catch {
+    failures.push('Unresolved UI creation intents remain')
   }
   const publication = prepared?.publication
   if (publication?.publication_state !== 'PUBLISHED' || !Number.isSafeInteger(publication?.active_version_id)

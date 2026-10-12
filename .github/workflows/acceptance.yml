@@ -149,17 +149,54 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.E2E_CLOUDFLARE_API_TOKEN }}
           E2E_RAILWAY_TOKEN: ${{ secrets.E2E_RAILWAY_TOKEN }}
 
+      - name: Verify protected acceptance artifacts
+        id: verify
+        if: always() && steps.sanitize.outcome == 'success' && hashFiles(format('.test-artifacts/{0}/acceptance-result.json', env.E2E_RUN_ID)) != ''
+        shell: bash
+        run: node scripts/finalize-real-browser-run.mjs verify ".test-artifacts/${E2E_RUN_ID}/acceptance-result.json" ".test-artifacts/${E2E_RUN_ID}/acceptance-artifacts" ".test-artifacts/${E2E_RUN_ID}/artifact-verification.json"
+        env:
+          E2E_ARTIFACT_KEY: ${{ secrets.E2E_ARTIFACT_KEY }}
+          E2E_REGISTRY_HMAC_KEY: ${{ secrets.E2E_REGISTRY_HMAC_KEY }}
+
+      - name: Sanitize acceptance diagnostics
+        id: sanitize_diagnostics
+        if: always()
+        shell: bash
+        run: node scripts/sanitize-test-artifacts.mjs --diagnostics ".test-artifacts/${E2E_RUN_ID}"
+        env:
+          E2E_ARTIFACT_KEY: ${{ secrets.E2E_ARTIFACT_KEY }}
+          E2E_REGISTRY_HMAC_KEY: ${{ secrets.E2E_REGISTRY_HMAC_KEY }}
+          E2E_ADMIN_SSH_KEY: ${{ secrets.E2E_ADMIN_SSH_KEY }}
+          E2E_HISTORY_TEACHER_PASSWORD: ${{ secrets.E2E_HISTORY_TEACHER_PASSWORD }}
+          E2E_HISTORY_ADMIN_PASSWORD: ${{ secrets.E2E_HISTORY_ADMIN_PASSWORD }}
+          E2E_GMAIL_CLIENT_ID: ${{ secrets.E2E_GMAIL_CLIENT_ID }}
+          E2E_GMAIL_CLIENT_SECRET: ${{ secrets.E2E_GMAIL_CLIENT_SECRET }}
+          E2E_GMAIL_ADMIN_REFRESH_TOKEN: ${{ secrets.E2E_GMAIL_ADMIN_REFRESH_TOKEN }}
+          E2E_GMAIL_TEACHER_REFRESH_TOKEN: ${{ secrets.E2E_GMAIL_TEACHER_REFRESH_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.E2E_CLOUDFLARE_API_TOKEN }}
+          E2E_RAILWAY_TOKEN: ${{ secrets.E2E_RAILWAY_TOKEN }}
+
       - name: Upload protected acceptance artifacts
-        if: always() && steps.sanitize.outcome == 'success'
+        if: always() && steps.sanitize.outcome == 'success' && steps.verify.outcome == 'success'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: acceptance-artifacts-${{ env.E2E_RUN_ID }}
           path: |
             .test-artifacts/${{ env.E2E_RUN_ID }}/acceptance-artifacts
             .test-artifacts/${{ env.E2E_RUN_ID }}/acceptance-result.json
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload sanitized acceptance diagnostics
+        if: always() && steps.sanitize_diagnostics.outcome == 'success'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: acceptance-diagnostics-${{ env.E2E_RUN_ID }}
+          path: |
             .test-artifacts/${{ env.E2E_RUN_ID }}/acceptance-plan.json
             .test-artifacts/${{ env.E2E_RUN_ID }}/acceptance-cleanup.json
             .test-artifacts/${{ env.E2E_RUN_ID }}/diagnostic-assessment.json
+            ${{ steps.verify.outputs.receipt_available == 'true' && format('.test-artifacts/{0}/artifact-verification.json', env.E2E_RUN_ID) || '' }}
           if-no-files-found: warn
           retention-days: 14
 

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -402,6 +403,38 @@ test('readonly cleanup completes only an empty journal and never claims deletion
 
     const missing = await publicReadonlyCleanup({ registryPath: join(directory, 'missing.json'), runId: 'run-1', signingKey })
     assert.equal(missing.status, 'failed')
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
+test('readonly cleanup refuses a write-ahead intent even without any observed identity', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'cronos-public-intents-'))
+  try {
+    const signingKey = Buffer.alloc(32, 8)
+    const write = async (name, intents) => {
+      const path = join(directory, name)
+      await writeFile(path, JSON.stringify(signRegistry({
+        schema_version: 1, run_id: 'run-1',
+        started_at: '2026-10-07T08:00:00.000Z', finished_at: '2026-10-07T08:00:00.000Z',
+        organizations: [], actors: [], intents,
+      }, signingKey)))
+      return path
+    }
+    const id = randomUUID()
+    const attemptedAt = '2026-10-07T08:00:00.000Z'
+    const pending = await publicReadonlyCleanup({ registryPath: await write('pending.json', [{ id, kind: 'actor', alias: 'admincronos100+run-1@gmail.com', attempted_at: attemptedAt }]), runId: 'run-1', signingKey })
+    assert.equal(pending.status, 'failed')
+    assert.equal(pending.not_needed, false)
+    assert.deepEqual(pending.pending, [])
+    assert.deepEqual(pending.pending_actors, [])
+    assert.deepEqual(pending.unresolved_intents, [{ id, kind: 'actor', attempted_at: attemptedAt }])
+    assert.equal(JSON.stringify(pending).includes('alias'), false)
+    assert.equal(JSON.stringify(pending).includes('@gmail.com'), false)
+
+    const malformed = await publicReadonlyCleanup({ registryPath: await write('malformed.json', 'not-an-array'), runId: 'run-1', signingKey })
+    assert.equal(malformed.status, 'failed')
+    assert.equal(malformed.not_needed, false)
   } finally {
     await rm(directory, { recursive: true, force: true })
   }

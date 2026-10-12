@@ -1,11 +1,13 @@
 # Implementação dos testes reais — registo de execução
 
-Revisão: 2026-10-08. Estado: implementação parcial; percursos, integração final e aceitação de produção pendentes.
+Revisão: 2026-10-12. Estado: implementação parcial; percursos, integração final e aceitação de produção pendentes.
 
 Estado atual da matriz: 69 IDs concretos definidos e recolhidos, sem erros de discovery.
 O âmbito do WBS mantém os 80 IDs originais. Anotar um caso não é executá-lo.
 Esta contagem não certifica execução nem aprovação dos percursos em produção.
 Os 69 casos anotados não equivalem a cobertura da matriz. Nenhum caso recebe `validated` sem execução real.
+
+A observação noturna de 2026-10-12 identifica a causa raiz do registo como o desafio Cloudflare do Clerk SignUp. O perfil do remetente do código continua por observar.
 
 ## Objetivo
 
@@ -129,7 +131,7 @@ As observações de escolas, os percursos de identidade e a composição remota 
 | W01.4–5 | Política pura exige produção, SHA completo e caixas dedicadas; runner ligado ao preflight. | Confirmar em execução real. |
 | W02.1–6 | Helpers OAuth/Gmail com PKCE readonly; os quatro secrets Gmail e os perfis das duas caixas confirmados. | Observar o remetente do código (`E2E_GMAIL_CODE_SENDER`) e entregar mensagens reais nos percursos. |
 | W03.1–7 | Matriz de 69 casos, avaliação pura, reporter, checkpoints explícitos por caso, cifragem, recuperação confinada, guards e composição fail-closed. | Execução real com registo dinâmico de segredos e upload protegido. |
-| W04 | Writer da revisão frontend e adaptadores de deployments; Cloudflare e Railway confirmados; produção alinhada em `c850235` com `/revision.json` verificável; o fixture W04.6 verifica deployments vivos por grupo. | Publicar o diff atual e reobservar a revisão de produção. |
+| W04 | Writer da revisão frontend e adaptadores de deployments; Cloudflare e Railway confirmados; produção alinhada em `4e62573` com `/revision.json` verificável; o fixture W04.6 verifica deployments vivos por grupo. | Publicar o diff atual e reobservar a revisão de produção. |
 | W05 e W06.3–W08 | Historicamente, os três specs anotavam os 69 casos concretos; atualmente cada caso exige checkpoint explícito, prova materializada e proveniência de UI. | Execução real pela UI: contas, escola, geração, operação e história elegível. |
 | W06.1–2 | Verificador independente de procura, crédito modular e recursos. | Ligar às leituras autenticadas e ao horário real. |
 | W09 | Regressão do chamador corrigida com testes determinísticos; nenhuma remoção de testes foi executada e o cutover W09 continua bloqueado. | Inventário e redução após provas substitutas executadas. |
@@ -1053,7 +1055,8 @@ Não se afirma que nenhuma conta foi criada.
 A submissão instrumentada final (alias novo) teve 0 pedidos Clerk `sign_up` após o clique, 0 pedidos ao host protect e nenhuma violação `connect-src`+protect.
 Os dois erros de consola pós-clique eram `%c%d font-size:0;color:transparent NaN` (formatação de consola), sem valores sensíveis.
 A hipótese de o bloqueio do registo resultar da CSP de `connect-src` não é sustentada.
-A causa raiz do registo permanece não identificada e fica como dependência bloqueante.
+A causa raiz ficou não identificada nesta observação; a observação noturna posterior identificou o desafio Cloudflare do Clerk SignUp.
+Ver o [progresso noturno](#progresso-noturno--2026-10-12).
 Nenhum passo deste ciclo certifica produção.
 
 ### Refresh do frontend local (CSP e dockerignore)
@@ -1068,3 +1071,76 @@ O `.dockerignore` do frontend exclui `.test-artifacts/`.
 A verificação HTTP devolveu 200 e a CSP servida tem `https://*.protect.clerk.com:*` apenas em `connect-src`.
 Nenhum valor de `.env` foi lido ou impresso.
 Nenhum passo deste ciclo certifica produção.
+
+## Progresso noturno — 2026-10-12
+
+Esta secção regista a entrega noturna local, a última observação de autenticação e o estado publicado.
+O código novo ainda não foi publicado nem executado pela CI.
+Os resultados locais não certificam produção.
+
+### Causa raiz observada do bloqueio do registo
+
+A observação usou a UI nativa, com um alias e um nome completo novos.
+O estado `.loaded` estava a `true` antes do clique em `Continuar`.
+A submissão gerou sete pedidos ao host `challenges.cloudflare.com`.
+Os estados foram `200` (cinco), `302` (um) e `401` (um).
+Os métodos foram `GET` (cinco) e `POST` (dois).
+Um iframe visível de outro processo tinha 300 por 65 pixels.
+O registo teve 16 linhas de consola `%c%d font-size:0 ... NaN`.
+A localização do host `challenges.cloudflare.com` teve 34 entradas, com dois erros.
+Os pedidos Clerk `sign_up` foram zero.
+Não houve OTP nem violação de CSP.
+Logo, o desafio Cloudflare do Clerk SignUp bloqueia o registo na UI nativa.
+
+Esta observação corrige o texto anterior, que dava a causa raiz como desconhecida.
+Não se afirma qual endpoint devolveu `401`; esse valor não foi registado.
+Não se afirma que uma flag Clerk foi ativada; o objeto de flags estava inacessível e vazio.
+O host do frame é uma dependência de fornecedor conhecida.
+`E2E_GMAIL_CODE_SENDER` continua por observar.
+Um desafio humano futuro exige um operador.
+Não se usou qualquer bypass, token de teste, desativação de segurança ou acesso a cookies de perfil.
+Não se usaram serviços pagos do fornecedor.
+As caixas Gmail de base não têm contas Clerk nem emails de código; isso foi confirmado numa iteração anterior e não se repetiu.
+Nenhuma conta registada ou escola nova ficou confirmada.
+Os aliases antigos sem instrumentação são desconhecidos; não se afirma ausência global de efeitos.
+O job de classificação nativo continua vermelho; o guard de código não resolve o Captcha.
+
+### Código novo local — três tarefas
+
+As três tarefas foram revistas com TDD.
+Os testes de infraestrutura Node passaram 268 casos.
+A verificação de produto registou 604 testes.
+A suite backend de 1 434 casos já tinha sido medida; não foi repetida.
+
+- (A) A prova obrigatória não pode cair para o nome reservado `acceptance-proof`, nem para um caminho fora da raiz de artefactos. Um checkpoint sem janela reclamada não satisfaz a prova. Três testes novos em `frontend/scripts/acceptance-proof.test.mjs`.
+- (B) As limpezas da execução são independentes. Uma exceção `undefined` ou `null` não impede parar a stack própria. Os rótulos preservam o primeiro código e a falha primária, sem texto bruto. Testes novos em `scripts/test.test.mjs`.
+- (C) `verifySignedResult` espelha o manifesto HMAC e o inventário e AES de cada ficheiro. O runner não sai com zero sem verificação. O CLI `verify` escreve um recibo de integridade fixo e seguro. A raiz é sanitizada antes de qualquer escrita. Os diagnósticos ficam limitados a quatro ficheiros: `acceptance-plan.json`, `acceptance-cleanup.json`, `diagnostic-assessment.json` e `artifact-verification.json`. O resultado selado não é re-redigido. Os valores JSON usam o mesmo modo do finalizador: segredos, números exatos e valores malformados falham fechado, e o modo legado sem chave mantém-se até ao cutover. O upload protegido da raiz e do resultado selado exige verificação com sucesso; um resultado selado inseguro ou adulterado não é carregado. Recibos de diagnóstico seguros são retidos, sem chaves nem armazenamento bruto. A política partilhada de `redactJSON` e o confinamento de ancestrais e junctions aplicam-se antes das escritas.
+- (D) Intenções de criação assinadas antes de quatro criações nativas na UI: ator fundador, ator docente e duas organizações. Os campos são opcionais; o esquema 1 lê registos antigos sem intenções. O `kind` é `actor` ou `org` e o `id` é UUID4. O alias exato da execução só existe no diário privado cifrado. Os instantes são UTC monotónicos. O ator resolve apenas pelo alias realmente observado. A organização resolve apenas pelo id exato passado, com criação real depois da intenção, nunca uma escola antiga. Restos de crash desconhecidos forçam limpeza global `failed` e `not_needed=false`; os alvos próprios conhecidos ainda são limpos, com exportações e efeitos retidos. Não há procura nem eliminação de desconhecidos por nome ou alias. O Node é o gate global autoritativo; o Python de baixo nível usa apenas IDs conhecidos, sem novas políticas backend. A preparação e a promoção rejeitam intenções não resolvidas ou malformadas.
+- (E) `awaitAuthStage` usa `expect.poll` nativo com prazo rígido, mesmo para leituras presas. Um resultado tardio nunca passa. Os erros de página propagam-se. Só frames destacados confirmados são tolerados. Um desafio gerido breve pode terminar normalmente. Um gate visível persistente expira em 30 segundos como enum seguro e ligado. O fundador espera pela UI real do OTP antes da pesquisa Gmail. O docente espera pela sessão e depois por `expectIdentity` exato e verificado.
+- (F) Quatro IDs públicos aguardam prova física. A ligação do pipeline exige um workflow nativo após a publicação. Não existe certificação nativa dos 69 casos.
+
+### Evidência pública e limpeza
+
+O `frontend/e2e/acceptance/public.spec.js` ganhou três asserções fortes no caso de teclado existente, com o ID 69 inalterado.
+As asserções verificam a descrição acessível calculada de `aria-describedby` para o nome e o email.
+Verificam também os dois alertas iniciais na ordem correta.
+Estas asserções podem substituir uma `ContactDetailsStep` de componente.
+Essa substituição é só de testes unitários e só depois de uma execução pública real no GHA.
+O ficheiro `public.spec.js` ainda existe; não se afirma remoção nem redução.
+
+A limpeza pública continua `public_readonly` com `not_needed=true`, quando não há alvos nem intenções.
+Uma intenção de criação por resolver mantém a campanha `failed`, mesmo sem alvos observados.
+
+### Estado publicado e produção
+
+A `main` publicada é `4e62573298dda9e386f9d1dc2f1e76ce733f752c`.
+A CI [run 37998099499](https://github.com/ORIOP25/Cronos/actions/runs/37998099499) passou os jobs de backend, frontend, E2E e capacidade.
+A PR 67 tem o Sonar `PASS`.
+A produção mantém o frontend e a API na revisão `4e`.
+Os quatro serviços Railway estão `SUCCESS`, incluindo o supervisor.
+O supervisor passou a ter autodeploy ligado à `main`, verificado.
+As alterações não publicadas da raiz do Desktop foram preservadas.
+O container local já tinha sido atualizado na iteração anterior e a etiqueta de rollback foi conservada.
+As alterações novas tocam apenas ferramentas E2E, não o bundle visível da aplicação.
+Não é necessário reconstruir a imagem Docker, porque o código de render não mudou.
+Os testes locais correm antes da publicação; não se afirma que as funcionalidades novas estão em produção.

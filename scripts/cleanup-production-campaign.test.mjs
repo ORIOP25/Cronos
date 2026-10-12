@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict'
-import { randomBytes } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
 import { cleanupProductionCampaign } from './cleanup-production-campaign.mjs'
-import { createUiRegistry, recordUiActor, recordUiSchool, signRegistry, verifyRegistry } from './e2e-run-registry.mjs'
+import { createUiRegistry, recordUiActor, recordUiCreationIntent, recordUiSchool, signRegistry, verifyRegistry } from './e2e-run-registry.mjs'
 import { protectEvidence, recoverEvidence } from './protect-test-evidence.mjs'
 
 async function fixture() {
@@ -211,5 +211,42 @@ test('conflicting removed and pending actor outcomes cannot certify remote effec
     assert.deepEqual(result.pending_actors, ['user_Founder'])
     assert.deepEqual(result.completed, [])
     assert.deepEqual(await readdir(f.options.artifactRoot).catch(() => []), [])
+  } finally { await rm(f.root, { recursive: true, force: true }) }
+})
+
+test('an unresolved write-ahead intent fails the campaign while confirmed removals and backups are preserved', async () => {
+  const f = await fixture()
+  try {
+    const key = Buffer.from(f.environment.E2E_REGISTRY_HMAC_KEY, 'base64')
+    const registry = verifyRegistry(JSON.parse(await readFile(f.options.registryPath, 'utf8')), key)
+    const intentId = randomUUID(), attemptedAt = '2026-10-08T09:04:00.000Z'
+    const withIntent = recordUiCreationIntent(registry, { id: intentId, kind: 'actor', alias: 'professorcronos100+run-1@gmail.com' }, attemptedAt)
+    await writeFile(f.options.registryPath, JSON.stringify(signRegistry(withIntent, key)))
+    const result = await cleanupProductionCampaign(f.options, f.environment, { execute: async () => f.response })
+    assert.equal(result.status, 'failed')
+    assert.equal(result.failure_type, 'UnresolvedUiCreation')
+    assert.deepEqual(result.completed, [7])
+    assert.deepEqual(result.removed_actors, ['user_Founder'])
+    assert.deepEqual(result.pending, [])
+    assert.deepEqual(result.exports, ['organization-7.zip.enc'])
+    assert.deepEqual(result.unresolved_intents, [{ id: intentId, kind: 'actor', attempted_at: attemptedAt }])
+    assert.ok((await readFile(join(f.options.artifactRoot, 'organization-7.zip.enc'))).length > 0)
+  } finally { await rm(f.root, { recursive: true, force: true }) }
+})
+
+test('an unresolved write-ahead intent without known targets fails closed without transport', async () => {
+  const f = await fixture()
+  try {
+    const key = Buffer.from(f.environment.E2E_REGISTRY_HMAC_KEY, 'base64')
+    const intentId = randomUUID(), attemptedAt = '2026-10-08T09:01:00.000Z'
+    const registry = recordUiCreationIntent(createUiRegistry('run-1', '2026-10-08T09:00:00.000Z'), { id: intentId, kind: 'org' }, attemptedAt)
+    await writeFile(f.options.registryPath, JSON.stringify(signRegistry(registry, key)))
+    let effects = 0
+    const result = await cleanupProductionCampaign(f.options, f.environment, { execute: async () => { effects++; return f.response } })
+    assert.equal(result.status, 'failed')
+    assert.equal(result.failure_type, 'UnresolvedUiCreation')
+    assert.equal(effects, 0)
+    assert.deepEqual(result.completed, [])
+    assert.deepEqual(result.unresolved_intents, [{ id: intentId, kind: 'org', attempted_at: attemptedAt }])
   } finally { await rm(f.root, { recursive: true, force: true }) }
 })
