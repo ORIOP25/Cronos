@@ -75,17 +75,24 @@ async function railwayExecutable(environment) {
 // Fixed, secret-free classes of the native client's stderr; the text never leaves.
 export function classifyTransportFailure(stderr) {
   if (/Host key verification failed/i.test(stderr)) return 'ssh_host_key'
+  if (/Load key|no_ssh_key/i.test(stderr)) return 'ssh_key_unreadable'
   if (/Permission denied \(publickey/i.test(stderr)) return 'ssh_key_rejected'
   if (/unauthori[sz]ed|not authorized|invalid token|railway login/i.test(stderr)) return 'railway_auth'
   if (/not found/i.test(stderr)) return 'target_not_found'
   return 'unknown'
 }
 
+// OpenSSH rejects a key without its final newline or with CRLF line endings,
+// both common when a secret is pasted.
+export function sshIdentityFile(value) {
+  return `${value.replaceAll('\r\n', '\n').trimEnd()}\n`
+}
+
 async function nativeTransport(packet, environment, code = remoteCode) {
   const temporary = await mkdtemp(join(tmpdir(), 'cronos-admin-ssh-'))
   try {
     const keyPath = join(temporary, 'identity')
-    await writeFile(keyPath, environment.E2E_ADMIN_SSH_KEY, { mode: 0o600, flag: 'wx' })
+    await writeFile(keyPath, sshIdentityFile(environment.E2E_ADMIN_SSH_KEY), { mode: 0o600, flag: 'wx' })
     const executable = await railwayExecutable(environment)
     const command = `python -c 'exec(__import__("base64").b64decode("${Buffer.from(code).toString('base64')}"))'`
     const args = ['ssh', '--project', environment.E2E_RAILWAY_PROJECT_ID,
@@ -247,17 +254,23 @@ function withUnresolvedUiCreation(outcome, { intents, invalid }) {
   return outcome
 }
 
+// The signed registry is the only source of administrative targets.
+async function readAdministrativeRegistry(registryPath, runId, environment) {
+  const info = await lstat(registryPath)
+  if (!info.isFile() || info.isSymbolicLink()) throw new Error('Registry must be a regular file')
+  const envelope = JSON.parse(await readFile(registryPath, 'utf8'))
+  const registry = verifyRegistry(envelope, Buffer.from(environment.E2E_REGISTRY_HMAC_KEY, 'base64'))
+  if (registry.schema_version !== 1 || registry.run_id !== runId || !Array.isArray(registry.organizations) || !Array.isArray(registry.actors)) throw new Error('Administrative registry identity mismatch')
+  if (registry.organizations.some(item => !Number.isSafeInteger(item.local_id) || item.local_id <= 0 || !['disposable', 'persistent'].includes(item.type)) || registry.actors.some(item => !/^user_[a-zA-Z0-9]+$/.test(item.id || ''))) throw new Error('Invalid administrative target identity')
+  return { envelope, registry }
+}
+
 export async function cleanupProductionCampaign({ registryPath, runId, expectedRevision, artifactRoot }, environment, { execute = nativeTransport, exportOnly = false, usePriorExports = false } = {}) {
   const failure = { run_id: runId, status: 'failed', completed: [], removed_actors: [], pending: [], pending_actors: [], failure_type: 'AdministrativeCleanupFailed' }
   let unresolved = { intents: [], invalid: false }
   try {
     validateAdministrativeConfiguration({ runId, expectedRevision, exportOnly, usePriorExports }, environment)
-    const info = await lstat(registryPath)
-    if (!info.isFile() || info.isSymbolicLink()) throw new Error('Registry must be a regular file')
-    const envelope = JSON.parse(await readFile(registryPath, 'utf8'))
-    const registry = verifyRegistry(envelope, Buffer.from(environment.E2E_REGISTRY_HMAC_KEY, 'base64'))
-    if (registry.schema_version !== 1 || registry.run_id !== runId || !Array.isArray(registry.organizations) || !Array.isArray(registry.actors)) throw new Error('Administrative registry identity mismatch')
-    if (registry.organizations.some(item => !Number.isSafeInteger(item.local_id) || item.local_id <= 0 || !['disposable', 'persistent'].includes(item.type)) || registry.actors.some(item => !/^user_[a-zA-Z0-9]+$/.test(item.id || ''))) throw new Error('Invalid administrative target identity')
+    const { envelope, registry } = await readAdministrativeRegistry(registryPath, runId, environment)
     unresolved = unresolvedIntentReport(registry)
     if (hasUnresolvedUiCreation(unresolved)) failure.unresolved_intents = unresolved.intents
     const organizations = registry.organizations.filter(item => item.type === 'disposable').map(item => item.local_id)
