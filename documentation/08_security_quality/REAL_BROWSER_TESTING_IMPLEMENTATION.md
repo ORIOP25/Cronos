@@ -1414,6 +1414,10 @@ Nessa campanha, o desafio anti-bot do registo fica explicitamente fora da certif
 Sem alterar respostas, o FAPI de produção devolve `captcha_bypass=false` mesmo com o token, observado numa leitura sem submissão; o clerk-js mantém então o Turnstile.
 Por isso `withSignUpTestingToken` (em `ui-auth.js`) replica o helper do fornecedor apenas durante cada registo: acrescenta `__clerk_testing_token` aos pedidos `https://clerk.cronos.pt/v1/**` e eleva só esse indicador, sem retries nem outras alterações, e retira a rota quando o registo termina.
 `mintClerkTestingToken` (em `cleanup-production-campaign.mjs`) emite um token por registo, pelo transporte SSH administrativo, dentro do container da API; a chave Clerk nunca sai do servidor e o token (cerca de uma hora) é registado como segredo.
-A API Clerk não expõe o From dos templates (`delivered_by_clerk=true`, domínio `cronos.pt`); o remetente continua por observar no painel ou numa mensagem recebida.
+A API Clerk não expõe o From dos templates (`delivered_by_clerk=true`, domínio `cronos.pt`).
+O painel Clerk de produção (instância `ins_3HjskMD24ZJIRVqZCWHCfMZPTiz`), lido sem alterações, mostra o From vazio nos dois templates, com os valores por omissão do fornecedor:
+`notifications@cronos.pt` para `{{otp_code}} is your verification code` e `noreply@cronos.pt` para `{{otp_code}} is your reset password code`.
+Como os remetentes diferem, a recuperação passa a usar `E2E_GMAIL_RESET_SENDER`, exigida e validada no preflight como `E2E_GMAIL_CODE_SENDER`.
+As duas variáveis GitHub foram configuradas com esses valores.
 W11.4 tem autorização para um ambiente Railway temporário, ainda não criado.
 Nenhum passo desta revalidação certifica produção.

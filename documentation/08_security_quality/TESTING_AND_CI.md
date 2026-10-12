@@ -249,7 +249,7 @@ The workflow creates registry directories with mode `0700` and files with mode `
 The running campaign appends observed verification codes and generated passwords to that file, without changing the GitHub secret.
 It can start as `[]`; it must grow when the campaign observes new secrets.
 The identity journey persists generated passwords and delivered codes before using them in the browser.
-`E2E_GMAIL_CODE_SENDER` identifies the observed production verification/recovery sender; configure it as a repository variable.
+`E2E_GMAIL_CODE_SENDER` identifies the observed production verification sender and `E2E_GMAIL_RESET_SENDER` the reset-password sender; configure both as repository variables.
 Preflight requires this value before account creation. Do not derive it from the development Clerk instance.
 The contact journey requires an authorized forward from `contacto@cronos.pt` to `admincronos100@gmail.com`.
 Keep the production contact recipient unchanged. Configure forwarding separately; these tests do not provision it.
@@ -354,7 +354,7 @@ A green legacy CI run does not certify this production matrix.
 
 ## Code sender observation
 
-`E2E_GMAIL_CODE_SENDER` must be the real production verification sender.
+`E2E_GMAIL_CODE_SENDER` and `E2E_GMAIL_RESET_SENDER` must be the real production verification and reset senders.
 Observe it before setting the variable; never guess the address.
 
 Run the readonly metadata observation against one dedicated mailbox:

@@ -88,9 +88,11 @@ export async function runIdentityCampaign({ page, browser, provenance, delivered
   if (persistent) await persistCredentials({ admin_email: email, teacher_email: teacherEmail,
     admin_registration_password: password, admin_password: recoveredPassword, teacher_password: teacherPassword })
   // Clerk's production sender must be observed/configured, never inferred from development.
+  // Clerk sends verification and reset codes from distinct template defaults.
   const sender = validateCodeSender(process.env.E2E_GMAIL_CODE_SENDER)
+  const resetSender = validateCodeSender(process.env.E2E_GMAIL_RESET_SENDER)
   const original = await readOriginalExpectations()
-  const criteria = (after, subject) => ({ recipient: email, senders: [sender], subject, purpose: 'code', after, before: after + 120_000 })
+  const criteria = (after, subject, from = sender) => ({ recipient: email, senders: [from], subject, purpose: 'code', after, before: after + 120_000 })
   // One short-lived vendor token per registration; redacted like any credential.
   const signUpToken = async () => {
     const token = await mintClerkTestingToken({ expectedRevision: process.env.E2E_EXPECTED_REVISION }, process.env)
@@ -163,7 +165,7 @@ export async function runIdentityCampaign({ page, browser, provenance, delivered
     const recoveryRequestedAt = Date.now()
     await recoveryPage.getByRole('button', { name: 'Enviar código', exact: true }).click()
     await expect(recoveryPage.getByRole('heading', { name: 'Introduza o código', exact: true })).toBeVisible()
-    const recovery = await deliveredMail('admin', criteria(recoveryRequestedAt, /^\d{6} is your reset password code$/))
+    const recovery = await deliveredMail('admin', criteria(recoveryRequestedAt, /^\d{6} is your reset password code$/, resetSender))
     await recoveryPage.getByLabel('Código de verificação', { exact: true }).fill(recovery.code)
     await recoveryPage.getByRole('button', { name: 'Verificar código', exact: true }).click()
     await recoveryPage.getByLabel('Nova palavra-passe', { exact: true }).fill(recoveredPassword)

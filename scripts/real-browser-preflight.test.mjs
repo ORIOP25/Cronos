@@ -40,9 +40,19 @@ test('missing production code sender blocks the campaign before any account is c
   const configured = { ...environment }
   for (const name of productionDependencies({})) configured[name] = 'configured'
   delete configured.E2E_GMAIL_CODE_SENDER
+  delete configured.E2E_GMAIL_RESET_SENDER
   const result = await preflight(configured, { fetchImpl: () => { throw new Error('Unexpected external request') } })
   assert.equal(result.status, 'dependency_unavailable')
-  assert.deepEqual(result.missing, ['E2E_GMAIL_CODE_SENDER'])
+  assert.deepEqual(result.missing, ['E2E_GMAIL_CODE_SENDER', 'E2E_GMAIL_RESET_SENDER'])
+})
+
+test('preflight rejects a malformed reset-code sender before any external effect', async () => {
+  const configured = { ...environment }
+  for (const name of productionDependencies({})) configured[name] = 'configured'
+  configured.E2E_ARTIFACT_KEY = Buffer.alloc(32, 7).toString('base64')
+  configured.E2E_GMAIL_CODE_SENDER = 'notifications@cronos.pt'
+  configured.E2E_GMAIL_RESET_SENDER = 'noreply@example.com'
+  await assert.rejects(preflight(configured, { fetchImpl: () => { throw new Error('network should not start') } }), /code sender/i)
 })
 
 test('preflight rejects a malformed production code sender before any external effect', async () => {
