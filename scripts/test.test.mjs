@@ -393,6 +393,7 @@ test('the frontend fast macro stays narrow and e2e-runtime owns the relocated ma
   const fast = scripts['verify:critical:fast']
   assert.ok(fast, 'verify:critical:fast must remain a developer macro')
   assert.match(fast, /npm run test:critical:coverage/, 'the critical coverage gate must stay in the fast macro')
+  assert.doesNotMatch(fast, /npm run lint/, 'the full-source frontend lint belongs to e2e-runtime')
   assert.doesNotMatch(fast, /audit:production/, 'the production dependency audit belongs to e2e-runtime')
   assert.doesNotMatch(fast, /test:acceptance-infrastructure/, 'the acceptance infrastructure belongs to e2e-runtime')
 
@@ -413,14 +414,15 @@ test('the frontend fast macro stays narrow and e2e-runtime owns the relocated ma
     return runtime.slice(start, end)
   }
   const install = runtime.findIndex((line) => line.includes('Install frontend dependencies'))
+  const lint = runtime.indexOf('        run: npm run lint')
   const audit = runtime.indexOf('        run: npm run audit:production')
   const infrastructure = runtime.indexOf('        run: npm run test:acceptance-infrastructure')
   assert.ok(
-    install !== -1 && install < audit && install < infrastructure,
-    'both relocated commands run after the frontend install',
+    install !== -1 && install < lint && lint < audit && install < infrastructure,
+    'the relocated commands run after the frontend install',
   )
   assert.equal(runtime.some((line) => /^    if:/.test(line)), false, 'the e2e-runtime job must stay unconditional')
-  for (const [label, runLine] of [['production dependency audit', audit], ['acceptance infrastructure', infrastructure]]) {
+  for (const [label, runLine] of [['frontend lint', lint], ['production dependency audit', audit], ['acceptance infrastructure', infrastructure]]) {
     const block = stepBlock(runLine)
     assert.ok(block.includes('        working-directory: frontend'), `${label} runs in the frontend directory`)
     assert.equal(block.some((line) => /^        if:/.test(line)), false, `${label} step must stay unconditional`)

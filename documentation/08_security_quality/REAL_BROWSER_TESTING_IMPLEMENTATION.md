@@ -1214,7 +1214,7 @@ A base é `d4f6269` (#71, negociação de conteúdo do edge, sem relação); a r
 A libertação e o desbloqueio dos 69 casos ficam pendentes.
 A execução [run 38295681535](https://github.com/ORIOP25/Cronos/actions/runs/38295681535), tentativa 1 em `46a7aef`, ficou com os cinco jobs verdes.
 
-A seleção crítica de CI está entregue e validada em GHA; as três execuções frontend em `46a7aef` deram mediana 66 s, acima do objetivo, pelo que a verificação final do orçamento continua pendente.
+A seleção crítica de CI está entregue e validada em GHA; as execuções frontend em `46a7aef` deram mediana 66 s e a revisão posterior `1486691` (PR 74) mediu 60 s e 64 s, pelo que a verificação final do orçamento continua pendente.
 O alvo de 50 por cento foi substituído pela exigência de segundos por job, atingida na primeira execução completa.
 O checkout original do Desktop fica preservado; o worktree local tem as modificações.
 
@@ -1317,7 +1317,7 @@ A cadeia partilhada é `auth-state` → `app` (12) → `provider` (4) → `reado
 
 O projeto `faults` foi retirado e mapeia nos 2 caminhos de caso de `isolated` e `readonly`.
 O backend unitário usa `-n 4 --dist=loadscope` e a integração já usava 4.
-O macro rápido do frontend corre a verificação e a cobertura crítica em sequência; `audit:production` e a infraestrutura de aceitação passam a passos obrigatórios do job `e2e-runtime`, depois da instalação das dependências frontend; a sobreposição anterior de verificações e cobertura foi revertida por somar tempo na CI.
+O macro rápido do frontend corre a verificação e a cobertura crítica em sequência; `lint`, `audit:production` e a infraestrutura de aceitação passam a passos obrigatórios do job `e2e-runtime`, depois da instalação das dependências frontend; a sobreposição anterior de verificações e cobertura foi revertida por somar tempo na CI.
 O E2E constrói as imagens Docker de backend e frontend em paralelo; o gate da imagem de privacidade mantém-se.
 
 ### Primeira execução de CI medida (perfil amplo, fase 1) — run 38262965438
@@ -1347,7 +1347,7 @@ A seleção observada no backend é cerca de 225 casos unitários mais 62 de bas
 A contagem completa anterior de 1 416 casos fica como referência histórica.
 
 O frontend corre `npm run verify:critical:fast` na CI; o modo crítico seleciona 24 ficheiros e 254 casos e mede 31 módulos com os floors 45/40/35/45.
-O macro rápido deixou de correr `audit:production` e `test:acceptance-infrastructure`; ambos passam a passos obrigatórios e incondicionais do job longo `e2e-runtime`, depois da instalação das dependências frontend.
+O macro rápido deixou de correr `npm run lint`, `audit:production` e `test:acceptance-infrastructure`; os três passam a passos obrigatórios e incondicionais do job longo `e2e-runtime`, depois da instalação das dependências frontend.
 Numa execução local independente, `npm run verify:critical` passou os 254 casos em 20,33 s, com cobertura nativa 67,2/70,65/56,53/69,39.
 A infraestrutura Node local é 282 casos após o novo guard, com 58 no runner após o novo RuntimeGuard, mais edge 22, legal 3 e build 9; o build levou 1,83 s.
 O `vitest run` completo continua opcional sobre 82 ficheiros e 587 casos.
@@ -1365,21 +1365,24 @@ A libertação exige a mediana de três execuções equivalentes depois do SHA d
 
 No Windows, o comando crítico força Docker sem rede de stack, pelo que o gate completo não é executável localmente até existir uma base conhecida; a CI fornece os serviços PostgreSQL/Redis e as credenciais efémeras.
 
-A `main` fundida em `46a7aef` mede três execuções frontend: 71 s, 51 s e 66 s.
-A mediana é 66 s, acima do objetivo de 60 s.
+A `main` fundida em `46a7aef` mede três execuções frontend: 71 s, 51 s e 66 s; a mediana é 66 s, acima do objetivo de 60 s.
 A tentativa 1 completa ([run 38295681535](https://github.com/ORIOP25/Cronos/actions/runs/38295681535)) teve os cinco jobs verdes: frontend 71 s, backend 101 s, `e2e-runtime` 122 s e `e2e-browser` 560 s.
+`46a7aef` tem as três execuções frontend, pelo que a mediana é 66 s.
+A revisão posterior `1486691` (PR 74) mede uma execução completa ([run 38299733416](https://github.com/ORIOP25/Cronos/actions/runs/38299733416)) com os cinco jobs verdes: frontend 60 s, backend 85 s, `e2e-runtime` 124 s e `e2e-browser` 478 s; uma repetição distinta do frontend deu 64 s.
+As duas execuções frontend em `1486691` (60 s e 64 s) já fixam uma mediana de pelo menos 60 s independentemente de uma terceira, pelo que `1486691` não foi repetida uma terceira vez.
 
-| Tentativa frontend em `46a7aef` | Segundos |
-| :--- | ---: |
-| 1 | 71 s |
-| 2 | 51 s |
-| 3 | 66 s |
-| Mediana | 66 s |
+| Tentativa frontend | `46a7aef` | `1486691` |
+| :--- | ---: | ---: |
+| 1 | 71 s | 60 s |
+| 2 | 51 s | 64 s |
+| 3 | 66 s | — |
+| Mediana | 66 s | — |
 
-O backend ficou abaixo de 120 s na primeira tentativa; o frontend continua acima de 60 s, pelo que o orçamento não está cumprido.
-O ajuste de margem retira `audit:production` e `test:acceptance-infrastructure` do macro rápido e passa-os para o job `e2e-runtime`, sem baixar cobertura nem retirar testes críticos.
-A verificação final do orçamento de três execuções continua pendente após este ajuste; o tempo do ajuste ainda não foi medido.
-O macro `npm run verify:critical:fast` mantém lint, contratos, assets e cobertura crítica; `npm run verify:critical` mantém `verify:checks`, a cobertura crítica e o build, e `npm run verify` continua com 587 casos.
+São medições adicionais, não uma mediana de três concluída.
+O gargalo medido é o ESLint de árvore completa (`npm run lint`, cerca de 16 s), pelo que esta correção o move para o job `e2e-runtime`.
+A correção de margem retira `npm run lint`, `audit:production` e `test:acceptance-infrastructure` do macro rápido e passa-os para o job `e2e-runtime`, sem baixar cobertura nem retirar testes críticos.
+A verificação final do orçamento continua pendente após esta correção medida; nenhum resultado alvo foi inventado.
+O macro `npm run verify:critical:fast` mantém contratos, assets e cobertura crítica; `npm run verify:critical` mantém `verify:checks`, a cobertura crítica e o build, e `npm run verify` continua com 587 casos.
 
 ### Fronteiras mantidas
 
