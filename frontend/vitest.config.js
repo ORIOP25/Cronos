@@ -64,6 +64,10 @@ const common = {
   exclude: ['e2e/**', 'scripts/**', 'node_modules/**', ...supportFiles],
 }
 
+// The 2-CPU GHA runner contends on parallel jsdom/transform work, so critical CI
+// uses 2 workers while the full developer suite keeps 4/6.
+const criticalCommon = { ...common, maxWorkers: process.env.CI ? 2 : 6 }
+
 const coreUiOptimizer = {
   optimizer: {
     client: {
@@ -145,7 +149,7 @@ export default defineConfig(({ mode }) => {
   const criticalProjects = [
     {
       test: {
-        ...common,
+        ...criticalCommon,
         name: 'node',
         environment: 'node',
         include: [...criticalNodeTests, criticalGuardTest],
@@ -153,7 +157,7 @@ export default defineConfig(({ mode }) => {
     },
     {
       test: {
-        ...common,
+        ...criticalCommon,
         name: 'dom',
         environment: 'jsdom',
         pool: 'threads',
@@ -169,7 +173,7 @@ export default defineConfig(({ mode }) => {
     },
     {
       test: {
-        ...common,
+        ...criticalCommon,
         name: 'dom-network',
         environment: 'jsdom',
         pool: 'threads',
