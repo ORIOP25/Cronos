@@ -1396,3 +1396,31 @@ Os 69 casos de produção continuam por certificar e bloqueados; não coincidem 
 A nova direção permite retirar o não crítico do gate obrigatório, não o apagar.
 O PR 72 foi fundido na `main` por squash em `46a7aef`.
 O alvo de runtime ficou cumprido na `1457d74`; a conclusão deste alvo de CI não certifica o cutover W09 nem a campanha de produção de 69 casos, que permanecem frentes independentes e abertas.
+
+## Revalidação externa — 2026-10-12 (b5beeb7)
+
+A [CI da `main`](https://github.com/ORIOP25/Cronos/actions/runs/38305414872) em `b5beeb7` passou os cinco jobs.
+O frontend (`revision.json`, `verifiable=true`), a API (`/health/ready`), o worker, o supervisor e o Beat estão todos em `b5beeb7`, com os deployments Railway `SUCCESS` e PostgreSQL e Redis ligados.
+A variável `E2E_ACCEPTANCE_ENABLED` continua `false`.
+`E2E_GMAIL_CODE_SENDER`, `E2E_CONTACT_SENDER`, `E2E_HISTORY_TEACHER_PASSWORD` e `E2E_HISTORY_ADMIN_PASSWORD` continuam por configurar.
+
+O `inspect-code-sender` real passou OAuth, perfil e listagem nas duas caixas e terminou `incomplete` com `no_messages`, numa janela de sete dias:
+[admin, `verification`](https://github.com/ORIOP25/Cronos/actions/runs/38308630919) e [teacher, `reset`](https://github.com/ORIOP25/Cronos/actions/runs/38308634273).
+Nenhum código foi entregue, pelo que o remetente continua por observar e a dependência circular com o preflight mantém-se.
+
+A [documentação Clerk](https://clerk.com/docs/security/bot-protection) confirma que os registos automatizados ou vindos de proxies recebem o desafio Turnstile e que só um Testing Token ou a desativação de "Challenge suspicious sign-ups" o evitam.
+O titular autorizou um Testing Token limitado ao desafio do registo, mantendo a proteção de produção ativa e reais todos os outros passos.
+Nessa campanha, o desafio anti-bot do registo fica explicitamente fora da certificação.
+Sem alterar respostas, o FAPI de produção devolve `captcha_bypass=false` mesmo com o token, observado numa leitura sem submissão; o clerk-js mantém então o Turnstile.
+Por isso `withSignUpTestingToken` (em `ui-auth.js`) replica o helper do fornecedor apenas durante cada registo: acrescenta `__clerk_testing_token` aos pedidos `https://clerk.cronos.pt/v1/**` e eleva só esse indicador, sem retries nem outras alterações, e retira a rota quando o registo termina.
+`mintClerkTestingToken` (em `cleanup-production-campaign.mjs`) emite um token por registo, pelo transporte SSH administrativo, dentro do container da API; a chave Clerk nunca sai do servidor e o token (cerca de uma hora) é registado como segredo.
+A API Clerk não expõe o From dos templates (`delivered_by_clerk=true`, domínio `cronos.pt`).
+O painel Clerk de produção (instância `ins_3HjskMD24ZJIRVqZCWHCfMZPTiz`), lido sem alterações, mostra o From vazio nos dois templates, com os valores por omissão do fornecedor:
+`notifications@cronos.pt` para `{{otp_code}} is your verification code` e `noreply@cronos.pt` para `{{otp_code}} is your reset password code`.
+Como os remetentes diferem, a recuperação passa a usar `E2E_GMAIL_RESET_SENDER`, exigida e validada no preflight como `E2E_GMAIL_CODE_SENDER`.
+As duas variáveis GitHub foram configuradas com esses valores.
+A inspeção do container de produção mostrou só `app`, `alembic` e `alembic.ini` em `/app`: a imagem `runtime` não incluía `scripts/`.
+O transporte SSH importa `scripts.cleanup_e2e_run`, pelo que a limpeza administrativa real terminaria sempre `failed`.
+A imagem passa a copiar apenas `scripts/__init__.py`, `privacy.py`, `e2e_cleanup_policy.py` e `cleanup_e2e_run.py`; o gate da imagem no job `e2e-runtime` importa agora `scripts.cleanup_e2e_run` (RED antes, GREEN depois, em Docker local).
+W11.4 tem autorização para um ambiente Railway temporário, ainda não criado.
+Nenhum passo desta revalidação certifica produção.

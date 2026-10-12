@@ -8,6 +8,7 @@ import {
   awaitAuthStage,
   awaitAuthUi,
   providerChallengeHost,
+  withSignUpTestingToken,
 } from '../e2e/utils/ui-auth.js'
 
 // Deterministic poll strategy for the pure unit: call the probe at most
@@ -264,4 +265,55 @@ test('a hung probe is never classified as a provider block from an older state',
   )
   gate.resolve()
   await new Promise(resolve => setTimeout(resolve, 0))
+})
+
+// Minimal route surface: page.route/unroute and route.request/fetch/fulfill.
+function routedPage() {
+  const page = { handlers: [], unrouted: [] }
+  page.route = async (pattern, handler) => { page.handlers.push({ pattern, handler }) }
+  page.unroute = async (pattern, handler) => { page.unrouted.push({ pattern, handler }) }
+  return page
+}
+
+async function routeThrough(handler, url, body) {
+  const seen = {}
+  const response = { json: async () => { if (body === undefined) throw new Error('not json'); return structuredClone(body) } }
+  await handler({
+    request: () => ({ url: () => url }),
+    fetch: async options => { seen.fetched = options; return response },
+    fulfill: async options => { seen.fulfilled = options },
+  })
+  return seen
+}
+
+const TOKEN = 'tok_' + 'b'.repeat(40)
+
+test('the sign-up testing token is scoped to the registration and always removed', async () => {
+  const page = routedPage()
+  await assert.rejects(withSignUpTestingToken(page, TOKEN, async () => { throw new Error('primary') }), /primary/)
+  assert.equal(page.handlers.length, 1)
+  assert.equal(page.handlers[0].pattern, 'https://clerk.cronos.pt/v1/**')
+  assert.deepEqual(page.unrouted, [page.handlers[0]])
+  for (const value of [undefined, '', 'short', 'has space'.repeat(5)]) {
+    await assert.rejects(withSignUpTestingToken(routedPage(), value, async () => {}), /testing token/)
+  }
+})
+
+test('the sign-up testing token only appends the parameter and lifts the captcha flag', async () => {
+  const page = routedPage()
+  await withSignUpTestingToken(page, TOKEN, async () => {})
+  const { handler } = page.handlers[0]
+  const client = await routeThrough(handler, 'https://clerk.cronos.pt/v1/client?_clerk_js_version=5', { response: { id: 'client_1', captcha_bypass: false } })
+  const fetched = new URL(client.fetched.url)
+  assert.equal(fetched.searchParams.get('__clerk_testing_token'), TOKEN)
+  assert.equal(fetched.searchParams.get('_clerk_js_version'), '5')
+  assert.equal(client.fulfilled.json.response.captcha_bypass, true)
+  const piggyback = await routeThrough(handler, 'https://clerk.cronos.pt/v1/client/sign_ups', { response: { id: 'sua_1' }, client: { captcha_bypass: false } })
+  assert.equal(piggyback.fulfilled.json.client.captcha_bypass, true)
+  assert.equal(piggyback.fulfilled.json.response.id, 'sua_1')
+  const environment = await routeThrough(handler, 'https://clerk.cronos.pt/v1/environment', { display_config: { captcha_widget_type: 'smart' } })
+  assert.equal(environment.fulfilled.json, undefined)
+  const binary = await routeThrough(handler, 'https://clerk.cronos.pt/v1/tickets/accept', undefined)
+  assert.equal(binary.fulfilled.json, undefined)
+  assert.ok(binary.fulfilled.response)
 })

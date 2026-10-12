@@ -8,7 +8,8 @@ import { completeAndResumeGuide } from '../utils/ui-guide.js'
 import { restartDisposableSchoolYear } from '../utils/ui-year.js'
 import { exerciseSchoolIsolation } from '../utils/ui-isolation.js'
 import { exercisePendingOccurrenceAndGap } from '../utils/ui-occurrences.js'
-import { awaitAuthStage, expectIdentity, login, freshSession } from '../utils/ui-auth.js'
+import { awaitAuthStage, expectIdentity, login, freshSession, withSignUpTestingToken } from '../utils/ui-auth.js'
+import { mintClerkTestingToken } from '../../../scripts/cleanup-production-campaign.mjs'
 import { validateCodeSender } from './acceptance-policy.js'
 import { test, expect } from '@playwright/test'
 
@@ -87,10 +88,19 @@ export async function runIdentityCampaign({ page, browser, provenance, delivered
   if (persistent) await persistCredentials({ admin_email: email, teacher_email: teacherEmail,
     admin_registration_password: password, admin_password: recoveredPassword, teacher_password: teacherPassword })
   // Clerk's production sender must be observed/configured, never inferred from development.
+  // Clerk sends verification and reset codes from distinct template defaults.
   const sender = validateCodeSender(process.env.E2E_GMAIL_CODE_SENDER)
+  const resetSender = validateCodeSender(process.env.E2E_GMAIL_RESET_SENDER)
   const original = await readOriginalExpectations()
-  const criteria = (after, subject) => ({ recipient: email, senders: [sender], subject, purpose: 'code', after, before: after + 120_000 })
+  const criteria = (after, subject, from = sender) => ({ recipient: email, senders: [from], subject, purpose: 'code', after, before: after + 120_000 })
+  // One short-lived vendor token per registration; redacted like any credential.
+  const signUpToken = async () => {
+    const token = await mintClerkTestingToken({ expectedRevision: process.env.E2E_EXPECTED_REVISION }, process.env)
+    await registerSecret(token)
+    return token
+  }
 
+  const verification = await withSignUpTestingToken(page, await signUpToken(), async () => {
   await page.goto('/register')
   await page.getByLabel('Nome', { exact: true }).fill('Cronos')
   await page.getByLabel('Apelido', { exact: true }).fill('Aceitação')
@@ -107,11 +117,13 @@ export async function runIdentityCampaign({ page, browser, provenance, delivered
   // The founder's delivered-code poll starts only after the real verification
   // UI is visible; a persistent provider challenge fails here, not after 120s.
   await awaitAuthStage(page, { stage: 'code', testInfo })
-  const verification = await deliveredMail('admin', criteria(registrationRequestedAt, /^\d{6} is your verification code$/))
+  const delivered = await deliveredMail('admin', criteria(registrationRequestedAt, /^\d{6} is your verification code$/))
   const codeInput = page.locator('input[autocomplete="one-time-code"]').first()
   await expect(codeInput).toBeVisible()
-  await codeInput.pressSequentially(verification.code)
+  await codeInput.pressSequentially(delivered.code)
   await expectIdentity(page, email)
+  return delivered
+  })
   await provenance.recordCurrentActor()
   // Actual verified session metadata only; never the delivered code or credential.
   const session = await page.evaluate(() => ({
@@ -153,7 +165,7 @@ export async function runIdentityCampaign({ page, browser, provenance, delivered
     const recoveryRequestedAt = Date.now()
     await recoveryPage.getByRole('button', { name: 'Enviar código', exact: true }).click()
     await expect(recoveryPage.getByRole('heading', { name: 'Introduza o código', exact: true })).toBeVisible()
-    const recovery = await deliveredMail('admin', criteria(recoveryRequestedAt, /^\d{6} is your reset password code$/))
+    const recovery = await deliveredMail('admin', criteria(recoveryRequestedAt, /^\d{6} is your reset password code$/, resetSender))
     await recoveryPage.getByLabel('Código de verificação', { exact: true }).fill(recovery.code)
     await recoveryPage.getByRole('button', { name: 'Verificar código', exact: true }).click()
     await recoveryPage.getByLabel('Nova palavra-passe', { exact: true }).fill(recoveredPassword)
@@ -185,6 +197,7 @@ export async function runIdentityCampaign({ page, browser, provenance, delivered
     await recordCheckpoint(testInfo, ['E2E-04/delivered-invitation', 'E2E-04/pending-conversion-relations'], { requires: 'school' })
     let preferenceSlot
     await freshSession(browser, testInfo, 'teacher-invitation', async teacherPage => {
+      await withSignUpTestingToken(teacherPage, await signUpToken(), async () => {
       await teacherPage.goto(invitation.link)
       await expect(teacherPage).toHaveURL(/^https:\/\/cronos\.pt\/(login|register)(?:[/?#]|$)/)
       if (new URL(teacherPage.url()).pathname.startsWith('/login')) {
@@ -205,6 +218,7 @@ export async function runIdentityCampaign({ page, browser, provenance, delivered
       // provider challenge before the exact-email identity assertion.
       await awaitAuthStage(teacherPage, { stage: 'authenticated', testInfo })
       await expectIdentity(teacherPage, teacherEmail)
+      })
       await provenance.recordCurrentActor(teacherPage)
       await teacherPage.goto('/my-schedules')
       await expect(teacherPage).toHaveURL(/\/my-schedules$/)

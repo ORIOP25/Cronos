@@ -11,7 +11,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
 export function productionDependencies(environment, { preparation = false } = {}) {
   const names = [
-    'E2E_GMAIL_CLIENT_ID', 'E2E_GMAIL_CLIENT_SECRET', 'E2E_GMAIL_ADMIN_REFRESH_TOKEN', 'E2E_GMAIL_TEACHER_REFRESH_TOKEN', 'E2E_GMAIL_CODE_SENDER',
+    'E2E_GMAIL_CLIENT_ID', 'E2E_GMAIL_CLIENT_SECRET', 'E2E_GMAIL_ADMIN_REFRESH_TOKEN', 'E2E_GMAIL_TEACHER_REFRESH_TOKEN', 'E2E_GMAIL_CODE_SENDER', 'E2E_GMAIL_RESET_SENDER',
     'CLOUDFLARE_API_TOKEN', 'E2E_CLOUDFLARE_ACCOUNT_ID', 'E2E_CLOUDFLARE_PROJECT',
     'E2E_RAILWAY_TOKEN', 'E2E_RAILWAY_TOKEN_TYPE', 'E2E_RAILWAY_PROJECT_ID', 'E2E_RAILWAY_ENVIRONMENT_ID',
     'E2E_RAILWAY_API_SERVICE_ID', 'E2E_RAILWAY_WORKER_SERVICE_ID', 'E2E_RAILWAY_SUPERVISOR_SERVICE_ID', 'E2E_RAILWAY_BEAT_SERVICE_ID',
@@ -64,6 +64,7 @@ export async function preflight(environment, { fetchImpl = fetch, inspect = insp
   const missing = productionDependencies(environment, { preparation })
   if (missing.length) return { status: 'dependency_unavailable', phase, missing, checked_at: new Date().toISOString() }
   validateCodeSender(environment.E2E_GMAIL_CODE_SENDER)
+  validateCodeSender(environment.E2E_GMAIL_RESET_SENDER)
   if (Buffer.from(environment.E2E_ARTIFACT_KEY, 'base64').length !== 32) throw new Error('Evidence key must contain exactly 32 random bytes')
   const envelope = JSON.parse(await readFile(resolve(environment.E2E_PERSISTENT_REGISTRY), 'utf8'))
   const registry = verifyRegistry(envelope, Buffer.from(environment.E2E_REGISTRY_HMAC_KEY, 'base64'))
