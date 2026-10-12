@@ -130,11 +130,11 @@ As observações de escolas, os percursos de identidade e a composição remota 
 | W01.1–3 | Originais completos, manifesto, inspetor independente e preservação de bytes na CI. | Conferir os resultados depois da importação pela UI. |
 | W01.4–5 | Política pura exige produção, SHA completo e caixas dedicadas; runner ligado ao preflight. | Confirmar em execução real. |
 | W02.1–6 | Helpers OAuth/Gmail com PKCE readonly; os quatro secrets Gmail e os perfis das duas caixas confirmados. | Observar o remetente do código (`E2E_GMAIL_CODE_SENDER`) e entregar mensagens reais nos percursos. |
-| W03.1–7 | Matriz de 69 casos, avaliação pura, reporter, checkpoints explícitos por caso, cifragem, recuperação confinada, guards e composição fail-closed. | Execução real com registo dinâmico de segredos e upload protegido. |
-| W04 | Writer da revisão frontend e adaptadores de deployments; Cloudflare e Railway confirmados; produção alinhada em `4e62573` com `/revision.json` verificável; o fixture W04.6 verifica deployments vivos por grupo. | Publicar o diff atual e reobservar a revisão de produção. |
+| W03.1–7 | Matriz de 69 casos, avaliação pura, reporter, checkpoints explícitos por caso, cifragem, recuperação confinada, guards e composição fail-closed. | Cadeia de verificação assinada e upload provados no GHA; falta a campanha completa. |
+| W04 | Writer da revisão frontend e adaptadores de deployments; Cloudflare e Railway confirmados; produção alinhada em `6140da6` com `/revision.json` verificável; o fixture W04.6 verifica deployments vivos por grupo. | Reobservar a revisão de produção na campanha. |
 | W05 e W06.3–W08 | Historicamente, os três specs anotavam os 69 casos concretos; atualmente cada caso exige checkpoint explícito, prova materializada e proveniência de UI. | Execução real pela UI: contas, escola, geração, operação e história elegível. |
 | W06.1–2 | Verificador independente de procura, crédito modular e recursos. | Ligar às leituras autenticadas e ao horário real. |
-| W09 | Regressão do chamador corrigida com testes determinísticos; nenhuma remoção de testes foi executada e o cutover W09 continua bloqueado. | Inventário e redução após provas substitutas executadas. |
+| W09 | Regressão do chamador corrigida com testes determinísticos; uma remoção unitária parcial foi executada após prova nativa; o cutover da maioria continua bloqueado. | Inventário e redução após as restantes provas substitutas. |
 | W10.1–3, W10.7 | Comandos `acceptance` e `prepare-history` fail-closed, workflow serializado e upload sanitizado em falha; `E2E_ACCEPTANCE_ENABLED` está `false`. | Ativar a variável e executar a campanha real com os segredos e a matriz de percursos. |
 | W10.4–6 | Registo HMAC, wrapper administrativo, exportação cifrada, erasure com bloqueio de jobs e transporte SSH separado. | Executar o wrapper remoto sobre o registo real produzido pela UI e comprovar eliminação no fornecedor. |
 | W11.1–3 | Recuperação com broker real, worker próprio terminado e supervisor real por Redis; entrega duplicada sem proposta adicional. | W11.4: repetir num ambiente Railway isolado quando a prova exigir o fornecedor. |
@@ -1074,9 +1074,9 @@ Nenhum passo deste ciclo certifica produção.
 
 ## Progresso noturno — 2026-10-12
 
-Esta secção regista a entrega noturna local, a última observação de autenticação e o estado publicado.
-O código novo ainda não foi publicado nem executado pela CI.
-Os resultados locais não certificam produção.
+Esta secção regista a entrega noturna, a última observação de autenticação e o estado publicado.
+O código desta entrega foi publicado na PR 68, como `6140da6`, e verificado pela CI e pela execução nativa.
+A campanha completa de produção continua por certificar.
 
 ### Causa raiz observada do bloqueio do registo
 
@@ -1108,39 +1108,83 @@ O job de classificação nativo continua vermelho; o guard de código não resol
 ### Código novo local — três tarefas
 
 As três tarefas foram revistas com TDD.
-Os testes de infraestrutura Node passaram 268 casos.
-A verificação de produto registou 604 testes.
-A suite backend de 1 434 casos já tinha sido medida; não foi repetida.
+Antes desta entrega, a contagem era 604 testes de aplicação e 216 de infraestrutura: 820 no total.
+Depois da remoção unitária, a contagem é 603 testes de aplicação em 87 ficheiros e 268 de infraestrutura: 871 no total.
+O total sobe 51; não houve redução global.
+A remoção foi um único ficheiro unitário.
+Os testes novos de infraestrutura cobrem regressões concretas de TDD.
+A suite backend de 1 434 casos já tinha sido medida; não foi repetida nesta fase.
 
 - (A) A prova obrigatória não pode cair para o nome reservado `acceptance-proof`, nem para um caminho fora da raiz de artefactos. Um checkpoint sem janela reclamada não satisfaz a prova. Três testes novos em `frontend/scripts/acceptance-proof.test.mjs`.
 - (B) As limpezas da execução são independentes. Uma exceção `undefined` ou `null` não impede parar a stack própria. Os rótulos preservam o primeiro código e a falha primária, sem texto bruto. Testes novos em `scripts/test.test.mjs`.
 - (C) `verifySignedResult` espelha o manifesto HMAC e o inventário e AES de cada ficheiro. O runner não sai com zero sem verificação. O CLI `verify` escreve um recibo de integridade fixo e seguro. A raiz é sanitizada antes de qualquer escrita. Os diagnósticos ficam limitados a quatro ficheiros: `acceptance-plan.json`, `acceptance-cleanup.json`, `diagnostic-assessment.json` e `artifact-verification.json`. O resultado selado não é re-redigido. Os valores JSON usam o mesmo modo do finalizador: segredos, números exatos e valores malformados falham fechado, e o modo legado sem chave mantém-se até ao cutover. O upload protegido da raiz e do resultado selado exige verificação com sucesso; um resultado selado inseguro ou adulterado não é carregado. Recibos de diagnóstico seguros são retidos, sem chaves nem armazenamento bruto. A política partilhada de `redactJSON` e o confinamento de ancestrais e junctions aplicam-se antes das escritas.
 - (D) Intenções de criação assinadas antes de quatro criações nativas na UI: ator fundador, ator docente e duas organizações. Os campos são opcionais; o esquema 1 lê registos antigos sem intenções. O `kind` é `actor` ou `org` e o `id` é UUID4. O alias exato da execução só existe no diário privado cifrado. Os instantes são UTC monotónicos. O ator resolve apenas pelo alias realmente observado. A organização resolve apenas pelo id exato passado, com criação real depois da intenção, nunca uma escola antiga. Restos de crash desconhecidos forçam limpeza global `failed` e `not_needed=false`; os alvos próprios conhecidos ainda são limpos, com exportações e efeitos retidos. Não há procura nem eliminação de desconhecidos por nome ou alias. O Node é o gate global autoritativo; o Python de baixo nível usa apenas IDs conhecidos, sem novas políticas backend. A preparação e a promoção rejeitam intenções não resolvidas ou malformadas.
 - (E) `awaitAuthStage` usa `expect.poll` nativo com prazo rígido, mesmo para leituras presas. Um resultado tardio nunca passa. Os erros de página propagam-se. Só frames destacados confirmados são tolerados. Um desafio gerido breve pode terminar normalmente. Um gate visível persistente expira em 30 segundos como enum seguro e ligado. O fundador espera pela UI real do OTP antes da pesquisa Gmail. O docente espera pela sessão e depois por `expectIdentity` exato e verificado.
-- (F) Quatro IDs públicos aguardam prova física. A ligação do pipeline exige um workflow nativo após a publicação. Não existe certificação nativa dos 69 casos.
+- (F) Os quatro IDs públicos do diagnóstico readonly têm prova física numa execução nativa. Não existe certificação nativa dos 69 casos.
 
 ### Evidência pública e limpeza
 
 O `frontend/e2e/acceptance/public.spec.js` ganhou três asserções fortes no caso de teclado existente, com o ID 69 inalterado.
-As asserções verificam a descrição acessível calculada de `aria-describedby` para o nome e o email.
-Verificam também os dois alertas iniciais na ordem correta.
-Estas asserções podem substituir uma `ContactDetailsStep` de componente.
-Essa substituição é só de testes unitários e só depois de uma execução pública real no GHA.
-O ficheiro `public.spec.js` ainda existe; não se afirma remoção nem redução.
+As asserções verificam a descrição acessível calculada de `aria-describedby` para o nome e o email, e os dois alertas iniciais na ordem correta.
+A execução nativa [run 38193441985](https://github.com/ORIOP25/Cronos/actions/runs/38193441985) passou os quatro casos públicos à primeira tentativa.
+O lote público foi executado sem eliminação por API, emails ou perfis novos. A pipeline verificou os artefactos depois da assinatura.
+O ficheiro `public.spec.js` ainda existe; não se afirma remoção deste ficheiro.
+A remoção unitária autorizada foi `frontend/src/test/ContactDetailsStep.test.jsx`, com 17 linhas e 7 asserções cobertas pela prova nativa mais forte.
+Antes da remoção, `npm test` passou 88 ficheiros e 604 casos; depois, 87 ficheiros e 603 casos, com lint e Knip verdes.
+Nenhum outro teste foi removido; os testes únicos de políticas, autenticação, segurança, marketing e legal mantêm-se.
 
-A limpeza pública continua `public_readonly` com `not_needed=true`, quando não há alvos nem intenções.
+### Prova física do caso de teclado
+
+O `keyboard-contact-validation` foi observado num Chrome headless sem retries.
+O ficheiro de prova relativo é `acceptance-public-contact--effbd-s-errors-without-submitting-acceptance/attachments/keyboard-contact-validation-e498636d4457b512337a814993efe6afdb8ab629.json`.
+Os campos observados são:
+
+| Campo | Valor observado |
+| :--- | :--- |
+| `active_element` | `email` |
+| `name_aria_invalid` | `false` |
+| `email_aria_invalid` | `true` |
+| `email_aria_describedby` | `email-error` |
+| `announcements` | `['Indique um email válido.']` |
+| `initial_announcements` | `['Indique o seu nome.', 'Indique o seu email.']` |
+| `name_describedby_text` | `Indique o seu nome.` |
+| `email_describedby_text` | `Indique um email válido.` |
+| `writes` | `0` |
+
+As asserções nativas da descrição acessível passaram para o nome e para o email.
+O ID de teclado e as suas anotações de foco mantêm-se iguais aos quatro casos readonly.
+
+A limpeza pública observada ficou `public_readonly` com `not_needed=true` e listas vazias.
 Uma intenção de criação por resolver mantém a campanha `failed`, mesmo sem alvos observados.
+O CLI Python reporta apenas os alvos conhecidos e legítimos do seu âmbito.
+O Node compõe o resultado global, que falha quando existem intenções pendentes.
+Alvos desconhecidos nunca são procurados nem eliminados por nome ou alias.
+Esta separação já existe; não há defeito backend nem validação duplicada.
 
 ### Estado publicado e produção
 
-A `main` publicada é `4e62573298dda9e386f9d1dc2f1e76ce733f752c`.
-A CI [run 37998099499](https://github.com/ORIOP25/Cronos/actions/runs/37998099499) passou os jobs de backend, frontend, E2E e capacidade.
-A PR 67 tem o Sonar `PASS`.
-A produção mantém o frontend e a API na revisão `4e`.
-Os quatro serviços Railway estão `SUCCESS`, incluindo o supervisor.
-O supervisor passou a ter autodeploy ligado à `main`, verificado.
-As alterações não publicadas da raiz do Desktop foram preservadas.
-O container local já tinha sido atualizado na iteração anterior e a etiqueta de rollback foi conservada.
-As alterações novas tocam apenas ferramentas E2E, não o bundle visível da aplicação.
+A `main` publicada é `6140da6db2688f0017e6e54cf5da2e07f612c523`.
+A [PR 68](https://github.com/ORIOP25/Cronos/pull/68) foi fundida nessa revisão.
+A CI da `main` [run 38192706792](https://github.com/ORIOP25/Cronos/actions/runs/38192706792) passou os jobs de backend, frontend, E2E e capacidade.
+A CI da PR [run 38191885411](https://github.com/ORIOP25/Cronos/actions/runs/38191885411) passou todos os jobs, incluindo o Sonar.
+Os quatro serviços Railway estão `SUCCESS` na revisão `6140`.
+A revisão do frontend é verificável e coincide no instantâneo real.
+A API responde `ok` em `/health/ready`, com PostgreSQL e Redis ligados.
+O supervisor mantém o autodeploy ligado à `main`, reconfirmado pelo CLI nativo.
+
+A execução nativa [run 38193441985](https://github.com/ORIOP25/Cronos/actions/runs/38193441985) correu em `main` `6140`, no modo `diagnose-public`, e passou os quatro casos públicos à primeira tentativa.
+Os passos de sanitização da raiz, verificação criptográfica do resultado assinado, sanitização dos diagnósticos e os dois uploads passaram no job `114630913074`.
+O JSON seguro foi inspecionado: o `diagnostic-assessment` ficou `passed`, com `certifies_production=false` e `failures=[]`.
+O `artifact-verification` ficou `verified`, com `reason=null` e `certifies_production=false`.
+A limpeza ficou `completed`, `scope=public_readonly`, `not_needed=true`, com listas pendentes, atores pendentes e exportações vazias.
+O resultado assinado tem as cinco revisões iguais a `6140` antes e depois, com os mesmos IDs de deployment.
+Os quatro casos passaram à primeira tentativa, com `eligible=true` e `ui_provenance=true`.
+A avaliação global fica `incomplete` e `data_verified=false`; não certifica os 69 casos.
+Os artefactos protegidos são `11721908760` (raiz binária e resultado selado) e `11722048391` (três ficheiros de diagnóstico, sem o resultado selado).
+A verificação de inventário HMAC e AES foi real no GHA; não se afirma decifragem manual nem leitura de chaves.
+
+O tempo observado é curto: cerca de 1 m 39 s no job público, 9 m 51 s na E2E da PR e 9 m 49 s na `main`.
+Não se inventam custos financeiros nem volumes.
+As alterações tocam apenas ferramentas E2E, não o bundle visível da aplicação.
 Não é necessário reconstruir a imagem Docker, porque o código de render não mudou.
-Os testes locais correm antes da publicação; não se afirma que as funcionalidades novas estão em produção.
+Os planos completos não estão concluídos; esta entrega cobre infraestrutura nativa e uma redução parcial.
