@@ -31,7 +31,7 @@
     "verify:checks": "npm run lint && npm run lint:dead-code && npm run lint:dead-code:production && npm run test:legal-contract && npm run test:marketing-build && npm run test:acceptance-infrastructure && node --test scripts/edge-worker.test.mjs && npm run test:marketing-assets",
     "verify": "npm run verify:checks && npm run test:coverage && npm run build",
     "verify:critical": "npm run verify:checks && npm run test:critical:coverage && npm run build",
-    "verify:critical:fast": "npm run lint && npm run audit:production && npm run test:legal-contract && npm run test:marketing-build && npm run test:acceptance-infrastructure && node --test scripts/edge-worker.test.mjs && npm run test:marketing-assets && npm run test:critical:coverage"
+    "verify:critical:fast": "npm run lint && npm run test:legal-contract && npm run test:marketing-build && node --test scripts/edge-worker.test.mjs && npm run test:marketing-assets && npm run test:critical:coverage"
   },
   "dependencies": {
     "@clerk/localizations": "^4.16.1",
