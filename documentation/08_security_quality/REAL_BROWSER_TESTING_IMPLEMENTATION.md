@@ -1214,7 +1214,7 @@ A base é `d4f6269` (#71, negociação de conteúdo do edge, sem relação); a r
 A libertação e o desbloqueio dos 69 casos ficam pendentes.
 A execução [run 38295681535](https://github.com/ORIOP25/Cronos/actions/runs/38295681535), tentativa 1 em `46a7aef`, ficou com os cinco jobs verdes.
 
-A seleção crítica de CI está entregue e validada em GHA; as execuções frontend em `46a7aef` deram mediana 66 s e a revisão posterior `1486691` (PR 74) mediu 60 s e 64 s, pelo que a verificação final do orçamento continua pendente.
+A seleção crítica de CI está entregue e validada em GHA; as execuções frontend em `46a7aef` deram mediana 66 s e `1486691` mediu 60 s e 64 s, perfis históricos. O SHA de runtime `1457d74` cumpriu o objetivo na [run 38301804176](https://github.com/ORIOP25/Cronos/actions/runs/38301804176).
 O alvo de 50 por cento foi substituído pela exigência de segundos por job, atingida na primeira execução completa.
 O checkout original do Desktop fica preservado; o worktree local tem as modificações.
 
@@ -1365,9 +1365,9 @@ A libertação exige a mediana de três execuções equivalentes depois do SHA d
 
 No Windows, o comando crítico força Docker sem rede de stack, pelo que o gate completo não é executável localmente até existir uma base conhecida; a CI fornece os serviços PostgreSQL/Redis e as credenciais efémeras.
 
-A `main` fundida em `46a7aef` mede três execuções frontend: 71 s, 51 s e 66 s; a mediana é 66 s, acima do objetivo de 60 s.
+A `main` fundida em `46a7aef` mediu três execuções frontend, hoje históricas: 71 s, 51 s e 66 s; a mediana foi 66 s, acima do objetivo de 60 s.
 A tentativa 1 completa ([run 38295681535](https://github.com/ORIOP25/Cronos/actions/runs/38295681535)) teve os cinco jobs verdes: frontend 71 s, backend 101 s, `e2e-runtime` 122 s e `e2e-browser` 560 s.
-`46a7aef` tem as três execuções frontend, pelo que a mediana é 66 s.
+`46a7aef` tem as três execuções frontend, pelo que a mediana histórica é 66 s.
 A revisão posterior `1486691` (PR 74) mede uma execução completa ([run 38299733416](https://github.com/ORIOP25/Cronos/actions/runs/38299733416)) com os cinco jobs verdes: frontend 60 s, backend 85 s, `e2e-runtime` 124 s e `e2e-browser` 478 s; uma repetição distinta do frontend deu 64 s.
 As duas execuções frontend em `1486691` (60 s e 64 s) já fixam uma mediana de pelo menos 60 s independentemente de uma terceira, pelo que `1486691` não foi repetida uma terceira vez.
 
@@ -1378,10 +1378,14 @@ As duas execuções frontend em `1486691` (60 s e 64 s) já fixam uma mediana de
 | 3 | 66 s | — |
 | Mediana | 66 s | — |
 
-São medições adicionais, não uma mediana de três concluída.
+O SHA de runtime `1457d74945e4d62ca45922ff418c08f662faf296` (branch do PR 74) cumpriu o objetivo na [run 38301804176](https://github.com/ORIOP25/Cronos/actions/runs/38301804176), com as cinco tentativas verdes no mesmo SHA.
+A [tentativa 1](https://github.com/ORIOP25/Cronos/actions/runs/38301804176/attempts/1) correu o pipeline completo com os cinco jobs verdes: frontend 38 s, backend 99 s, `e2e-runtime` 134 s, `e2e-browser` 560 s e agregado 4 s.
+As tentativas [2](https://github.com/ORIOP25/Cronos/actions/runs/38301804176/attempts/2) e [3](https://github.com/ORIOP25/Cronos/actions/runs/38301804176/attempts/3) repetiram só o frontend (47 s e 40 s); as tentativas [4](https://github.com/ORIOP25/Cronos/actions/runs/38301804176/attempts/4) e [5](https://github.com/ORIOP25/Cronos/actions/runs/38301804176/attempts/5) repetiram só o backend (101 s e 114 s).
+As três execuções distintas de frontend dão mediana 40 s (38 a 47 s); as três de backend dão mediana 101 s (99 a 114 s), pelo que cada execução distinta fica abaixo de 60 s e 120 s.
+Só a tentativa 1 é um pipeline completo; as tentativas seletivas reutilizam os outros jobs, pelo que não são três execuções E2E completas.
 O gargalo medido é o ESLint de árvore completa (`npm run lint`, cerca de 16 s), pelo que esta correção o move para o job `e2e-runtime`.
 A correção de margem retira `npm run lint`, `audit:production` e `test:acceptance-infrastructure` do macro rápido e passa-os para o job `e2e-runtime`, sem baixar cobertura nem retirar testes críticos.
-A verificação final do orçamento continua pendente após esta correção medida; nenhum resultado alvo foi inventado.
+O alvo de runtime ficou cumprido na `1457d74`; nenhum resultado alvo foi inventado. A verificação completa da `main` publicada ocorre depois da fusão do PR 74.
 O macro `npm run verify:critical:fast` mantém contratos, assets e cobertura crítica; `npm run verify:critical` mantém `verify:checks`, a cobertura crítica e o build, e `npm run verify` continua com 587 casos.
 
 ### Fronteiras mantidas
@@ -1391,4 +1395,4 @@ Os 80 casos legacy de UI passaram nativamente na CI no perfil de browser atual, 
 Os 69 casos de produção continuam por certificar e bloqueados; não coincidem com os 80 IDs de tarefa do WBS, que permanecem parciais.
 A nova direção permite retirar o não crítico do gate obrigatório, não o apagar.
 O PR 72 foi fundido na `main` por squash em `46a7aef`.
-O fecho final da redução de CI aguarda a verificação do orçamento de três execuções após este ajuste de margem.
+O alvo de runtime ficou cumprido na `1457d74`; a conclusão deste alvo de CI não certifica o cutover W09 nem a campanha de produção de 69 casos, que permanecem frentes independentes e abertas.

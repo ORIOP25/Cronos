@@ -97,7 +97,7 @@ E2E is two jobs plus one aggregate. `e2e-runtime` needs no Clerk or provider cre
 | :--- | :--- | :--- | :--- |
 | Critical CI (fast, required) | 23 unit files + 9 database files + 2 webhook node IDs | 24 files, 254 cases | 18 declared sources at 80 percent, with 100 and 90 for the two protected modules; 31 declared modules at 45/40/35/45 |
 | Full (optional, manual) | full unit, integration and contract corpus | `vitest run`, 82 files, 587 cases | whole application: 70 percent backend and 45/40/35/45 frontend |
-| Observed limits | core 287 (225 unit + 62 db) from the native Linux 3.14 run | critical 254 cases in 24 files | frontend `46a7aef`: 71/51/66 s, median 66 s; `1486691`: 60/64 s; final budget verification pending after the lint relocation |
+| Observed limits | core 287 (225 unit + 62 db) from the native Linux 3.14 run | critical 254 cases in 24 files | historical `46a7aef`: 71/51/66 s, median 66 s; `1486691`: 60/64 s; final `1457d74` ([run 38301804176](https://github.com/ORIOP25/Cronos/actions/runs/38301804176)): frontend median 40 s, backend median 101 s |
 
 The user goal is a frontend job under 60 seconds and a backend job under 120 seconds.
 Local native Linux timings are about 22.26 s for the critical unit group and 61.90 s for the database group; the frontend critical run passed 24 files and 254 cases in 20.33 s with 67.2/70.65/56.53/69.39 coverage.
@@ -105,13 +105,11 @@ The local backend critical run reported 81.03 percent scope coverage, 100 percen
 These local timings are not CI. CI setup adds about 69 s.
 Only job seconds and the critical coverage are completion criteria now; the old 30–45 backend and 8–12 frontend file quotas are retired.
 
-The merged `main` at `46a7aef` measured three frontend runs: 71 s, 51 s and 66 s.
-The median is 66 s, so the 60-second goal is not yet met.
+The earlier merged `main` `46a7aef` measured three frontend runs: 71 s, 51 s and 66 s.
+Its median was 66 s, so the 60-second goal was not met at that point.
 The first full attempt [38295681535](https://github.com/ORIOP25/Cronos/actions/runs/38295681535) had all five jobs green: frontend 71 s, backend 101 s, `e2e-runtime` 122 s and `e2e-browser` 560 s.
-`46a7aef` has all three frontend runs, so its median is 66 s.
-A later revision `1486691` (PR 74) measured a full run [38299733416](https://github.com/ORIOP25/Cronos/actions/runs/38299733416) with all five jobs green: frontend 60 s, backend 85 s, `e2e-runtime` 124 s and `e2e-browser` 478 s; one distinct frontend rerun on `1486691` measured 64 s.
-The two `1486691` frontend runs (60 s and 64 s) already fix a median of at least 60 s regardless of a third, so `1486691` was not rerun a third time.
-These are additional measurements, not a completed three-run median.
+The later revision `1486691` (PR 74 branch) measured a full run [38299733416](https://github.com/ORIOP25/Cronos/actions/runs/38299733416) with all five jobs green: frontend 60 s, backend 85 s, `e2e-runtime` 124 s and `e2e-browser` 478 s; one distinct frontend rerun measured 64 s.
+These `46a7aef` and `1486691` profiles stay at or above the 60-second goal, so this update keeps them as historical.
 
 | Frontend attempt | `46a7aef` | `1486691` |
 | :--- | ---: | ---: |
@@ -120,11 +118,17 @@ These are additional measurements, not a completed three-run median.
 | 3 | 66 s | — |
 | Median | 66 s | — |
 
-The measured bottleneck is the unchanged whole-tree ESLint (`npm run lint`, about 16 s), so this correction moves it into the long `e2e-runtime` job. The final budget verification is still pending after this correction.
+The runtime SHA `1457d74945e4d62ca45922ff418c08f662faf296` (PR 74 branch) met the goal in [run 38301804176](https://github.com/ORIOP25/Cronos/actions/runs/38301804176), where all five attempts succeeded on that SHA.
+Attempt 1 [attempts/1](https://github.com/ORIOP25/Cronos/actions/runs/38301804176/attempts/1) ran the full pipeline with all five jobs green: frontend 38 s, backend 99 s, `e2e-runtime` 134 s, `e2e-browser` 560 s and aggregate 4 s.
+Attempts [2](https://github.com/ORIOP25/Cronos/actions/runs/38301804176/attempts/2) and [3](https://github.com/ORIOP25/Cronos/actions/runs/38301804176/attempts/3) reran only the frontend (47 s and 40 s); attempts [4](https://github.com/ORIOP25/Cronos/actions/runs/38301804176/attempts/4) and [5](https://github.com/ORIOP25/Cronos/actions/runs/38301804176/attempts/5) reran only the backend (101 s and 114 s).
+The three distinct frontend executions give a median of 40 s (range 38-47 s); the three distinct backend executions give a median of 101 s (range 99-114 s), so every distinct execution is below 60 s and 120 s.
+Only attempt 1 is a full pipeline; the selective attempts reuse the other jobs, so this is not three full E2E runs.
+
+The measured bottleneck is the unchanged whole-tree ESLint (`npm run lint`, about 16 s), so this correction moves it into the long `e2e-runtime` job. The runtime SHA `1457d74` then met the goal; the final measurements appear above.
 
 The legacy 80 UI browser cases passed natively in CI on the current browser profile: runs 38269061278 on `0fb3594` and 38262965438 on `1e18315`.
 The 69 production acceptance cases stay uncertified and blocked; this is not the same as the 80 WBS task IDs, which stay partial.
-The critical profile and the `e2e-runtime` job are CI-validated; the measured frontend runs on `46a7aef` and `1486691` did not establish a median strictly below 60 s, so the final budget verification is pending and W09 stays in progress.
+The critical profile and the `e2e-runtime` job are CI-validated; the runtime SHA `1457d74` establishes a frontend median of 40 s and a backend median of 101 s, so the runtime goal is met. W09 stays in progress only for the wider cutover and dependency tasks, not this runtime target.
 The new direction permits retiring non-critical suites from the required gate, not deleting them.
 On Windows the critical command currently forces Docker without a shared stack network, so the full critical gate is not runnable locally until a known database is provided. The CI job supplies the PostgreSQL/Redis services and the ephemeral credentials.
 
