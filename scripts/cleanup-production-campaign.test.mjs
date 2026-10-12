@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
-import { cleanupProductionCampaign } from './cleanup-production-campaign.mjs'
+import { cleanupProductionCampaign, mintClerkTestingToken } from './cleanup-production-campaign.mjs'
 import { createUiRegistry, recordUiActor, recordUiCreationIntent, recordUiSchool, signRegistry, verifyRegistry } from './e2e-run-registry.mjs'
 import { protectEvidence, recoverEvidence } from './protect-test-evidence.mjs'
 
@@ -248,5 +248,32 @@ test('an unresolved write-ahead intent without known targets fails closed withou
     assert.equal(effects, 0)
     assert.deepEqual(result.completed, [])
     assert.deepEqual(result.unresolved_intents, [{ id: intentId, kind: 'org', attempted_at: attemptedAt }])
+  } finally { await rm(f.root, { recursive: true, force: true }) }
+})
+
+test('testing token is minted through the administrative transport without protection keys', async () => {
+  const f = await fixture()
+  try {
+    let sent
+    const token = await mintClerkTestingToken({ expectedRevision: f.options.expectedRevision }, f.environment, {
+      execute: async (packet, environment, code) => { sent = { packet, code }; return { testing_token: 'tok_' + 'a'.repeat(40) } } })
+    assert.equal(token, 'tok_' + 'a'.repeat(40))
+    assert.deepEqual(sent.packet, { mode: 'testing_token', expected_revision: f.options.expectedRevision })
+    assert.match(sent.code, /testing_tokens/)
+    assert.doesNotMatch(JSON.stringify(sent.packet), /private-key|railway-test/)
+  } finally { await rm(f.root, { recursive: true, force: true }) }
+})
+
+test('testing token minting fails closed on configuration and malformed responses', async () => {
+  const f = await fixture()
+  try {
+    let calls = 0
+    const execute = async () => { calls++; return { testing_token: 'bad token' } }
+    await assert.rejects(mintClerkTestingToken({ expectedRevision: 'short' }, f.environment, { execute }), /Invalid campaign identity/)
+    await assert.rejects(mintClerkTestingToken({ expectedRevision: f.options.expectedRevision }, { ...f.environment, E2E_ADMIN_SSH_KEY: '' }, { execute }), /Administrative dependency unavailable/)
+    assert.equal(calls, 0)
+    for (const response of [{ testing_token: 'bad token' }, {}, null]) {
+      await assert.rejects(mintClerkTestingToken({ expectedRevision: f.options.expectedRevision }, f.environment, { execute: async () => response }), /Testing token unavailable/)
+    }
   } finally { await rm(f.root, { recursive: true, force: true }) }
 })

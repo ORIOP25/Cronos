@@ -30,7 +30,7 @@ Não assumir que uma escola atual pertence aos testes.
 | Executor | Runners GitHub Actions alojados pelo GitHub; não abrir browsers no PC nas campanhas normais. |
 | Ações de negócio | Executar pela interface, com autenticação, email, persistência, filas e solver reais. |
 | APIs auxiliares | Apenas provas de leitura, identificação de deployments e limpeza limitada. |
-| Autenticação | Usar métodos apresentados. Excluir helpers, tokens de teste e tickets de login fabricados por API. |
+| Autenticação | Usar métodos apresentados. Excluir helpers, tokens de teste e tickets de login fabricados por API. Única exceção autorizada pelo titular (2026-10-12): um Clerk Testing Token emitido no servidor por registo, limitado ao desafio anti-bot do registo; esse desafio fica fora da certificação. |
 | Email | Mensagens realmente entregues, lidas via Gmail API readonly. |
 | Dados | Usar sempre os cinco moldes completos fornecidos; não reduzir o conjunto. |
 | Escolas | Combinar descartáveis e persistentes, construídas pela interface e identificadas por proveniência. |

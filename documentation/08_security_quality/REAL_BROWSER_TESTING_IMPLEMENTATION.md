@@ -1411,6 +1411,9 @@ Nenhum código foi entregue, pelo que o remetente continua por observar e a depe
 A [documentação Clerk](https://clerk.com/docs/security/bot-protection) confirma que os registos automatizados ou vindos de proxies recebem o desafio Turnstile e que só um Testing Token ou a desativação de "Challenge suspicious sign-ups" o evitam.
 O titular autorizou um Testing Token limitado ao desafio do registo, mantendo a proteção de produção ativa e reais todos os outros passos.
 Nessa campanha, o desafio anti-bot do registo fica explicitamente fora da certificação.
-O token ainda não foi implementado: falta um canal autorizado para o emitir e para ler o remetente nas definições Clerk de produção.
+Sem alterar respostas, o FAPI de produção devolve `captcha_bypass=false` mesmo com o token, observado numa leitura sem submissão; o clerk-js mantém então o Turnstile.
+Por isso `withSignUpTestingToken` (em `ui-auth.js`) replica o helper do fornecedor apenas durante cada registo: acrescenta `__clerk_testing_token` aos pedidos `https://clerk.cronos.pt/v1/**` e eleva só esse indicador, sem retries nem outras alterações, e retira a rota quando o registo termina.
+`mintClerkTestingToken` (em `cleanup-production-campaign.mjs`) emite um token por registo, pelo transporte SSH administrativo, dentro do container da API; a chave Clerk nunca sai do servidor e o token (cerca de uma hora) é registado como segredo.
+A API Clerk não expõe o From dos templates (`delivered_by_clerk=true`, domínio `cronos.pt`); o remetente continua por observar no painel ou numa mensagem recebida.
 W11.4 tem autorização para um ambiente Railway temporário, ainda não criado.
 Nenhum passo desta revalidação certifica produção.

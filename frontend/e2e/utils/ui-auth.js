@@ -157,6 +157,34 @@ export async function awaitAuthStage(page, { stage, testInfo, timeoutMs = AUTH_S
   }
 }
 
+const CLERK_FRONTEND_API = 'https://clerk.cronos.pt/v1/**'
+
+// Owner-authorised (2026-10-12) Clerk Testing Token for the registration
+// challenge only, applied the way the vendor helper does: the token query
+// parameter plus the client's captcha_bypass flag. No retries, no other change;
+// the route is removed when the registration settles, success or failure.
+export async function withSignUpTestingToken(page, token, perform) {
+  if (!/^[A-Za-z0-9_-]{20,200}$/.test(token || '')) throw new Error('A minted Clerk testing token is required for registration')
+  const handler = async route => {
+    const url = new URL(route.request().url())
+    url.searchParams.set('__clerk_testing_token', token)
+    const response = await route.fetch({ url: url.toString(), maxRedirects: 0 })
+    let json
+    try { json = await response.json() } catch { return route.fulfill({ response }) }
+    let lifted = false
+    for (const holder of [json?.response, json?.client]) {
+      if (holder?.captcha_bypass === false) { holder.captcha_bypass = true; lifted = true }
+    }
+    return lifted ? route.fulfill({ response, json }) : route.fulfill({ response })
+  }
+  await page.route(CLERK_FRONTEND_API, handler)
+  try {
+    return await perform()
+  } finally {
+    await page.unroute(CLERK_FRONTEND_API, handler)
+  }
+}
+
 export async function expectIdentity(page, email) {
   await expect.poll(() => page.evaluate(() => ({
     email: window.Clerk?.user?.primaryEmailAddress?.emailAddress,

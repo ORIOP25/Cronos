@@ -43,6 +43,25 @@ except Exception:
 print(json.dumps({"result": result, "exports": exports, "export_directory": directory}, separators=(",", ":")))
 `
 
+// Owner-authorised vendor Testing Token for the UI registration challenge only.
+// The production key never leaves the API container; only the token returns.
+const testingTokenCode = `import json, os, sys, httpx
+packet = json.load(sys.stdin)
+out = {"testing_token": None}
+try:
+    if packet.get("mode") != "testing_token" or os.environ.get("RAILWAY_GIT_COMMIT_SHA") != packet["expected_revision"]:
+        raise ValueError("Administrative revision mismatch")
+    key = os.environ.get("CLERK_SECRET_KEY", "")
+    if not key.startswith("sk_live_"):
+        raise ValueError("Production provider credential required")
+    response = httpx.post("https://api.clerk.com/v1/testing_tokens", headers={"Authorization": "Bearer " + key}, timeout=15)
+    response.raise_for_status()
+    out = {"testing_token": response.json()["token"]}
+except Exception:
+    pass
+print(json.dumps(out, separators=(",", ":")))
+`
+
 async function railwayExecutable(environment) {
   if (environment.E2E_RAILWAY_CLI) return environment.E2E_RAILWAY_CLI
   if (process.platform !== 'win32') return 'railway'
@@ -53,13 +72,13 @@ async function railwayExecutable(environment) {
   throw new Error('Native Railway executable unavailable')
 }
 
-async function nativeTransport(packet, environment) {
+async function nativeTransport(packet, environment, code = remoteCode) {
   const temporary = await mkdtemp(join(tmpdir(), 'cronos-admin-ssh-'))
   try {
     const keyPath = join(temporary, 'identity')
     await writeFile(keyPath, environment.E2E_ADMIN_SSH_KEY, { mode: 0o600, flag: 'wx' })
     const executable = await railwayExecutable(environment)
-    const command = `python -c 'exec(__import__("base64").b64decode("${Buffer.from(remoteCode).toString('base64')}"))'`
+    const command = `python -c 'exec(__import__("base64").b64decode("${Buffer.from(code).toString('base64')}"))'`
     const args = ['ssh', '--project', environment.E2E_RAILWAY_PROJECT_ID,
       '--environment', environment.E2E_RAILWAY_ENVIRONMENT_ID, '--service', environment.E2E_RAILWAY_API_SERVICE_ID,
       '--identity-file', keyPath, command]
@@ -96,6 +115,17 @@ function validateAdministrativeConfiguration({ runId, expectedRevision, exportOn
     const key = Buffer.from(environment[name], 'base64')
     if (key.length !== 32 || key.toString('base64') !== environment[name]) throw new Error('Invalid administrative protection key')
   }
+}
+
+export async function mintClerkTestingToken({ expectedRevision }, environment, { execute = nativeTransport } = {}) {
+  if (!/^[a-f0-9]{40}$/.test(expectedRevision || '')) throw new Error('Invalid campaign identity')
+  for (const name of ['E2E_ADMIN_SSH_KEY', 'E2E_RAILWAY_TOKEN', 'E2E_RAILWAY_PROJECT_ID', 'E2E_RAILWAY_ENVIRONMENT_ID', 'E2E_RAILWAY_API_SERVICE_ID']) {
+    if (!environment[name]) throw new Error('Administrative dependency unavailable')
+  }
+  if (!['account', 'project'].includes(environment.E2E_RAILWAY_TOKEN_TYPE)) throw new Error('Invalid Railway token type')
+  const token = (await execute({ mode: 'testing_token', expected_revision: expectedRevision }, environment, testingTokenCode))?.testing_token
+  if (!/^[A-Za-z0-9_-]{20,200}$/.test(token || '')) throw new Error('Testing token unavailable')
+  return token
 }
 
 async function inspectArtifactRoot(artifactRoot) {
