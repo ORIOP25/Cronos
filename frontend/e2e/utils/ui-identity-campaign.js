@@ -71,7 +71,7 @@ async function verifyTeacherPermissions(page) {
   } finally { page.off('request', observe) }
 }
 
-export async function runIdentityCampaign({ page, browser, provenance, deliveredMail, registerSecret }, testInfo, { persistent = false, persistCredentials, onPrepared } = {}) {
+export async function runIdentityCampaign({ page, browser, provenance, deliveredMail, registerSecret, runtime }, testInfo, { persistent = false, persistCredentials, onPrepared } = {}) {
   test.setTimeout(1_200_000)
   if (persistent && (typeof persistCredentials !== 'function' || typeof onPrepared !== 'function')) throw new Error('Persistent preparation requires protected credentials and observed publication evidence')
   const schoolType = persistent ? 'persistent' : 'disposable'
@@ -149,9 +149,25 @@ export async function runIdentityCampaign({ page, browser, provenance, delivered
   await expect(schoolName).toHaveValue(schoolTitle)
   // Signed write-ahead organization intent before Clerk creates the school.
   const organizationIntentId = await provenance.beginOrganizationCreation()
-  await page.getByRole('button', { name: /^(continuar|continue)$/i }).click()
-  await expect(page).toHaveURL(/\/foundation$/)
-  await expect(page.locator('#school_start_date')).toBeEnabled()
+  // A brand-new school has no local member until the app calls /session/bootstrap;
+  // its single GET /members/me 403 is that designed signal (403 is never retried).
+  // The 403 is allowed only inside this action and only with a successful bootstrap.
+  const bootstrapSeen = { forbidden: 0, bootstrapped: 0 }
+  const observeBootstrap = response => {
+    const url = new URL(response.url())
+    if (url.origin !== 'https://api.cronos.pt') return
+    if (url.pathname === '/api/v1/members/me' && response.status() === 403) bootstrapSeen.forbidden += 1
+    if (url.pathname === '/api/v1/session/bootstrap' && response.request().method() === 'POST' && response.ok()) bootstrapSeen.bootstrapped += 1
+  }
+  await runtime.action('school-bootstrap', [{ origin: 'https://api.cronos.pt', pathname: '/api/v1/members/me', method: 'GET', status: 403, action: 'school-bootstrap' }], async () => {
+    page.on('response', observeBootstrap)
+    try {
+      await page.getByRole('button', { name: /^(continuar|continue)$/i }).click()
+      await expect(page).toHaveURL(/\/foundation$/)
+      await expect(page.locator('#school_start_date')).toBeEnabled()
+      if (bootstrapSeen.forbidden) expect(bootstrapSeen.bootstrapped, 'A new-school 403 must be followed by a successful bootstrap').toBeGreaterThan(0)
+    } finally { page.off('response', observeBootstrap) }
+  })
   await provenance.recordCreatedSchool(schoolType, page, organizationIntentId)
   const schoolPeriod = futureSchoolPeriod()
   await completeFoundation(page, schoolPeriod, testInfo)

@@ -6,10 +6,10 @@ import { runIdentityCampaign } from '../utils/ui-identity-campaign.js'
 import { readSchoolResource } from '../utils/ui-school.js'
 import { test, expect } from '../acceptance/fixtures.js'
 
-test('prepare a persistent full school through native UI for future historical campaigns', async ({ page, browser, provenance, deliveredMail, registerSecret }, testInfo) => {
+test('prepare a persistent full school through native UI for future historical campaigns', async ({ page, browser, provenance, deliveredMail, registerSecret, runtime }, testInfo) => {
   if (!process.env.E2E_PREPARATION_REPORT) throw new Error('Persistent preparation requires its separate result path')
   let credentialsPath
-  await runIdentityCampaign({ page, browser, provenance, deliveredMail, registerSecret }, testInfo, {
+  await runIdentityCampaign({ page, browser, provenance, deliveredMail, registerSecret, runtime }, testInfo, {
     persistent: true,
     async persistCredentials(credentials) {
       const path = testInfo.outputPath('persistent-credentials.json.enc')
