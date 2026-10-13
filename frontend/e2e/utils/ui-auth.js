@@ -119,7 +119,7 @@ export async function awaitAuthUi({ stage, readState, timeoutMs = AUTH_STAGE_TIM
 async function readAuthState(page, stage) {
   const target = stage === 'code'
     ? await page.locator('input[autocomplete="one-time-code"]').first().isVisible()
-    : await page.evaluate(() => Boolean(window.Clerk?.session && window.Clerk?.user))
+    : Boolean(await evaluateAcrossNavigation(page, () => Boolean(window.Clerk?.session && window.Clerk?.user)))
   let challenge = null
   for (const frame of page.frames()) {
     const host = providerChallengeHost(frame.url())
