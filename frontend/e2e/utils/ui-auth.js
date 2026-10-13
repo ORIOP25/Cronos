@@ -238,7 +238,7 @@ export async function signOutThroughUi(page) {
   await expect.poll(() => evaluateAcrossNavigation(page, () => Boolean(window.Clerk?.loaded && !window.Clerk.user && !window.Clerk.session))).toBe(true)
 }
 
-export async function login(page, email, password, readCode) {
+export async function login(page, email, password, readCode, runtime) {
   await page.goto('/login')
   await awaitClerkLoaded(page)
   // A trusted device may still hold an earlier session; end it first, as a person would.
@@ -250,16 +250,30 @@ export async function login(page, email, password, readCode) {
   await page.getByLabel('Email', { exact: true }).fill(email)
   await page.getByLabel('Palavra-passe', { exact: true }).fill(password)
   const requestedAt = Date.now()
-  await page.getByRole('button', { name: 'Continuar', exact: true }).click()
-  // Clerk's client trust asks a new device for an emailed code before the session.
-  const code = page.locator('input[autocomplete="one-time-code"]').first()
-  const signedIn = () => evaluateAcrossNavigation(page, () => Boolean(window.Clerk?.session && window.Clerk?.user))
-  await expect.poll(async () => (await code.isVisible()) || Boolean(await signedIn()), { timeout: 30_000 }).toBe(true)
-  if (await code.isVisible()) {
-    if (typeof readCode !== 'function') throw new Error('New-device sign-in requires the delivered code reader')
-    await code.pressSequentially(await readCode(requestedAt))
+  // Clerk's UI asks for the new-device code twice; Clerk may throttle that duplicate
+  // (429). Only this sign-in's prepare_second_factor 429 is expected, in this action.
+  const allowDuplicateCode = request => {
+    const url = new URL(request.url())
+    if (request.method() === 'POST' && url.origin === 'https://clerk.cronos.pt'
+      && /^\/v1\/client\/sign_ins\/[A-Za-z0-9_]+\/prepare_second_factor$/.test(url.pathname)) runtime.allowRequestFailure(request, 429)
   }
-  await expectIdentity(page, email)
+  const signIn = async () => {
+    await page.getByRole('button', { name: 'Continuar', exact: true }).click()
+    // Clerk's client trust asks a new device for an emailed code before the session.
+    const code = page.locator('input[autocomplete="one-time-code"]').first()
+    const signedIn = () => evaluateAcrossNavigation(page, () => Boolean(window.Clerk?.session && window.Clerk?.user))
+    await expect.poll(async () => (await code.isVisible()) || Boolean(await signedIn()), { timeout: 30_000 }).toBe(true)
+    if (await code.isVisible()) {
+      if (typeof readCode !== 'function') throw new Error('New-device sign-in requires the delivered code reader')
+      await code.pressSequentially(await readCode(requestedAt))
+    }
+    await expectIdentity(page, email)
+  }
+  if (!runtime) return signIn()
+  await runtime.action('new-device-sign-in', [], async () => {
+    page.on('request', allowDuplicateCode)
+    try { await signIn() } finally { page.off('request', allowDuplicateCode) }
+  })
 }
 
 export async function loginPersistentActor(page, school, actor, password, readCode) {
