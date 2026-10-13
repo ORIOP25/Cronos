@@ -249,15 +249,21 @@ export async function login(page, email, password, readCode, runtime) {
   }
   await page.getByLabel('Email', { exact: true }).fill(email)
   await page.getByLabel('Palavra-passe', { exact: true }).fill(password)
-  const requestedAt = Date.now()
-  // Clerk's UI asks for the new-device code twice; Clerk may throttle that duplicate
-  // (429). Only this sign-in's prepare_second_factor 429 is expected, in this action.
-  const allowDuplicateCode = request => {
+  // Clerk's UI asks for the new-device code twice and Clerk may throttle code
+  // sends (429 with Retry-After). Only this sign-in's prepare_second_factor 429 is
+  // expected, inside this action; every send's outcome is kept for the decision.
+  const isCodeSend = request => {
     const url = new URL(request.url())
-    if (request.method() === 'POST' && url.origin === 'https://clerk.cronos.pt'
-      && /^\/v1\/client\/sign_ins\/[A-Za-z0-9_]+\/prepare_second_factor$/.test(url.pathname)) runtime.allowRequestFailure(request, 429)
+    return request.method() === 'POST' && url.origin === 'https://clerk.cronos.pt'
+      && /^\/v1\/client\/sign_ins\/[A-Za-z0-9_]+\/prepare_second_factor$/.test(url.pathname)
+  }
+  const sends = []
+  const allowThrottledSend = request => { if (isCodeSend(request) && runtime) runtime.allowRequestFailure(request, 429) }
+  const recordSend = response => {
+    if (isCodeSend(response.request())) sends.push({ status: response.status(), retryAfter: Number(response.headers()['retry-after']) || 0 })
   }
   const signIn = async () => {
+    let requestedAt = Date.now()
     await page.getByRole('button', { name: 'Continuar', exact: true }).click()
     // Clerk's client trust asks a new device for an emailed code before the session.
     const code = page.locator('input[autocomplete="one-time-code"]').first()
@@ -265,15 +271,28 @@ export async function login(page, email, password, readCode, runtime) {
     await expect.poll(async () => (await code.isVisible()) || Boolean(await signedIn()), { timeout: 30_000 }).toBe(true)
     if (await code.isVisible()) {
       if (typeof readCode !== 'function') throw new Error('New-device sign-in requires the delivered code reader')
+      // A throttled send gets no email: wait as Clerk asks, then use the visible resend control.
+      for (let attempt = 0; ; attempt += 1) {
+        await expect.poll(() => sends.length, { timeout: 15_000 }).toBeGreaterThan(0)
+        if (sends.some(send => send.status < 300)) break
+        const wait = Math.max(30, ...sends.map(send => send.retryAfter))
+        if (attempt === 2 || wait > 600) throw new Error(`Clerk throttled the new-device code: ${sends.map(send => `${send.status}/${send.retryAfter}s`).join(', ')}`)
+        sends.length = 0
+        await page.waitForTimeout(wait * 1000)
+        requestedAt = Date.now()
+        await page.getByRole('button', { name: /Reenviar/ }).click()
+      }
       await code.pressSequentially(await readCode(requestedAt))
     }
     await expectIdentity(page, email)
   }
-  if (!runtime) return signIn()
-  await runtime.action('new-device-sign-in', [], async () => {
-    page.on('request', allowDuplicateCode)
-    try { await signIn() } finally { page.off('request', allowDuplicateCode) }
-  })
+  const observe = async () => {
+    page.on('request', allowThrottledSend)
+    page.on('response', recordSend)
+    try { await signIn() } finally { page.off('request', allowThrottledSend); page.off('response', recordSend) }
+  }
+  if (!runtime) return observe()
+  await runtime.action('new-device-sign-in', [], observe)
 }
 
 export async function loginPersistentActor(page, school, actor, password, readCode) {
