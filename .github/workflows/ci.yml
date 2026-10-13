@@ -64,18 +64,18 @@ jobs:
     timeout-minutes: 45
     services:
       postgres:
-        image: postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
+        image: postgres:18-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
         env:
           POSTGRES_USER: postgres
           POSTGRES_HOST_AUTH_METHOD: trust
           POSTGRES_DB: cronos_test_db
         ports: ["5432:5432"]
         options: >-
-          --tmpfs /var/lib/postgresql/data:size=1073741824
+          --tmpfs /var/lib/postgresql:size=1073741824
           --health-cmd "pg_isready -U postgres -d cronos_test_db"
           --health-interval 5s --health-timeout 5s --health-retries 10
       redis:
-        image: redis:7-alpine@sha256:ff02b58f971e7d7d156a1267e283fcbbeee91773b6aa36c49dac28ecfe28eadf
+        image: redis:8.2-alpine@sha256:b51665e66f00759be7c3152ad5ac3c66fb2f619c13ef62dea7cc1f9914524635
         ports: ["6379:6379"]
         options: >-
           --health-cmd "redis-cli ping"
@@ -450,18 +450,18 @@ jobs:
     timeout-minutes: 25
     services:
       postgres:
-        image: postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
+        image: postgres:18-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
         env:
           POSTGRES_USER: postgres
           POSTGRES_HOST_AUTH_METHOD: trust
           POSTGRES_DB: cronos_test_db
         ports: ["5432:5432"]
         options: >-
-          --tmpfs /var/lib/postgresql/data:size=1073741824
+          --tmpfs /var/lib/postgresql:size=1073741824
           --health-cmd "pg_isready -U postgres -d cronos_test_db"
           --health-interval 5s --health-timeout 5s --health-retries 10
       redis:
-        image: redis:7-alpine@sha256:ff02b58f971e7d7d156a1267e283fcbbeee91773b6aa36c49dac28ecfe28eadf
+        image: redis:8.2-alpine@sha256:b51665e66f00759be7c3152ad5ac3c66fb2f619c13ef62dea7cc1f9914524635
         ports: ["6379:6379"]
         options: >-
           --health-cmd "redis-cli ping"
