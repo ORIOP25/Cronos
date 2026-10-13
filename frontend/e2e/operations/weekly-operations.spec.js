@@ -139,7 +139,7 @@ test('teacher records an occurrence in advance and the admin decides it once', a
       expect(await apiRequest(page, 'GET', '/occurrences/debts')).toEqual(debtsBefore)
     })
 
-    await test.step('admin decides the gap once, and repeating it changes nothing', async () => {
+    await test.step('admin decides the gap once and it moves to the history', async () => {
       await goTo(page, `/absences?occurrence_id=${occurrence.id}`)
       await decideGap(page, occurrence)
       const gap = await apiRequest(page, 'GET', `/occurrences/${occurrence.id}`)
@@ -147,8 +147,12 @@ test('teacher records an occurrence in advance and the admin decides it once', a
       const debtsAfter = await apiRequest(page, 'GET', '/occurrences/debts')
       expect(debtsAfter.total_hours_owed).toBeGreaterThan(debtsBefore.total_hours_owed)
 
+      // A decided occurrence offers no second decision; it is only listed in the history.
       await page.reload()
-      await decideGap(page, gap)
+      await expect(page.getByRole('heading', { name: 'Faltas e Ocorrências', exact: true })).toBeVisible()
+      await expect(page.getByRole('dialog')).toHaveCount(0)
+      await goTo(page, '/absences?tab=historical')
+      await expect(page.getByText('Furo', { exact: true }).first()).toBeVisible()
       expect(await apiRequest(page, 'GET', `/occurrences/${occurrence.id}`)).toEqual(gap)
       expect(await apiRequest(page, 'GET', '/occurrences/debts')).toEqual(debtsAfter)
     })
