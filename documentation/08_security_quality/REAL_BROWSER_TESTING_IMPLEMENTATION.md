@@ -1481,7 +1481,19 @@ A razão "contains a phone number" foi obtida por uma sonda única na API admini
 O 403 de `members/me` numa escola nova é o sinal previsto para `POST /session/bootstrap` e só é aceite nessa ação, seguido de bootstrap com sucesso.
 O código de novo dispositivo é lido pela caixa dedicada; nenhum passo de autenticação foi contornado além do token autorizado para o desafio do registo.
 
-### Operação
+### Limite de códigos Clerk (estado às 07:10, Lisboa)
+
+As [PR 90](https://github.com/ORIOP25/Cronos/pull/90) e [PR 91](https://github.com/ORIOP25/Cronos/pull/91) mostraram o bloqueio seguinte.
+Em [38350529359](https://github.com/ORIOP25/Cronos/actions/runs/38350529359) o login em contexto novo passou (`sign_in.client_trust.passed`).
+Em [38352484340](https://github.com/ORIOP25/Cronos/actions/runs/38352484340) a recuperação foi recusada: "Too many verification code requests. Please try again later."
+Em [38354575782](https://github.com/ORIOP25/Cronos/actions/runs/38354575782), com esperas de 35, 70 e 140 s, a recusa manteve-se.
+Os registos Clerk mostram três códigos em 30 s para a mesma conta: registo às 07:04:19, novo dispositivo às 07:04:48 e às 07:04:49.
+Todos os pedidos de recuperação seguintes, até 07:09:09, foram recusados.
+O componente Clerk envia o código de novo dispositivo duas vezes; a rota da app é única (`/login/*`) e o `StrictMode` não duplica em produção.
+
+O fundador precisa de um código de registo, dois de novo dispositivo, um de recuperação e mais dois por cada novo contexto; o docente tem o mesmo problema.
+Esperas curtas não chegam. A próxima alteração exige uma decisão de desenho:
+reutilizar um contexto de browser por ator depois do primeiro login em contexto novo (dispositivo confiável), esperar pela janela Clerk, ou alterar a política Clerk de confiança do cliente.
 
 O Railway marcou o worker e o Beat como `SKIPPED` num commit só de frontend; foram publicados no SHA da `main` com `railway redeploy --from-source` antes da campanha.
 O job legado `e2e-browser` falhou de forma intermitente por indisponibilidade da instância Clerk de desenvolvimento; uma repetição dos jobs falhados ficou verde.
