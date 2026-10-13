@@ -47,6 +47,9 @@ ruff check app scripts
 Run migrations with the privileged `cronos_migrator` role. Run application tests
 only against the database names listed above.
 
+The migration chain has one baseline, `0001_scheduler_v1_baseline`, a PostgreSQL 18 schema dump. Add new migrations on top of it.
+A database on the old chain must run `alembic downgrade base` with the previous code first; see the [Deployment Runbook](../documentation/09_ops_observability/DEPLOYMENT_RUNBOOK.md#migration-baseline-and-reset-rule).
+
 ## Coverage Requirements
 
 CI runs the critical selection in `tests/critical_manifest.json` through `node ../scripts/test.mjs critical --scope backend`. The manifest owns the paths and the coverage thresholds.

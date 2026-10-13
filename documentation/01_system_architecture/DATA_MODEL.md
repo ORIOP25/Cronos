@@ -69,6 +69,7 @@ erDiagram
 ## Contracts and Invariants
 
 - `organization_id` scopes tenant-owned rows.
+- A database created on the removed pre-baseline chain cannot upgrade. Run `alembic downgrade base` with the previous code first; see the [Deployment Runbook](../09_ops_observability/DEPLOYMENT_RUNBOOK.md#migration-baseline-and-reset-rule).
 - Cross-tenant foreign keys use organization-scoped constraints where required.
 - Module `required_minutes` is positive.
 - Ledger entries use an idempotency key and cannot contain zero deltas.
@@ -120,7 +121,7 @@ erDiagram
 - ORM models: `backend/app/models.py`
 - Scheduler v1 models: `backend/app/scheduler/infrastructure/models.py`
 - Schemas: `backend/app/schemas.py`
-- Migrations: `backend/alembic/versions/`
+- Migrations: `backend/alembic/versions/` holds the single baseline `0001_scheduler_v1_baseline`, a PostgreSQL 18 SQL schema dump. New migrations stack on it.
 - RLS tests: `backend/tests/contracts/test_rls_database_policies.py`
 - Integrity tests: `backend/tests/integration/committed/test_tenant_isolation_complete.py`
 

@@ -42,6 +42,7 @@ Completion invalidates the foundation, member, dashboard, and readiness queries.
 Administrators add data through `/imports`.
 The backend renders the templates and validates the files.
 See [Administrative CSV import](BULK_IMPORT_CSV.md) for the templates and endpoints.
+The sample set in [`sample_import_48_classes/`](sample_import_48_classes/) holds five CSV files for 48 classes.
 
 ## Test and E2E Data Preparation
 `backend/scripts/prepare_e2e_clerk_state.py` prepares the shared E2E organization.
@@ -75,6 +76,7 @@ Then run `pytest backend/tests/integration/committed/test_prepare_e2e_clerk_stat
 - Foundation service: `backend/app/services/foundation_service.py`
 - E2E state preparation: `backend/scripts/e2e_clerk_state.py`
 - E2E preparation script: `backend/scripts/prepare_e2e_clerk_state.py`
+- Sample import set: `documentation/07_data_and_seed/sample_import_48_classes/`
 - Bulk import policy: `backend/app/services/bulk_import_policy.py`
 - Bulk import service: `backend/app/services/bulk_import_service.py`
 

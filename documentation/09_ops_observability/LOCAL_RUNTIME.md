@@ -89,7 +89,8 @@ The development override changes only the frontend service.
 - Missing migrations cause application schema errors.
 - Redis failure affects rate limits, readiness, and background dispatch.
 - A PostgreSQL 16 data volume cannot start with the PostgreSQL 18 image.
-  Back up required data and use a fresh volume or a supported database upgrade before switching majors.
+  The named volume is `cronos_postgres_data_v18`, so an old volume is not reused. Back up required data before you switch majors.
+- The PostgreSQL 18 image mounts its volume at `/var/lib/postgresql`, not `/var/lib/postgresql/data`.
 
 ## Safe Stop and Cleanup
 

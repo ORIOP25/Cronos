@@ -73,6 +73,8 @@ Create a v1 occurrence through the scheduled lesson workflow. There is no standa
 - Debt claims follow source lessons across published versions. Each claim contributes only its remaining balance to debt totals.
 - Repeating cancellation can reconcile residual historical debt in an open week. It preserves revocation metadata and adds only needed debt revisions.
 - Valid completed lessons without an occurrence decision stay outside occurrence history.
+- An internship flow withdraws its lessons and records a `GAP` decision for each. Withdrawn-lesson absences stay listed after a new schedule version.
+- A withdrawn lesson accepts only a `GAP` decision; any other decision returns `409`.
 - The diagnostics endpoint explains each excluded candidate with a structured reason and a setup path.
 
 ## States and Transitions

@@ -1,6 +1,6 @@
 # Cronos Scheduler v1 Technical Specification (Revision 2)
 
-Updated: 13 October 2026.
+Updated: 14 October 2026.
 
 ## Purpose
 
@@ -29,7 +29,7 @@ The engine preserves execution, curricular minutes, debt, and protected physical
 | D01 | Use a new baseline without compatibility with the previous generator. |
 | D02 | Existing test data can be removed before real school use. |
 | D03 | Run one schedule job globally. Queue other requests. |
-| D04 | A job can use multiple internal CP-SAT workers. Compare 1, 2, 4, and 8 workers when calibration is required. |
+| D04 | A job can use multiple internal CP-SAT workers. Compare 1, 2, 4, and 8 workers by manual measurement when tuning is required. |
 | D05 | There is no fixed p95 target. Previous 15-minute and two-minute values are not targets. |
 | D06 | Measure performance by size and difficulty family. Initially, p95 is an observed result. |
 | D07 | Search stops through proof, sufficient certified proximity, or low estimated additional return. A p95 never stops search. |
@@ -82,9 +82,9 @@ The implementation lives in `backend/app/scheduler/`.
 | Domain accounting | `demand.py`, `debt.py`, `projection.py`: execution, debt, and modular projection |
 | Domain verification | `candidate_validation.py`, `diagnostics.py`, `oracle.py`: validation, capacity evidence, and tiny-instance test oracle |
 | Domain policy | `quality.py`, `recovery.py`, `eligibility.py`, `results.py`, `stop.py`, `timetable.py` |
-| Domain serialization | `serialization.py`: canonical snapshot representation and digest |
-| Persistence | `infrastructure/models.py`, `progress.py`, `proposals.py`, `operations.py`, `occurrences.py`, `queries.py` |
-| Solver | `infrastructure/annual_model.py`, `constructive.py`, `placement_model.py`, `search.py` |
+| Domain serialization | `serialization.py`: the only canonical JSON serializer, with the snapshot digest |
+| Persistence | `infrastructure/models.py`, `progress.py`, `proposals.py`, `operations.py`, `occurrences.py`, `queries.py` (all operations use the v1 tables) |
+| Solver | `infrastructure/annual_model.py`, `constructive.py`, `placement_model.py`, `recovery_construction.py`, `search.py` |
 | Runtime | `infrastructure/snapshot.py`, `jobs.py`, `diagnostics.py`, `curriculum.py`, `task_dispatcher.py` |
 | Test fixtures | `lab/fixtures.py`, `scale.py`, `annual.py`, `recovery.py`, `typology.py` |
 
@@ -100,7 +100,7 @@ Use immutable dataclasses, enums, integers, and ordered collections.
 Domain contracts contain no ORM models, SQLAlchemy sessions, CP-SAT objects, or untyped `Any` values.
 The validator examines materialized blocks independently of solver variables.
 The enumerative oracle is a test reference, never a production fallback.
-Only the v1 engine runs. There is no selectable legacy engine.
+Only the v1 engine runs.
 
 ## Data or Request Flow
 
@@ -225,7 +225,7 @@ Approval recalculates the boundary. A proposal can become invalid while awaiting
 
 ### Persistence and revisions
 
-Use the consolidated Alembic baseline `0001_scheduler_v1_baseline` in `backend/alembic/versions/`.
+The single Alembic baseline `0001_scheduler_v1_baseline` in `backend/alembic/versions/` is a PostgreSQL 18 SQL schema dump. New migrations stack on it.
 The [Data Model](../01_system_architecture/DATA_MODEL.md) maps retained lifecycle, operational, and v1 tables.
 Tenant foreign keys include organization identifiers where required.
 Force RLS on school tables and use an explicit organization context with a role that cannot bypass RLS.
@@ -382,7 +382,7 @@ Modular-only changes do not increase physical disruption.
 `lambda` is positive; `g` has integer coefficients and strictly positive slopes.
 `adaptive_quality_vector` implements an experimental comparator. Coefficients require explicit measured calibration, not arbitrary production claims.
 Record the quality policy version, coefficients, and ordering examples with measurements.
-Policy changes require corresponding specification, oracle, and baseline updates.
+Policy changes require corresponding specification and oracle updates.
 Measure incremental disruption against the previous version and accumulated disruption against the first approval.
 
 ### Generation and recovery algorithms
@@ -543,7 +543,7 @@ Rejection without changed inputs creates no new reason. Submission revalidates e
 - Changed inputs invalidate queued work or pending proposals.
 - Lost locks, stalled heartbeats, or killed processes trigger supervised recovery.
 - Migration drift, tenant isolation failures, and invalid accounting block release.
-- Old database schemas require the explicit baseline-reset procedure, never automatic legacy fallback.
+- A database on the pre-baseline migration chain needs the reset rule in the [Deployment Runbook](../09_ops_observability/DEPLOYMENT_RUNBOOK.md#migration-baseline-and-reset-rule).
 
 ## Verification Procedure
 
@@ -571,8 +571,7 @@ Transactions use PostgreSQL through Alembic, never SQLite. CP-SAT tests assert v
 | UI | Configure, generate, approve, decide occurrence, repair, execute, correct, renew |
 
 Metamorphic checks cover entity renaming, input permutation, additional availability, and enumerated optimal vectors.
-The retained lab modules provide deterministic test fixtures. Historical campaign CLI, JSON corpora, and campaign reports were removed.
-Use the maintained unit, integration, and capacity suites instead of removed campaign commands.
+The `lab/` modules provide deterministic test fixtures only.
 The 48-class correctness regression uses the configured 900-second safety budget and validates a complete candidate.
 
 For performance comparisons, fix inputs, hardware, policy, versions, and safety limits.
@@ -580,7 +579,7 @@ Record seeds, image/commit identity, input digest, CPU/RAM limits, workers, phas
 Separate queue time from processing. Include failures, OOM, and censored runs.
 Report sample size and uncertainty. Do not combine local and Railway measurements into one baseline.
 Compare validity and completion first, then quality and resources. Avoid averages that conceal difficult-school regressions.
-Calibration can compare 1/2/4/8 internal workers; eight workers do not guarantee eight CPU cores.
+A comparison can use 1/2/4/8 internal workers; eight workers do not guarantee eight CPU cores.
 Evaluate stop-policy changes against independent cases and record missed late improvements.
 Historical timings are not a current controlled benchmark or universal guarantee.
 
@@ -605,7 +604,7 @@ Local test commands never reset or deploy Railway or Cloudflare.
 Acceptance requires zero validator violations, duplicated minutes, protected physical changes, or stale approvals.
 Concurrency tests must prove one global calculation.
 Quality requires small-instance oracles and honest large-instance evidence.
-Verify empty installation, baseline reset, process recovery, API, queue, generation, approval, and the frontend.
+Verify empty installation, process recovery, API, queue, generation, approval, and the frontend.
 Record known limitations and selected runtime parameters. Functional acceptance uses concrete reviewable results.
 The implementation is complete only when accounting, quality, operations, and publication work together.
 

@@ -125,6 +125,16 @@ def _v1_week_operational_blocks(
     )
 
 
+def _tally_slot(item: dict, status: str | None) -> None:
+    item["total_slots"] += 1
+    if status in ("COMPLETED", "OCCURRENCE"):
+        item["registered_slots"] += 1
+    if status == "COMPLETED":
+        item["completed_slots"] += 1
+    if status == "OCCURRENCE":
+        item["occurrence_slots"] += 1
+
+
 def _v1_slot_counts(
     db: Session,
     organization_id: int,
@@ -142,32 +152,18 @@ def _v1_slot_counts(
         }
         for teacher_id in teacher_ids
     }
-    if not teacher_ids:
-        return counts
-    for teacher_id, _lesson, lesson_log in _v1_week_lessons(
-        db, organization_id, year_id, version, teacher_ids, week_start_date
-    ):
-        item = counts[teacher_id]
-        item["total_slots"] += 1
-        status = None if lesson_log is None else lesson_log.status
-        if status in ("COMPLETED", "OCCURRENCE"):
-            item["registered_slots"] += 1
-        if status == "COMPLETED":
-            item["completed_slots"] += 1
-        if status == "OCCURRENCE":
-            item["occurrence_slots"] += 1
-    for block, _lesson, lesson_log in _v1_week_operational_blocks(
-        db, organization_id, year_id, teacher_ids, week_start_date
-    ):
-        item = counts[block.teacher_id]
-        item["total_slots"] += 1
-        status = None if lesson_log is None else lesson_log.status.value
-        if status in ("COMPLETED", "OCCURRENCE"):
-            item["registered_slots"] += 1
-        if status == "COMPLETED":
-            item["completed_slots"] += 1
-        if status == "OCCURRENCE":
-            item["occurrence_slots"] += 1
+    if teacher_ids:
+        for teacher_id, _lesson, lesson_log in _v1_week_lessons(
+            db, organization_id, year_id, version, teacher_ids, week_start_date
+        ):
+            _tally_slot(counts[teacher_id], None if lesson_log is None else lesson_log.status)
+        for block, _lesson, lesson_log in _v1_week_operational_blocks(
+            db, organization_id, year_id, teacher_ids, week_start_date
+        ):
+            _tally_slot(
+                counts[block.teacher_id],
+                None if lesson_log is None else lesson_log.status.value,
+            )
     return counts
 
 

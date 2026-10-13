@@ -302,7 +302,7 @@ const LessonLogModal = ({ onClose, slot, isAdmin = false, readOnly = false, allo
                 </CButton>
                 <CButton
                   color="warning" size="sm" className="text-white"
-                  onClick={() => { setShowOccurrenceConfirm(false); handleSubmit('OCCURRENCE') }}
+                  onClick={() => { setShowOccurrenceConfirm(false); void handleSubmit('OCCURRENCE') }}
                   disabled={upsertLogMutation.isPending}
                 >
                   {upsertLogMutation.isPending && <CSpinner size="sm" className="me-1" />}

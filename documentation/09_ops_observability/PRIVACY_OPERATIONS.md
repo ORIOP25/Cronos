@@ -52,7 +52,6 @@ The exporter creates each destination exclusively with mode `0600`; an existing 
 New parent directories use mode `0700`. Parent traversal and symbolic parent directories are rejected.
 The plain and encrypted exporters share this file creation policy.
 The standalone export reads through `DATABASE_URL` with the tenant context.
-The campaign wrapper reuses the same classified export within its administrative transaction.
 
 ## Erasure
 
@@ -75,7 +74,7 @@ tables are `organization`, `organization_legal_acceptance`, and `alembic_version
 The required sequence is export first, confirmed provider deletion second, and
 the local transaction last. Execution requires both `--execute` and
 `--provider-deleted`; the command is otherwise a dry-run.
-Execution also refuses active jobs in both scheduler generations while holding
+Execution also refuses active scheduler v1 jobs while holding
 the organization row lock until commit.
 
 ## Incident and breach checklist

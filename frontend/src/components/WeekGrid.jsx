@@ -291,7 +291,11 @@ const WeekGrid = ({
   }
 
   return (
-    <section className="week-grid-scroll" tabIndex="0" aria-label="Grelha semanal de horários. Use Shift e roda do rato para deslocar horizontalmente.">
+    <section
+      className="week-grid-scroll"
+      tabIndex="0" // NOSONAR: a scrollable region must be keyboard focusable (WCAG 2.1.1)
+      aria-label="Grelha semanal de horários. Use Shift e roda do rato para deslocar horizontalmente."
+    >
       {transitionInWeek ? (
         <output className="week-grid__transition-notice d-block">
           Nova grelha em vigor a partir de {formatDate(gridTransitionDate)}

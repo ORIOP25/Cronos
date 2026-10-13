@@ -36,5 +36,6 @@ Deployment contracts also live in `docker-compose*.yml`, `backend/railway/*.json
 `.github/workflows/ci.yml`, and the environment example files.
 
 Local, test, and CI stacks use PostgreSQL 18 and Redis 8.2.
-Fresh databases use the frozen `0001_scheduler_v1_baseline` migration.
-Railway JSON files record intended settings. Verify their dashboard application before deployment.
+Fresh databases use the frozen `0001_scheduler_v1_baseline` migration. A database on the old chain needs `alembic downgrade base` with the previous code first.
+Railway `api`, `worker`, and `beat` use their JSON files. `scheduler-supervisor` is configured in the dashboard; `backend/railway/supervisor.json` is its reference.
+Verify dashboard settings before deployment.

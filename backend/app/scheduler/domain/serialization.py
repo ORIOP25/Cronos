@@ -10,6 +10,7 @@ from __future__ import annotations
 import enum
 import hashlib
 import json
+import math
 from collections.abc import Mapping
 from datetime import date, datetime, time
 from decimal import Decimal
@@ -44,7 +45,7 @@ def canonical_json_value(value: Any) -> Any:
     if value is None or isinstance(value, (str, int, bool)):
         return value
     if isinstance(value, float):
-        if value != value or value in (float("inf"), float("-inf")):
+        if not math.isfinite(value):
             raise SchedulerSerializationError("Scheduler snapshots require finite numbers.")
         return value
     if isinstance(value, Decimal):

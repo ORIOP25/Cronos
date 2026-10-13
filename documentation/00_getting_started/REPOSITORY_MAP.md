@@ -22,7 +22,7 @@ Cronos organizes source into backend, frontend, documentation, workflow, and age
 MeuProjeto/
 ├── .agents/                      # AI agent skills and configuration
 │   ├── README.md                 # Agent suite documentation
-│   └── skills/                   # Cronos skills and protected imported skills
+│   └── skills/                   # Cronos skills, tracked ponytail skill, and ignored imported skills
 ├── .github/                      # GitHub Action workflows and agent definitions
 │   ├── agents/                   # Agent_Cronos.md router
 │   ├── workflows/                # CI workflow specifications
@@ -75,6 +75,7 @@ MeuProjeto/
 │   ├── 05_backend_api/           # REST API reference and standards
 │   ├── 06_frontend_ux/           # UI architecture, routes, design tokens
 │   ├── 07_data_and_seed/         # Seed scenarios and test data
+│   │   └── sample_import_48_classes/ # Sample CSV import set (48 classes, 16 courses)
 │   ├── 08_security_quality/      # Security controls, RLS, and CI workflows
 │   └── 09_ops_observability/     # Local runtime and observability runbooks
 ├── scripts/                      # Root test and quality runners
@@ -110,7 +111,8 @@ MeuProjeto/
 - Onboarding API: `backend/app/api/v1/endpoints/session.py`, `backend/app/api/v1/endpoints/foundation.py`, `backend/app/api/v1/endpoints/readiness.py`
 - Onboarding services: `backend/app/services/foundation_service.py`, `backend/app/services/school_readiness_service.py`, `backend/app/services/dashboard_service.py`
 - Compose configurations: `docker-compose.yml`, `docker-compose.dev.yml`, `docker-compose.ci.yml`, `docker-compose.test.yml`
-- Railway service definitions: `backend/railway/*.json`
+- Railway service definitions: `backend/railway/*.json` (supervisor is a dashboard reference)
+- Sample CSV import set: `documentation/07_data_and_seed/sample_import_48_classes/`
 
 ## Related Documents
 

@@ -169,6 +169,8 @@ Valid calendar replacements do not produce a constraint conflict. Invalid date c
 Scheduler status exposes `active_proposal_id` for the approved proposal linked to the active version, or `null` when absent.
 Weekly schedule reads return published lesson intervals, resource identifiers, module projections, and operational log state.
 There is no separate proposal-lesson listing route.
+The API has no observability summary routes, no `POST /api/v1/occurrences/` create route, and no `GET /api/v1/scheduler/drafts/{id}/lessons` route.
+`POST /api/v1/schedule/constraints/` remains because the E2E adaptive repair test triggers it.
 
 ### Occurrences, timesheets, and webhooks
 
@@ -245,7 +247,7 @@ Important error codes are `FOUNDATION_DRAFT_VERSION_CONFLICT`, `FOUNDATION_INCOM
 
 ### Occurrence payload compatibility
 
-The public occurrence create, update, and cancel payloads no longer accept the
+The public occurrence update and cancel payloads no longer accept the
 free-text `reason` field. Clients that still send it receive `422`; this is an
 intentional incompatible contract change. Consumers must remove the field
 before rollout.
