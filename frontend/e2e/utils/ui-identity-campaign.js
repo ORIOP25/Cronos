@@ -8,7 +8,7 @@ import { completeAndResumeGuide } from '../utils/ui-guide.js'
 import { restartDisposableSchoolYear } from '../utils/ui-year.js'
 import { exerciseSchoolIsolation } from '../utils/ui-isolation.js'
 import { exercisePendingOccurrenceAndGap } from '../utils/ui-occurrences.js'
-import { awaitAuthStage, evaluateAcrossNavigation, expectIdentity, login, freshSession, withSignUpTestingToken } from '../utils/ui-auth.js'
+import { awaitAuthStage, deliveredCodeReader, evaluateAcrossNavigation, expectIdentity, login, freshSession, withSignUpTestingToken } from '../utils/ui-auth.js'
 import { mintClerkTestingToken } from '../../../scripts/cleanup-production-campaign.mjs'
 import { campaignSchoolLabel, validateCodeSender } from './acceptance-policy.js'
 import { test, expect } from '@playwright/test'
@@ -92,6 +92,8 @@ export async function runIdentityCampaign({ page, browser, provenance, delivered
   const sender = validateCodeSender(process.env.E2E_GMAIL_CODE_SENDER)
   const resetSender = validateCodeSender(process.env.E2E_GMAIL_RESET_SENDER)
   const original = await readOriginalExpectations()
+  const adminCode = deliveredCodeReader(deliveredMail, 'admin', email)
+  const teacherCode = deliveredCodeReader(deliveredMail, 'teacher', teacherEmail)
   const criteria = (after, subject, from = sender) => ({ recipient: email, senders: [from], subject, purpose: 'code', after, before: after + 120_000 })
   // One short-lived vendor token per registration; redacted like any credential.
   const signUpToken = async () => {
@@ -178,7 +180,7 @@ export async function runIdentityCampaign({ page, browser, provenance, delivered
   await page.getByRole('button', { name: 'Terminar sessão', exact: true }).click()
   await expect.poll(() => evaluateAcrossNavigation(page, () => Boolean(window.Clerk?.loaded && !window.Clerk.user && !window.Clerk.session))).toBe(true)
 
-  await freshSession(browser, testInfo, 'fresh-login', loginPage => login(loginPage, email, password))
+  await freshSession(browser, testInfo, 'fresh-login', loginPage => login(loginPage, email, password, adminCode))
   await recordCheckpoint(testInfo, ['E2E-02/admin-login-logout', 'E2E-02/new-context-login'], { requires: 'actor' })
   await freshSession(browser, testInfo, 'recovery', async recoveryPage => {
     await recoveryPage.goto('/recuperar-palavra-passe')
@@ -198,7 +200,7 @@ export async function runIdentityCampaign({ page, browser, provenance, delivered
   await freshSession(browser, testInfo, 'old-password-rejected', (loginPage, runtime) => rejectOldPassword(loginPage, runtime, testInfo, email, password))
   await recordCheckpoint(testInfo, 'E2E-03/credential-change', { requires: 'actor' })
   await freshSession(browser, testInfo, 'recovered-login', async (loginPage, runtime) => {
-    await login(loginPage, email, recoveredPassword)
+    await login(loginPage, email, recoveredPassword, adminCode)
     await recordCheckpoint(testInfo, 'E2E-03/recovered-login', { requires: 'actor', observation: { recovered: true } })
     await importOriginalData(loginPage, testInfo)
     const imported = await verifyImportedData(loginPage, original, testInfo)
@@ -250,7 +252,7 @@ export async function runIdentityCampaign({ page, browser, provenance, delivered
     })
     await recordCheckpoint(testInfo, 'E2E-04/invitation-acceptance', { requires: 'school' })
     await freshSession(browser, testInfo, 'teacher-fresh-login', async teacherPage => {
-      await login(teacherPage, teacherEmail, teacherPassword)
+      await login(teacherPage, teacherEmail, teacherPassword, teacherCode)
       await teacherPage.goto('/my-schedules')
       await expect(teacherPage).toHaveURL(/\/my-schedules$/)
       await verifyTeacherPreference(teacherPage, preferenceSlot)
@@ -283,13 +285,13 @@ export async function runIdentityCampaign({ page, browser, provenance, delivered
     await verifyFirstProposalAndApprove(loginPage, testInfo, generated, original, imported)
     let operationalHistory
     await freshSession(browser, testInfo, 'teacher-published-schedule-and-progress', async teacherPage => {
-      await login(teacherPage, teacherEmail, teacherPassword)
+      await login(teacherPage, teacherEmail, teacherPassword, teacherCode)
       const { member, week } = await verifyPublishedTeacherSchedule(teacherPage, testInfo, generated, original, imported, converted)
       await verifyFutureExecutionAndIncompleteWeek(teacherPage, testInfo, week)
       await verifyInitialProgress(teacherPage, testInfo, original, imported, member.teacher_id)
       if (persistent) return
       await freshSession(browser, testInfo, 'concurrent-admin-occurrence-decision', async (concurrentPage, concurrentRuntime) => {
-        await login(concurrentPage, email, recoveredPassword)
+        await login(concurrentPage, email, recoveredPassword, adminCode)
         operationalHistory = await exercisePendingOccurrenceAndGap(teacherPage, loginPage, testInfo, week, original, imported.identities, { page: concurrentPage, runtime: concurrentRuntime })
       })
     })

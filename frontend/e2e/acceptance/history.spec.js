@@ -1,7 +1,7 @@
 import { lstat, readFile } from 'node:fs/promises'
 import { verifyRegistry } from '../../../scripts/e2e-run-registry.mjs'
 import { recordCheckpoint } from '../utils/acceptance-proof.js'
-import { freshSession, loginPersistentActor } from '../utils/ui-auth.js'
+import { deliveredCodeReader, freshSession, loginPersistentActor } from '../utils/ui-auth.js'
 import { readSchoolResource } from '../utils/ui-school.js'
 import { validateExecutedLessonCredit } from '../utils/expected-results.js'
 import { openLessonRecord, openTeacherWeek } from '../utils/ui-teacher.js'
@@ -19,7 +19,7 @@ test('persistent UI school records an ended lesson once and preserves exact curr
     'E2E-12/submit-week', 'E2E-12/approve-week', 'E2E-12/closed-week-blocked', 'E2E-12/reopen-week',
     'E2E-13/future-change-repair', 'E2E-13/physical-lineage', 'E2E-13/residual-coverage', 'E2E-13/historical-credit-preserved']
     .map(description => ({ type: 'acceptance-case', description })),
-}, async ({ page, browser, provenance, registerSecret }, testInfo) => {
+}, async ({ page, browser, provenance, registerSecret, deliveredMail }, testInfo) => {
   test.setTimeout(1_800_000)
   const path = process.env.E2E_PERSISTENT_REGISTRY
   const info = await lstat(path)
@@ -41,7 +41,7 @@ test('persistent UI school records an ended lesson once and preserves exact curr
   if (!actor || !password || !adminActor || !adminPassword) throw new Error('Historical dependency unavailable: persistent teacher and founder UI credentials are required')
   await registerSecret(password)
   await registerSecret(adminPassword)
-  const member = await loginPersistentActor(page, school, actor, password)
+  const member = await loginPersistentActor(page, school, actor, password, deliveredCodeReader(deliveredMail, 'teacher', actor.email))
   expect(member.teacher_id).toBe(school.preparation.teacher_id)
   expect(member.capabilities).toContain('teacher')
   await provenance.observePersistentSchool(school, page)
@@ -103,7 +103,7 @@ test('persistent UI school records an ended lesson once and preserves exact curr
     'E2E-10/ended-lesson-log', 'E2E-10/exact-minute-delta', 'E2E-10/repeat-without-duplicate',
   ], { requires: 'school', observation: { lesson_log_id: after.lesson_log_id, exact_minutes: minutes } })
   await freshSession(browser, testInfo, 'persistent-admin-occurrence-decisions', async adminPage => {
-    const admin = await loginPersistentActor(adminPage, school, adminActor, adminPassword)
+    const admin = await loginPersistentActor(adminPage, school, adminActor, adminPassword, deliveredCodeReader(deliveredMail, 'admin', adminActor.email))
     expect(admin.capabilities).toContain('admin')
     await exerciseEndedGiven(page, adminPage, testInfo, school, horizon, selected.weekStart)
     await exerciseEndedSubstitution(page, adminPage, testInfo, school, horizon, selected.weekStart)

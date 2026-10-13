@@ -354,6 +354,7 @@ export async function createGmailReader(credentials, { fetchImpl = fetch } = {})
         after: criteria.after,
         before: criteria.before,
       })
+      let previous = -1
       do {
         const matches = []
         const { expired } = await scanPages(query, { deadline }, async item => {
@@ -361,8 +362,15 @@ export async function createGmailReader(credentials, { fetchImpl = fetch } = {})
           if (delivered) matches.push(delivered)
         })
         if (expired) throw new Error(DEADLINE_ERROR)
-        if (matches.length > 1) throw new Error('Ambiguous matching Gmail messages')
-        if (matches.length === 1) return matches[0]
+        // A re-sent code (e.g. Clerk's new-device check) invalidates the earlier one:
+        // with `latest`, take the newest code once two scans agree on the set.
+        if (criteria.latest === true && criteria.purpose === 'code' && matches.length) {
+          if (matches.length === previous) return matches.reduce((a, b) => (b.delivered_at > a.delivered_at ? b : a))
+          previous = matches.length
+        } else {
+          if (matches.length > 1) throw new Error('Ambiguous matching Gmail messages')
+          if (matches.length === 1) return matches[0]
+        }
         await sleep(Math.min(intervalMs, Math.max(0, deadline - Date.now())))
       } while (Date.now() < deadline)
       throw new Error(DEADLINE_ERROR)

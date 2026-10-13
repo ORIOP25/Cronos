@@ -1,7 +1,7 @@
 import { observeAcceptanceRuntime } from './acceptance-runtime.js'
 import { expect } from '@playwright/test'
 import { readSchoolResource } from './ui-school.js'
-import { campaignSchoolLabel } from './acceptance-policy.js'
+import { campaignSchoolLabel, validateCodeSender } from './acceptance-policy.js'
 
 // Bounded normal transition for the real provider UI. A managed challenge that
 // auto-completes inside this window still passes; only a persistent, visible
@@ -205,16 +205,32 @@ export async function expectIdentity(page, email) {
   }))).toEqual({ email, verified: 'verified', session: true })
 }
 
-export async function login(page, email, password) {
+// Reads the newest delivered sign-in code for a dedicated mailbox recipient.
+export function deliveredCodeReader(deliveredMail, mailbox, recipient) {
+  const sender = validateCodeSender(process.env.E2E_GMAIL_CODE_SENDER)
+  return async after => (await deliveredMail(mailbox, { recipient, senders: [sender], subject: /^\d{6} is your verification code$/,
+    purpose: 'code', after, before: after + 120_000, latest: true })).code
+}
+
+export async function login(page, email, password, readCode) {
   await page.goto('/login')
   await page.getByLabel('Email', { exact: true }).fill(email)
   await page.getByLabel('Palavra-passe', { exact: true }).fill(password)
+  const requestedAt = Date.now()
   await page.getByRole('button', { name: 'Continuar', exact: true }).click()
+  // Clerk's client trust asks a new device for an emailed code before the session.
+  const code = page.locator('input[autocomplete="one-time-code"]').first()
+  const signedIn = () => evaluateAcrossNavigation(page, () => Boolean(window.Clerk?.session && window.Clerk?.user))
+  await expect.poll(async () => (await code.isVisible()) || Boolean(await signedIn()), { timeout: 30_000 }).toBe(true)
+  if (await code.isVisible()) {
+    if (typeof readCode !== 'function') throw new Error('New-device sign-in requires the delivered code reader')
+    await code.pressSequentially(await readCode(requestedAt))
+  }
   await expectIdentity(page, email)
 }
 
-export async function loginPersistentActor(page, school, actor, password) {
-  await login(page, actor.email, password)
+export async function loginPersistentActor(page, school, actor, password, readCode) {
+  await login(page, actor.email, password, readCode)
   expect(await page.evaluate(() => window.Clerk.user.id)).toBe(actor.id)
   if (await page.evaluate(() => window.Clerk.organization?.id) !== school.clerk_id) {
     await page.getByRole('group', { name: 'Selecionar escola', exact: true }).getByRole('button', { name: 'Abrir seletor de organizações', exact: true }).click()
