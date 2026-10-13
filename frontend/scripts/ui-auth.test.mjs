@@ -327,3 +327,15 @@ test('a poll read survives a navigation but never hides another page error', asy
   const broken = { evaluate: async () => { throw new Error('page.evaluate: Target page, context or browser has been closed') } }
   await assert.rejects(evaluateAcrossNavigation(broken, () => 1), /has been closed/)
 })
+
+test('a request settled before the token route answers is left alone, other route errors are not', async () => {
+  const page = routedPage()
+  await withSignUpTestingToken(page, TOKEN, async () => {})
+  const { handler } = page.handlers[0]
+  const settled = { request: () => ({ url: () => 'https://clerk.cronos.pt/v1/client' }),
+    fetch: async () => ({ json: async () => ({ response: { captcha_bypass: false } }) }),
+    fulfill: async () => { throw new Error('route.fulfill: Route is already handled!') } }
+  await handler(settled)
+  const broken = { ...settled, fulfill: async () => { throw new Error('route.fulfill: unexpected') } }
+  await assert.rejects(handler(broken), /unexpected/)
+})
