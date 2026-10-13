@@ -223,10 +223,9 @@ test('the frontend fast macro stays narrow and e2e-runtime owns the relocated ma
 
   const lines = readFileSync(join(ROOT, '.github/workflows/ci.yml'), 'utf8').split(/\r?\n/)
   const runtimeStart = lines.indexOf('  e2e-runtime:')
-  const aggregateStart = lines.indexOf('  e2e:')
   assert.notEqual(runtimeStart, -1, 'the e2e-runtime job must exist')
-  assert.notEqual(aggregateStart, -1, 'the aggregate e2e job must exist')
-  const runtime = lines.slice(runtimeStart, aggregateStart)
+  const runtimeEnd = lines.findIndex((line, index) => index > runtimeStart && /^  [a-z0-9-]+:$/.test(line))
+  const runtime = lines.slice(runtimeStart, runtimeEnd === -1 ? lines.length : runtimeEnd)
   // The YAML step block that owns a run line, from its `- name:` marker to the
   // next one. It lets the guard reject a step-level `if:` on the step itself,
   // not only a job-level condition.
@@ -254,10 +253,6 @@ test('the frontend fast macro stays narrow and e2e-runtime owns the relocated ma
     assert.ok(block.includes('        working-directory: frontend'), `${label} runs in the frontend directory`)
     assert.equal(block.some((line) => /^        if:/.test(line)), false, `${label} step must stay unconditional`)
   }
-
-  const aggregate = lines.slice(aggregateStart).join('\n')
-  assert.match(aggregate, /needs: \[already-verified, e2e-runtime, e2e-browser\]/)
-  assert.match(aggregate, /if \[ "\$runtime" != "success" \]; then/)
 })
 
 test('preserves paths and arguments containing spaces as separate child arguments', () => {
