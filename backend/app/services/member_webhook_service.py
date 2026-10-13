@@ -285,6 +285,9 @@ async def _load_matching_membership(
             selectinload(models.OrganizationMembership.teacher_profile),
         )
         .where(models.Organization.clerk_org_id == clerk_org_id)
+        # Same lock order as the member endpoints (membership before account): a
+        # restore holds this row while calling Clerk, whose webhook then waits here.
+        .with_for_update(of=models.OrganizationMembership)
     )
     if membership_id:
         stmt = stmt.where(models.OrganizationMembership.id == membership_id)
