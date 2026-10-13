@@ -191,7 +191,7 @@ export async function runIdentityCampaign({ page, browser, provenance, delivered
   const adminDevice = await browser.newContext({ baseURL: 'https://cronos.pt' })
   const teacherDevice = await browser.newContext({ baseURL: 'https://cronos.pt' })
   try {
-  await freshSession(browser, testInfo, 'fresh-login', loginPage => login(loginPage, email, password, adminCode), { context: adminDevice })
+  await freshSession(browser, testInfo, 'fresh-login', (loginPage, loginRuntime) => login(loginPage, email, password, adminCode, loginRuntime), { context: adminDevice })
   await recordCheckpoint(testInfo, ['E2E-02/admin-login-logout', 'E2E-02/new-context-login'], { requires: 'actor' })
   await freshSession(browser, testInfo, 'admin-school', async (loginPage, runtime) => {
     // The trusted admin device still holds the session from the new-context sign-in.
@@ -258,8 +258,8 @@ export async function runIdentityCampaign({ page, browser, provenance, delivered
       await expect.poll(() => evaluateAcrossNavigation(teacherPage, () => Boolean(window.Clerk?.loaded && !window.Clerk.user && !window.Clerk.session))).toBe(true)
     }, { context: teacherDevice })
     await recordCheckpoint(testInfo, 'E2E-04/invitation-acceptance', { requires: 'school' })
-    await freshSession(browser, testInfo, 'teacher-fresh-login', async teacherPage => {
-      await login(teacherPage, teacherEmail, teacherPassword, teacherCode)
+    await freshSession(browser, testInfo, 'teacher-fresh-login', async (teacherPage, teacherRuntime) => {
+      await login(teacherPage, teacherEmail, teacherPassword, teacherCode, teacherRuntime)
       await teacherPage.goto('/my-schedules')
       await expect(teacherPage).toHaveURL(/\/my-schedules$/)
       await verifyTeacherPreference(teacherPage, preferenceSlot)
@@ -294,8 +294,8 @@ export async function runIdentityCampaign({ page, browser, provenance, delivered
     expect(generated.versionId).not.toBe(rejected.versionId)
     await verifyFirstProposalAndApprove(loginPage, testInfo, generated, original, imported)
     let operationalHistory
-    await freshSession(browser, testInfo, 'teacher-published-schedule-and-progress', async teacherPage => {
-      await login(teacherPage, teacherEmail, teacherPassword, teacherCode)
+    await freshSession(browser, testInfo, 'teacher-published-schedule-and-progress', async (teacherPage, teacherRuntime) => {
+      await login(teacherPage, teacherEmail, teacherPassword, teacherCode, teacherRuntime)
       const { member, week } = await verifyPublishedTeacherSchedule(teacherPage, testInfo, generated, original, imported, converted)
       await verifyFutureExecutionAndIncompleteWeek(teacherPage, testInfo, week)
       await verifyInitialProgress(teacherPage, testInfo, original, imported, member.teacher_id)
@@ -344,7 +344,7 @@ export async function runIdentityCampaign({ page, browser, provenance, delivered
       await rejectOldPassword(rejectPage, rejectRuntime, testInfo, email, password)
     }, { context: registrationDevice })
     await recordCheckpoint(testInfo, 'E2E-03/credential-change', { requires: 'actor' })
-    await login(loginPage, email, recoveredPassword, adminCode)
+    await login(loginPage, email, recoveredPassword, adminCode, runtime)
     await recordCheckpoint(testInfo, 'E2E-03/recovered-login', { requires: 'actor', observation: { recovered: true } })
     if (persistent) {
       await onPrepared({ page: loginPage, original, imported, converted, generated, schoolPeriod })
