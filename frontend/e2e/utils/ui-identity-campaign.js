@@ -190,7 +190,11 @@ export async function runIdentityCampaign({ page, browser, provenance, delivered
     await recoveryPage.getByLabel('Email', { exact: true }).fill(email)
     const recoveryRequestedAt = Date.now()
     await recoveryPage.getByRole('button', { name: 'Enviar código', exact: true }).click()
-    await expect(recoveryPage.getByRole('heading', { name: 'Introduza o código', exact: true })).toBeVisible()
+    // A refused code request shows the app's alert; report it instead of a bare timeout.
+    const codeStep = recoveryPage.getByRole('heading', { name: 'Introduza o código', exact: true })
+    const refusal = recoveryPage.getByRole('alert')
+    await expect(codeStep.or(refusal).first()).toBeVisible()
+    if (!(await codeStep.isVisible())) throw new Error(`Password recovery refused the code request: ${(await refusal.first().innerText()).replaceAll(email, '<email>')}`)
     const recovery = await deliveredMail('admin', criteria(recoveryRequestedAt, /^\d{6} is your reset password code$/, resetSender))
     await recoveryPage.getByLabel('Código de verificação', { exact: true }).fill(recovery.code)
     await recoveryPage.getByRole('button', { name: 'Verificar código', exact: true }).click()
