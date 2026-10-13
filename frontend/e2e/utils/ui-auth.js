@@ -225,8 +225,8 @@ export async function expectIdentity(page, email) {
 // Reads the newest delivered sign-in code for a dedicated mailbox recipient.
 export function deliveredCodeReader(deliveredMail, mailbox, recipient) {
   const sender = validateCodeSender(process.env.E2E_GMAIL_CODE_SENDER)
-  return async after => (await deliveredMail(mailbox, { recipient, senders: [sender], subject: /^\d{6} is your verification code$/,
-    purpose: 'code', after, before: after + 120_000, latest: true })).code
+  return async (after, exclude = []) => (await deliveredMail(mailbox, { recipient, senders: [sender], subject: /^\d{6} is your verification code$/,
+    purpose: 'code', after, before: after + 120_000, latest: true, exclude })).code
 }
 
 // Ends a live session through the visible control; the device stays trusted.
@@ -258,7 +258,14 @@ export async function login(page, email, password, readCode, runtime) {
       && /^\/v1\/client\/sign_ins\/[A-Za-z0-9_]+\/prepare_second_factor$/.test(url.pathname)
   }
   const sends = []
-  const allowThrottledSend = request => { if (isCodeSend(request) && runtime) runtime.allowRequestFailure(request, 429) }
+  const isCodeAttempt = request => request.method() === 'POST' && new URL(request.url()).origin === 'https://clerk.cronos.pt'
+    && /^\/v1\/client\/sign_ins\/[A-Za-z0-9_]+\/attempt_second_factor$/.test(new URL(request.url()).pathname)
+  // A code Clerk replaced with the duplicate send is rejected (422) before the other one is tried.
+  const allowThrottledSend = request => {
+    if (!runtime) return
+    if (isCodeSend(request)) runtime.allowRequestFailure(request, 429)
+    if (isCodeAttempt(request)) runtime.allowRequestFailure(request, 422)
+  }
   const recordSend = response => {
     if (isCodeSend(response.request())) sends.push({ status: response.status(), retryAfter: Number(response.headers()['retry-after']) || 0 })
   }
@@ -282,7 +289,19 @@ export async function login(page, email, password, readCode, runtime) {
         requestedAt = Date.now()
         await page.getByRole('button', { name: /Reenviar/ }).click()
       }
-      await code.pressSequentially(await readCode(requestedAt))
+      // Two sends mean two emails whose arrival order may differ from the send
+      // order: enter the newest delivered code and, if Clerk rejects it, the other.
+      const tried = []
+      for (;;) {
+        const next = await readCode(requestedAt, tried)
+        tried.push(next)
+        await code.pressSequentially(next)
+        const accepted = await expect.poll(signedIn, { timeout: 15_000 }).toBe(true).then(() => true, () => false)
+        if (accepted) break
+        if (tried.length === 3) throw new Error('No delivered new-device code was accepted')
+        await code.click()
+        for (let digit = 0; digit < 6; digit += 1) await page.keyboard.press('Backspace')
+      }
     }
     await expectIdentity(page, email)
   }
