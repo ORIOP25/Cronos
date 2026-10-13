@@ -46,6 +46,25 @@ describe('E2E runtime guard classifiers', () => {
     }, { baseUrl })).toBeNull()
   })
 
+  it('ignores a Clerk development CDN UI chunk blocked by ORB', () => {
+    expect(getRequestFailureError({
+      method: 'GET',
+      url: 'https://welcomed-cat-83.clerk.accounts.dev/npm/@clerk/ui@1.40.0/dist/3736_ui_96623b_1.40.0.js',
+      errorText: 'net::ERR_BLOCKED_BY_ORB',
+    }, { baseUrl })).toBeNull()
+  })
+
+  it.each([
+    ['an application asset', 'http://localhost:5173/assets/index.js'],
+    ['a Clerk API read', 'https://welcomed-cat-83.clerk.accounts.dev/v1/client'],
+  ])('still fails %s blocked by ORB', (_label, url) => {
+    expect(getRequestFailureError({
+      method: 'GET',
+      url,
+      errorText: 'net::ERR_BLOCKED_BY_ORB',
+    }, { baseUrl })).toContain('Network request failed')
+  })
+
   it('fails an aborted Clerk organization write because its outcome is unknown', () => {
     expect(getRequestFailureError({
       method: 'POST',

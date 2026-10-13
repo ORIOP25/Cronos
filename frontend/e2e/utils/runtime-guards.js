@@ -187,6 +187,15 @@ function isAllowedApiFailure(allowedFailures, { status, url = '', method }, { ba
   ))
 }
 
+function isClerkDevelopmentUiChunk(url) {
+  try {
+    const { protocol, hostname, pathname } = new URL(url)
+    return protocol === 'https:' && hostname.endsWith('.clerk.accounts.dev') && pathname.startsWith('/npm/@clerk/')
+  } catch {
+    return false
+  }
+}
+
 export function getRequestFailureError(requestFailure, { baseUrl, observedOptionalTelemetry, onIgnoredOptionalTelemetry } = {}) {
   const url = normalizedText(requestFailure.url)
   if (isDataLikeUrl(url)) return null
@@ -199,6 +208,10 @@ export function getRequestFailureError(requestFailure, { baseUrl, observedOption
   ) {
     return null
   }
+
+  // Clerk's development CDN sometimes serves a lazy UI chunk the browser blocks
+  // (ORB). Clerk retries it; a real breakage still fails the visible assertions.
+  if (method === 'GET' && errorText.includes('net::ERR_BLOCKED_BY_ORB') && isClerkDevelopmentUiChunk(url)) return null
 
   if (isOptionalTelemetryScriptFailure({
     url, method, resourceType: requestFailure.resourceType, errorText,
