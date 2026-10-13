@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { validateProductionConfig, validateCodeSender, evaluateAcceptance, REQUIRED_CASES } from '../e2e/utils/acceptance-policy.js'
+import { campaignSchoolLabel, validateProductionConfig, validateCodeSender, evaluateAcceptance, REQUIRED_CASES } from '../e2e/utils/acceptance-policy.js'
 
 const revision = 'a'.repeat(40)
 const environment = {
@@ -111,4 +111,11 @@ test('unsafe or nontext campaign identities cannot certify cleanup and evidence 
     run.cleanup.run_id = runId
     assert.equal(evaluateAcceptance(run).status, 'failed')
   }
+})
+
+test('a campaign school label carries the run id without a phone-like digit run', () => {
+  assert.equal(campaignSchoolLabel('38331518766-1'), 'diddbfbihgg-b')
+  assert.doesNotMatch(campaignSchoolLabel('38331518766-1'), /\d/)
+  assert.notEqual(campaignSchoolLabel('38331518766-1'), campaignSchoolLabel('38331518766-2'))
+  assert.throws(() => campaignSchoolLabel('Run 1'), /run identity/)
 })
