@@ -21,7 +21,9 @@ function requestMethod(request) {
 async function clerkErrorCodes(response) {
   try {
     const body = await response.json()
-    return (body?.errors || []).map(item => item?.code).filter(code => /^[a-z0-9_]{1,64}$/.test(code || ''))
+    const safe = value => /^[a-z0-9_]{1,64}$/.test(value || '')
+    return (body?.errors || []).filter(item => safe(item?.code))
+      .map(item => (safe(item.meta?.param_name) ? `${item.code}(${item.meta.param_name})` : item.code))
   } catch { return [] }
 }
 

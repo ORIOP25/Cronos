@@ -400,7 +400,7 @@ test('an unexpected Clerk failure records only its fixed error codes', async () 
   page.emit('response', { request: () => create, url: create.url, status: () => 422,
     json: async () => ({ errors: [{ code: 'form_param_format_invalid', message: 'private text', meta: { param_name: 'name' } }, { code: 'Bad Code!' }] }) })
   await new Promise(resolve => setImmediate(resolve))
-  assert.ok(runtime.errors.includes('Clerk 422 POST /v1/organizations: form_param_format_invalid'))
+  assert.ok(runtime.errors.includes('Clerk 422 POST /v1/organizations: form_param_format_invalid(name)'))
   assert.ok(runtime.errors.every(error => !error.includes('private text')))
   await runtime.action('expected', [], async () => {
     const signIn = request('https://clerk.cronos.pt/v1/client/sign_ins', 'POST')
