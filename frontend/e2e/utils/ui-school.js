@@ -5,6 +5,7 @@ import { isDeepStrictEqual, promisify } from 'node:util'
 import { expect } from '@playwright/test'
 import { recordCheckpoint } from './acceptance-proof.js'
 import { validateImportedData } from './expected-results.js'
+import { awaitClerkLoaded } from './ui-auth.js'
 
 export async function readOriginalExpectations() {
   const { stdout } = await promisify(execFile)(process.env.E2E_PYTHON || 'python', [
@@ -14,6 +15,8 @@ export async function readOriginalExpectations() {
 }
 
 export async function readSchoolResource(page, path) {
+  // A read right after a navigation must wait for Clerk's session to load.
+  await awaitClerkLoaded(page)
   return page.evaluate(async relativePath => {
     // Production serves the API from its own origin, not from the Pages site.
     const response = await fetch(`https://api.cronos.pt/api/v1/${relativePath}`, {
