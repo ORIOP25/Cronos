@@ -1455,3 +1455,54 @@ Uma primeira tentativa esperou que o backend bloqueado desaparecesse, o que não
 A segunda tentativa usou a confirmação do novo `ready.` pelo host; a ausência de escrita parcial confirma o aborto.
 O projeto temporário foi apagado no fim e os ficheiros locais de credenciais descartáveis foram removidos.
 A produção não foi interrompida nem lida por este ensaio.
+
+## Preparação real em produção — noite de 2026-10-13
+
+Cada execução de `prepare-history` correu em `main`, com as cinco componentes alinhadas no SHA publicado e a CI da `main` verde.
+Cada falha real foi corrigida com RED, implementação mínima e GREEN, numa PR própria.
+Os registos de eventos do painel Clerk, lidos sem alterações, confirmaram cada passo.
+
+| Execução | Avanço observado | Causa | Correção |
+| :--- | :--- | :--- | :--- |
+| [38317698570](https://github.com/ORIOP25/Cronos/actions/runs/38317698570) | Transporte SSH falha (`unknown`) | Chave sem quebra de linha final rejeitada pelo OpenSSH | [PR 77](https://github.com/ORIOP25/Cronos/pull/77) |
+| [38320345763](https://github.com/ORIOP25/Cronos/actions/runs/38320345763) | Token emitido; desafio saltado (`sign_up.captcha.skipped`); código real recebido de `notifications@cronos.pt` | Cores `#000000` no HTML tornavam o código ambíguo | [PR 78](https://github.com/ORIOP25/Cronos/pull/78) |
+| [38322448212](https://github.com/ORIOP25/Cronos/actions/runs/38322448212) | Utilizador verificado; limpeza SSH apagou o ator (`user.deleted`) | 422 ao criar a organização, sem código no registo seguro | [PR 79](https://github.com/ORIOP25/Cronos/pull/79), [PR 80](https://github.com/ORIOP25/Cronos/pull/80) |
+| [38327696863](https://github.com/ORIOP25/Cronos/actions/runs/38327696863) | `form_param_value_invalid(name)` | Nome preenchido antes dos valores por omissão da tarefa Clerk | [PR 81](https://github.com/ORIOP25/Cronos/pull/81) |
+| [38331518766](https://github.com/ORIOP25/Cronos/actions/runs/38331518766) | O mesmo código com o valor confirmado | Clerk rejeita nomes com "phone number"; o run id tem onze dígitos | [PR 82](https://github.com/ORIOP25/Cronos/pull/82) |
+| [38333362676](https://github.com/ORIOP25/Cronos/actions/runs/38333362676) | Escola criada no Clerk | Leituras relativas `/api/v1` (404 nas Pages); 403 de bootstrap não previsto | [PR 83](https://github.com/ORIOP25/Cronos/pull/83) |
+| [38335415060](https://github.com/ORIOP25/Cronos/actions/runs/38335415060) | Bootstrap e Fundação concluídos | `tracing.start` duplicado em `freshSession` | [PR 84](https://github.com/ORIOP25/Cronos/pull/84) |
+| [38337065491](https://github.com/ORIOP25/Cronos/actions/runs/38337065491) | Primeira sessão nova | `page.evaluate` durante navegação | [PR 85](https://github.com/ORIOP25/Cronos/pull/85) |
+| [38338850759](https://github.com/ORIOP25/Cronos/actions/runs/38338850759) | Login em contexto novo sem sessão | `sign_in.client_trust.required`: código de novo dispositivo, enviado duas vezes | [PR 86](https://github.com/ORIOP25/Cronos/pull/86) |
+| [38341802630](https://github.com/ORIOP25/Cronos/actions/runs/38341802630), [38342083281](https://github.com/ORIOP25/Cronos/actions/runs/38342083281) | Falhas intermitentes no registo | `Route is already handled` na rota do token | [PR 87](https://github.com/ORIOP25/Cronos/pull/87) |
+| [38344632705](https://github.com/ORIOP25/Cronos/actions/runs/38344632705) | Consentimento ignorado aos 9 s | Interação antes de o Clerk carregar | [PR 88](https://github.com/ORIOP25/Cronos/pull/88) |
+
+O diagnóstico Clerk regista apenas os códigos fixos e o nome do parâmetro, nunca mensagens.
+A razão "contains a phone number" foi obtida por uma sonda única na API administrativa, dentro do container da API; a organização de controlo com nome válido foi criada e apagada no mesmo script.
+O 403 de `members/me` numa escola nova é o sinal previsto para `POST /session/bootstrap` e só é aceite nessa ação, seguido de bootstrap com sucesso.
+O código de novo dispositivo é lido pela caixa dedicada; nenhum passo de autenticação foi contornado além do token autorizado para o desafio do registo.
+
+### Operação
+
+O Railway marcou o worker e o Beat como `SKIPPED` num commit só de frontend; foram publicados no SHA da `main` com `railway redeploy --from-source` antes da campanha.
+O job legado `e2e-browser` falhou de forma intermitente por indisponibilidade da instância Clerk de desenvolvimento; uma repetição dos jobs falhados ficou verde.
+O SonarCloud trata problemas antigos de `frontend/e2e` e `scripts` como código novo sempre que o ficheiro muda; as PRs com CI verde e apenas esses avisos foram fundidas, e a configuração de âmbito fica por decidir.
+
+### Restos por limpar
+
+As preparações que falharam depois de criar a escola deixaram escolas persistentes de teste e os respetivos fundadores.
+A política nunca apaga uma escola persistente nem procura alvos por nome.
+A limpeza exige os registos protegidos de cada execução, decifrados com `E2E_ARTIFACT_KEY`, que só existe como secret do GitHub.
+O painel Clerk lista exatamente cinco, todas com um membro e o rótulo da execução (cada dígito escrito como letra):
+
+| Execução | Organização Clerk |
+| :--- | :--- |
+| `38333362676-1` | `org_3KcTJD9BKqoJm5cMHSkXbRdQ1h5` |
+| `38335415060-1` | `org_3KcWTyVLKnczVg0GnaK02icNPye` |
+| `38337065491-1` | `org_3KcZ4Uwv79jSV1AeY8BEDYZo4ks` |
+| `38338850759-1` | `org_3KcbjwgQUnuFi4g9cRl8SIhxTqW` |
+| `38342083281-1` | `org_3KcgZohCzJtQdbiQ13cbyf40iBR` |
+
+Os fundadores destas execuções continuam no Clerk, porque pertencem a uma organização fora do registo e a limpeza preserva-os.
+A organização criada e apagada às 02:20 (Lisboa) foi a sonda de diagnóstico do nome.
+
+O build das Cloudflare Pages falhou em `9da801a` (PR 88, que só altera ficheiros de aceitação; a pré-visualização da PR compilou); o commit seguinte da `main` volta a publicar o frontend.
