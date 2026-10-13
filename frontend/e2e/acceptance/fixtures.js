@@ -97,7 +97,7 @@ export const test = base.extend({
           const clerk = window.Clerk
           const organization = clerk?.organization
           if (!organization || !clerk.user || !clerk.session) throw new Error('UI school identity is not active')
-          const response = await fetch('/api/v1/members/me', { redirect: 'error', headers: { Authorization: `Bearer ${await clerk.session.getToken()}` } })
+          const response = await fetch('https://api.cronos.pt/api/v1/members/me', { redirect: 'error', headers: { Authorization: `Bearer ${await clerk.session.getToken()}` } })
           if (!response.ok) throw new Error('Local school identity is unavailable')
           const member = await response.json()
           const memberships = await organization.getMemberships({ pageSize: 100, initialPage: 1 })

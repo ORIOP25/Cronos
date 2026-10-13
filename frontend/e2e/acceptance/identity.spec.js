@@ -20,6 +20,6 @@ test('founder verifies delivered email and recovers a credential through the UI'
     .concat(['E2E-11/planned-substitution-reservation'])
     .concat(['E2E-11/stale-version'])
     .map(description => ({ type: 'acceptance-case', description })),
-}, async ({ page, browser, provenance, deliveredMail, registerSecret }, testInfo) => {
-  await runIdentityCampaign({ page, browser, provenance, deliveredMail, registerSecret }, testInfo)
+}, async ({ page, browser, provenance, deliveredMail, registerSecret, runtime }, testInfo) => {
+  await runIdentityCampaign({ page, browser, provenance, deliveredMail, registerSecret, runtime }, testInfo)
 })

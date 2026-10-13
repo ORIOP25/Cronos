@@ -15,7 +15,8 @@ export async function readOriginalExpectations() {
 
 export async function readSchoolResource(page, path) {
   return page.evaluate(async relativePath => {
-    const response = await fetch(`/api/v1/${relativePath}`, {
+    // Production serves the API from its own origin, not from the Pages site.
+    const response = await fetch(`https://api.cronos.pt/api/v1/${relativePath}`, {
       method: 'GET', redirect: 'error', headers: { Authorization: `Bearer ${await window.Clerk.session.getToken()}` },
     })
     if (!response.ok) throw new Error(`Read-only school verification failed: HTTP ${response.status}`)
