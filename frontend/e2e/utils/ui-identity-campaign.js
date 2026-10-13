@@ -264,6 +264,9 @@ export async function runIdentityCampaign({ page, browser, provenance, delivered
       await expect(teacherPage).toHaveURL(/\/my-schedules$/)
       await verifyTeacherPreference(teacherPage, preferenceSlot)
       await verifyTeacherPermissions(teacherPage)
+      // Leave the trusted device signed out: a later archive/restore would
+      // otherwise turn this live session into a pending organization task.
+      await signOutThroughUi(teacherPage)
     }, { context: teacherDevice })
     await recordCheckpoint(testInfo, [
       'E2E-02/teacher-login-logout', 'E2E-15/teacher-admin-routes-denied', 'E2E-15/denied-actions-no-effects',
