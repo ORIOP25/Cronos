@@ -23,7 +23,7 @@ test.describe('Session resilience', () => {
   })
 
   test.afterEach(async ({ context }) => {
-    await context.unrouteAll({ behavior: 'wait' })
+    await context.unrouteAll({ behavior: 'ignoreErrors' })
   })
 
   test('sessão persiste após page reload', async ({ page }) => {
