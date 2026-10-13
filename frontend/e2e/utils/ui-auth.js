@@ -166,7 +166,7 @@ const CLERK_FRONTEND_API = 'https://clerk.cronos.pt/v1/**'
 // the route is removed when the registration settles, success or failure.
 export async function withSignUpTestingToken(page, token, perform) {
   if (!/^[A-Za-z0-9_-]{20,200}$/.test(token || '')) throw new Error('A minted Clerk testing token is required for registration')
-  const handler = async route => {
+  const answer = async route => {
     const url = new URL(route.request().url())
     url.searchParams.set('__clerk_testing_token', token)
     const response = await route.fetch({ url: url.toString(), maxRedirects: 0 })
@@ -177,6 +177,15 @@ export async function withSignUpTestingToken(page, token, perform) {
       if (holder?.captcha_bypass === false) { holder.captcha_bypass = true; lifted = true }
     }
     return lifted ? route.fulfill({ response, json }) : route.fulfill({ response })
+  }
+  // A navigation or the unroute can settle a request while its fetch is in
+  // flight; that request needs no answer. Any other route error still fails.
+  const handler = async route => {
+    try {
+      await answer(route)
+    } catch (error) {
+      if (!/Route is already handled/.test(error?.message || '')) throw error
+    }
   }
   await page.route(CLERK_FRONTEND_API, handler)
   try {
