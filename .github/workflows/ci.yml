@@ -46,9 +46,12 @@ jobs:
           head=$(gh api "repos/$REPO/commits/$SHA/pulls" --jq '[.[] | select(.merged_at != null)][0].head.sha // empty')
           if [ -n "$head" ]; then
             tree() { gh api "repos/$REPO/git/commits/$1" --jq .tree.sha; }
-            if [ "$(tree "$SHA")" = "$(tree "$head")" ]; then
-              green=$(gh api "repos/$REPO/commits/$head/check-runs?filter=latest&per_page=100"                 --jq '[.check_runs[] | select((.name == "backend" or .name == "frontend" or .name == "e2e") and .conclusion == "success") | .name] | unique | length')
-              if [ "$green" = 3 ]; then verified=true; fi
+            pushed_tree=$(tree "$SHA"); head_tree=$(tree "$head")
+            if [ -n "$pushed_tree" ] && [ "$pushed_tree" = "$head_tree" ]; then
+              # e2e-browser must have run: a skipped browser job (Dependabot, forks) is no proof.
+              green=$(gh api "repos/$REPO/commits/$head/check-runs?filter=latest&per_page=100" \
+                --jq '[.check_runs[] | select((.name == "backend" or .name == "frontend" or .name == "e2e-browser" or .name == "e2e") and .conclusion == "success") | .name] | unique | length')
+              if [ "$green" = 4 ]; then verified=true; fi
             fi
           fi
           echo "Pull request head: ${head:-none}; already verified: $verified"
@@ -730,6 +733,8 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
 
       - name: Verify the production deployment
         run: |
@@ -737,3 +742,13 @@ jobs:
           node scripts/verify-production-deploy.mjs
         env:
           EXPECTED_REVISION: ${{ github.sha }}
+
+      - name: Install the browser
+        working-directory: frontend
+        run: |
+          npm ci --ignore-scripts
+          npx --no-install playwright install chromium
+
+      - name: Open the public site and the login in a browser
+        working-directory: frontend
+        run: node scripts/verify-production-browser.mjs
