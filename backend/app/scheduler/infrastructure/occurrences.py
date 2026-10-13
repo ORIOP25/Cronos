@@ -43,6 +43,7 @@ from app.scheduler.infrastructure.operations import (
     assert_week_open,
     lesson_context,
     lesson_lineage_ids,
+    local_times,
     record_lesson_log,
     reverse_lesson_execution,
 )
@@ -190,30 +191,6 @@ async def _log_rows(
     return (await db.execute(query)).all()
 
 
-async def _open_debt_by_origin(
-    db: AsyncSession, organization_id: int, origins: Sequence[str]
-) -> dict[str, int]:
-    if not origins:
-        return {}
-    claims = (
-        await db.scalars(
-            select(CurricularDebt).where(
-                CurricularDebt.organization_id == organization_id,
-                CurricularDebt.origin.in_(origins),
-            )
-        )
-    ).all()
-    if not claims:
-        return {}
-    open_by_claim = await _open_minutes_by_claim(db, claims)
-    open_by_origin: dict[str, int] = {}
-    for claim in claims:
-        minutes = open_by_claim.get(claim.id, 0)
-        if minutes:
-            open_by_origin[claim.origin] = open_by_origin.get(claim.origin, 0) + minutes
-    return open_by_origin
-
-
 async def _open_minutes_by_claim(
     db: AsyncSession, claims: Sequence[CurricularDebt]
 ) -> dict[int, int]:
@@ -324,12 +301,6 @@ def _substitution_summary(
             "assignment_id": assignment_by_occurrence.get(occurrence_id),
         }
     return result
-
-
-def _local_times(lesson: SchedulerLessonV1, zone: ZoneInfo) -> tuple[time, time]:
-    start = lesson.starts_at.astimezone(zone)
-    end = lesson.ends_at.astimezone(zone)
-    return time(start.hour, start.minute), time(end.hour, end.minute)
 
 
 async def _timeslot_ids(
@@ -464,7 +435,7 @@ async def _items(
     )
     items: list[dict] = []
     for log, lesson, assignment, subject, teacher, class_model, _room in rows:
-        local_start, local_end = _local_times(lesson, zone)
+        local_start, local_end = local_times(lesson, zone)
         block = blocks.get(log.id)
         substitution = substitutions.get(log.id)
         lesson_finished = execution_allowed(moment, lesson.ends_at)
@@ -897,15 +868,6 @@ async def _requirements(
     )
 
 
-SUBSTITUTE_SETUP_ACTIONS = {
-    "teacher": "Confirme um docente ativo e associado à turma.",
-    "availability": "Edite a disponibilidade do docente em Membros.",
-    "assignment": "Configure a disciplina na turma em Disciplinas.",
-    "room": "Ajuste a sala ou a sala preferencial da disciplina.",
-    "capacity": "Amplie os módulos da disciplina substituta.",
-}
-
-
 def _substitution_exclusion(code: str, message: str, setup: str) -> dict:
     return {"code": code, "message": message, "setup": setup}
 
@@ -1260,7 +1222,7 @@ async def _plan_substitution(
     if lesson is None:
         raise _error(404, "Ocorrência sem aula publicada.")
     timeslots = await _timeslot_ids(db, organization_id)
-    local_start, local_end = _local_times(lesson, zone)
+    local_start, local_end = local_times(lesson, zone)
     timeslot_id = timeslots.get((lesson.school_date.weekday(), local_start, local_end))
     if not timeslot_id:
         raise _error(422, "A aula substituta não tem um período compatível.")

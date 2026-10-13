@@ -1,13 +1,12 @@
 import { CCard, CCardBody, CRow, CCol, CFormCheck } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import { cilCalendar, cilClock } from '@coreui/icons'
+import { DAY_LABELS } from '../../../constants'
 import { formatTimeOfDay } from '../../../utils/timeOfDay'
 import { normalizeBreakOverrides } from '../foundationModel'
 
-const DAY_NAMES = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo']
-
 export function SummaryStep({ values, organizationName, confirmed, onConfirmedChange }) {
-  const days = (values.days_of_week || []).map((d) => DAY_NAMES[d] || `Dia ${d}`).join(', ')
+  const days = (values.days_of_week || []).map((d) => DAY_LABELS[d] || `Dia ${d}`).join(', ')
   const overrides = normalizeBreakOverrides(values.break_overrides)
   const adjustments = overrides.length
     ? overrides.map((override) => `após aula ${override.after_slot} (${override.duration_minutes} min)`).join(', ')

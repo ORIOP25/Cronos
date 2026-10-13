@@ -344,7 +344,7 @@ async def test_approval_activates_the_pending_grid_version(db_session, monkeypat
     await db_session.refresh(seed.state)
 
     now = datetime.now(UTC)
-    proposal = await current_proposal(db_session, seed.organization.id, now_utc=now)
+    proposal = await current_proposal(db_session, seed.organization.id)
     assert proposal is not None
     result = await approve_proposal(
         db_session,

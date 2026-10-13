@@ -312,12 +312,6 @@ def adaptive_quality_vector(
     return AdaptiveQualityVector(excess, progressive, days, *costs)
 
 
-class SolveWorkloadMode(StrEnum):
-    QUALITY_ONLY = "QUALITY_ONLY"
-    PROTECT_COMFORT = "PROTECT_COMFORT"
-    DEADLINE_RESCUE = "DEADLINE_RESCUE"
-
-
 class AvailabilityTier(StrEnum):
     PREFERRED = "PREFERRED"
     NEUTRAL = "NEUTRAL"
@@ -631,51 +625,3 @@ class ScheduleQualityEvaluator:
             block.room_id,
             block.timeslot_id,
         )
-
-
-class IncrementalQualityState:
-    def __init__(
-        self,
-        evaluator: ScheduleQualityEvaluator,
-        blocks: Iterable[QualityBlock] = (),
-    ):
-        self.evaluator = evaluator
-        self._blocks = list(blocks)
-
-    @property
-    def metrics(self) -> ScheduleQualityMetrics:
-        return self.evaluator.evaluate(self._blocks)
-
-    def incremental_vector(self, block: QualityBlock) -> tuple[int, int, int]:
-        before = self.metrics
-        after = self.evaluator.evaluate((*self._blocks, block))
-        return (
-            after.workload_cost_minutes - before.workload_cost_minutes,
-            after.gap_and_availability_cost_minutes - before.gap_and_availability_cost_minutes,
-            after.room_inconsistency_count - before.room_inconsistency_count,
-        )
-
-    def add(self, block: QualityBlock) -> None:
-        self._blocks.append(block)
-
-
-def quality_policy_from_snapshot(snapshot: Mapping[str, Any]) -> SchedulerQualityPolicy:
-    durations = []
-    for row in snapshot.get("timetable_grid", []):
-        start = ScheduleQualityEvaluator._minute(row["start_time"])
-        end = ScheduleQualityEvaluator._minute(row["end_time"])
-        if end > start:
-            durations.append(end - start)
-    return SchedulerQualityPolicy.from_durations(durations or (60,))
-
-
-def quality_slots_from_snapshot(snapshot: Mapping[str, Any]) -> tuple[QualitySlot, ...]:
-    return tuple(
-        QualitySlot(
-            id=row["id"],
-            day_of_week=row["day_of_week"],
-            start_minute=ScheduleQualityEvaluator._minute(row["start_time"]),
-            end_minute=ScheduleQualityEvaluator._minute(row["end_time"]),
-        )
-        for row in snapshot.get("timetable_grid", [])
-    )

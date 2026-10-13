@@ -32,6 +32,7 @@ from app.scheduler.infrastructure.models import (
     SchedulerRecoveryReservationV1,
     SchedulerVersionV1,
 )
+from app.scheduler.infrastructure.progress import load_active_version_id
 from app.scheduler.infrastructure.snapshot import (
     SnapshotBundle,
     SnapshotConfigurationError,
@@ -67,18 +68,6 @@ class ApprovalResult:
 class RejectionResult:
     proposal_id: int
     rejected_at: datetime
-
-
-async def _active_version_id(
-    db: AsyncSession, organization_id: int, school_year_id: int
-) -> int | None:
-    return await db.scalar(
-        select(SchedulerVersionV1.id).where(
-            SchedulerVersionV1.organization_id == organization_id,
-            SchedulerVersionV1.school_year_id == school_year_id,
-            SchedulerVersionV1.status == "ACTIVE",
-        )
-    )
 
 
 async def _reject_pending_grid_version(
@@ -457,7 +446,7 @@ async def approve_proposal(
             "Existem alterações mais recentes. Gere uma nova proposta.",
             context={"proposal_status": "STALE"},
         )
-    current_active = await _active_version_id(db, organization_id, proposal.school_year_id)
+    current_active = await load_active_version_id(db, organization_id, proposal.school_year_id)
     if current_active != proposal.base_version_id:
         await _mark_stale(
             db, organization_id, proposal, reason="BASE_VERSION_CHANGED", now_utc=now_utc, job=job

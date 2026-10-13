@@ -2,7 +2,6 @@
 
 from datetime import UTC, date, datetime
 
-import pytest
 from sqlalchemy import func, select
 
 from app import models
@@ -368,27 +367,19 @@ async def test_soft_reset_requires_exact_confirmation(async_client, db_session):
     assert response.json()["detail"]["code"] == "soft_reset_confirmation_required"
 
 
-@pytest.mark.parametrize("endpoint", ["school-settings", "legacy-schedule"])
-async def test_both_reset_endpoints_share_the_same_behavior(
-    async_client,
-    db_session,
-    endpoint: str,
-):
-    headers = {"Authorization": f"Bearer test_reset_{endpoint}"}
+async def test_soft_reset_unpublishes_the_school_year(async_client, db_session):
+    headers = {"Authorization": "Bearer test_reset_school-settings"}
     published = await _published_seed(
         db_session,
-        clerk_user_id=f"reset_{endpoint}",
-        clerk_org_id=f"reset_{endpoint}_org",
+        clerk_user_id="reset_school-settings",
+        clerk_org_id="reset_school-settings_org",
     )
 
-    if endpoint == "school-settings":
-        response = await async_client.post(
-            f"{API}/school/settings/soft-reset",
-            json={"confirm_phrase": "Confirmo"},
-            headers=headers,
-        )
-    else:
-        response = await async_client.delete(f"{API}/schedule/reset", headers=headers)
+    response = await async_client.post(
+        f"{API}/school/settings/soft-reset",
+        json={"confirm_phrase": "Confirmo"},
+        headers=headers,
+    )
     assert response.status_code == 200, response.text
 
     assert await _week_slots(async_client, headers, published.class_id) == []

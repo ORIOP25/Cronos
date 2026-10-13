@@ -112,20 +112,6 @@ DESC_HOURS_TOTAL = "Carga horária total do módulo"
 # ==========================================
 
 
-class OrganizationBase(BaseModel):
-    name: str
-
-
-class OrganizationCreate(OrganizationBase):
-    pass
-
-
-class OrganizationRead(OrganizationBase):
-    id: int
-    plan_status: str
-    model_config = model_config
-
-
 # --- TEACHER ---
 class TeacherBase(BaseModel):
     name: str
@@ -159,15 +145,6 @@ AccessStatusLiteral = Literal[
     "blocked",
     "sync_error",
 ]
-
-
-class MemberErrorEnvelope(BaseModel):
-    code: str
-    category: str | None = None
-    message: str
-    retryable: bool = False
-    support_required: bool = False
-    fields: dict[str, str] = Field(default_factory=dict)
 
 
 class ClientErrorReport(BaseModel):
@@ -538,13 +515,6 @@ class ModuleUpsert(BaseModel):
     order: int = Field(..., ge=0, description="Ordem sequencial do módulo")
 
 
-class ModuleUpdate(BaseModel):
-    name: str | None = None
-    code: str | None = None
-    hours_total: int | None = Field(None, gt=0, description=DESC_HOURS_TOTAL)
-    subject_id: int | None = None
-
-
 class ModuleRead(ModuleBase):
     id: int
     subject_id: int
@@ -576,7 +546,7 @@ class SubjectCreate(SubjectBase):
 
         # Extrai orders e ordena
         orders = sorted([m.order for m in self.modules])
-        expected = list(range(0, len(self.modules)))
+        expected = list(range(len(self.modules)))
 
         # Valida sequência começando em 0
         if orders != expected:
@@ -597,7 +567,7 @@ class SubjectUpdate(BaseModel):
         if self.modules is None:
             return self
         orders = sorted([m.order for m in self.modules])
-        expected = list(range(0, len(self.modules)))
+        expected = list(range(len(self.modules)))
         if orders != expected:
             raise ValueError(
                 f"Módulos devem ter ordem sequencial começando em 0 [0, 1, 2, ...]. "
@@ -662,19 +632,6 @@ class TimeslotCreate(TimeslotBase):
     pass
 
 
-class TimeslotUpdate(BaseModel):
-    day_of_week: int | None = Field(None, ge=0, le=6)
-    start_time: time | None = None
-    end_time: time | None = None
-
-    @model_validator(mode="after")
-    def check_times(self):
-        if self.start_time is not None and self.end_time is not None:
-            if self.end_time <= self.start_time:
-                raise ValueError("A hora de fim deve ser posterior à hora de início")
-        return self
-
-
 class TimeslotRead(TimeslotBase):
     id: int
     organization_id: int
@@ -692,24 +649,6 @@ class TimeslotRead(TimeslotBase):
 # - Turma: A que turma é? (ex: 10º TGEI)
 # - Disciplina: Qual disciplina? (ex: Matemática)
 # - Professor: Quem leciona? (ex: Prof. Silva) [VALIDADO: deve ter competência]
-
-
-class LessonBase(BaseModel):
-    class_id: int
-    subject_id: int
-    teacher_id: int
-
-
-class LessonCreate(LessonBase):
-    # NOVO: Permite criar uma atribuição sem especificar horas exatas.
-    # O Solver dirá quantas horas por semana são necessárias.
-    pass
-
-
-class LessonRead(LessonBase):
-    id: int
-    organization_id: int
-    model_config = model_config
 
 
 # --- CONSTRAINT (REGRA) ---
@@ -843,10 +782,6 @@ class AvailabilityBase(BaseModel):
     score: PreferenceLevel = PreferenceLevel.NEUTRAL
 
 
-class AvailabilityCreate(AvailabilityBase):
-    pass
-
-
 class AvailabilitySelfCreate(BaseModel):
     """Disponibilidade sem teacher_id (usa ID do path/autenticacao)."""
 
@@ -870,170 +805,6 @@ class AvailabilityRead(AvailabilityBase):
     id: int
 
     model_config = ConfigDict(from_attributes=True)
-
-
-# --- GERADOR DE HORÁRIOS (Sprint 1) ---
-class ScheduleGenerateRequest(BaseModel):
-    """Pedido publico de geração de horário.
-
-    A estratégia é escolhida internamente pelo estado de publicação do ano letivo.
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-    replace_pending_draft: bool = False
-    idempotency_key: str | None = Field(None, min_length=1, max_length=100)
-
-
-class SchedulerGenerateResponse(BaseModel):
-    job_id: int
-    strategy: Literal["COMPLETE_GENERATION", "ADAPTIVE_REPAIR", "GRID_CHANGE"]
-    trigger_type: Literal[
-        "FIRST_GENERATION", "EXPLICIT_DEBT", "SCHEDULER_CHANGE", "MIXED", "GRID_CHANGE"
-    ]
-    status: str
-
-
-class SchedulerStatusResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    school_year_id: int | None
-    school_year_publication_state: Literal["UNPUBLISHED", "PUBLISHED"] | None
-    pending_draft_id: int | None
-    primary_action: Literal[
-        "REVIEW_PENDING_DRAFT",
-        "GENERATE_SCHEDULE",
-        "GENERATION_UNAVAILABLE",
-    ]
-    can_generate_new_draft: bool
-    can_regenerate_with_confirmation: bool
-    blocked_reason: str | None
-    trigger_type: (
-        Literal[
-            "FIRST_GENERATION",
-            "EXPLICIT_DEBT",
-            "SCHEDULER_CHANGE",
-            "MIXED",
-            "GRID_CHANGE",
-        ]
-        | None
-    )
-    unresolved_debt_hours: float = Field(ge=0)
-    scheduler_state_version: int | None = Field(default=None, ge=0)
-    approved_scheduler_state_version: int | None = Field(default=None, ge=0)
-
-
-class ScheduleGenerationJobResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    strategy: Literal["COMPLETE_GENERATION", "ADAPTIVE_REPAIR", "GRID_CHANGE"]
-    trigger_type: (
-        Literal["FIRST_GENERATION", "EXPLICIT_DEBT", "SCHEDULER_CHANGE", "MIXED", "GRID_CHANGE"]
-        | None
-    )
-    job_status: Literal[
-        "QUEUED",
-        "RUNNING",
-        "CANCEL_REQUESTED",
-        "CANCELED",
-        "SUCCEEDED",
-        "FAILED",
-        "NO_VALID_OUTPUT",
-    ]
-    result_category: Literal["COMPLETE_SUCCESS", "PARTIAL_RECOVERY", "NO_VALID_OUTPUT"] | None
-    queued_at: datetime
-    started_at: datetime | None
-    finished_at: datetime | None
-    deadline_at: datetime | None
-    duration_ms: int | None
-    failure_code: str | None
-    failure_message: str | None
-    failure_reference: str | None
-
-
-class ScheduleGenerationCancelResponse(BaseModel):
-    job_id: int
-    job_status: str
-
-
-class ScheduleDraftSummaryResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    draft_id: int
-    strategy: Literal["COMPLETE_GENERATION", "ADAPTIVE_REPAIR", "GRID_CHANGE"]
-    draft_state: Literal["PENDING", "APPROVED", "REJECTED", "REPLACED", "STALE", "INVALIDATED"]
-    result_category: Literal["COMPLETE_SUCCESS", "PARTIAL_RECOVERY"]
-    trigger_type: Literal[
-        "FIRST_GENERATION", "EXPLICIT_DEBT", "SCHEDULER_CHANGE", "MIXED", "GRID_CHANGE"
-    ]
-    recovery_escalation_level: str | None
-    adaptation_level: str | None
-    projected_completion_date: date
-    hard_end_date: date
-    debt_hours_before: float = Field(ge=0)
-    debt_hours_recovered: float = Field(ge=0)
-    debt_hours_remaining: float = Field(ge=0)
-    partial_recovery_blocker_type: str | None
-    main_blocker_message: str | None
-    recommended_actions: list[str] | tuple[str, ...]
-    changed_blocks: int = Field(ge=0)
-    affected_classes: int = Field(ge=0)
-    affected_teachers: int = Field(ge=0)
-    affected_days: int = Field(ge=0)
-    disruption_score: float = Field(ge=0)
-    warnings: list[str] | tuple[str, ...]
-    can_approve: bool
-    quality_policy_version: str | None = None
-    quality_optimization_complete: bool | None = None
-    class_completion_spread_days: int = Field(default=0, ge=0)
-    class_high_load_days: int = Field(default=0, ge=0)
-    teacher_high_load_days: int = Field(default=0, ge=0)
-    class_gap_minutes: int = Field(default=0, ge=0)
-    teacher_gap_minutes: int = Field(default=0, ge=0)
-    availability_disutility_minutes: int = Field(default=0, ge=0)
-    consecutive_excess_minutes: int = Field(default=0, ge=0)
-    recovery_stack_excess_minutes: int = Field(default=0, ge=0)
-    workload_override_used: bool = False
-    class_overload_count: int = Field(default=0, ge=0)
-    class_overload_excess_minutes: int = Field(default=0, ge=0)
-    teacher_overload_count: int = Field(default=0, ge=0)
-    teacher_overload_excess_minutes: int = Field(default=0, ge=0)
-
-
-class ScheduleDraftDiffEntryResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    change_type: Literal["ADDED", "MOVED", "CHANGED", "REMOVED", "UNCHANGED_IMPACTED"]
-    impact_scope: Literal["AFFECTED", "RELATED", "UNRELATED"]
-    class_id: int
-    subject_id: int
-    teacher_id: int
-    before_active_block_id: int | None
-    after_draft_block_id: int | None
-    before_snapshot: dict[str, Any] | None
-    after_snapshot: dict[str, Any] | None
-    reason_code: str | None
-    reason_message: str | None
-    recovery_link_impact: dict[str, Any] | None
-
-
-class ScheduleDraftApprovalResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    draft_id: int
-    draft_state: Literal["APPROVED"]
-    school_year_publication_state: Literal["PUBLISHED"]
-    active_schedule_version_id: str
-    active_block_count: int = Field(ge=0)
-
-
-class ScheduleDraftRejectionResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    draft_id: int
-    draft_state: Literal["REJECTED"]
 
 
 # --- CURSOS ---
@@ -1181,20 +952,6 @@ class CourseBasic(CourseBase):
     model_config = ConfigDict(from_attributes=True)
 
 
-# --- CLASS DETAIL READ (Turma + Curso) ---
-class ClassDetailRead(ClassRead):
-    """
-    Detalhes da turma incluindo o curso associado.
-    Não inclui Lessons (horário) para manter payload leve - essas vêm de um endpoint separado.
-
-    4º Pilar - Scalability: Endpoint é autossuficiente (tem course no browser navigation),
-    sem sobrecarregar com centenas de lessons. O horário vem depois se necessário.
-    """
-
-    course: CourseBasic | None = None
-    model_config = ConfigDict(from_attributes=True)
-
-
 # --- PROGRESSO DE MÓDULOS (Dashboard da Turma) ---
 
 
@@ -1262,8 +1019,6 @@ class ClassProgressBulkUpdate(BaseModel):
 #  CONFIGURAÇÕES DA ESCOLA (Sprint 0)
 # ==========================================
 
-DESC_ACADEMIC_YEAR = "Ano letivo no formato 'AAAA/AAAA' (ex: '2025/2026')"
-DESC_REGION_CODE = "Município/distrito para feriados regionais (ex: 'Lisboa', 'Porto')"
 DESC_HARD_END_DATE = "Data-limite rígida para término das aulas (hard stop do gerador)"
 DESC_LUNCH_START = "Hora de início da janela de almoço (ex: 12:00)"
 DESC_LUNCH_END = "Hora de fim da janela de almoço (ex: 14:00)"
@@ -1376,11 +1131,6 @@ class OrganizationGridSettingsRead(BaseModel):
     lunch_min_duration_minutes: int | None = None
 
     model_config = ConfigDict(from_attributes=True)
-
-
-class HolidaysSyncResponse(BaseModel):
-    imported_count: int
-    message: str
 
 
 class SchoolCalendarEventCreate(BaseModel):
@@ -1711,14 +1461,6 @@ class ClassSubjectUpdate(BaseModel):
     )
 
 
-class TeacherSimple(BaseModel):
-    """Versão simplificada de Teacher para dropdowns"""
-
-    id: int
-    name: str
-    model_config = ConfigDict(from_attributes=True)
-
-
 class ClassSubjectRead(BaseModel):
     """Disciplina da turma com professor atribuído"""
 
@@ -1903,17 +1645,6 @@ class DebtListRead(BaseModel):
     items: list[DebtItem]
 
 
-class AvailableSubstituteRead(BaseModel):
-    """Professor disponível para substituir num slot específico."""
-
-    teacher_id: int
-    teacher_name: str
-    subject_id: int
-    subject_name: str
-    class_id: int
-    class_name: str
-
-
 class SubstituteRecommendationRead(BaseModel):
     """Candidato elegível para substituição com ranking e critérios objetivos."""
 
@@ -1998,78 +1729,6 @@ class TeacherEndpointObservabilitySummaryRead(BaseModel):
 # ==========================================
 #  SPRINT 3 — RASCUNHOS E DIFF DE HORÁRIOS
 # ==========================================
-
-
-class ScheduleDraftRead(BaseModel):
-    """Resumo de um rascunho de horário pendente de aprovação."""
-
-    generation_id: str
-    count: int
-    earliest_date: date | None = None
-    latest_date: date | None = None
-
-
-class DraftComparisonSummaryRead(BaseModel):
-    """Estatísticas agregadas de comparação entre o rascunho e o publicado."""
-
-    delta_projected_end_date_days: int
-    end_date_spread_days: int
-    churn_outside_frozen_ratio: float
-    total_blocks_changed: int
-    backlog_remaining_hours: float
-    aggregate_gap_variation: int
-
-
-class ScheduleDiffRead(BaseModel):
-    """Resultado do diff entre rascunho e horário ativo."""
-
-    generation_id: str
-    added: int
-    removed: int
-    unchanged: int
-    total_draft: int
-    total_active: int
-    repair_window_days: int | None = None
-    frozen_until: date | None = None
-    compared_from_date: date | None = None
-    statistics: DraftComparisonSummaryRead | None = None
-
-
-class AuditGenerationSummaryRead(BaseModel):
-    """Resumo de uma geração ativa para seleção no dashboard técnico."""
-
-    generation_id: str
-    blocks_count: int
-    start_date: date | None = None
-    end_date: date | None = None
-
-
-class AuditRoomUsageRead(BaseModel):
-    room_type: str
-    blocks_count: int
-
-
-class ScheduleGenerationAuditRead(BaseModel):
-    """Métricas técnicas de auditoria por geração."""
-
-    generation_id: str
-    blocks_count: int
-    start_date: date | None = None
-    end_date: date | None = None
-    classes_total: int
-    classes_with_week_slots: int
-    classes_empty_week: int
-    week_slots_min: int
-    week_slots_max: int
-    week_slots_avg: float
-    weekly_fairness_spread: float
-    duplicate_teacher_slots: int
-    duplicate_class_slots: int
-    teachers_with_week_slots: int
-    teacher_week_slots_min: int
-    teacher_week_slots_max: int
-    teacher_week_slots_avg: float
-    room_type_usage: list[AuditRoomUsageRead]
 
 
 # ==========================================

@@ -155,7 +155,7 @@ def replay_annual_events(
         seed = event_seed + index * EVENT_STRIDE
         event = recovery_event(seed)
         perturbed, effect = apply_event_with_effect(
-            snapshot, fixture.periods, CandidateSchedule(active), event, seed
+            snapshot, CandidateSchedule(active), event, seed
         )
         if not effect.applied:
             steps.append(

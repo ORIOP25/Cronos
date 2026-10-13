@@ -172,7 +172,7 @@ async def get_current_proposal(
     current_user: deps.ActiveActor,
 ) -> dict:
     """Current pending proposal with product metrics and warnings."""
-    proposal = await queries.current_proposal(db, current_user.organization_id, now_utc=_now())
+    proposal = await queries.current_proposal(db, current_user.organization_id)
     if proposal is None:
         _raise_scheduler_error(
             kind="not_found",

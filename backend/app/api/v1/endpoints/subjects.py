@@ -36,7 +36,7 @@ async def create_subject(
 @router.patch(
     "/{subject_id}",
     response_model=schemas.SubjectRead,
-    responses={404: {"description": "Disciplina nÃ£o encontrada"}},
+    responses={404: {"description": "Disciplina não encontrada"}},
 )
 async def update_subject(
     subject_id: int,
@@ -57,8 +57,8 @@ async def update_subject(
 @router.delete(
     "/{subject_id}",
     responses={
-        404: {"description": "Disciplina nÃ£o encontrada"},
-        400: {"description": "DependÃªncias existentes"},
+        404: {"description": "Disciplina não encontrada"},
+        400: {"description": "Dependências existentes"},
     },
 )
 async def delete_subject(

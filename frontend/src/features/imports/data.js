@@ -112,15 +112,15 @@ const IMPORT_COUNT_LABELS = Object.freeze({
   assignments: 'Atribuições',
 })
 
-export function getImportResource(resource) {
+function getImportResource(resource) {
   return IMPORT_RESOURCES.find((item) => item.key === resource)
 }
 
-export function getImportResourceLabel(resource) {
+function getImportResourceLabel(resource) {
   return getImportResource(resource)?.label || 'Secção'
 }
 
-export function getImportFieldLabel(resource, field) {
+function getImportFieldLabel(resource, field) {
   return getImportResource(resource)?.fields?.[field] || 'Campo'
 }
 

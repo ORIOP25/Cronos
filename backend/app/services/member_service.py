@@ -158,7 +158,6 @@ def _provider_state(member: models.OrganizationMembership) -> str:
 
 def _member_actions(
     member: models.OrganizationMembership,
-    teacher: models.Teacher | None,
     *,
     has_history: bool = False,
 ) -> schemas.MemberActionFlags:
@@ -192,7 +191,7 @@ def _to_read(
     account = member.account
     teacher = member.teacher_profile
     caps = sorted(cap.capability.value for cap in member.capabilities)
-    actions = _member_actions(member, teacher, has_history=has_history)
+    actions = _member_actions(member, has_history=has_history)
     invitation_expired = (
         reference_time is not None
         and member.access_status == models.MembershipAccessStatus.pending_invite
@@ -765,7 +764,6 @@ async def _send_invitation(
             intended_role=expected_role,
             intent=intent,
             membership_id=membership_id,
-            account_id=account_id,
             lock_version=member.lock_version,
             previous_snapshot=previous_snapshot or _access_snapshot(member),
             draft_payload=draft_payload,
@@ -1000,7 +998,6 @@ async def _change_provider_role(
             intended_role=target_role,
             intent={"target_role": target_role.value},
             membership_id=member.id,
-            account_id=member.account_id,
             lock_version=member.lock_version,
             previous_snapshot=previous_snapshot,
             clerk_org_id=clerk_org_id,
@@ -1092,7 +1089,6 @@ async def _revoke_provider_access(
                 intended_role=None,
                 intent=intent,
                 membership_id=membership_id,
-                account_id=account_id,
                 lock_version=member.lock_version,
                 previous_snapshot=_access_snapshot(member),
                 clerk_org_id=org.clerk_org_id,
@@ -1640,7 +1636,6 @@ async def remove_member(
     )
     actions = _member_actions(
         member,
-        member.teacher_profile,
         has_history=member.teacher_profile is not None and member.teacher_profile.id in history_ids,
     )
     teacher_id = member.teacher_profile.id if member.teacher_profile else None

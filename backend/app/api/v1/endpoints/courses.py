@@ -7,7 +7,7 @@ from app.api import deps
 from app.core.exceptions import AppError
 from app.services import class_service, course_service
 
-COURSE_NOT_FOUND_MSG = "Curso nÃ£o encontrado"
+COURSE_NOT_FOUND_MSG = "Curso não encontrado"
 
 router = APIRouter()
 
@@ -21,9 +21,9 @@ async def read_courses(
     limit: int = 100,
 ) -> Any:
     """
-    Lista cursos da organizaÃ§Ã£o com paginaÃ§Ã£o (offset/limit).
-    - skip: NÃºmero de registos a saltar (default: 0)
-    - limit: NÃºmero mÃ¡ximo de registos a retornar (default: 100, max: 1000)
+    Lista cursos da organização com paginação (offset/limit).
+    - skip: Número de registos a saltar (default: 0)
+    - limit: Número máximo de registos a retornar (default: 100, max: 1000)
     """
     return await course_service.get_courses_by_org(db, current_user.organization_id, skip, limit)
 
@@ -32,7 +32,7 @@ async def read_courses(
 @router.post(
     "/",
     response_model=schemas.CourseDetailRead,
-    responses={400: {"description": "Sigla duplicada ou disciplinas invÃ¡lidas"}},
+    responses={400: {"description": "Sigla duplicada ou disciplinas inválidas"}},
 )
 async def create_course(
     item: schemas.CourseCreate,
@@ -63,8 +63,8 @@ async def read_course_detail(
     current_user: deps.ActiveActor,
 ) -> Any:
     """
-    Retorna toda a Ã¡rvore do curso: Disciplinas + Turmas Ativas.
-    Usado na pÃ¡gina de Detalhes do Curso.
+    Retorna toda a árvore do curso: Disciplinas + Turmas Ativas.
+    Usado na página de Detalhes do Curso.
     """
     course = await course_service.get_course_details(db, course_id, current_user.organization_id)
     if not course:
@@ -112,8 +112,8 @@ async def create_course_class(
     "/{course_id}/classes/{class_id}",
     response_model=schemas.ClassRead,
     responses={
-        404: {"description": "Turma nÃ£o encontrada neste curso"},
-        400: {"description": "Intervalo de anos invÃ¡lido"},
+        404: {"description": "Turma não encontrada neste curso"},
+        400: {"description": "Intervalo de anos inválido"},
     },
 )
 async def update_course_class(
@@ -135,7 +135,7 @@ async def update_course_class(
 
 @router.delete(
     "/{course_id}/classes/{class_id}",
-    responses={404: {"description": "Turma nÃ£o encontrada neste curso"}},
+    responses={404: {"description": "Turma não encontrada neste curso"}},
 )
 async def delete_course_class(
     course_id: int,
@@ -153,13 +153,13 @@ async def delete_course_class(
     return {"message": "Turma removida com sucesso", "remove_effect": remove_effect}
 
 
-# --- 4. Atualizar Curso (PATCH - AtualizaÃ§Ã£o Parcial) ---
+# --- 4. Atualizar Curso (PATCH - Atualização Parcial) ---
 @router.patch(
     "/{course_id}",
     response_model=schemas.CourseDetailRead,
     responses={
         404: {"description": COURSE_NOT_FOUND_MSG},
-        400: {"description": "Sigla jÃ¡ existente"},
+        400: {"description": "Sigla já existente"},
     },
 )
 async def update_course(
@@ -172,11 +172,11 @@ async def update_course(
     Atualiza parcialmente um curso (apenas os campos enviados).
 
     Regras:
-    - Se envias 'subject_ids': substitui completamente (nÃ£o Ã© merge)
-    - Se envias 'abbreviation': valida unicidade na organizaÃ§Ã£o
-    - Se nÃ£o envias um campo: mantÃ©m o valor existente
+    - Se envias 'subject_ids': substitui completamente (não é merge)
+    - Se envias 'abbreviation': valida unicidade na organização
+    - Se não envias um campo: mantém o valor existente
 
-    4Âº Pilar - Stability: Rejeita se hÃ¡ classes (impede perda de dados)
+    4º Pilar - Stability: Rejeita se há classes (impede perda de dados)
     """
     return await course_service.update_course(
         db,
@@ -192,7 +192,7 @@ async def update_course(
     "/{course_id}",
     responses={
         404: {"description": COURSE_NOT_FOUND_MSG},
-        400: {"description": "DependÃªncias existentes"},
+        400: {"description": "Dependências existentes"},
     },
 )
 async def delete_course(

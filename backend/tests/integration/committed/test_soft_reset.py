@@ -3,32 +3,32 @@ from sqlalchemy import func, select
 from app import models
 from app.config import settings
 
-API = settings.API_V1_STR
+RESET_URL = f"{settings.API_V1_STR}/school/settings/soft-reset"
+CONFIRMATION = {"confirm_phrase": "Confirmo"}
 
 
-async def test_schedule_reset_admin_success(async_client, clerk_admin_headers):
-    response = await async_client.delete(
-        f"{API}/schedule/reset",
+async def test_soft_reset_admin_success(async_client, clerk_admin_headers):
+    response = await async_client.post(
+        RESET_URL,
+        json=CONFIRMATION,
         headers=clerk_admin_headers,
     )
 
     assert response.status_code == 200
-    payload = response.json()
-    assert payload["msg"].startswith("Dados de hor")
-    assert payload["msg"].endswith("apagados com sucesso.")
-    assert "deleted_rows" in payload
+    assert response.json() == {"message": "Soft-reset efetuado com sucesso."}
 
 
-async def test_schedule_reset_denies_non_admin(async_client, clerk_teacher_headers):
-    response = await async_client.delete(
-        f"{API}/schedule/reset",
+async def test_soft_reset_denies_non_admin(async_client, clerk_teacher_headers):
+    response = await async_client.post(
+        RESET_URL,
+        json=CONFIRMATION,
         headers=clerk_teacher_headers,
     )
 
     assert response.status_code == 403
 
 
-async def test_schedule_reset_reverses_progress_without_mutating_history(
+async def test_soft_reset_reverses_progress_without_mutating_history(
     async_client,
     clerk_admin_headers,
     db_session,
@@ -89,13 +89,13 @@ async def test_schedule_reset_reverses_progress_without_mutating_history(
     db_session.add(original)
     await db_session.commit()
 
-    response = await async_client.delete(
-        f"{API}/schedule/reset",
+    response = await async_client.post(
+        RESET_URL,
+        json=CONFIRMATION,
         headers=clerk_admin_headers,
     )
 
     assert response.status_code == 200, response.text
-    assert response.json()["deleted_rows"]["active_schedule_blocks"] == 0
     db_session.expire_all()
     entries = list(
         await db_session.scalars(

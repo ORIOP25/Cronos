@@ -6,7 +6,6 @@ revalidate it without running the solver again.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from typing import Any
 
 from app.scheduler.application.contracts import CompletionReport, RepairSummary
@@ -165,16 +164,3 @@ def diagnoses_to_dict(diagnoses: tuple[Diagnosis, ...]) -> list[dict[str, Any]]:
         }
         for diagnosis in diagnoses
     ]
-
-
-def quality_components(metrics: Mapping[str, Any]) -> dict[str, Any]:
-    return {
-        key: metrics[key]
-        for key in (
-            "teacher_gap_minutes",
-            "class_gap_minutes",
-            "preference_cost_minutes",
-            "room_change_cost",
-        )
-        if key in metrics
-    }

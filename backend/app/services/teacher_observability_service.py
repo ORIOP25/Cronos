@@ -3,21 +3,26 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from math import ceil
+from time import perf_counter
 
 import structlog
 from sqlalchemy import and_, select
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 from app import models
+from app.core.exceptions import AppError, status_code_for_kind
 from app.core.logging import safe_exception_frames
 
 logger = structlog.get_logger(__name__)
 
 ENDPOINT_TEACHERS_ME_AVAILABILITY_READ = "TEACHERS_ME_AVAILABILITY_READ"
 ENDPOINT_TEACHERS_ME_PROGRESS_READ = "TEACHERS_ME_PROGRESS_READ"
-ENDPOINT_TEACHERS_AVAILABILITY_UPDATE = "TEACHERS_AVAILABILITY_UPDATE"
 ENDPOINT_SCHEDULE_ME_HORIZON_READ = "SCHEDULE_ME_HORIZON_READ"
 ENDPOINT_SCHEDULE_WEEK_TEACHER_READ = "SCHEDULE_WEEK_TEACHER_READ"
 
@@ -69,6 +74,52 @@ def log_teacher_endpoint_event_safe_sync(
             error_type=type(exc).__name__,
             exception_frames=safe_exception_frames(exc),
         )
+
+
+@dataclass
+class EndpointOutcome:
+    """Mutable outcome of a tracked endpoint call; callers may set the generation id."""
+
+    http_status: int = 200
+    active_generation_id: str | None = None
+
+
+@asynccontextmanager
+async def track_teacher_endpoint(
+    db: AsyncSession,
+    *,
+    organization_id: int,
+    actor_membership_id: int | None,
+    actor_role: str | None,
+    endpoint_key: str,
+    enabled: bool = True,
+) -> AsyncIterator[EndpointOutcome]:
+    """Time the wrapped endpoint body and record its HTTP outcome and latency."""
+    started = perf_counter()
+    outcome = EndpointOutcome()
+    try:
+        yield outcome
+    except AppError as exc:
+        outcome.http_status = status_code_for_kind(exc.kind, exc.code)
+        raise
+    except Exception:
+        outcome.http_status = 500
+        raise
+    finally:
+        if enabled:
+            latency_ms = max(1, int((perf_counter() - started) * 1000))
+            await db.run_sync(
+                lambda sync_db: log_teacher_endpoint_event_safe_sync(
+                    sync_db,
+                    organization_id=organization_id,
+                    actor_membership_id=actor_membership_id,
+                    actor_role=actor_role,
+                    endpoint_key=endpoint_key,
+                    http_status=outcome.http_status,
+                    latency_ms=latency_ms,
+                    active_generation_id=outcome.active_generation_id,
+                )
+            )
 
 
 def get_teacher_endpoint_observability_summary_sync(

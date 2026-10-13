@@ -160,7 +160,7 @@ def test_a_protected_published_lesson_is_preserved_and_the_rest_is_repaired():
         baseline_lessons=baseline.lessons,
         protected_lessons=(protected,),
     )
-    snapshot = apply_event(snapshot, base.periods, baseline, "TEACHER_ABSENCE", 1)
+    snapshot = apply_event(snapshot, baseline, "TEACHER_ABSENCE", 1)
     oracle = enumerate_candidates(snapshot, base.periods)
 
     result = repair_published_schedule(

@@ -1,18 +1,18 @@
 import { useQuery } from '@tanstack/react-query'
 import { useOrganization, useAuth } from '@clerk/react'
 import { useApiClient } from '../../ApiClientContext'
-import { orgQueryKey } from '../queryKeys'
+import { invalidateOrgQueries, orgQueryKey } from '../queryKeys'
 
 const DYNAMIC_OPTS = {
   staleTime: 1000 * 60 * 5,
 }
 
 export function invalidatePreparationQueries(queryClient, orgId) {
-  return Promise.all([
-    queryClient.invalidateQueries({ queryKey: ['dashboard', orgId] }),
-    queryClient.invalidateQueries({ queryKey: ['readiness-bases', orgId] }),
-    queryClient.invalidateQueries({ queryKey: orgQueryKey('scheduler-prevalidation', orgId) }),
-    queryClient.invalidateQueries({ queryKey: orgQueryKey('scheduler-status', orgId) }),
+  return invalidateOrgQueries(queryClient, orgId, [
+    'dashboard',
+    'readiness-bases',
+    'scheduler-prevalidation',
+    'scheduler-status',
   ])
 }
 

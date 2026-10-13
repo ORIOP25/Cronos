@@ -1,5 +1,3 @@
-# Ficheiro: app/services/teacher_service.py
-
 from datetime import date
 
 import structlog
@@ -17,10 +15,6 @@ from app.services.availability_matrix_service import AvailabilityMatrixInspector
 from app.services.scheduler_state_service import record_scheduler_change
 
 logger = structlog.get_logger(__name__)
-
-
-def _teacher_capacity_snapshot(subject_ids) -> dict:
-    return {"subject_ids": sorted(int(subject_id) for subject_id in subject_ids)}
 
 
 def _availability_snapshot(rows) -> list[dict]:
@@ -86,129 +80,6 @@ async def get_teachers_by_org(
         final_list.append(teacher)
 
     return final_list
-
-
-# Helper Function
-async def get_teacher_with_subjects(db: AsyncSession, teacher_id: int, organization_id: int):
-    query = (
-        select(models.Teacher)
-        .where(models.Teacher.id == teacher_id, models.Teacher.organization_id == organization_id)
-        .options(selectinload(models.Teacher.subjects))
-    )
-
-    result = await db.execute(query)
-    return result.scalars().first()
-
-
-async def get_teacher_details(db: AsyncSession, teacher_id: int, organization_id: int):
-    stmt = (
-        select(
-            models.Teacher,
-            models.User.email,
-            (
-                models.OrganizationMembership.lifecycle_status
-                == models.MembershipLifecycleStatus.active
-            ).label("is_active"),
-        )
-        .join(
-            models.OrganizationMembership,
-            models.OrganizationMembership.id == models.Teacher.organization_membership_id,
-        )
-        .join(
-            models.User,
-            models.User.id == models.OrganizationMembership.account_id,
-        )
-        .where(models.Teacher.id == teacher_id, models.Teacher.organization_id == organization_id)
-        .options(selectinload(models.Teacher.subjects))
-        .execution_options(populate_existing=True)
-    )
-
-    result = await db.execute(stmt)
-    row = result.first()
-
-    if not row:
-        return None
-
-    teacher, email, is_active = row
-    teacher.login_email = email
-    teacher.email = email
-    teacher.is_active = is_active
-
-    return teacher
-
-
-async def find_replacement_teacher(
-    db: AsyncSession, organization_id: int, unavailable_slot_id: int, exclude_teacher_id: int
-):
-    """
-    Encontra professores que podem substituir numa aula.
-    Lógica de Prioridade:
-    1. (Melhor) Preferencial (Score 2)
-    2. (Normal) Neutro / Sem Registo (Score 1)
-    3. (Pior) Evitar (Score 0) -> Fundo da lista
-    Excluídos: Impossível (Score -1)
-    """
-    # 1. Buscar todos os professores
-    all_teachers = await get_teachers_by_org(db, organization_id)
-
-    # 2. Buscar as preferências de TODOS os professores para este slot específico
-    avail_stmt = (
-        select(Availability)
-        .join(
-            models.Timeslot,
-            Availability.timeslot_id == models.Timeslot.id,
-        )
-        .where(
-            Availability.timeslot_id == unavailable_slot_id,
-            models.Timeslot.organization_id == organization_id,
-        )
-    )
-    avail_results = await db.execute(avail_stmt)
-
-    # Mapa rápido: { teacher_id: score }
-    teacher_scores = {av.teacher_id: av.score for av in avail_results.scalars().all()}
-
-    suggestions = []
-
-    for teacher in all_teachers:
-        if teacher.id == exclude_teacher_id:
-            continue
-
-        # Obter score (Default = 1/Neutro se não tiver registo)
-        score = teacher_scores.get(teacher.id, 1)  #
-
-        # FILTRO RÍGIDO: Se for Impossível (-1), salta fora.
-        if score == -1:
-            continue
-
-        # DEFINIR PRIORIDADE (Menor número = Aparece primeiro na lista)
-        # 1: Top (Reserva para lógica futura de "Já dá aulas à turma")
-        # 2: Preferencial (Score 2)
-        # 3: Neutro (Score 1)
-        # 4: Evitar (Score 0) -> Fundo da lista
-
-        priority = 3  # Default
-        reason = "Disponível"
-
-        if score == 2:
-            priority = 2
-            reason = "Preferencial (Marcado a Verde)"
-        elif score == 0:
-            priority = 4
-            reason = "Evitar (Marcado a Laranja)"
-
-        suggestions.append(
-            {
-                "teacher_id": teacher.id,
-                "teacher_name": teacher.name,
-                "priority": priority,
-                "reason": reason,
-            }
-        )
-
-    # Ordenar: Prioridade (crescente), depois Nome (alfabético)
-    suggestions.sort(key=lambda x: (x["priority"], x["teacher_name"]))
-    return suggestions
 
 
 async def get_teacher_availability(
@@ -475,11 +346,3 @@ async def get_teacher_progress(
 
 
 # ── Clerk Integration ─────────────────────────────────────────────
-
-
-async def invite_teacher_to_clerk(
-    clerk_org_id: str,
-    teacher_email: str,
-    teacher_id: int,
-) -> dict:
-    raise RuntimeError("Legacy teacher Clerk invites are disabled. Use ClerkAccessService.")

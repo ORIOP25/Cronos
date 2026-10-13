@@ -86,13 +86,6 @@ Marketing CSS classes use the `cronos-*` namespace to isolate styles from authen
 | `/my-availability`, `/my-schedules`, `/my-progress` | `MyAvailability.jsx`, `MySchedules.jsx`, `MyProgress.jsx` | Teacher |
 | `/sign-in/*`, `/sign-up/*` | Redirects | Public |
 
-## Visual Baseline Generation
-Visual snapshot reference graphics reside in `documentation/06_frontend_ux/visual-baselines/`. CSS coverage is an explicit opt-in measurement and writes its report to `documentation/08_security_quality/loc-phase-2-evidence/`:
-
-```bash
-CSS_COVERAGE_ENABLED=1 node scripts/capture-css-coverage.mjs http://127.0.0.1:4173
-```
-
 The runtime image serves the compiled SPA with Nginx.
 Nginx proxies `/api/` to the backend.
 Nginx serves pre-rendered marketing pages with `try_files $uri $uri.html =404` and application routes from `app-shell.html`.

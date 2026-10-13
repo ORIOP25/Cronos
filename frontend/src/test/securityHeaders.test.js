@@ -6,7 +6,6 @@ const headers = fs.readFileSync('public/_headers', 'utf8').replaceAll('\r\n', '\
 const html = fs.readFileSync('index.html', 'utf8')
 const nginx = fs.readFileSync('nginx.conf', 'utf8')
 const nginxCi = fs.readFileSync('nginx.ci.conf', 'utf8')
-const nginxLocal = fs.readFileSync('nginx.local.conf', 'utf8')
 const worker = fs.readFileSync('public/_worker.js', 'utf8')
 
 describe('production browser boundary', () => {
@@ -25,7 +24,7 @@ describe('production browser boundary', () => {
   })
 
   it('keeps the three host adapters aligned on public routing', () => {
-    for (const config of [nginx, nginxCi, nginxLocal]) {
+    for (const config of [nginx, nginxCi]) {
       expect(config).toContain('charset_types text/html text/markdown;')
       expect(config).toContain('error_page 404 =404 $not_found_asset;')
       expect(config).toContain('try_files $uri $uri.html =404;')
@@ -82,7 +81,6 @@ describe('Clerk protect port is scoped to connect-src only', () => {
     ['public/_worker.js', workerCsp(worker)],
     ['nginx.conf', nginxCsp(nginx)],
     ['nginx.ci.conf', nginxCsp(nginxCi)],
-    ['nginx.local.conf', nginxCsp(nginxLocal)],
   ]
 
   it.each(targets)('%s allows every protect port only for connections', (_name, csp) => {

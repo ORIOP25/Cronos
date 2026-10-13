@@ -1,26 +1,37 @@
 from datetime import UTC, date, datetime, timedelta
-from time import perf_counter
 from typing import Annotated
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Query, Request
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models, schemas
 from app.api import deps
-from app.core.exceptions import AppError, status_code_for_kind
+from app.core.exceptions import AppError
 from app.core.ratelimit import limiter
 from app.scheduler.infrastructure import operations
 from app.scheduler.infrastructure.models import SchedulerVersionV1
-from app.services import schedule_service, teacher_observability_service
-from app.services.school_year_reset_service import SchoolYearResetService
+from app.services import lesson_log_service, schedule_service, teacher_observability_service
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)
 ERR_TEACHER_PROFILE_REQUIRED = "Professor sem perfil associado"
-ERR_TEACHER_OWN_SCHEDULE_ONLY = "Professor sÃ³ pode consultar o prÃ³prio horÃ¡rio"
-ERR_TEACHER_HORIZON_NOT_FOUND = "NÃ£o existe horizonte semanal configurado para a organizaÃ§Ã£o"
-ERR_SCHEDULE_RESET_FORBIDDEN = "Sem permissÃµes para apagar os dados de horÃ¡rio"
+ERR_TEACHER_OWN_SCHEDULE_ONLY = "Professor só pode consultar o próprio horário"
+ERR_TEACHER_HORIZON_NOT_FOUND = "Não existe horizonte semanal configurado para a organização"
+
+
+def _track_teacher_read(
+    db: AsyncSession, current_user: deps.Actor, endpoint_key: str, *, enabled: bool = True
+):
+    return teacher_observability_service.track_teacher_endpoint(
+        db,
+        organization_id=current_user.organization_id,
+        actor_membership_id=current_user.membership_id,
+        actor_role=deps.actor_role(current_user),
+        endpoint_key=endpoint_key,
+        enabled=enabled,
+    )
 
 
 def _raise_schedule_error(status_code: int, code: str, detail: str) -> None:
@@ -31,58 +42,6 @@ def _raise_schedule_error(status_code: int, code: str, detail: str) -> None:
         422: "validation",
     }.get(status_code, "bad_request")
     raise AppError(kind=kind, code=code, detail=detail)
-
-
-def _extract_request_id(request: Request) -> str | None:
-    return request.headers.get("x-request-id") or request.headers.get("x-correlation-id")
-
-
-def _log_schedule_reset_audit(
-    request: Request,
-    *,
-    organization_id: int | None,
-    membership_id: int | None,
-    role: str | None,
-    status_code: int,
-    detail: str,
-) -> None:
-    logger.info(
-        "schedule_reset_audit",
-        organization_id=organization_id,
-        actor_membership_id=membership_id,
-        actor_role=role,
-        method=request.method,
-        path=str(request.url.path),
-        request_id=_extract_request_id(request),
-        http_status=status_code,
-        detail=detail,
-    )
-
-
-async def _require_admin_for_schedule_reset(
-    request: Request,
-    current_user: Annotated[deps.Actor, Depends(deps.get_current_active_user)],
-) -> deps.Actor:
-    """Aplica gate admin-only com trilho de auditoria para tentativas negadas."""
-    try:
-        return deps.get_current_active_admin(current_user)
-    except HTTPException as exc:
-        detail = str(exc.detail)
-        if exc.status_code == 403:
-            detail = ERR_SCHEDULE_RESET_FORBIDDEN
-        _log_schedule_reset_audit(
-            request,
-            organization_id=getattr(current_user, "organization_id", None),
-            membership_id=getattr(current_user, "membership_id", None),
-            role=deps.actor_role(current_user),
-            status_code=exc.status_code,
-            detail=detail,
-        )
-        raise AppError(
-            kind="forbidden" if exc.status_code == 403 else "unauthorized",
-            code="schedule_reset_forbidden",
-            detail=detail,
-        ) from exc
 
 
 # --- CONSTRAINTS (Regras) ---
@@ -104,80 +63,11 @@ async def create_constraint(
         raise AppError(kind="validation", code="constraint_invalid", detail=str(exc)) from exc
 
 
-@router.get("/constraints/", response_model=list[schemas.ConstraintRead])
-async def read_constraints(
-    db: deps.DbSession,
-    current_user: deps.ActiveActor,
-):
-    return await schedule_service.get_constraints_by_org(db, current_user.organization_id)
-
-
-@router.delete(
-    "/constraints/{constraint_id}", responses={404: {"description": "Regra nÃ£o encontrada"}}
-)
-async def delete_constraint(
-    constraint_id: int,
-    db: deps.DbSession,
-    current_user: deps.AdminActor,
-):
-    success = await schedule_service.delete_constraint(
-        db,
-        constraint_id,
-        current_user.organization_id,
-        changed_by_membership_id=current_user.membership_id,
-    )
-    if not success:
-        _raise_schedule_error(404, "constraint_not_found", "Regra nÃ£o encontrada")
-    return {"ok": True}
-
-
-@router.delete(
-    "/reset",
-    responses={
-        200: {"description": "Dados de horÃ¡rio apagados com sucesso"},
-        401: {"description": "Credenciais invÃ¡lidas"},
-        403: {"description": ERR_SCHEDULE_RESET_FORBIDDEN},
-    },
-    summary="Apagar dados operacionais de horÃ¡rio (admin-only)",
-)
-async def reset_all_data(
-    request: Request,
-    db: deps.DbSession,
-    current_user: Annotated[deps.Actor, Depends(_require_admin_for_schedule_reset)],
-):
-    status_code = 200
-    detail = "Dados de horÃ¡rio apagados com sucesso."
-
-    try:
-        result = await SchoolYearResetService(db).reset_year(
-            current_user.organization_id,
-            reset_by_membership_id=current_user.membership_id,
-        )
-        return {
-            "msg": "Dados de horÃ¡rio apagados com sucesso.",
-            "deleted_rows": result.deleted_rows,
-            "new_school_year_id": result.new_school_year_id,
-        }
-    except Exception as exc:
-        status_code = 500
-        detail = f"Falha ao apagar dados de horÃ¡rio: {exc}"
-        raise
-    finally:
-        _log_schedule_reset_audit(
-            request,
-            organization_id=current_user.organization_id,
-            membership_id=current_user.membership_id,
-            role="admin" if current_user.can_admin else "teacher",
-            status_code=status_code,
-            detail=detail,
-        )
-
-
 # ==========================================
-#  SPRINT 4 â€” VISUALIZAÃ‡ÃƒO SEMANAL
+#  SPRINT 4 — VISUALIZAÇÃO SEMANAL
 # ==========================================
 
-WEEK_FILTER_REQUIRED_MSG = "Indique class_id ou teacher_id para filtrar o horÃ¡rio."
+WEEK_FILTER_REQUIRED_MSG = "Indique class_id ou teacher_id para filtrar o horário."
 WEEK_SCHEDULE_RATE_LIMIT = "60/minute;600/hour"
 
 
@@ -263,16 +153,14 @@ async def get_teacher_schedule_horizon(
     db: deps.DbSession,
     current_user: deps.ActiveActor,
 ):
-    start_ts = perf_counter()
-    status_code = 200
-    active_generation_id = None
-
-    try:
+    async with _track_teacher_read(
+        db,
+        current_user,
+        teacher_observability_service.ENDPOINT_SCHEDULE_ME_HORIZON_READ,
+    ) as outcome:
         if not deps.user_has_teacher_capability(current_user):
-            status_code = 403
             _raise_schedule_error(403, "teacher_schedule_forbidden", ERR_TEACHER_OWN_SCHEDULE_ONLY)
         if current_user.teacher_id is None:
-            status_code = 403
             _raise_schedule_error(403, "teacher_profile_required", ERR_TEACHER_PROFILE_REQUIRED)
 
         def _run(sync_db):
@@ -311,33 +199,10 @@ async def get_teacher_schedule_horizon(
 
         horizon_payload = await db.run_sync(_run)
         if horizon_payload is None:
-            status_code = 404
             _raise_schedule_error(404, "teacher_horizon_not_found", ERR_TEACHER_HORIZON_NOT_FOUND)
 
-        active_generation_id = horizon_payload.get("active_generation_id")
+        outcome.active_generation_id = horizon_payload.get("active_generation_id")
         return horizon_payload
-    except AppError as exc:
-        status_code = status_code_for_kind(exc.kind, exc.code)
-        raise
-    except Exception:
-        status_code = 500
-        raise
-    finally:
-        elapsed_ms = max(1, int((perf_counter() - start_ts) * 1000))
-
-        def _emit(sync_db):
-            teacher_observability_service.log_teacher_endpoint_event_safe_sync(
-                sync_db,
-                organization_id=current_user.organization_id,
-                actor_membership_id=current_user.membership_id,
-                actor_role=deps.actor_role(current_user),
-                endpoint_key=teacher_observability_service.ENDPOINT_SCHEDULE_ME_HORIZON_READ,
-                http_status=status_code,
-                latency_ms=elapsed_ms,
-                active_generation_id=active_generation_id,
-            )
-
-        await db.run_sync(_emit)
 
 
 @router.get(
@@ -346,14 +211,14 @@ async def get_teacher_schedule_horizon(
     responses={
         400: {"description": WEEK_FILTER_REQUIRED_MSG},
         403: {"description": ERR_TEACHER_OWN_SCHEDULE_ONLY},
-        429: {"description": "Limite temporÃ¡rio de proteÃ§Ã£o do endpoint excedido."},
+        429: {"description": "Limite temporário de proteção do endpoint excedido."},
     },
-    summary="HorÃ¡rio de uma semana (turma ou professor)",
+    summary="Horário de uma semana (turma ou professor)",
 )
 @limiter.limit(WEEK_SCHEDULE_RATE_LIMIT)
 async def get_week_schedule(
     week_start: Annotated[
-        date, Query(description="Data de inÃ­cio da semana (segunda-feira, YYYY-MM-DD)")
+        date, Query(description="Data de início da semana (segunda-feira, YYYY-MM-DD)")
     ],
     request: Request,
     db: deps.DbSession,
@@ -361,40 +226,35 @@ async def get_week_schedule(
     class_id: Annotated[int | None, Query(description="ID da turma")] = None,
     teacher_id: Annotated[int | None, Query(description="ID do professor")] = None,
 ):
-    """Retorna os slots da semana indicada, enriquecidos com o estado de ocorrÃªncia para dias passados."""
-    start_ts = perf_counter()
-    status_code = 200
-    should_log_teacher_observability = deps.user_has_teacher_capability(current_user)
-
+    """Retorna os slots da semana indicada, enriquecidos com o estado de ocorrência para dias passados."""
     effective_class_id = class_id
     effective_teacher_id = teacher_id
+    is_admin = deps.user_has_admin_capability(current_user)
+    is_teacher = deps.user_has_teacher_capability(current_user)
 
-    try:
-        is_admin = deps.user_has_admin_capability(current_user)
-        is_teacher = deps.user_has_teacher_capability(current_user)
-
+    async with _track_teacher_read(
+        db,
+        current_user,
+        teacher_observability_service.ENDPOINT_SCHEDULE_WEEK_TEACHER_READ,
+        enabled=is_teacher,
+    ):
         if not is_admin and not is_teacher:
-            status_code = 403
             _raise_schedule_error(403, "teacher_schedule_forbidden", ERR_TEACHER_OWN_SCHEDULE_ONLY)
 
         if is_teacher and not is_admin:
             if current_user.teacher_id is None:
-                status_code = 403
                 _raise_schedule_error(403, "teacher_profile_required", ERR_TEACHER_PROFILE_REQUIRED)
             if class_id is not None:
-                status_code = 403
                 _raise_schedule_error(
                     403, "teacher_schedule_forbidden", ERR_TEACHER_OWN_SCHEDULE_ONLY
                 )
             if teacher_id is not None and teacher_id != current_user.teacher_id:
-                status_code = 403
                 _raise_schedule_error(
                     403, "teacher_schedule_forbidden", ERR_TEACHER_OWN_SCHEDULE_ONLY
                 )
             effective_teacher_id = current_user.teacher_id
 
         if effective_class_id is None and effective_teacher_id is None:
-            status_code = 400
             _raise_schedule_error(400, "week_filter_required", WEEK_FILTER_REQUIRED_MSG)
 
         v1_slots = await operations.week_schedule(
@@ -408,9 +268,7 @@ async def get_week_schedule(
             return v1_slots
 
         def _run(sync_db):
-            from app.services import schedule_service as svc
-
-            return svc.get_week_schedule_sync(
+            return schedule_service.get_week_schedule_sync(
                 sync_db,
                 organization_id=current_user.organization_id,
                 week_start=week_start,
@@ -419,37 +277,10 @@ async def get_week_schedule(
             )
 
         return await db.run_sync(_run)
-    except AppError as exc:
-        status_code = status_code_for_kind(exc.kind, exc.code)
-        raise
-    except Exception:
-        status_code = 500
-        raise
-    finally:
-        if should_log_teacher_observability:
-            elapsed_ms = max(1, int((perf_counter() - start_ts) * 1000))
-
-            def _emit(sync_db):
-                teacher_observability_service.log_teacher_endpoint_event_safe_sync(
-                    sync_db,
-                    organization_id=current_user.organization_id,
-                    actor_membership_id=current_user.membership_id,
-                    actor_role=deps.actor_role(current_user),
-                    endpoint_key=teacher_observability_service.ENDPOINT_SCHEDULE_WEEK_TEACHER_READ,
-                    http_status=status_code,
-                    latency_ms=elapsed_ms,
-                    active_generation_id=None,
-                )
-
-            await db.run_sync(_emit)
 
 
 # ==========================================
-#  AUDITORIA TÃ‰CNICA POR GERAÃ‡ÃƒO
-# ==========================================
-
-# ==========================================
-#  WBS FASE 1/2 â€” REGISTO DE AULAS (LESSON LOG)
+#  WBS FASE 1/2 — REGISTO DE AULAS (LESSON LOG)
 # ==========================================
 
 LESSON_LOG_ACCESS_DENIED = "Acesso negado."
@@ -489,8 +320,6 @@ async def upsert_active_lesson_log(
     is_admin = _require_lesson_log_actor(current_user)
 
     def _run(sync_db):
-        from app.services import lesson_log_service
-
         block = (
             sync_db.query(models.ActiveScheduleBlock)
             .filter(
@@ -567,8 +396,6 @@ async def upsert_operational_lesson_log(
             _raise_operations_error(exc)
 
     def _run(sync_db):
-        from app.services import lesson_log_service
-
         return lesson_log_service.upsert_operational_lesson_log_sync(
             sync_db,
             organization_id=current_user.organization_id,

@@ -21,6 +21,7 @@ from app.scheduler.domain.candidate import (
 )
 from app.scheduler.domain.oracle import optimal_candidate
 from app.scheduler.domain.recovery import RecoveryPolicy
+from app.scheduler.infrastructure.constructive import construct_schedule
 from app.scheduler.lab.annual import AnnualFixture
 from app.scheduler.lab.fixtures import (
     CaseExpectation,
@@ -96,18 +97,16 @@ def _ordered(lessons: tuple) -> list:
 
 def apply_event(
     snapshot: PlanningSnapshot,
-    periods: tuple[Period, ...],
     baseline: CandidateSchedule,
     event: str,
     event_seed: int,
 ) -> PlanningSnapshot:
     """One audited perturbation over the published baseline."""
-    return apply_event_with_effect(snapshot, periods, baseline, event, event_seed)[0]
+    return apply_event_with_effect(snapshot, baseline, event, event_seed)[0]
 
 
 def apply_event_with_effect(
     snapshot: PlanningSnapshot,
-    periods: tuple[Period, ...],
     baseline: CandidateSchedule,
     event: str,
     event_seed: int,
@@ -189,9 +188,9 @@ def build_recovery_case(
     base = build_fixture(case_id + "-base", spec, fixture_seed=fixture_seed)
     baseline = base.witness
     event = recovery_event(event_seed)
-    snapshot = apply_event(base.snapshot, base.periods, baseline, event, event_seed)
+    snapshot = apply_event(base.snapshot, baseline, event, event_seed)
     for extra in extra_events:
-        snapshot = apply_event(snapshot, base.periods, baseline, recovery_event(extra), extra)
+        snapshot = apply_event(snapshot, baseline, recovery_event(extra), extra)
     witness = optimal_candidate(snapshot, base.periods)
     expectation = (
         CaseExpectation.FEASIBLE_WITH_WITNESS
@@ -231,8 +230,6 @@ def build_constructed_recovery_case(
     independent validator. The minimal oracle is never called, so the case can
     grow beyond enumerable size without weakening the witness guarantee.
     """
-    from app.scheduler.lab.construct import construct_schedule
-
     snapshot = build_snapshot(spec)
     periods = tuple(
         normalize_period(day, start, end, spec.timezone_name) for day, start, end in spec.periods
@@ -241,9 +238,9 @@ def build_constructed_recovery_case(
     if baseline is None:
         raise ValueError("The constructed baseline has no independent witness.")
     event = recovery_event(event_seed)
-    perturbed = apply_event(snapshot, periods, baseline, event, event_seed)
+    perturbed = apply_event(snapshot, baseline, event, event_seed)
     for extra in extra_events:
-        perturbed = apply_event(perturbed, periods, baseline, recovery_event(extra), extra)
+        perturbed = apply_event(perturbed, baseline, recovery_event(extra), extra)
     target = construct_schedule(perturbed, periods)
     if target is None:
         raise ValueError("The perturbed case has no independent constructive witness.")
@@ -276,9 +273,9 @@ def perturb_constructed_fixture(
     if baseline is None:
         raise ValueError("A constructed recovery fixture needs a witness baseline.")
     event = recovery_event(event_seed)
-    snapshot = apply_event(fixture.snapshot, fixture.periods, baseline, event, event_seed)
+    snapshot = apply_event(fixture.snapshot, baseline, event, event_seed)
     for extra in extra_events:
-        snapshot = apply_event(snapshot, fixture.periods, baseline, recovery_event(extra), extra)
+        snapshot = apply_event(snapshot, baseline, recovery_event(extra), extra)
     return RecoveryCase(
         case_id=case_id or getattr(fixture, "case_id", "recovery"),
         family=family,

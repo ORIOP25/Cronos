@@ -30,7 +30,6 @@ from app.scheduler.lab.fixtures import (
 from app.scheduler.lab.scale import build_scale_fixture
 
 SCHEMA_VERSION = "scheduler-lab-v3"
-IMAGE_IDENTITY = "cronos-backend-test:local"
 
 
 @dataclass(frozen=True)

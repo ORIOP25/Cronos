@@ -27,18 +27,6 @@ PENDING_PROPOSAL_MESSAGE = (
     "a proposta antes de regenerar a grelha."
 )
 
-TIMESLOT_DEPENDENCY_POLICIES = {
-    ("availability", "timeslot_id"): "recreate",
-    ("schedule_draft_blocks", "timeslot_id"): "protect",
-    ("active_schedule_blocks", "timeslot_id"): "protect",
-    ("operational_schedule_block", "timeslot_id"): "protect",
-    ("schedule_output", "timeslot_id"): "protect",
-    ("substitutions", "timeslot_id"): "protect",
-    ("lesson_occurrence", "planned_timeslot_id"): "protect",
-    ("schedule_diff_entries", "before_timeslot_id"): "protect",
-    ("schedule_diff_entries", "after_timeslot_id"): "protect",
-}
-
 
 @dataclass(frozen=True)
 class GridRegenerationPlan:

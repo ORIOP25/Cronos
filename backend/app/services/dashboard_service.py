@@ -1,4 +1,4 @@
-"""ServiÃ§o de Dashboard V1 â€” agrega mÃ©tricas chave para o painel do diretor."""
+"""Serviço de Dashboard V1 — agrega métricas chave para o painel do diretor."""
 
 from collections import defaultdict
 from datetime import date, datetime, timedelta
@@ -534,7 +534,7 @@ def _get_debt_summary(
     organization_id: int,
     today: date,
 ) -> schemas.DebtSummary:
-    """Resumo de dÃ­vidas de horas."""
+    """Resumo de dívidas de horas."""
 
     debt_list = occurrence_service.get_debts_sync(db, organization_id)
 

@@ -1,14 +1,13 @@
-"""Endpoints para gestÃ£o de ocorrÃªncias de aulas (Sprint 2).
+"""Endpoints para gestão de ocorrências de aulas (Sprint 2).
 
 Rotas:
-    POST /occurrences/        â€” criar/reutilizar ocorrÃªncia por bloco planeado
-  GET  /occurrences/         â€” listar ocorrÃªncias (com filtros)
-  GET  /occurrences/debts    â€” dÃ­vidas de horas agrupadas
-    GET  /occurrences/observability/summary â€” contadores operacionais por organizaÃ§Ã£o
-    GET  /occurrences/{id}/substitutes/recommendations â€” ranking de elegÃ­veis
-  GET  /occurrences/{id}     â€” detalhe de uma ocorrÃªncia
-  PATCH /occurrences/{id}    â€” registar falta (GAP) ou substituiÃ§Ã£o
-  GET  /occurrences/substitutes â€” professores disponÃ­veis num slot/data
+    POST /occurrences/        — criar/reutilizar ocorrência por bloco planeado
+  GET  /occurrences/         — listar ocorrências (com filtros)
+  GET  /occurrences/debts    — dívidas de horas agrupadas
+    GET  /occurrences/observability/summary — contadores operacionais por organização
+    GET  /occurrences/{id}/substitutes/recommendations — ranking de elegíveis
+  GET  /occurrences/{id}     — detalhe de uma ocorrência
+  PATCH /occurrences/{id}    — registar falta (GAP) ou substituição
 """
 
 from __future__ import annotations
@@ -21,10 +20,11 @@ from fastapi import APIRouter, Query, Response, status
 from app import schemas
 from app.api import deps
 from app.core.exceptions import AppError, status_code_for_kind
+from app.scheduler.infrastructure import occurrences as occurrences_v1
 from app.services import occurrence_service
 
 # Constante reutilizada (SonarQube S1192)
-OCCURRENCE_NOT_FOUND_MSG = "OcorrÃªncia nÃ£o encontrada"
+OCCURRENCE_NOT_FOUND_MSG = "Ocorrência não encontrada"
 
 router = APIRouter()
 
@@ -38,25 +38,23 @@ router = APIRouter()
 @router.get(
     "/",
     response_model=schemas.LessonOccurrenceListRead,
-    summary="Listar ocorrÃªncias de aulas",
+    summary="Listar ocorrências de aulas",
 )
 async def list_occurrences(
     db: deps.DbSession,
     current_user: deps.AdminActor,
     class_id: Annotated[int | None, Query(gt=0, description="Filtrar por turma")] = None,
-    date_from: Annotated[date | None, Query(description="Data de inÃ­cio (YYYY-MM-DD)")] = None,
+    date_from: Annotated[date | None, Query(description="Data de início (YYYY-MM-DD)")] = None,
     date_to: Annotated[date | None, Query(description="Data de fim (YYYY-MM-DD)")] = None,
     status: Annotated[
         str | None,
         Query(description="Filtrar por estado: OPEN_PENDING, GIVEN, GAP, SUBSTITUTED, REVOKED"),
     ] = None,
     skip: Annotated[int, Query(ge=0, description="Registos a saltar")] = 0,
-    limit: Annotated[int, Query(ge=1, le=500, description="MÃ¡ximo de registos a devolver")] = 100,
+    limit: Annotated[int, Query(ge=1, le=500, description="Máximo de registos a devolver")] = 100,
 ):
-    """Devolve ocorrÃªncias de aulas com filtros opcionais."""
+    """Devolve ocorrências de aulas com filtros opcionais."""
     organization_id = current_user.organization_id
-
-    from app.scheduler.infrastructure import occurrences as occurrences_v1
 
     if await occurrences_v1.is_active(db, organization_id):
         return await occurrences_v1.list_occurrences(
@@ -90,11 +88,11 @@ async def list_occurrences(
     "/",
     response_model=schemas.LessonOccurrenceRead,
     status_code=status.HTTP_201_CREATED,
-    summary="Criar ocorrÃªncia operacional por bloco planeado",
+    summary="Criar ocorrência operacional por bloco planeado",
     responses={
-        404: {"description": "Bloco planeado nÃ£o encontrado"},
-        409: {"description": "Bloco invÃ¡lido para criaÃ§Ã£o operacional"},
-        422: {"description": "Contexto de bloco invÃ¡lido"},
+        404: {"description": "Bloco planeado não encontrado"},
+        409: {"description": "Bloco inválido para criação operacional"},
+        422: {"description": "Contexto de bloco inválido"},
     },
 )
 async def create_occurrence(
@@ -103,7 +101,7 @@ async def create_occurrence(
     db: deps.DbSession,
     current_user: deps.AdminActor,
 ):
-    """Executa comando CREATE_OCCURRENCE (cria/reutiliza) para um bloco do horÃ¡rio."""
+    """Executa comando CREATE_OCCURRENCE (cria/reutiliza) para um bloco do horário."""
     organization_id = current_user.organization_id
 
     try:
@@ -150,17 +148,15 @@ async def create_occurrence(
 @router.get(
     "/debts",
     response_model=schemas.DebtListRead,
-    summary="DÃ­vidas de horas de aulas",
+    summary="Dívidas de horas de aulas",
 )
 async def list_debts(
     db: deps.DbSession,
     current_user: deps.AdminActor,
     class_id: Annotated[int | None, Query(description="Filtrar por turma")] = None,
 ):
-    """Devolve as horas em dÃ­vida (faltas nÃ£o recuperadas) agrupadas por turma/disciplina."""
+    """Devolve as horas em dívida (faltas não recuperadas) agrupadas por turma/disciplina."""
     organization_id = current_user.organization_id
-
-    from app.scheduler.infrastructure import occurrences as occurrences_v1
 
     if await occurrences_v1.is_active(db, organization_id):
         return await occurrences_v1.get_debts(db, organization_id, class_id=class_id)
@@ -171,14 +167,12 @@ async def list_debts(
 @router.get(
     "/observability/summary",
     response_model=schemas.OccurrenceObservabilitySummaryRead,
-    summary="Resumo de observabilidade operacional de ocorrÃªncias",
+    summary="Resumo de observabilidade operacional de ocorrências",
 )
 async def get_occurrence_observability_summary(
     db: deps.DbSession,
     current_user: deps.AdminActor,
-    window_days: Annotated[
-        int, Query(ge=1, le=90, description="Janela de agregaÃ§Ã£o em dias")
-    ] = 7,
+    window_days: Annotated[int, Query(ge=1, le=90, description="Janela de agregação em dias")] = 7,
 ):
     organization_id = current_user.organization_id
 
@@ -190,33 +184,12 @@ async def get_occurrence_observability_summary(
 
 
 @router.get(
-    "/substitutes",
-    response_model=list[schemas.AvailableSubstituteRead],
-    summary="Professores disponÃ­veis para substituiÃ§Ã£o",
-    responses={404: {"description": "Timeslot nÃ£o encontrado"}},
-)
-async def list_available_substitutes(
-    db: deps.DbSession,
-    current_user: deps.AdminActor,
-    timeslot_id: Annotated[int, Query(description="ID do timeslot afetado")],
-    target_date: Annotated[date, Query(description="Data da aula (YYYY-MM-DD)")],
-):
-    """Devolve professores da organizaÃ§Ã£o que estÃ£o disponÃ­veis num dado timeslot/data."""
-    organization_id = current_user.organization_id
-
-    results = await occurrence_service.get_available_substitutes(
-        db, organization_id, timeslot_id, target_date
-    )
-    return results
-
-
-@router.get(
     "/{occurrence_id}/substitutes/recommendations",
     response_model=list[schemas.SubstituteRecommendationRead],
-    summary="Ranking de elegÃ­veis para substituiÃ§Ã£o",
+    summary="Ranking de elegíveis para substituição",
     responses={
         404: {"description": OCCURRENCE_NOT_FOUND_MSG},
-        422: {"description": "OcorrÃªncia sem contexto vÃ¡lido para recomendaÃ§Ã£o"},
+        422: {"description": "Ocorrência sem contexto válido para recomendação"},
     },
 )
 async def get_substitute_recommendations(
@@ -225,8 +198,6 @@ async def get_substitute_recommendations(
     current_user: deps.AdminActor,
 ):
     organization_id = current_user.organization_id
-
-    from app.scheduler.infrastructure import occurrences as occurrences_v1
 
     if await occurrences_v1.is_active(db, organization_id):
         return await occurrences_v1.get_substitute_recommendations(
@@ -256,8 +227,6 @@ async def get_substitute_diagnostics(
 ):
     """Devolve candidatos e os motivos estruturados que os excluem."""
     organization_id = current_user.organization_id
-
-    from app.scheduler.infrastructure import occurrences as occurrences_v1
 
     if await occurrences_v1.is_active(db, organization_id):
         return await occurrences_v1.get_substitute_diagnostics(db, organization_id, occurrence_id)
@@ -289,7 +258,7 @@ async def get_substitute_diagnostics(
 @router.get(
     "/{occurrence_id}",
     response_model=schemas.LessonOccurrenceRead,
-    summary="Detalhe de uma ocorrÃªncia",
+    summary="Detalhe de uma ocorrência",
     responses={404: {"description": OCCURRENCE_NOT_FOUND_MSG}},
 )
 async def get_occurrence(
@@ -297,10 +266,8 @@ async def get_occurrence(
     db: deps.DbSession,
     current_user: deps.AdminActor,
 ):
-    """Devolve uma ocorrÃªncia pelo ID."""
+    """Devolve uma ocorrência pelo ID."""
     organization_id = current_user.organization_id
-
-    from app.scheduler.infrastructure import occurrences as occurrences_v1
 
     if await occurrences_v1.is_active(db, organization_id):
         return await occurrences_v1.get_occurrence(db, organization_id, occurrence_id)
@@ -311,11 +278,11 @@ async def get_occurrence(
 @router.patch(
     "/{occurrence_id}",
     response_model=schemas.LessonOccurrenceRead,
-    summary="Registar falta ou substituiÃ§Ã£o",
+    summary="Registar falta ou substituição",
     responses={
         404: {"description": OCCURRENCE_NOT_FOUND_MSG},
-        422: {"description": "Dados invÃ¡lidos (ex: substituto obrigatÃ³rio em SUBSTITUTED)"},
-        409: {"description": "TransiÃ§Ã£o invÃ¡lida ou tentativa de sobrescrever histÃ³rico"},
+        422: {"description": "Dados inválidos (ex: substituto obrigatório em SUBSTITUTED)"},
+        409: {"description": "Transição inválida ou tentativa de sobrescrever histórico"},
     },
 )
 async def update_occurrence(
@@ -324,10 +291,8 @@ async def update_occurrence(
     db: deps.DbSession,
     current_user: deps.AdminActor,
 ):
-    """Permite ao diretor marcar uma ocorrÃªncia como GAP ou SUBSTITUTED."""
+    """Permite ao diretor marcar uma ocorrência como GAP ou SUBSTITUTED."""
     organization_id = current_user.organization_id
-
-    from app.scheduler.infrastructure import occurrences as occurrences_v1
 
     if await occurrences_v1.is_active(db, organization_id):
         try:
@@ -405,8 +370,8 @@ async def update_occurrence(
 
 @router.post(
     "/{occurrence_id}/cancel",
-    summary="Cancelar uma ocorrÃªncia",
-    responses={404: {"description": "OcorrÃªncia nÃ£o encontrada."}},
+    summary="Cancelar uma ocorrência",
+    responses={404: {"description": "Ocorrência não encontrada."}},
 )
 async def cancel_occurrence(
     occurrence_id: int,
@@ -414,10 +379,8 @@ async def cancel_occurrence(
     db: deps.DbSession,
     current_user: deps.AdminActor,
 ):
-    """Cancela uma ocorrÃªncia (OPEN ou decidida), revertendo o LessonLog para PENDING."""
+    """Cancela uma ocorrência (OPEN ou decidida), revertendo o LessonLog para PENDING."""
     organization_id = current_user.organization_id
-
-    from app.scheduler.infrastructure import occurrences as occurrences_v1
 
     if await occurrences_v1.is_active(db, organization_id):
         return await occurrences_v1.cancel_occurrence(

@@ -1,14 +1,10 @@
 import { useMemo } from 'react'
 import StatePanel from './StatePanel'
+import { DAY_LABELS } from '../constants'
 import { addDays, formatDate, formatDateShort } from '../utils/formatUtils'
 import { getSubjectColor } from '../utils/subjectColors'
 import { buildWeekGridModel } from '../utils/weekGridModel'
 import { getLessonLogStatus } from '../utils/presentation'
-
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-const DAY_LABELS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo']
 
 const OCCURRENCE_CLASSES = {
   GIVEN:       'zen-state-given',

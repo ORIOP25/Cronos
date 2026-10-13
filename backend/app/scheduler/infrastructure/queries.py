@@ -28,9 +28,8 @@ from app.scheduler.infrastructure.models import (
     SchedulerLessonSliceV1,
     SchedulerLessonV1,
     SchedulerProposalV1,
-    SchedulerVersionV1,
 )
-from app.scheduler.infrastructure.progress import load_executed_minutes
+from app.scheduler.infrastructure.progress import load_active_version_id, load_executed_minutes
 
 
 def _iso(value: datetime | None) -> str | None:
@@ -53,18 +52,6 @@ async def _year_and_state(db: AsyncSession, organization_id: int):
         )
     )
     return year, state
-
-
-async def _active_version_id(
-    db: AsyncSession, organization_id: int, school_year_id: int
-) -> int | None:
-    return await db.scalar(
-        select(SchedulerVersionV1.id).where(
-            SchedulerVersionV1.organization_id == organization_id,
-            SchedulerVersionV1.school_year_id == school_year_id,
-            SchedulerVersionV1.status == "ACTIVE",
-        )
-    )
 
 
 async def _eligibility(
@@ -134,8 +121,7 @@ async def _job_summary(db: AsyncSession, job: SchedulerJobV1) -> dict:
     }
 
 
-async def _proposal_summary(
-    db: AsyncSession,
+def _proposal_summary(
     proposal: SchedulerProposalV1,
     *,
     state: models.SchedulerSchoolYearState | None,
@@ -201,7 +187,7 @@ async def scheduler_status(db: AsyncSession, organization_id: int, *, now_utc: d
             "active_job": None,
             "pending_proposal": None,
         }
-    active_version_id = await _active_version_id(db, organization_id, year.id)
+    active_version_id = await load_active_version_id(db, organization_id, year.id)
     active_proposal_id = (
         await db.scalar(
             select(SchedulerProposalV1.id)
@@ -255,9 +241,7 @@ async def scheduler_status(db: AsyncSession, organization_id: int, *, now_utc: d
         "pending_proposal": (
             None
             if proposal is None
-            else await _proposal_summary(
-                db, proposal, state=state, active_version_id=active_version_id
-            )
+            else _proposal_summary(proposal, state=state, active_version_id=active_version_id)
         ),
     }
 
@@ -280,9 +264,7 @@ async def get_job(db: AsyncSession, organization_id: int, job_id: int) -> dict |
     return summary
 
 
-async def current_proposal(
-    db: AsyncSession, organization_id: int, *, now_utc: datetime
-) -> dict | None:
+async def current_proposal(db: AsyncSession, organization_id: int) -> dict | None:
     year, state = await _year_and_state(db, organization_id)
     if year is None:
         return None
@@ -297,10 +279,8 @@ async def current_proposal(
     )
     if proposal is None:
         return None
-    active_version_id = await _active_version_id(db, organization_id, year.id)
-    summary = await _proposal_summary(
-        db, proposal, state=state, active_version_id=active_version_id
-    )
+    active_version_id = await load_active_version_id(db, organization_id, year.id)
+    summary = _proposal_summary(proposal, state=state, active_version_id=active_version_id)
     job = await db.scalar(select(SchedulerJobV1).where(SchedulerJobV1.id == proposal.job_id))
     summary["strategy"] = job.strategy if job is not None else None
     return summary

@@ -1,4 +1,3 @@
-from collections import defaultdict
 from datetime import date, timedelta
 
 from sqlalchemy import and_, case, func, true
@@ -36,7 +35,7 @@ async def create_timeslot(
     organization_id: int,
     changed_by_membership_id: int | None = None,
 ):
-    # O item.model_dump() jÃ¡ vai ter 'start_time' como objeto time.
+    # O item.model_dump() já vai ter 'start_time' como objeto time.
     version = await grid_version_service.ensure_active_grid_version(db, organization_id)
     db_item = models.Timeslot(
         **item.model_dump(),
@@ -193,120 +192,6 @@ async def create_constraint(
     await db.flush()
     await db.refresh(db_item)
     return db_item
-
-
-async def get_constraints_by_org(db: AsyncSession, organization_id: int):
-    """Lista todas as restriÃ§Ãµes."""
-    result = await db.execute(
-        select(models.Constraint).where(models.Constraint.organization_id == organization_id)
-    )
-    return result.scalars().all()
-
-
-async def delete_constraint(
-    db: AsyncSession,
-    constraint_id: int,
-    organization_id: int,
-    changed_by_membership_id: int | None = None,
-):
-    """Apaga uma regra de horÃ¡rio."""
-    query = select(models.Constraint).where(
-        models.Constraint.id == constraint_id, models.Constraint.organization_id == organization_id
-    )
-    result = await db.execute(query)
-    item = result.scalars().first()
-
-    if item:
-        before = {"rule_type": item.rule_type, "rule_payload": item.rule_payload}
-        await db.delete(item)
-        await record_scheduler_change(
-            db,
-            organization_id,
-            entity_type="SCHEDULER_CONSTRAINT",
-            entity_id=item.id,
-            operation=models.SchedulerStateChangeOperation.DELETE,
-            before=before,
-            after=None,
-            changed_by_membership_id=changed_by_membership_id,
-            future_impacting=_constraint_affects_future(before["rule_payload"]),
-        )
-        await db.flush()
-        return True
-    return False
-
-
-def get_modules_by_subject_sync(db: Session, organization_id: int) -> dict:
-    """Retorna {subject_id: [Module ordenado]} para todos os subjects da org."""
-    modules = (
-        db.query(models.Module)
-        .join(models.Subject, models.Module.subject_id == models.Subject.id)
-        .filter(models.Subject.organization_id == organization_id)
-        .filter(models.Module.organization_id == organization_id)
-        .order_by(models.Module.subject_id, models.Module.order)
-        .all()
-    )
-    result: dict = defaultdict(list)
-    for module in modules:
-        result[module.subject_id].append(module)
-    return dict(result)
-
-
-def get_class_progress_map_sync(db: Session, organization_id: int) -> dict:
-    """Return derived completed hours without a mutable summary table."""
-    rows = (
-        db.query(
-            models.ProgressLedgerEntry.class_id,
-            models.ProgressLedgerEntry.module_id,
-            func.sum(models.ProgressLedgerEntry.completed_minutes_delta),
-        )
-        .filter(
-            models.ProgressLedgerEntry.organization_id == organization_id,
-        )
-        .group_by(
-            models.ProgressLedgerEntry.class_id,
-            models.ProgressLedgerEntry.module_id,
-        )
-        .all()
-    )
-    return {(row[0], row[1]): int(row[2] or 0) / 60 for row in rows}
-
-
-def get_org_settings_sync(db: Session, organization_id: int):
-    """Retorna as OrganizationSettings desta org, da mais recente para a mais antiga."""
-    return (
-        db.query(models.OrganizationSettings)
-        .filter(models.OrganizationSettings.organization_id == organization_id)
-        .order_by(models.OrganizationSettings.id.desc())
-        .all()
-    )
-
-
-def get_grid_settings_sync(db: Session, organization_id: int):
-    """Retorna as OrganizationGridSettings desta org (Ãºnica por org), ou None."""
-    return (
-        db.query(models.OrganizationGridSettings)
-        .filter(models.OrganizationGridSettings.organization_id == organization_id)
-        .first()
-    )
-
-
-def get_calendar_events_sync(db: Session, organization_id: int):
-    """Retorna todos os SchoolCalendarEvents desta org."""
-    return (
-        db.query(models.SchoolCalendarEvent)
-        .filter(models.SchoolCalendarEvent.organization_id == organization_id)
-        .all()
-    )
-
-
-def update_class_projected_end_date_sync(
-    db: Session, organization_id: int, class_id: int, end_date: date
-) -> None:
-    """Atualiza projected_end_date de uma turma."""
-    db.query(models.Class).filter(
-        models.Class.id == class_id,
-        models.Class.organization_id == organization_id,
-    ).update({"projected_end_date": end_date})
 
 
 def _find_active_module(modules: list, progress_map: dict):

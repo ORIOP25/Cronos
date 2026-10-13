@@ -10,7 +10,8 @@ import {
 import CIcon from '@coreui/icons-react'
 import { cilSave, cilTrash, cilCalendar, cilPencil } from '@coreui/icons'
 import { useOrganization } from '@clerk/react'
-import { formatDate } from '../../utils/formatUtils'
+import { DAY_LABELS } from '../../constants'
+import { formatDate, normalizeTimeLabel } from '../../utils/formatUtils'
 import { TXT, EVENT_TYPE_LABELS } from '../../utils/terminology'
 import { getApiErrorCode, getApiErrorMessage } from '../../utils/apiErrors'
 import {
@@ -891,8 +892,8 @@ export const GridSection = () => {
   }
   const data = settingsQuery.data
   const initialGridSettings = {
-    lunch_window_start: data?.lunch_window_start?.slice(0, 5) || '12:00',
-    lunch_window_end: data?.lunch_window_end?.slice(0, 5) || '14:00',
+    lunch_window_start: normalizeTimeLabel(data?.lunch_window_start) || '12:00',
+    lunch_window_end: normalizeTimeLabel(data?.lunch_window_end) || '14:00',
     lunch_min_duration_minutes: data?.lunch_min_duration_minutes ?? 60,
   }
 
@@ -908,13 +909,9 @@ export const GridSection = () => {
   )
 }
 
-const DAY_LABELS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo']
-
 const RULE_TYPE_LABELS = {
   CLASS_DAY_OFF: 'Regra de dia sem aulas',
 }
-
-const shortTime = (value) => String(value ?? '').slice(0, 5)
 
 const PendingProposalBanner = ({ proposal }) => {
   if (!proposal?.grid_version_id) return null
@@ -1004,7 +1001,7 @@ const GridChangeImpactPanel = ({ preview, decisions, onDecision, onPropose, isPr
                 <fieldset key={target.current_timeslot_id} className="border rounded p-3 mb-3">
                   <legend className="fs-6 fw-semibold">
                     {isAvailability
-                      ? `${DAY_LABELS[target.current.day_of_week]} ${shortTime(target.current.start_time)}-${shortTime(target.current.end_time)}`
+                      ? `${DAY_LABELS[target.current.day_of_week]} ${normalizeTimeLabel(target.current.start_time)}-${normalizeTimeLabel(target.current.end_time)}`
                       : RULE_TYPE_LABELS[target.rule_type] || 'Regra'}
                   </legend>
                   <div className="text-muted small mb-2">
@@ -1013,7 +1010,7 @@ const GridChangeImpactPanel = ({ preview, decisions, onDecision, onPropose, isPr
                       : 'Regra aplicada a este bloco horário.'}
                     {' '}
                     {target.proposed
-                      ? `Novo bloco: ${DAY_LABELS[target.proposed.day_of_week]} ${shortTime(target.proposed.start_time)}-${shortTime(target.proposed.end_time)}.`
+                      ? `Novo bloco: ${DAY_LABELS[target.proposed.day_of_week]} ${normalizeTimeLabel(target.proposed.start_time)}-${normalizeTimeLabel(target.proposed.end_time)}.`
                       : 'Sem bloco de destino.'}
                   </div>
                   <CFormCheck

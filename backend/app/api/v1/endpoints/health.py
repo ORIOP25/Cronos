@@ -1,6 +1,3 @@
-# Ficheiro: app/api/endpoints/health.py
-
-
 import structlog
 from fastapi import APIRouter, Request, status
 from fastapi.responses import JSONResponse

@@ -5,7 +5,6 @@ from app.config import Settings
 
 BASE = {
     "DATABASE_URL": "postgresql://user:pass@localhost/test_db",
-    "SECRET_KEY": "test",
 }
 
 

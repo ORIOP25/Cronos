@@ -48,7 +48,6 @@
 
   /* ── 10% Yellow · Accent ── */
   --brand-500: #d4940b; /* Warm yellow-amber — CTAs, highlights, active states */
-  --brand-300: #fef3c7; /* Pale yellow — backgrounds for alerts, badges */
 
   /* ── Typography ── */
   --font-display: 'Playfair Display', serif;
@@ -87,18 +86,8 @@
   --rs-light-border: #e0d6cc;
   --rs-disabled: #b8a99c;
 
-  /* ── Sidebar (Dark Brown Surface) ── */
-  --rs-sidebar-text: #faf8f5;
-  --rs-sidebar-brand: var(--brand-500);
-  --rs-sidebar-section: rgba(250, 248, 245, 0.55);
-  --rs-sidebar-link: rgba(250, 248, 245, 0.75);
-
   /* ── Focus & Input ── */
   --rs-input-focus-border: var(--brand-800);
-
-  /* ── Login ── */
-
-  /* ── Calendar Events ── */
 
   /* ── Heatmap ── */
   --rs-heat-good-bg: var(--rs-teal-light);
@@ -112,15 +101,6 @@
   --rs-heat-critical-text: #b91c1c;
   --rs-heat-neutral-bg: var(--brand-100);
   --rs-heat-neutral-border: #d0c8be;
-
-  /* ── Availability Grid ── */
-  --rs-grid-header-bg: var(--brand-100);
-  --rs-grid-header-text: #1a1512;
-  --rs-grid-time-bg: var(--brand-50);
-  --rs-grid-time-text: var(--brand-800);
-  --rs-grid-cell-border: #e0d6cc;
-  --rs-grid-empty-bg: #faf8f5;
-  --rs-grid-empty-border: #e0d6cc;
 
   /* ── Preference Levels ── */
   --rs-pref-preferred: #bbf7d0;
@@ -168,21 +148,14 @@
   --color-bg-surface-strong: var(--brand-100);
   --color-bg-muted: var(--brand-100);
 
-
-
   --color-border-default: #e0d6cc;
   --color-border-strong: #8b6f5c;
   --color-focus-ring: rgba(92, 61, 46, 0.45);
   --color-shadow-soft: rgba(61, 43, 31, 0.04);
   --color-shadow-strong: rgba(61, 43, 31, 0.08);
 
-  --color-warning: var(--brand-500);
   --color-state-open: var(--brand-950);
 
-  --color-text-success-access: var(--rs-teal);
-  --color-text-warning-access: #92400e;
-  --color-text-danger-access: var(--rs-deep);
-  --color-text-info-access: #1d4ed8;
 
   /* ── Marketing Surface ── */
 
@@ -267,54 +240,10 @@
   }
 }
 
-.zen-stagger-1 { animation-delay: 0.1s; }
-.zen-stagger-2 { animation-delay: 0.2s; }
-.zen-stagger-3 { animation-delay: 0.3s; }
-.zen-stagger-4 { animation-delay: 0.4s; }
-.zen-stagger-5 { animation-delay: 0.5s; }
-.zen-stagger-6 { animation-delay: 0.6s; }
-
 .text-display {
   font-family: var(--font-display);
   line-height: 1.1;
   letter-spacing: -0.02em;
-}
-
-.text-editorial {
-  font-family: var(--font-display);
-  font-style: italic;
-  font-weight: 400;
-}
-
-.zen-caps {
-  text-transform: uppercase;
-  letter-spacing: 0.2em;
-  font-size: 0.75rem;
-  font-weight: 600;
-}
-
-.zen-alert-success {
-  background-color: var(--color-state-given-bg);
-  border-color: rgba(21, 128, 61, 0.25);
-  color: var(--color-text-success-access);
-}
-
-.zen-alert-danger {
-  background-color: var(--color-state-gap-bg);
-  border-color: rgba(185, 28, 28, 0.25);
-  color: var(--color-text-danger-access);
-}
-
-.zen-alert-warning {
-  background-color: var(--color-state-substituted-bg);
-  border-color: rgba(212, 148, 11, 0.25);
-  color: var(--color-text-warning-access);
-}
-
-.zen-alert-info {
-  background-color: rgba(37, 99, 235, 0.08);
-  border-color: rgba(37, 99, 235, 0.15);
-  color: var(--color-text-info-access);
 }
 
 /* Zen Cards & Surfaces */
@@ -503,89 +432,6 @@
   color: var(--brand-800);
 }
 
-.zen-sidebar-profile,
-.zen-sidebar-logout {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 0;
-  color: var(--rs-sidebar-link);
-  cursor: pointer;
-}
-
-.zen-sidebar-profile {
-  justify-content: flex-start;
-  gap: 12px;
-  padding: 12px;
-  margin-bottom: 16px;
-  text-align: left;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.03);
-}
-
-.zen-sidebar-profile:hover,
-.zen-sidebar-profile:focus-visible {
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.zen-sidebar-avatar {
-  width: 36px;
-  height: 36px;
-  flex: 0 0 36px;
-  display: grid;
-  place-items: center;
-  border-radius: 4px;
-  color: #fff;
-  font-weight: 700;
-  background: var(--brand-800);
-}
-
-.zen-profile-details {
-  min-width: 0;
-  flex: 1;
-}
-
-.zen-profile-details p {
-  margin: 0;
-  overflow: hidden;
-  color: var(--brand-50);
-  font-size: 0.85rem;
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.zen-profile-details span {
-  color: var(--rs-sidebar-section);
-  font-size: 0.6rem;
-}
-
-.zen-sidebar.is-collapsed .zen-sidebar-profile {
-  justify-content: center;
-  padding-inline: 0;
-  background: transparent;
-}
-
-.zen-sidebar.is-collapsed .zen-profile-details {
-  display: none;
-}
-
-.zen-sidebar-logout {
-  gap: 6px;
-  padding: 8px 12px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 4px;
-  background: transparent;
-}
-
-.zen-sidebar-logout:hover,
-.zen-sidebar-logout:focus-visible {
-  color: var(--brand-50);
-  border-color: rgba(255, 255, 255, 0.15);
-  background: rgba(255, 255, 255, 0.04);
-}
-
 .dashboard-card-title {
   color: var(--brand-800);
   font-size: 0.95rem;
@@ -668,29 +514,6 @@
   opacity: 1;
 }
 
-/* Zen Sidebar Refinement */
-.zen-sidebar-item {
-  position: relative;
-  overflow: hidden;
-}
-
-.zen-sidebar-item::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 3px;
-  height: 0;
-  background: var(--rs-sidebar-brand);
-  transition: height 0.3s ease;
-}
-
-.zen-sidebar-item:hover::before,
-.zen-sidebar-item.active::before {
-  height: 60%;
-}
-
 html {
   scroll-behavior: smooth;
 }
@@ -717,28 +540,6 @@ textarea {
 }
 
 /* ===========================
-   SHARED BUTTON: ONBOARDING
-   =========================== */
-
-.zen-btn-primary {
-  background: var(--brand-800) !important;
-  color: #ffffff !important;
-  border: none !important;
-  border-radius: 0 !important;
-  padding: 12px 28px !important;
-  font-weight: 600 !important;
-  letter-spacing: 0;
-  font-size: 0.75rem !important;
-  text-transform: uppercase !important;
-  transition: background 0.3s ease, transform 0.2s ease !important;
-}
-
-.zen-btn-primary:hover {
-  background: var(--brand-950) !important;
-  transform: translateY(-1px);
-}
-
-/* ===========================
    PUBLIC MARKETING SITE
    =========================== */
 
@@ -760,15 +561,6 @@ textarea {
 .zen-not-found-inner {
   width: min(100%, 640px);
   text-align: center;
-}
-
-.zen-not-found-kicker {
-  margin: 0 0 12px;
-  color: var(--brand-500);
-  font-size: 0.78rem;
-  font-weight: 700;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
 }
 
 .zen-not-found-title {
@@ -809,44 +601,6 @@ textarea {
     width: 100%;
     justify-content: center;
   }
-}
-
-/* ===========================
-   MOBILE: authenticated layout
-   =========================== */
-@media (max-width: 768px) {
-  /* Login/Register brand panel -> horizontal banner */
-  .zen-login-brand-panel {
-    min-height: auto !important;
-    padding: 32px 24px !important;
-    order: -1;
-  }
-
-  .zen-login-brand-panel > div:last-child {
-    padding: 0 !important;
-  }
-}
-
-/* ===========================
-   LINK UNDERLINE ANIMATION
-   =========================== */
-.zen-link-underline {
-  position: relative;
-}
-
-.zen-link-underline::after {
-  content: '';
-  position: absolute;
-  bottom: -2px;
-  left: 0;
-  width: 0;
-  height: 1px;
-  background: var(--brand-500);
-  transition: width 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-
-.zen-link-underline:hover::after {
-  width: 100%;
 }
 
 /* ===========================
@@ -892,7 +646,6 @@ textarea {
   --cui-btn-focus-shadow-rgb: 21, 128, 61;
 }
 
-
 /* ===========================
    BADGE & UTILITY OVERRIDES
    =========================== */
@@ -917,33 +670,10 @@ textarea {
 
 .badge.bg-secondary { background-color: #8b6f5c !important; }
 
-
 /* ===========================
    SPINNER
    =========================== */
 .spinner-border.text-primary { color: var(--rs-primary) !important; }
-
-
-/* ===========================
-   ALERTS
-   =========================== */
-.alert-info {
-  --cui-alert-bg: #eff6ff;
-  --cui-alert-border-color: #93c5fd;
-  --cui-alert-color: #1d4ed8;
-}
-
-.alert-success {
-  --cui-alert-bg: var(--rs-teal-light);
-  --cui-alert-border-color: var(--rs-teal);
-  --cui-alert-color: var(--rs-teal);
-}
-
-.alert-danger {
-  --cui-alert-bg: var(--rs-deep-light);
-  --cui-alert-border-color: var(--rs-deep);
-  --cui-alert-color: var(--rs-deep);
-}
 
 .school-config-field-label {
   display: block;
@@ -982,7 +712,6 @@ textarea {
   outline-offset: 2px;
 }
 
-
 /* ===========================
    CARDS
    =========================== */
@@ -1002,7 +731,6 @@ textarea {
   background-color: var(--rs-card-header-bg) !important;
   border-radius: 12px 12px 0 0 !important;
 }
-
 
 /* ===========================
    TABLES
@@ -1024,7 +752,6 @@ textarea {
   background-color: var(--rs-table-row-hover);
 }
 
-
 /* ===========================
    INPUT FOCUS
    =========================== */
@@ -1036,7 +763,6 @@ button:focus-visible {
   box-shadow: 0 0 0 0.25rem var(--color-focus-ring) !important;
 }
 
-
 /* ===========================
    NAV TABS
    =========================== */
@@ -1044,7 +770,6 @@ button:focus-visible {
   color: var(--rs-primary) !important;
   border-bottom-color: var(--rs-primary) !important;
 }
-
 
 /* ===========================
    GENERAL POLISH
@@ -1059,7 +784,6 @@ h1, h2, h3, h4, h5, h6 {
   color: var(--rs-heading);
 }
 
-
 /* ===========================
    SCROLLBAR (Webkit)
    =========================== */
@@ -1067,7 +791,6 @@ h1, h2, h3, h4, h5, h6 {
 ::-webkit-scrollbar-track { background: var(--rs-scrollbar-track); }
 ::-webkit-scrollbar-thumb { background: var(--rs-scrollbar-thumb); border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--rs-scrollbar-thumb-hover); }
-
 
 /* ===========================
    LUXURY / EDITORIAL THEME
@@ -1169,14 +892,6 @@ h1, h2, h3, h4, h5, h6 {
   height: 100%;
   object-fit: contain;
   filter: grayscale(1) brightness(0) invert(1);
-}
-
-.zen-auth-monogram-letter {
-  font-family: var(--font-display);
-  font-size: 1.6rem;
-  font-weight: 700;
-  color: var(--brand-500);
-  letter-spacing: 0.06em;
 }
 
 .zen-auth-brand-name {
@@ -1469,10 +1184,6 @@ h1, h2, h3, h4, h5, h6 {
     width: 56px;
     height: 56px;
     margin-bottom: 16px;
-  }
-
-  .zen-auth-monogram-letter {
-    font-size: 1.2rem;
   }
 
   .zen-auth-brand-name {

@@ -41,7 +41,7 @@ def test_a_teacher_absence_intersects_the_future_lessons_of_that_teacher():
     before = len(snapshot.unavailable)
 
     perturbed, effect = apply_event_with_effect(
-        snapshot, fixture.periods, CandidateSchedule(active), TEACHER_ABSENCE, seed
+        snapshot, CandidateSchedule(active), TEACHER_ABSENCE, seed
     )
 
     assert effect.applied is True
@@ -72,7 +72,6 @@ def test_a_teacher_without_future_lessons_reports_a_no_effect_event():
 
     _perturbed, effect = apply_event_with_effect(
         fixture.snapshot,
-        fixture.periods,
         CandidateSchedule(other_lessons),
         TEACHER_ABSENCE,
         seed,
@@ -86,7 +85,6 @@ def test_apply_event_keeps_its_previous_snapshot_only_contract():
     fixture = _fixture()
     snapshot = apply_event(
         fixture.snapshot,
-        fixture.periods,
         fixture.witness,
         TEACHER_ABSENCE,
         1,
@@ -102,7 +100,6 @@ def test_the_absence_duration_respects_the_seed():
     for seed in (1, 4, 7, 10):
         _snapshot, effect = apply_event_with_effect(
             fixture.snapshot,
-            fixture.periods,
             fixture.witness,
             TEACHER_ABSENCE,
             seed,

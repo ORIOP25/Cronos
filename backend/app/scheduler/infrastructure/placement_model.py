@@ -648,9 +648,7 @@ def _period_minutes(period: Period) -> tuple[int, int]:
     )
 
 
-def _lunch_options(
-    boundaries: list[int], window_start: int, window_end: int, minimum: int
-) -> list[tuple[int, int]]:
+def _lunch_options(boundaries: list[int], window_end: int, minimum: int) -> list[tuple[int, int]]:
     """Minimal windows of at least the minimum length, anchored at a boundary.
 
     A maximal free run always starts at a boundary. Its first boundary at or
@@ -711,7 +709,7 @@ def _add_lunch(state: _ScopeState) -> None:
                 boundaries.add(period_end)
         options = []
         for option_start, option_end in _lunch_options(
-            sorted(boundaries), window_start, window_end, rule.minimum_minutes
+            sorted(boundaries), window_end, rule.minimum_minutes
         ):
             terms = []
             blocked = False
@@ -950,8 +948,6 @@ def _solve_scope(
     state: _ScopeState,
     *,
     deadline: float,
-    num_workers: int,
-    random_seed: int,
     solver: cp_model.CpSolver,
     stop_at_first_complete: bool = False,
     optimize_room_continuity: bool = False,
@@ -1512,8 +1508,6 @@ def solve_placement(
             status, selections, scope_records, stop_reason = _solve_scope(
                 state,
                 deadline=window_deadline,
-                num_workers=num_workers,
-                random_seed=random_seed,
                 solver=solver,
                 optimize_room_continuity=optimize_room_continuity,
                 should_cancel=should_cancel,

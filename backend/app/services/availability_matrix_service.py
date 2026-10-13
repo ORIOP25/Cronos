@@ -52,9 +52,6 @@ class AvailabilityMatrixInspection:
     def get_score(self, teacher_id: int, timeslot_id: int) -> int:
         return self.matrix.get((teacher_id, timeslot_id), PreferenceLevel.NEUTRAL.value)
 
-    def is_impossible(self, teacher_id: int, timeslot_id: int) -> bool:
-        return self.get_score(teacher_id, timeslot_id) == PreferenceLevel.IMPOSSIBLE.value
-
 
 class AvailabilityMatrixInspector:
     """
@@ -135,58 +132,6 @@ class AvailabilityMatrixInspector:
             )
 
         return AvailabilityMatrixInspection(matrix=matrix, anomalies=anomalies)
-
-    @classmethod
-    async def has_possible_slot(
-        cls,
-        db: AsyncSession,
-        *,
-        organization_id: int,
-        teacher_ids: list[int] | set[int] | None = None,
-        timeslot_ids: list[int] | set[int] | None = None,
-    ) -> bool:
-        teacher_query = (
-            select(Teacher.id)
-            .join(
-                OrganizationMembership,
-                OrganizationMembership.id == Teacher.organization_membership_id,
-            )
-            .where(
-                Teacher.organization_id == organization_id,
-                OrganizationMembership.organization_id == organization_id,
-                OrganizationMembership.lifecycle_status == MembershipLifecycleStatus.active,
-                OrganizationMembership.can_teach.is_(True),
-            )
-        )
-        if teacher_ids is not None:
-            teacher_query = teacher_query.where(Teacher.id.in_(teacher_ids))
-
-        timeslot_query = select(Timeslot.id).where(
-            Timeslot.organization_id == organization_id,
-            Timeslot.id.in_(await _effective_timeslot_ids(db, organization_id, timeslot_ids)),
-        )
-
-        teachers = teacher_query.subquery("teachers")
-        timeslots = timeslot_query.subquery("timeslots")
-        possible_query = (
-            select(literal(1))
-            .select_from(teachers.join(timeslots, literal(True)))
-            .outerjoin(
-                Availability,
-                (Availability.organization_id == organization_id)
-                & (Availability.teacher_id == teachers.c.id)
-                & (Availability.timeslot_id == timeslots.c.id),
-            )
-            .where(
-                or_(
-                    Availability.id.is_(None),
-                    Availability.score != PreferenceLevel.IMPOSSIBLE.value,
-                )
-            )
-            .limit(1)
-        )
-        possible = await db.scalar(possible_query)
-        return bool(possible)
 
     @classmethod
     async def fully_impossible_teacher_ids(

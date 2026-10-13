@@ -70,9 +70,7 @@ async def _collect_generation_teacher_ids(db: AsyncSession, organization_id: int
         )
         .distinct()
     )
-    class_subject_teacher_ids = {row[0] for row in class_subject_teacher_rows.all()}
-
-    return class_subject_teacher_ids
+    return {row[0] for row in class_subject_teacher_rows.all()}
 
 
 async def _collect_generation_subject_ids(db: AsyncSession, organization_id: int) -> set[int]:
@@ -88,9 +86,7 @@ async def _collect_generation_subject_ids(db: AsyncSession, organization_id: int
         )
         .distinct()
     )
-    class_subject_ids = {row[0] for row in class_subject_subject_rows.all()}
-
-    return class_subject_ids
+    return {row[0] for row in class_subject_subject_rows.all()}
 
 
 async def _validate_teacher_availabilities(

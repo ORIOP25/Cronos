@@ -1,12 +1,12 @@
 import { timeOfDayToMinutes } from '../../utils/timeOfDay'
 
-export function minutesToTime(totalMinutes) {
+function minutesToTime(totalMinutes) {
   const hours = Math.floor(totalMinutes / 60)
   const mins = totalMinutes % 60
   return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`
 }
 
-export function splitBreakOverrides(raw) {
+function splitBreakOverrides(raw) {
   const valid = []
   const rejected = []
   const seen = new Set()

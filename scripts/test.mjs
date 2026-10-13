@@ -831,21 +831,7 @@ async function startTestStack(context, { full = false } = {}) {
     project,
     rest: ['exec', '-T', '-e', `PGPASSWORD=${postgresPassword}`, 'db', 'psql', '-v', 'ON_ERROR_STOP=1', '-U', 'postgres', '-d', database, '-c', sql],
   })
-  const rolesSql = `DO $$ BEGIN
-    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'cronos_migrator') THEN
-      CREATE ROLE cronos_migrator LOGIN NOSUPERUSER BYPASSRLS PASSWORD '${migratorPassword}';
-    END IF;
-    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'cronos_app') THEN
-      CREATE ROLE cronos_app LOGIN NOSUPERUSER NOBYPASSRLS PASSWORD '${appPassword}';
-    END IF;
-    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'cronos_auth_definer') THEN
-      CREATE ROLE cronos_auth_definer NOLOGIN NOSUPERUSER BYPASSRLS;
-    END IF;
-  END $$;
-  GRANT cronos_auth_definer TO cronos_migrator;
-  ALTER DATABASE cronos_test_db OWNER TO cronos_migrator;
-  GRANT CONNECT ON DATABASE cronos_test_db TO cronos_app;`
-  await runChecked(psql('cronos_test_db', rolesSql), {
+  await runChecked(compose(['--profile', 'maintenance', 'run', '--rm', 'provision-db']), {
     env: composeEnv, label: 'provision test database roles', environmentFailure: true,
   })
   for (let worker = 0; worker < INTEGRATION_WORKERS; worker += 1) {

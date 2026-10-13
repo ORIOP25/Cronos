@@ -13,8 +13,6 @@ from app.config import settings
 from app.db.tenant import set_async_tenant_context
 from app.services import clerk_sync
 
-RETRYABLE_CATEGORIES = {"temporary_failure", "provider_rate_limited"}
-
 
 def _now() -> datetime:
     return datetime.now(UTC)
@@ -242,33 +240,6 @@ async def process_clerk_event(db: AsyncSession, event: models.ClerkWebhookEvent)
         event.error_category = "temporary_failure"
 
 
-async def _sync_organization(db: AsyncSession, data: dict[str, Any]) -> None:
-    clerk_org_id = (data.get("organization") or {}).get("id") or data.get("id")
-    if not clerk_org_id:
-        return
-    org = await db.scalar(
-        select(models.Organization).where(models.Organization.clerk_org_id == clerk_org_id)
-    )
-    if org is None:
-        org = models.Organization(
-            name=data.get("name") or (data.get("organization") or {}).get("name") or "Organization",
-            clerk_org_id=clerk_org_id,
-            plan_status="active",
-        )
-        db.add(org)
-    elif data.get("name"):
-        org.name = data["name"]
-
-
-async def _archive_organization(db: AsyncSession, data: dict[str, Any]) -> None:
-    clerk_org_id = data.get("id")
-    org = await db.scalar(
-        select(models.Organization).where(models.Organization.clerk_org_id == clerk_org_id)
-    )
-    if org is not None:
-        org.plan_status = models.OrganizationPlanStatus.inactive
-
-
 async def _load_matching_membership(
     db: AsyncSession,
     *,
@@ -436,83 +407,3 @@ async def _sync_invitation(db: AsyncSession, event_type: str, data: dict[str, An
     ):
         member.access_status = models.MembershipAccessStatus.invite_expired
     return True
-
-
-async def _sync_user_identity(db: AsyncSession, data: dict[str, Any]) -> bool:
-    clerk_user_id = data.get("id")
-    email = _normalize_email(data.get("email_address"))
-    if not clerk_user_id or not email:
-        return False
-    result = await db.execute(select(models.User).where(func.lower(models.User.email) == email))
-    accounts = result.scalars().all()
-    if len(accounts) != 1:
-        return False
-    account = accounts[0]
-    if account.clerk_user_id and account.clerk_user_id != clerk_user_id:
-        members = await db.execute(
-            select(models.OrganizationMembership).where(
-                models.OrganizationMembership.account_id == account.id,
-                models.OrganizationMembership.access_status.in_(
-                    [
-                        models.MembershipAccessStatus.pending_invite,
-                        models.MembershipAccessStatus.invite_expired,
-                        models.MembershipAccessStatus.active,
-                    ]
-                ),
-            )
-        )
-        matched_members = members.scalars().all()
-        for member in matched_members:
-            _mark_identity_conflict(member)
-        return bool(matched_members)
-    conflicting_account = await db.scalar(
-        select(models.User).where(
-            models.User.clerk_user_id == clerk_user_id, models.User.id != account.id
-        )
-    )
-    if conflicting_account is not None:
-        members = await db.execute(
-            select(models.OrganizationMembership).where(
-                models.OrganizationMembership.account_id == account.id,
-                models.OrganizationMembership.access_status.in_(
-                    [
-                        models.MembershipAccessStatus.pending_invite,
-                        models.MembershipAccessStatus.invite_expired,
-                        models.MembershipAccessStatus.active,
-                    ]
-                ),
-            )
-        )
-        matched_members = members.scalars().all()
-        for member in matched_members:
-            _mark_identity_conflict(member)
-        return bool(matched_members)
-    profile_name = " ".join(filter(None, [data.get("first_name"), data.get("last_name")])) or None
-    linked_account = await clerk_sync.ensure_user_exists(
-        db,
-        clerk_user_id=clerk_user_id,
-        email=email,
-        name=profile_name,
-    )
-    if linked_account is None or linked_account.id != account.id:
-        return False
-    await db.refresh(account)
-    return True
-
-
-async def _block_deleted_user(db: AsyncSession, data: dict[str, Any]) -> bool:
-    clerk_user_id = data.get("id")
-    if not clerk_user_id:
-        return False
-    result = await db.execute(
-        select(models.OrganizationMembership)
-        .join(models.User)
-        .where(models.User.clerk_user_id == clerk_user_id)
-        .options(selectinload(models.OrganizationMembership.account))
-    )
-    members = result.scalars().all()
-    for member in members:
-        member.access_status = models.MembershipAccessStatus.blocked
-        member.access_block_reason = "provider_user_deleted"
-        member.clerk_membership_id = None
-    return bool(members)

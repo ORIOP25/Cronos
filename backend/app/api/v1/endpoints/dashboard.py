@@ -1,4 +1,4 @@
-"""Endpoint do Dashboard V1 â€” Command Center para administradores."""
+"""Endpoint do Dashboard V1 — Command Center para administradores."""
 
 from fastapi import APIRouter
 
@@ -14,10 +14,10 @@ async def get_dashboard(
     db: deps.DbSession,
     current_user: deps.AdminActor,
 ):
-    """Dashboard V1 â€” Command Center.
+    """Dashboard V1 — Command Center.
 
-    Agrega alertas operacionais, saÃºde do horÃ¡rio, progresso curricular,
-    contagens de recursos e resumo de dÃ­vidas numa Ãºnica resposta.
+    Agrega alertas operacionais, saúde do horário, progresso curricular,
+    contagens de recursos e resumo de dívidas numa única resposta.
     """
 
     return await dashboard_service.get_dashboard_summary(db, current_user.organization_id)

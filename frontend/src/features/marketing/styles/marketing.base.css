@@ -28,7 +28,7 @@
 .cronos-button--secondary { --button-bg: transparent; --button-border: var(--marketing-ink); --button-fg: var(--marketing-ink); }
 .cronos-button--secondary:hover { --button-bg: var(--marketing-surface-muted); --button-border: var(--marketing-ink); }
 .cronos-button--light { --button-bg: var(--marketing-surface); --button-border: var(--marketing-surface); --button-fg: var(--marketing-ink); }
-.cronos-marketing .cronos-nav__link, .cronos-marketing .cronos-footer a, .cronos-marketing .cronos-contact-strip a, .cronos-marketing .cronos-founder-note a, .cronos-marketing .cronos-questionnaire__error a { color: var(--marketing-ink); }
+.cronos-marketing .cronos-nav__link, .cronos-marketing .cronos-footer a, .cronos-marketing .cronos-contact-strip a, .cronos-marketing .cronos-questionnaire__error a { color: var(--marketing-ink); }
 .cronos-marketing .cronos-footer a, .cronos-marketing .cronos-footer__brand p { color: rgb(255 253 249 / 78%); }
 .cronos-marketing .cronos-button, .cronos-marketing .cronos-button:hover { color: var(--button-fg); }
 .cronos-marketing button:focus-visible, .cronos-marketing a:focus-visible, .cronos-marketing input:focus-visible, .cronos-marketing textarea:focus-visible { outline: 2px solid var(--marketing-accent); outline-offset: 2px; }

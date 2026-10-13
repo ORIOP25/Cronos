@@ -70,7 +70,7 @@ async def test_generation_projects_the_class_subject_link(db_session, monkeypatc
 
     await _queue_generation(db_session, monkeypatch, seed, key="projection-a")
 
-    proposal = await current_proposal(db_session, seed.organization.id, now_utc=MOMENT)
+    proposal = await current_proposal(db_session, seed.organization.id)
     assert proposal is not None
     assert proposal["can_approve"] is True
     assignments = (

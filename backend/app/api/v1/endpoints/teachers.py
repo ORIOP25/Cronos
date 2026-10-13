@@ -1,20 +1,36 @@
-# Ficheiro: backend/app/api/endpoints/teachers.py
-
 from datetime import date
-from time import perf_counter
 from typing import Annotated
 
 from fastapi import APIRouter, Query, Request
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import schemas
 from app.api import deps
-from app.core.exceptions import AppError, status_code_for_kind
+from app.core.exceptions import AppError
 from app.core.ratelimit import limiter
 from app.services import teacher_observability_service, teacher_service
 
 TEACHER_NOT_FOUND_MSG = "Professor não encontrado"
 
 router = APIRouter()
+
+
+def _require_teacher_profile(current_user: deps.Actor) -> int:
+    if current_user.teacher_id is None:
+        raise AppError(
+            kind="forbidden", code="access_forbidden", detail="Professor sem perfil associado"
+        )
+    return current_user.teacher_id
+
+
+def _track(db: AsyncSession, current_user: deps.Actor, endpoint_key: str):
+    return teacher_observability_service.track_teacher_endpoint(
+        db,
+        organization_id=current_user.organization_id,
+        actor_membership_id=current_user.membership_id,
+        actor_role=deps.actor_role(current_user),
+        endpoint_key=endpoint_key,
+    )
 
 
 @router.get(
@@ -27,43 +43,14 @@ async def read_my_availability(
     current_user: deps.ActiveActor,
 ):
     """Lê disponibilidade do professor autenticado (self-service)."""
-    start_ts = perf_counter()
-    status_code = 200
-
-    try:
-        if current_user.teacher_id is None:
-            status_code = 403
-            raise AppError(
-                kind="forbidden", code="access_forbidden", detail="Professor sem perfil associado"
-            )
-
-        result = await teacher_service.get_teacher_availability(
+    async with _track(
+        db, current_user, teacher_observability_service.ENDPOINT_TEACHERS_ME_AVAILABILITY_READ
+    ):
+        return await teacher_service.get_teacher_availability(
             db,
-            teacher_id=current_user.teacher_id,
+            teacher_id=_require_teacher_profile(current_user),
             organization_id=current_user.organization_id,
         )
-        return result
-    except AppError as exc:
-        status_code = status_code_for_kind(exc.kind, exc.code)
-        raise
-    except Exception:
-        status_code = 500
-        raise
-    finally:
-        elapsed_ms = max(1, int((perf_counter() - start_ts) * 1000))
-
-        def _emit(sync_db):
-            teacher_observability_service.log_teacher_endpoint_event_safe_sync(
-                sync_db,
-                organization_id=current_user.organization_id,
-                actor_membership_id=current_user.membership_id,
-                actor_role=deps.actor_role(current_user),
-                endpoint_key=teacher_observability_service.ENDPOINT_TEACHERS_ME_AVAILABILITY_READ,
-                http_status=status_code,
-                latency_ms=elapsed_ms,
-            )
-
-        await db.run_sync(_emit)
 
 
 @router.put(
@@ -82,19 +69,13 @@ async def update_my_availability(
     current_user: deps.ActiveActor,
 ):
     """Atualiza disponibilidade do professor autenticado (self-service)."""
-    if current_user.teacher_id is None:
-        raise AppError(
-            kind="forbidden", code="access_forbidden", detail="Professor sem perfil associado"
-        )
-
-    result = await teacher_service.set_teacher_availability(
+    return await teacher_service.set_teacher_availability(
         db,
-        current_user.teacher_id,
+        _require_teacher_profile(current_user),
         availability_data,
         organization_id=current_user.organization_id,
         changed_by_membership_id=current_user.membership_id,
     )
-    return result
 
 
 @router.put(
@@ -143,13 +124,12 @@ async def read_teacher_availability(
             detail="Sem permissões para visualizar outro professor",
         )
 
-    result = await teacher_service.get_teacher_availability(
+    return await teacher_service.get_teacher_availability(
         db,
         teacher_id=teacher_id,
         organization_id=current_user.organization_id,
         on_date=on_date,
     )
-    return result
 
 
 @router.get(
@@ -185,43 +165,14 @@ async def read_my_progress(
     current_user: deps.ActiveActor,
 ):
     """Retorna o progresso das disciplinas do professor nas turmas assignadas."""
-    start_ts = perf_counter()
-    status_code = 200
-
-    try:
-        if current_user.teacher_id is None:
-            status_code = 403
-            raise AppError(
-                kind="forbidden", code="access_forbidden", detail="Professor sem perfil associado"
-            )
-
-        result = await teacher_service.get_teacher_progress(
+    async with _track(
+        db, current_user, teacher_observability_service.ENDPOINT_TEACHERS_ME_PROGRESS_READ
+    ):
+        return await teacher_service.get_teacher_progress(
             db,
-            teacher_id=current_user.teacher_id,
+            teacher_id=_require_teacher_profile(current_user),
             organization_id=current_user.organization_id,
         )
-        return result
-    except AppError as exc:
-        status_code = status_code_for_kind(exc.kind, exc.code)
-        raise
-    except Exception:
-        status_code = 500
-        raise
-    finally:
-        elapsed_ms = max(1, int((perf_counter() - start_ts) * 1000))
-
-        def _emit(sync_db):
-            teacher_observability_service.log_teacher_endpoint_event_safe_sync(
-                sync_db,
-                organization_id=current_user.organization_id,
-                actor_membership_id=current_user.membership_id,
-                actor_role=deps.actor_role(current_user),
-                endpoint_key=teacher_observability_service.ENDPOINT_TEACHERS_ME_PROGRESS_READ,
-                http_status=status_code,
-                latency_ms=elapsed_ms,
-            )
-
-        await db.run_sync(_emit)
 
 
 # --- 1. Ler Professores ---

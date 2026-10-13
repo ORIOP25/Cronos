@@ -29,7 +29,6 @@ $env:ENVIRONMENT='local'
 $env:TEST_DATABASE_URL='postgresql+asyncpg://cronos_app:app-ci@localhost:5432/cronos_test_db'
 $env:DATABASE_URL=$env:TEST_DATABASE_URL
 $env:DATABASE_POOLING_ENABLED='false'
-$env:SECRET_KEY='local-test-secret'
 $env:RATELIMIT_ENABLED='false'
 pytest tests/ -v
 ```
@@ -52,4 +51,4 @@ with a database name containing `test` or `ci`.
 
 ## Coverage Requirements
 
-CI enforces a minimum threshold of **70% backend code coverage** across the full database-backed test suite.
+CI runs the critical selection in `tests/critical_manifest.json` through `node ../scripts/test.mjs critical --scope backend`. The manifest owns the paths and the coverage thresholds.

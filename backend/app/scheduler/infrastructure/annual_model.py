@@ -113,7 +113,6 @@ class AnnualPlan:
 
 def _availability_minutes(
     demands,
-    origin: date,
 ) -> tuple[
     dict[tuple[str, int, int], int],
     dict[tuple[int, int], int],
@@ -359,7 +358,7 @@ def plan_annual_quotas(
             key = (assignment.assignment_id, week, duration)
             model.Add(q[key] + capacity * after <= capacity)
 
-    available, room_minutes = _availability_minutes(demands, snapshot.origin)
+    available, room_minutes = _availability_minutes(demands)
     for key, minutes in sorted(available.items()):
         terms = load_terms.get(key)
         if terms:

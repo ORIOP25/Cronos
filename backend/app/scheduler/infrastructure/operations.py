@@ -71,7 +71,7 @@ async def _active_year_and_version(db: AsyncSession, organization_id: int):
     return year, version
 
 
-def _local_times(lesson: SchedulerLessonV1, zone: ZoneInfo) -> tuple[time, time]:
+def local_times(lesson: SchedulerLessonV1, zone: ZoneInfo) -> tuple[time, time]:
     start = lesson.starts_at.astimezone(zone)
     end = lesson.ends_at.astimezone(zone)
     return time(start.hour, start.minute), time(end.hour, end.minute)
@@ -323,7 +323,7 @@ async def week_schedule(
     for lesson, _assignment, subject, teacher, class_model, room in rows:
         if lesson.id in hidden_lesson_ids:
             continue
-        start_local, end_local = _local_times(lesson, zone)
+        start_local, end_local = local_times(lesson, zone)
         position = slices_by_lesson.get(lesson.id, [])
         module_id = position[0][1].id if position else None
         module_minutes = position[0][1].required_minutes if position else None
@@ -430,7 +430,7 @@ async def week_schedule(
             room,
             module,
         ) in block_rows:
-            local_start, local_end = _local_times(source_lesson, zone)
+            local_start, local_end = local_times(source_lesson, zone)
             timesheet = timesheet_status.get(block.teacher_id)
             timesheet_locked = timesheet is not None and timesheet.status in (
                 models.TimesheetStatus.SUBMITTED,

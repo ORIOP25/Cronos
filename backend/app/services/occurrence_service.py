@@ -33,8 +33,6 @@ from app.services import internship_flow_service
 # Constantes
 # ---------------------------------------------------------------------------
 OCCURRENCE_NOT_FOUND = "OCCURRENCE_NOT_FOUND"
-ERR_INVALID_TRANSITION = "OCCURRENCE_INVALID_TRANSITION"
-ERR_DESTRUCTIVE_OVERWRITE = "Ocorrência já finalizada; alteração destrutiva bloqueada"
 ERR_MISSING_SCHEDULE_CONTEXT = "Ocorrência sem contexto de aula planeada"
 ERR_SUBJECT_OUTSIDE_ORG = "Disciplina substituta inválida para esta organização"
 ERR_MISSING_PLANNED_MODULE = "Não foi possível determinar o módulo planeado"
@@ -51,9 +49,6 @@ DECISION_GIVEN = "DECISION_GIVEN"
 DECISION_GAP = "DECISION_GAP"
 DECISION_SUBSTITUTED = "DECISION_SUBSTITUTED"
 ADMINISTRATIVE_REVERSAL = "ADMINISTRATIVE_REVERSAL"
-ERR_SCHEDULE_OUTPUT_NOT_FOUND = "Bloco planeado não encontrado"
-ERR_SCHEDULE_OUTPUT_IS_DRAFT = "Bloco de rascunho não pode iniciar ocorrência operacional"
-ERR_SCHEDULE_OUTPUT_NO_DATE = "Bloco sem data válida para criação de ocorrência"
 
 ERR_ACTIVE_BLOCK_NOT_FOUND = "Bloco ativo nao encontrado"
 ERR_STALE_VERSION = "OCCURRENCE_STALE_VERSION"
@@ -121,7 +116,6 @@ class ProgressLedgerContext:
     class_id: int
     status: models.LessonOccurrenceStatus
     planned_module_id: int | None
-    executed_module_id: int | None
     planned_hours: float
     direction: int
     actor_membership_id: int | None = None
@@ -1033,7 +1027,6 @@ def _cancel_operational_blocks_for_occurrence(
                         class_id=block.class_id,
                         status=models.LessonOccurrenceStatus.GIVEN,
                         planned_module_id=block.module_id,
-                        executed_module_id=block.module_id,
                         planned_hours=block_hours,
                         direction=-1,
                         actor_membership_id=cancelled_by_membership_id,
@@ -1111,7 +1104,6 @@ def _apply_state_accounting(
 def _ledger_deltas_for_state(
     status: models.LessonOccurrenceStatus,
     planned_module_id: int | None,
-    executed_module_id: int | None,
     planned_hours: float,
     direction: int,
 ) -> list[tuple[int | None, float, float]]:
@@ -1136,7 +1128,6 @@ def _record_progress_ledger_entries(
         deltas = _ledger_deltas_for_state(
             context.status,
             context.planned_module_id,
-            context.executed_module_id,
             context.planned_hours,
             context.direction,
         )
@@ -1438,7 +1429,6 @@ def cancel_occurrence_sync(
                             class_id=class_id,
                             status=occurrence.status,
                             planned_module_id=planned_module_id,
-                            executed_module_id=executed_module_id,
                             planned_hours=planned_hours,
                             direction=-1,
                             actor_membership_id=cancelled_by_membership_id,
@@ -1713,7 +1703,6 @@ def update_occurrence_sync(
                     class_id=class_id,
                     status=occurrence.status,
                     planned_module_id=planned_module_id,
-                    executed_module_id=occurrence.executed_module_id,
                     planned_hours=planned_hours,
                     direction=-1,
                     actor_membership_id=decided_by_membership_id,
@@ -1744,7 +1733,6 @@ def update_occurrence_sync(
                     class_id=class_id,
                     status=payload.status,
                     planned_module_id=planned_module_id,
-                    executed_module_id=executed_module_id,
                     planned_hours=planned_hours,
                     direction=1,
                     actor_membership_id=decided_by_membership_id,
@@ -2052,125 +2040,6 @@ def get_substitute_recommendations_sync(
     ]
 
 
-def get_available_substitutes_sync(
-    db: Session, organization_id: int, timeslot_id: int, target_date: date
-) -> list[schemas.AvailableSubstituteRead]:
-    """Devolve professores assignados à organização que:
-    1. Têm disponibilidade (score ≥ 0) no timeslot indicado.
-    2. Não têm já um bloco ativo ou operacional nessa data.
-
-    Retorna uma lista de candidatos com a disciplina que leccionam.
-    """
-    # 1. Timeslot info
-    ts = db.execute(
-        select(models.Timeslot).where(
-            and_(
-                models.Timeslot.id == timeslot_id,
-                models.Timeslot.organization_id == organization_id,
-            )
-        )
-    ).scalar_one_or_none()
-
-    if ts is None:
-        return []
-
-    # 2. Professores com availability score ≥ 0 (não impossível) para este timeslot
-    available_teacher_ids = {
-        row.teacher_id
-        for row in db.execute(
-            select(models.Availability.teacher_id).where(
-                and_(
-                    models.Availability.timeslot_id == timeslot_id,
-                    models.Availability.score >= 0,
-                )
-            )
-        ).all()
-    }
-
-    if not available_teacher_ids:
-        return []
-
-    # 3. Professores já ocupados nesta data/timeslot.
-    busy_teacher_ids = {
-        row.teacher_id
-        for row in db.execute(
-            select(models.ActiveScheduleBlock.teacher_id).where(
-                and_(
-                    models.ActiveScheduleBlock.organization_id == organization_id,
-                    models.ActiveScheduleBlock.timeslot_id == timeslot_id,
-                    models.ActiveScheduleBlock.date == target_date,
-                    models.ActiveScheduleBlock.status == models.ActiveScheduleBlockStatus.ACTIVE,
-                )
-            )
-        ).all()
-    }
-    busy_teacher_ids.update(
-        {
-            row.teacher_id
-            for row in db.execute(
-                select(models.OperationalScheduleBlock.teacher_id).where(
-                    and_(
-                        models.OperationalScheduleBlock.organization_id == organization_id,
-                        models.OperationalScheduleBlock.status
-                        == models.OperationalBlockStatus.ACTIVE,
-                        models.OperationalScheduleBlock.timeslot_id == timeslot_id,
-                        models.OperationalScheduleBlock.date == target_date,
-                    )
-                )
-            ).all()
-        }
-    )
-
-    free_teacher_ids = available_teacher_ids - busy_teacher_ids
-
-    if not free_teacher_ids:
-        return []
-
-    # 4. Buscar ClassSubjectLinks para os professores livres (para saber que disciplina dão)
-    links = list(
-        db.execute(
-            select(models.ClassSubjectLink)
-            .options(
-                joinedload(models.ClassSubjectLink.teacher),
-                joinedload(models.ClassSubjectLink.subject),
-                joinedload(models.ClassSubjectLink.class_),
-            )
-            .where(
-                and_(
-                    models.ClassSubjectLink.teacher_id.in_(free_teacher_ids),
-                )
-            )
-            .join(
-                models.Class,
-                models.ClassSubjectLink.class_id == models.Class.id,
-            )
-            .where(
-                and_(
-                    models.Class.organization_id == organization_id,
-                    models.Class.is_archived.is_(False),
-                )
-            )
-        )
-        .scalars()
-        .unique()
-    )
-
-    results = [
-        schemas.AvailableSubstituteRead(
-            teacher_id=link.teacher_id,
-            teacher_name=link.teacher.name if link.teacher else "—",
-            subject_id=link.subject_id,
-            subject_name=link.subject.name if link.subject else "—",
-            class_id=link.class_id,
-            class_name=link.class_.name if link.class_ else "—",
-        )
-        for link in links
-        if link.teacher_id is not None
-    ]
-
-    return results
-
-
 # ---------------------------------------------------------------------------
 # Async application entry points
 # ---------------------------------------------------------------------------
@@ -2256,19 +2125,6 @@ async def get_occurrence_observability_summary(
             get_occurrence_observability_summary_sync,
             organization_id=organization_id,
             window_days=window_days,
-        )
-    )
-
-
-async def get_available_substitutes(
-    db: AsyncSession, organization_id: int, timeslot_id: int, target_date: date
-) -> list[schemas.AvailableSubstituteRead]:
-    return await db.run_sync(
-        partial(
-            get_available_substitutes_sync,
-            organization_id=organization_id,
-            timeslot_id=timeslot_id,
-            target_date=target_date,
         )
     )
 

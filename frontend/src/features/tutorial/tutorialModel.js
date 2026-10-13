@@ -16,7 +16,7 @@ export const INITIAL_TUTORIAL_STATE = Object.freeze({
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
-export function createTutorialRunId() {
+function createTutorialRunId() {
   if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID()
   const bytes = new Uint8Array(16)
   if (globalThis.crypto?.getRandomValues) globalThis.crypto.getRandomValues(bytes)
@@ -177,6 +177,6 @@ export function validateTutorialState(state) {
   return { valid: true }
 }
 
-export function getTutorialStepContext(state) {
+function getTutorialStepContext(state) {
   return getTutorialStep(state.stepId)
 }

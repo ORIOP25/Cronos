@@ -18,7 +18,6 @@ from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, AsyncSession
 
 from app import models
-from app.config import settings
 from app.db.tenant import set_async_tenant_context
 from app.scheduler.domain.candidate import SchedulingStrategy
 from app.scheduler.domain.eligibility import (
@@ -32,8 +31,8 @@ from app.scheduler.infrastructure.models import (
     JOB_TERMINAL_STATUSES,
     SchedulerJobV1,
     SchedulerProposalV1,
-    SchedulerVersionV1,
 )
+from app.scheduler.infrastructure.progress import load_active_version_id
 from app.scheduler.infrastructure.snapshot import load_snapshot
 
 EXECUTOR_LOCK_KEY = 109_438_846_303_891  # "cronos" as a bigint
@@ -121,18 +120,6 @@ async def _active_year(
     return year, state
 
 
-async def _current_active_version_id(
-    db: AsyncSession, organization_id: int, school_year_id: int
-) -> int | None:
-    return await db.scalar(
-        select(SchedulerVersionV1.id).where(
-            SchedulerVersionV1.organization_id == organization_id,
-            SchedulerVersionV1.school_year_id == school_year_id,
-            SchedulerVersionV1.status == "ACTIVE",
-        )
-    )
-
-
 async def enqueue_generation(
     db: AsyncSession,
     organization_id: int,
@@ -188,7 +175,7 @@ async def enqueue_generation(
             reasons=decision.reasons,
             blocker=decision.blocker,
         )
-    active_version_id = await _current_active_version_id(db, organization_id, year.id)
+    active_version_id = await load_active_version_id(db, organization_id, year.id)
     strategy = (
         SchedulingStrategy.ADAPTIVE_RECOVERY
         if active_version_id is not None
@@ -297,7 +284,7 @@ async def enqueue_grid_change(
             "Já existe um pedido de geração em curso.",
             job_id=active_job.id,
         )
-    active_version_id = await _current_active_version_id(db, organization_id, year.id)
+    active_version_id = await load_active_version_id(db, organization_id, year.id)
     if active_version_id is None:
         raise GenerationUnavailable(
             "grid_change_requires_published_schedule",
@@ -492,9 +479,7 @@ async def claim_next_job(db: AsyncSession, *, now_utc: datetime) -> JobClaim | N
                 models.SchedulerSchoolYearState.school_year_id == job.school_year_id,
             )
         )
-        active_version = await _current_active_version_id(
-            db, job.organization_id, job.school_year_id
-        )
+        active_version = await load_active_version_id(db, job.organization_id, job.school_year_id)
         if (
             state is None
             or state.input_revision != job.input_revision_used
@@ -604,9 +589,7 @@ async def finish_job(
     if job.cancellation_requested_at is not None:
         status, result_code, stop_reason = "CANCELLED", "CANCELLED", "CANCELLED"
     else:
-        active_version = await _current_active_version_id(
-            db, organization_id, reference.school_year_id
-        )
+        active_version = await load_active_version_id(db, organization_id, reference.school_year_id)
         if (
             state is None
             or state.input_revision != job.input_revision_used
@@ -741,12 +724,3 @@ async def release_executor_lock(connection: AsyncConnection) -> None:
 
 def scheduler_now() -> datetime:
     return datetime.now(UTC)
-
-
-def scheduler_settings() -> dict[str, float | int]:
-    return {
-        "time_limit_seconds": settings.SCHEDULER_V1_JOB_TIMEOUT_SECONDS,
-        "heartbeat_seconds": settings.SCHEDULER_V1_HEARTBEAT_SECONDS,
-        "abandoned_seconds": settings.SCHEDULER_V1_ABANDONED_SECONDS,
-        "num_workers": settings.SCHEDULER_V1_NUM_WORKERS,
-    }

@@ -12,7 +12,7 @@ import { useCreateActiveOrganization } from '../organization/useCreateActiveOrga
 
 const ADMIN_ROLES = new Set(['admin', 'org:admin'])
 
-export function getClerkLegalVersions(user) {
+function getClerkLegalVersions(user) {
   const versions = user?.unsafeMetadata?.[CLERK_LEGAL_METADATA_KEY]
   return versions && typeof versions === 'object' ? versions : {}
 }

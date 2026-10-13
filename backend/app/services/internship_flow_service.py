@@ -28,9 +28,6 @@ CONFIRMATION_REQUIRED_MESSAGE = (
     "O fluxo de estágio remove aulas do horário. Pré-visualize e confirme a alteração."
 )
 STALE_MESSAGE = "As aulas afetadas mudaram desde a pré-visualização. Repita a pré-visualização."
-BLOCKED_LESSON_MESSAGE = (
-    "Este dia de estágio não permite criar aulas para a turma. Ajuste ou remova o fluxo primeiro."
-)
 MISSING_SCHOOL_YEAR_MESSAGE = "Configure o ano letivo antes de criar fluxos de estágio."
 INTERNSHIP_FLOW_OCCURRENCE_REASON = "Aula retirada por fluxo de estágio"
 
@@ -47,10 +44,6 @@ class InternshipFlowConfirmationRequired(InternshipFlowError):
 
 class InternshipFlowStale(InternshipFlowError):
     code = "CALENDAR_EVENT_STALE"
-
-
-class InternshipFlowBlockedLesson(InternshipFlowError):
-    code = "INTERNSHIP_FLOW_BLOCKS_LESSON"
 
 
 @dataclass(frozen=True)

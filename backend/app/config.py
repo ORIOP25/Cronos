@@ -1,5 +1,3 @@
-# Ficheiro: app/config.py
-
 from ipaddress import IPv4Network, IPv6Network, ip_network
 from typing import Literal
 from urllib.parse import urlparse

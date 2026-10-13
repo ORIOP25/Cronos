@@ -240,7 +240,7 @@ def _validate_debt_state(
     )
 
 
-async def _active_version_id(
+async def load_active_version_id(
     db: AsyncSession, organization_id: int, school_year_id: int
 ) -> int | None:
     return await db.scalar(
@@ -465,7 +465,7 @@ async def record_execution(
     debts, revisions, recorded_settlements, prior_settlements = await _debt_history(
         db, organization_id, assignment_id, stored
     )
-    active_version_id = await _active_version_id(db, organization_id, school_year_id)
+    active_version_id = await load_active_version_id(db, organization_id, school_year_id)
     reservations = await _active_reservations(
         db, organization_id, school_year_id, assignment_id, active_version_id
     )

@@ -11,7 +11,7 @@ from app.services import grid_version_service, timeslot_service
 router = APIRouter()
 
 
-# --- 1. Ler Timeslots (Usado na pÃ¡gina "HorÃ¡rios") ---
+# --- 1. Ler Timeslots (Usado na página "Horários") ---
 @router.get("/", response_model=list[schemas.TimeslotRead])
 async def read_timeslots(
     db: deps.DbSession,

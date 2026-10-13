@@ -1,4 +1,3 @@
-# Ficheiro: backend/app/api/deps.py
 from collections.abc import AsyncGenerator
 from typing import Annotated
 
@@ -270,7 +269,6 @@ MemberAccessOperationDep = Annotated[
     Depends(get_member_access_operation_service),
 ]
 SessionActor = Annotated[Actor, Depends(get_current_user)]
-LegalAcceptedActor = Annotated[Actor, Depends(get_current_legal_accepted_user)]
 LegalAdminActor = Annotated[Actor, Depends(get_legal_admin)]
 FoundationAdminActor = Annotated[Actor, Depends(get_foundation_admin)]
 ActiveActor = Annotated[Actor, Depends(get_current_active_user)]

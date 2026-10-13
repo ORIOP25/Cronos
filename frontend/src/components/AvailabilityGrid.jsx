@@ -1,9 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { PREFERENCE_LEVELS, DEFAULT_PREFERENCE } from '../constants'
-
-const DAY_LABELS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo']
-
-function timeLabel(time = '') { return time.slice(0, 5) }
+import { PREFERENCE_LEVELS, DEFAULT_PREFERENCE, DAY_LABELS } from '../constants'
+import { normalizeTimeLabel } from '../utils/formatUtils'
 
 export default function AvailabilityGrid({ timeslots = [], availabilityMap, onChange, selectedMode }) {
   const [focusedId, setFocusedId] = useState(null)
@@ -11,9 +8,9 @@ export default function AvailabilityGrid({ timeslots = [], availabilityMap, onCh
   const cellRefs = useRef(new Map())
 
   const model = useMemo(() => {
-    const slotByKey = new Map(timeslots.map((slot) => [`${slot.day_of_week}:${timeLabel(slot.start_time)}`, slot]))
+    const slotByKey = new Map(timeslots.map((slot) => [`${slot.day_of_week}:${normalizeTimeLabel(slot.start_time)}`, slot]))
     const days = [...new Set(timeslots.map((slot) => slot.day_of_week))].sort((a, b) => a - b)
-    const times = [...new Set(timeslots.map((slot) => timeLabel(slot.start_time)))].sort((a, b) => a.localeCompare(b))
+    const times = [...new Set(timeslots.map((slot) => normalizeTimeLabel(slot.start_time)))].sort((a, b) => a.localeCompare(b))
     return { slotByKey, days, times }
   }, [timeslots])
 
@@ -40,7 +37,7 @@ export default function AvailabilityGrid({ timeslots = [], availabilityMap, onCh
 
   const moveFocus = (currentSlot, dayOffset, timeOffset) => {
     const dayIndex = model.days.indexOf(currentSlot.day_of_week)
-    const timeIndex = model.times.indexOf(timeLabel(currentSlot.start_time))
+    const timeIndex = model.times.indexOf(normalizeTimeLabel(currentSlot.start_time))
     const nextDay = model.days[dayIndex + dayOffset]
     const nextTime = model.times[timeIndex + timeOffset]
     if (nextDay === undefined || nextTime === undefined) return
@@ -60,7 +57,7 @@ export default function AvailabilityGrid({ timeslots = [], availabilityMap, onCh
     }
     if (event.key === 'Home' || event.key === 'End') {
       event.preventDefault()
-      const time = timeLabel(slot.start_time)
+      const time = normalizeTimeLabel(slot.start_time)
       const day = event.key === 'Home' ? model.days[0] : model.days.at(-1)
       const next = model.slotByKey.get(`${day}:${time}`)
       if (next) {

@@ -18,7 +18,7 @@ import {
 } from '../features/operations/data'
 import { useClasses, useSubjects } from '../features/catalog/data'
 import { useTeachers } from '../features/members/data'
-import { formatDate, formatDateTime, formatDurationHours, isAfterDate } from '../utils/formatUtils'
+import { formatDate, formatDateTime, formatDurationHours, formatTimeRange, isAfterDate } from '../utils/formatUtils'
 import { TXT, OPERATIONAL_STATE_LABELS, OPERATIONAL_STATE_COLORS } from '../utils/terminology'
 import ConfirmationModal from '../components/ConfirmationModal'
 import FeedbackBanner from '../components/FeedbackBanner'
@@ -541,9 +541,7 @@ const OccurrenceHistoryCards = ({
       const isRevokedV1 = operationalState === 'REVOKED' && occ.creation_source === 'scheduler_v1'
       const hasDetail = Boolean(occ.lesson_log_summary || occ.lesson_log_notes)
       const isExpanded = expandedId === occ.id
-      const timeRange = occ.timeslot_start_time && occ.timeslot_end_time
-        ? `${occ.timeslot_start_time.slice(0, 5)}–${occ.timeslot_end_time.slice(0, 5)}`
-        : ''
+      const timeRange = formatTimeRange(occ.timeslot_start_time, occ.timeslot_end_time)
       return (
         <div key={occ.id} className="border rounded p-3 mb-2">
           <div className="d-flex justify-content-between align-items-start gap-2">
@@ -846,9 +844,7 @@ const OccurrencesPanel = ({
             const classLabel = occ.class_name ?? '—'
             const subjectLabel = occ.subject_name
               ?? resolveName(subjectById, occ.subject_id, 'Disciplina')
-            const timeRange = occ.timeslot_start_time && occ.timeslot_end_time
-              ? `${occ.timeslot_start_time.slice(0,5)}–${occ.timeslot_end_time.slice(0,5)}`
-              : ''
+            const timeRange = formatTimeRange(occ.timeslot_start_time, occ.timeslot_end_time)
             const summaryPreview = occ.lesson_log_summary
               ? (occ.lesson_log_summary.length > 80 ? occ.lesson_log_summary.slice(0, 80) + '…' : occ.lesson_log_summary)
               : '—'

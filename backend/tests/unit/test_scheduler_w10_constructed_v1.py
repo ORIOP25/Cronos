@@ -6,7 +6,7 @@ import pytest
 
 from app.scheduler.domain.candidate import SchedulingStrategy
 from app.scheduler.domain.candidate_validation import validate_candidate
-from app.scheduler.lab.construct import construct_schedule
+from app.scheduler.infrastructure.constructive import construct_schedule
 from app.scheduler.lab.fixtures import (
     AssignmentSpec,
     CaseExpectation,

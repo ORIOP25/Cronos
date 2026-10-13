@@ -241,7 +241,7 @@ async def run_generation(
     monkeypatch.setattr(worker, "RECOVERY_ASSESSMENT_SECONDS", 0.0)
     await worker.process_next_jobs()
     await db_session.refresh(seed.state)
-    proposal = await current_proposal(db_session, seed.organization.id, now_utc=now)
+    proposal = await current_proposal(db_session, seed.organization.id)
     await approve_proposal(
         db_session,
         organization_id=seed.organization.id,

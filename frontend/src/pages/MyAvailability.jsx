@@ -1,13 +1,14 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo } from 'react'
 import { toast } from 'react-hot-toast'
 import PageHeader from '../components/PageHeader'
 import StatePanel from '../components/StatePanel'
 import AvailabilityGrid from '../components/AvailabilityGrid'
+import AvailabilityToolbar from '../components/AvailabilityToolbar'
 import { useCurrentMember } from '../features/members/data'
 import { useTimeslots } from '../features/catalog/data'
 import { useMyAvailability, useSaveAvailability } from '../features/operations/data'
 import { useAttemptScope } from '../hooks/useAttemptScope'
-import { PREFERENCE_LEVELS, DEFAULT_PREFERENCE } from '../constants'
+import { useAvailabilityDraft } from '../hooks/useAvailabilityDraft'
 
 const mapAvailabilityApiMessage = (err, context) => {
   const status = err?.response?.status
@@ -17,13 +18,7 @@ const mapAvailabilityApiMessage = (err, context) => {
   return context === 'load' ? 'Falha ao carregar preferências de disponibilidade. Tente novamente.' : 'Erro ao gravar disponibilidade. Tente novamente.'
 }
 
-function toMap(rows = [], validIds) {
-  return Object.fromEntries(rows.filter((row) => validIds.has(row.timeslot_id)).map((row) => [row.timeslot_id, Number(row.score)]))
-}
-
 export default function MyAvailability({ readOnly = false, allowedActions, warnOnUnsavedChanges = true }) {
-  const [draftEdits, setDraftEdits] = useState({})
-  const [selectedScore, setSelectedScore] = useState(DEFAULT_PREFERENCE)
   const { data: currentMember } = useCurrentMember()
   const teacherId = currentMember?.teacher_id
   const timeslotsQuery = useTimeslots()
@@ -33,10 +28,12 @@ export default function MyAvailability({ readOnly = false, allowedActions, warnO
   const isTutorial = Array.isArray(allowedActions)
   const canSave = !readOnly && (!isTutorial || allowedActions.includes('UPDATE_AVAILABILITY'))
   const timeslots = useMemo(() => timeslotsQuery.data ?? [], [timeslotsQuery.data])
-  const persistedMap = useMemo(() => toMap(Array.isArray(availabilityQuery.data) ? availabilityQuery.data : [], new Set(timeslots.map((slot) => slot.id))), [availabilityQuery.data, timeslots])
-  const draftMap = useMemo(() => ({ ...persistedMap, ...draftEdits }), [persistedMap, draftEdits])
-  const changedIds = useMemo(() => Object.keys(draftEdits).filter((id) => draftEdits[id] !== (persistedMap[id] ?? DEFAULT_PREFERENCE)), [draftEdits, persistedMap])
-  const isDirty = changedIds.length > 0
+  const draft = useAvailabilityDraft({
+    timeslots,
+    rows: availabilityQuery.data,
+    disabled: !canSave || saveMutation.isPending,
+  })
+  const { isDirty } = draft
 
   useEffect(() => {
     const beforeUnload = (event) => {
@@ -48,27 +45,14 @@ export default function MyAvailability({ readOnly = false, allowedActions, warnO
     return () => window.removeEventListener('beforeunload', beforeUnload)
   }, [isDirty, warnOnUnsavedChanges])
 
-  const handleGridChange = useCallback((id, score) => {
-    if (!canSave || saveMutation.isPending) return
-    setDraftEdits((current) => {
-      const next = { ...current }
-      if (score === (persistedMap[id] ?? DEFAULT_PREFERENCE)) delete next[id]
-      else next[id] = score
-      return next
-    })
-  }, [canSave, persistedMap, saveMutation.isPending])
-
-  const handleReset = () => setDraftEdits({})
-
   const handleSave = async () => {
     if (!canSave || !teacherId || !isDirty) return
     const attempt = attemptScope.capture()
-    const validIds = new Set(timeslots.map((slot) => slot.id))
-    const payload = Object.entries(draftMap).filter(([id]) => validIds.has(Number(id))).map(([id, score]) => ({ timeslot_id: Number(id), score }))
+    const payload = draft.buildPayload()
     try {
       await saveMutation.mutateAsync({ teacherId, payload })
       if (!attemptScope.isCurrent(attempt)) return
-      setDraftEdits({})
+      draft.reset()
       toast.success('Preferências guardadas.')
     } catch (error) {
       if (!attemptScope.isCurrent(attempt)) return
@@ -84,19 +68,15 @@ export default function MyAvailability({ readOnly = false, allowedActions, warnO
   return (
     <div data-tutorial-target="availability-workspace">
       <PageHeader preTitle="Professor" title="Minhas Preferências" description="Escolha uma ferramenta e pinte os blocos. Pode usar rato, toque ou teclado." />
-      <div className="availability-toolbar" role="toolbar" aria-label="Ferramentas de disponibilidade">
-        <div className="availability-toolbar__tools">
-          {[2, 1, 0, -1].map((score) => {
-            const info = PREFERENCE_LEVELS[score]
-            return <button key={score} type="button" className={`availability-tool${selectedScore === score ? ' is-selected' : ''}`} aria-pressed={selectedScore === score} onClick={() => setSelectedScore(score)} disabled={!canSave || saveMutation.isPending}>
-              <span className="availability-tool__swatch" style={{ backgroundColor: info.color }} aria-hidden="true" />{info.label}
-            </button>
-          })}
-        </div>
-        <div className="availability-toolbar__status" aria-live="polite">{changedIds.length} {changedIds.length === 1 ? 'bloco alterado' : 'blocos alterados'}</div>
-        {isDirty && <button type="button" className="btn btn-link" onClick={handleReset} disabled={!canSave || saveMutation.isPending}>Repor alterações</button>}
-      </div>
-      <AvailabilityGrid timeslots={timeslots} availabilityMap={draftMap} onChange={handleGridChange} selectedMode={selectedScore} />
+      <AvailabilityToolbar
+        selectedScore={draft.selectedScore}
+        onSelect={draft.setSelectedScore}
+        changedCount={draft.changedCount}
+        disabled={!canSave || saveMutation.isPending}
+      >
+        {isDirty && <button type="button" className="btn btn-link" onClick={draft.reset} disabled={!canSave || saveMutation.isPending}>Repor alterações</button>}
+      </AvailabilityToolbar>
+      <AvailabilityGrid timeslots={timeslots} availabilityMap={draft.draftMap} onChange={draft.handleGridChange} selectedMode={draft.selectedScore} />
       <div className="d-flex justify-content-end mt-4">
         <button type="button" className="btn btn-primary" onClick={() => { void handleSave() }} disabled={!canSave || !isDirty || saveMutation.isPending}>
           {saveMutation.isPending ? 'A guardar' : 'Guardar preferências'}

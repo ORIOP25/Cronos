@@ -818,64 +818,6 @@ def _prepare_error_result(case: LabCase, exc: Exception, policy_version: str) ->
     )
 
 
-def _evaluate(
-    case: LabCase,
-    *,
-    code_identity: str,
-    policy_version: str,
-    mode: str = MODE_WITNESS,
-    time_limit_seconds: float = 10.0,
-    workers: int = 1,
-) -> tuple[CaseResult, dict]:
-    if mode not in VALID_MODES:
-        raise ValueError(f"Unknown campaign mode: {mode}")
-
-    def provenance(digest: str | None) -> dict:
-        return _provenance(
-            case, digest, code_identity, policy_version, mode, time_limit_seconds, workers
-        )
-
-    try:
-        prepared = prepare_case(case, mode)
-    except ValueError as exc:
-        return _prepare_error_result(case, exc, policy_version), provenance(None)
-    except OracleBudgetExceededError as exc:
-        return (
-            _result(
-                case,
-                CaseOutcome.ERROR,
-                "",
-                policy_version,
-                error=f"{type(exc).__name__}: {exc}",
-            ),
-            provenance(None),
-        )
-    return (
-        _evaluate_prepared(case, prepared, policy_version, mode, time_limit_seconds, workers),
-        provenance(prepared.digest),
-    )
-
-
-def run_case(
-    case: LabCase,
-    *,
-    code_identity: str = "unknown",
-    policy_version: str = "",
-    mode: str = MODE_WITNESS,
-    time_limit_seconds: float = 10.0,
-    workers: int = 1,
-) -> CaseResult:
-    """Evaluate one case against its declared expectation, never raising per case."""
-    return _evaluate(
-        case,
-        code_identity=code_identity,
-        policy_version=policy_version,
-        mode=mode,
-        time_limit_seconds=time_limit_seconds,
-        workers=workers,
-    )[0]
-
-
 def case_passes(case: LabCase, result: CaseResult) -> bool:
     """Fail closed: an unsettled or failed outcome never passes as success.
 
@@ -894,10 +836,6 @@ def case_passes(case: LabCase, result: CaseResult) -> bool:
     if result.passed is True:
         return True
     return result.settled
-
-
-def run_campaign(cases: Sequence[LabCase], campaign_id: str, commit: str) -> CampaignReport:
-    return CampaignReport(campaign_id, commit, tuple(run_case(case) for case in cases))
 
 
 def _atomic_write(path: Path, text: str) -> None:
