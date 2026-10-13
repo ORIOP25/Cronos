@@ -343,8 +343,9 @@ export async function createGmailReader(credentials, { fetchImpl = fetch } = {})
       if (expired) return discoveryResult(found, { status: 'incomplete', reason: 'time_limit' })
       return discoveryResult(found, discoveryOutcome(found))
     },
-    async poll(criteria, { timeoutMs = 120_000, intervalMs = 2000 } = {}) {
+    async poll(criteria, { timeoutMs = 120_000, intervalMs = 2000, settleMs = 15_000 } = {}) {
       validateCriteria(criteria)
+      if (criteria.latest === true && (!Number.isFinite(settleMs) || settleMs < 0 || settleMs >= timeoutMs)) throw new Error('Gmail polling bounds are invalid')
       if (criteria.purpose === 'contact' && criteria.forwardedMailbox !== mailbox) throw new Error('Contact forward belongs to a different mailbox')
       validatePollBounds(timeoutMs, intervalMs)
       const deadline = Date.now() + timeoutMs
@@ -354,7 +355,7 @@ export async function createGmailReader(credentials, { fetchImpl = fetch } = {})
         after: criteria.after,
         before: criteria.before,
       })
-      let previous = -1
+      let previous = -1, stableSince = 0
       do {
         const matches = []
         const { expired } = await scanPages(query, { deadline }, async item => {
@@ -362,11 +363,12 @@ export async function createGmailReader(credentials, { fetchImpl = fetch } = {})
           if (delivered) matches.push(delivered)
         })
         if (expired) throw new Error(DEADLINE_ERROR)
-        // A re-sent code (e.g. Clerk's new-device check) invalidates the earlier one:
-        // with `latest`, take the newest code once two scans agree on the set.
+        // A re-sent code (e.g. Clerk's new-device check) invalidates the earlier one,
+        // and its email can arrive seconds later: with `latest`, take the newest
+        // code only once the set has stayed unchanged for `settleMs`.
         if (criteria.latest === true && criteria.purpose === 'code' && matches.length) {
-          if (matches.length === previous) return matches.reduce((a, b) => (b.delivered_at > a.delivered_at ? b : a))
-          previous = matches.length
+          if (matches.length !== previous) { previous = matches.length; stableSince = Date.now() }
+          else if (Date.now() - stableSince >= settleMs) return matches.reduce((a, b) => (b.delivered_at > a.delivered_at ? b : a))
         } else {
           if (matches.length > 1) throw new Error('Ambiguous matching Gmail messages')
           if (matches.length === 1) return matches[0]
