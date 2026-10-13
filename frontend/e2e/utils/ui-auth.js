@@ -181,6 +181,8 @@ export async function withSignUpTestingToken(page, token, perform) {
   // A navigation or the unroute can settle a request while its fetch is in
   // flight; that request needs no answer. Any other route error still fails.
   const handler = async route => {
+    // A navigation (an invitation ticket) must keep the browser's own redirects.
+    if (route.request().isNavigationRequest?.()) return route.continue()
     try {
       await answer(route)
     } catch (error) {
