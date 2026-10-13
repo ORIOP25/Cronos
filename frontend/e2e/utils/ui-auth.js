@@ -218,9 +218,8 @@ export async function loginPersistentActor(page, school, actor, password) {
 export async function freshSession(browser, testInfo, label, perform) {
   const context = await browser.newContext({ baseURL: 'https://cronos.pt' })
   let page, runtime, primaryError
-  const trace = testInfo.outputPath(`${label}.zip`)
+  // The acceptance projects trace every context natively (`trace: 'on'`).
   try {
-    await context.tracing.start({ screenshots: true, snapshots: true, sources: true })
     page = await context.newPage()
     runtime = observeAcceptanceRuntime(page)
     await perform(page, runtime)
@@ -230,8 +229,6 @@ export async function freshSession(browser, testInfo, label, perform) {
       if (page) await testInfo.attach(`${label}-browser-evidence`, {
         body: await page.screenshot({ fullPage: true, mask: [page.locator('input, textarea')] }), contentType: 'image/png',
       })
-      await context.tracing.stop({ path: trace })
-      await testInfo.attach(`${label}-trace`, { path: trace, contentType: 'application/zip' })
     } catch (error) { primaryError ??= error }
     try { await context.close() } catch (error) { primaryError ??= error }
     runtime?.dispose()
