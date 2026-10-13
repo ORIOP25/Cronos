@@ -13,6 +13,9 @@ from app.scheduler.infrastructure.models import (
     SchedulerVersionV1,
 )
 
+FUTURE_LESSON_MESSAGE = "Não pode submeter semanas com aulas no futuro."
+UNRESOLVED_LESSON_MESSAGE = "Todas as aulas devem estar concluídas ou registadas como ocorrência."
+
 
 def _active_v1_year_and_version(
     db: Session, organization_id: int
@@ -71,6 +74,7 @@ def _v1_week_lessons(
             SchedulerLessonV1.version_id == version.id,
             CurricularAssignment.teacher_id.in_(teacher_ids),
             SchedulerLessonV1.school_date.between(week_start_date, week_end),
+            SchedulerLessonLogV1.withdrawn_at.is_(None),
         )
         .all()
     )
@@ -230,48 +234,9 @@ def submit_timesheet_sync(
             db, timesheet, organization_id, year_id, version, teacher_id, week_start_date
         )
 
-    week_end = week_start_date + timedelta(days=6)
-    rows = (
-        db.query(models.ActiveScheduleBlock, models.Timeslot, models.LessonLog)
-        .join(models.Timeslot, models.ActiveScheduleBlock.timeslot_id == models.Timeslot.id)
-        .outerjoin(
-            models.LessonLog,
-            and_(
-                models.LessonLog.organization_id == organization_id,
-                models.LessonLog.active_schedule_block_id == models.ActiveScheduleBlock.id,
-            ),
-        )
-        .filter(
-            models.ActiveScheduleBlock.organization_id == organization_id,
-            models.ActiveScheduleBlock.teacher_id == teacher_id,
-            models.ActiveScheduleBlock.status == models.ActiveScheduleBlockStatus.ACTIVE,
-            models.ActiveScheduleBlock.date.between(week_start_date, week_end),
-        )
-        .all()
+    raise AppError(
+        kind="bad_request", code="bad_request", detail="Sem aulas planeadas nesta semana."
     )
-    if not rows:
-        raise AppError(
-            kind="bad_request", code="bad_request", detail="Sem aulas planeadas nesta semana."
-        )
-    now = datetime.now()
-    for block, timeslot, lesson_log in rows:
-        if datetime.combine(block.date, timeslot.end_time) > now:
-            raise AppError(
-                kind="bad_request",
-                code="bad_request",
-                detail="Não pode submeter semanas com aulas no futuro.",
-            )
-        if lesson_log is None or lesson_log.status == models.LessonLogStatus.PENDING:
-            raise AppError(
-                kind="bad_request",
-                code="bad_request",
-                detail="Todas as aulas devem estar concluídas ou registadas como ocorrência.",
-            )
-    timesheet.status = models.TimesheetStatus.SUBMITTED
-    timesheet.submitted_at = datetime.now(UTC)
-    db.flush()
-    db.refresh(timesheet)
-    return timesheet
 
 
 def _submit_v1_week(
@@ -298,26 +263,26 @@ def _submit_v1_week(
             raise AppError(
                 kind="bad_request",
                 code="bad_request",
-                detail="Não pode submeter semanas com aulas no futuro.",
+                detail=FUTURE_LESSON_MESSAGE,
             )
         if lesson_log is None or lesson_log.status == "REVOKED":
             raise AppError(
                 kind="bad_request",
                 code="bad_request",
-                detail="Todas as aulas devem estar concluídas ou registadas como ocorrência.",
+                detail=UNRESOLVED_LESSON_MESSAGE,
             )
     for _block, lesson, lesson_log in blocks:
         if lesson.ends_at > now:
             raise AppError(
                 kind="bad_request",
                 code="bad_request",
-                detail="Não pode submeter semanas com aulas no futuro.",
+                detail=FUTURE_LESSON_MESSAGE,
             )
         if lesson_log is None or lesson_log.status != models.LessonLogStatus.COMPLETED:
             raise AppError(
                 kind="bad_request",
                 code="bad_request",
-                detail="Todas as aulas devem estar concluídas ou registadas como ocorrência.",
+                detail=UNRESOLVED_LESSON_MESSAGE,
             )
     timesheet.status = models.TimesheetStatus.SUBMITTED
     timesheet.submitted_at = datetime.now(UTC)
@@ -335,38 +300,7 @@ def _compute_slot_counts_for_teachers(
     year_id, version = _active_v1_year_and_version(db, organization_id)
     if version is not None:
         return _v1_slot_counts(db, organization_id, year_id, version, teacher_ids, week_start_date)
-    week_end = week_start_date + timedelta(days=6)
-    rows = (
-        db.query(
-            models.ActiveScheduleBlock.teacher_id,
-            models.ActiveScheduleBlock.id,
-            models.LessonLog.status,
-            models.LessonOccurrence.id.label("occurrence_id"),
-        )
-        .outerjoin(
-            models.LessonLog,
-            and_(
-                models.LessonLog.organization_id == organization_id,
-                models.LessonLog.active_schedule_block_id == models.ActiveScheduleBlock.id,
-            ),
-        )
-        .outerjoin(
-            models.LessonOccurrence,
-            and_(
-                models.LessonOccurrence.organization_id == organization_id,
-                models.LessonOccurrence.active_schedule_block_id == models.ActiveScheduleBlock.id,
-                models.LessonOccurrence.is_active.is_(True),
-            ),
-        )
-        .filter(
-            models.ActiveScheduleBlock.organization_id == organization_id,
-            models.ActiveScheduleBlock.teacher_id.in_(teacher_ids),
-            models.ActiveScheduleBlock.status == models.ActiveScheduleBlockStatus.ACTIVE,
-            models.ActiveScheduleBlock.date.between(week_start_date, week_end),
-        )
-        .all()
-    )
-    counts = {
+    return {
         teacher_id: {
             "total_slots": 0,
             "registered_slots": 0,
@@ -375,21 +309,95 @@ def _compute_slot_counts_for_teachers(
         }
         for teacher_id in teacher_ids
     }
-    seen = set()
+
+
+def _list_week_roster_sync(
+    db: Session,
+    organization_id: int,
+    week_start_date: date,
+    status: models.TimesheetStatus | None,
+) -> list[dict]:
+    roster_query = (
+        db.query(
+            models.Teacher.id.label("teacher_id"),
+            models.Teacher.organization_id.label("organization_id"),
+            models.OrganizationMembership.organization_display_name.label("teacher_name"),
+            models.TeacherWeeklyTimesheet.id.label("timesheet_id"),
+            models.TeacherWeeklyTimesheet.status.label("timesheet_status"),
+            models.TeacherWeeklyTimesheet.submitted_at.label("submitted_at"),
+            models.TeacherWeeklyTimesheet.approved_at.label("approved_at"),
+            models.TeacherWeeklyTimesheet.approved_by_membership_id.label(
+                "approved_by_membership_id"
+            ),
+            models.TeacherWeeklyTimesheet.created_at.label("created_at"),
+        )
+        .join(
+            models.OrganizationMembership,
+            and_(
+                models.OrganizationMembership.id == models.Teacher.organization_membership_id,
+                models.OrganizationMembership.organization_id == organization_id,
+            ),
+        )
+        .outerjoin(
+            models.TeacherWeeklyTimesheet,
+            and_(
+                models.TeacherWeeklyTimesheet.organization_id == organization_id,
+                models.TeacherWeeklyTimesheet.teacher_id == models.Teacher.id,
+                models.TeacherWeeklyTimesheet.week_start_date == week_start_date,
+            ),
+        )
+        .filter(
+            models.Teacher.organization_id == organization_id,
+            models.OrganizationMembership.lifecycle_status
+            == models.MembershipLifecycleStatus.active,
+            models.OrganizationMembership.can_teach.is_(True),
+        )
+    )
+    if status is not None:
+        if status == models.TimesheetStatus.OPEN:
+            roster_query = roster_query.filter(
+                or_(
+                    models.TeacherWeeklyTimesheet.id.is_(None),
+                    models.TeacherWeeklyTimesheet.status == status,
+                )
+            )
+        else:
+            roster_query = roster_query.filter(models.TeacherWeeklyTimesheet.status == status)
+    rows = roster_query.all()
+    teacher_ids = [row.teacher_id for row in rows]
+    slot_counts = (
+        _compute_slot_counts_for_teachers(
+            db,
+            organization_id,
+            teacher_ids,
+            week_start_date,
+        )
+        if teacher_ids
+        else {}
+    )
+    result = []
     for row in rows:
-        key = (row.teacher_id, row.id)
-        if key in seen:
-            continue
-        seen.add(key)
-        item = counts[row.teacher_id]
-        item["total_slots"] += 1
-        if row.status is not None and row.status != models.LessonLogStatus.PENDING:
-            item["registered_slots"] += 1
-        if row.status == models.LessonLogStatus.COMPLETED:
-            item["completed_slots"] += 1
-        if row.status == models.LessonLogStatus.OCCURRENCE or row.occurrence_id is not None:
-            item["occurrence_slots"] += 1
-    return counts
+        counts = slot_counts.get(row.teacher_id, {})
+        result.append(
+            {
+                "id": row.timesheet_id,
+                "organization_id": row.organization_id,
+                "teacher_id": row.teacher_id,
+                "teacher_name": row.teacher_name,
+                "week_start_date": week_start_date,
+                "week_end_date": week_start_date + timedelta(days=6),
+                "status": row.timesheet_status or models.TimesheetStatus.OPEN,
+                "submitted_at": row.submitted_at,
+                "approved_at": row.approved_at,
+                "approved_by_membership_id": row.approved_by_membership_id,
+                "created_at": row.created_at,
+                "total_slots": counts.get("total_slots", 0),
+                "registered_slots": counts.get("registered_slots", 0),
+                "completed_slots": counts.get("completed_slots", 0),
+                "occurrence_slots": counts.get("occurrence_slots", 0),
+            }
+        )
+    return result
 
 
 def list_timesheets_sync(
@@ -400,90 +408,7 @@ def list_timesheets_sync(
 ) -> list[dict]:
     """Admin lista as timesheets, podendo filtrar por semana ou estado."""
     if week_start_date is not None:
-        roster_query = (
-            db.query(
-                models.Teacher.id.label("teacher_id"),
-                models.Teacher.organization_id.label("organization_id"),
-                models.OrganizationMembership.organization_display_name.label("teacher_name"),
-                models.TeacherWeeklyTimesheet.id.label("timesheet_id"),
-                models.TeacherWeeklyTimesheet.status.label("timesheet_status"),
-                models.TeacherWeeklyTimesheet.submitted_at.label("submitted_at"),
-                models.TeacherWeeklyTimesheet.approved_at.label("approved_at"),
-                models.TeacherWeeklyTimesheet.approved_by_membership_id.label(
-                    "approved_by_membership_id"
-                ),
-                models.TeacherWeeklyTimesheet.created_at.label("created_at"),
-            )
-            .join(
-                models.OrganizationMembership,
-                and_(
-                    models.OrganizationMembership.id == models.Teacher.organization_membership_id,
-                    models.OrganizationMembership.organization_id == organization_id,
-                ),
-            )
-            .outerjoin(
-                models.TeacherWeeklyTimesheet,
-                and_(
-                    models.TeacherWeeklyTimesheet.organization_id == organization_id,
-                    models.TeacherWeeklyTimesheet.teacher_id == models.Teacher.id,
-                    models.TeacherWeeklyTimesheet.week_start_date == week_start_date,
-                ),
-            )
-            .filter(
-                models.Teacher.organization_id == organization_id,
-                models.OrganizationMembership.lifecycle_status
-                == models.MembershipLifecycleStatus.active,
-                models.OrganizationMembership.can_teach.is_(True),
-            )
-        )
-
-        if status is not None:
-            if status == models.TimesheetStatus.OPEN:
-                roster_query = roster_query.filter(
-                    or_(
-                        models.TeacherWeeklyTimesheet.id.is_(None),
-                        models.TeacherWeeklyTimesheet.status == status,
-                    )
-                )
-            else:
-                roster_query = roster_query.filter(models.TeacherWeeklyTimesheet.status == status)
-
-        rows = roster_query.all()
-        teacher_ids = [row.teacher_id for row in rows]
-        slot_counts = (
-            _compute_slot_counts_for_teachers(
-                db,
-                organization_id,
-                teacher_ids,
-                week_start_date,
-            )
-            if teacher_ids
-            else {}
-        )
-
-        result = []
-        for row in rows:
-            counts = slot_counts.get(row.teacher_id, {})
-            result.append(
-                {
-                    "id": row.timesheet_id,
-                    "organization_id": row.organization_id,
-                    "teacher_id": row.teacher_id,
-                    "teacher_name": row.teacher_name,
-                    "week_start_date": week_start_date,
-                    "week_end_date": week_start_date + timedelta(days=6),
-                    "status": row.timesheet_status or models.TimesheetStatus.OPEN,
-                    "submitted_at": row.submitted_at,
-                    "approved_at": row.approved_at,
-                    "approved_by_membership_id": row.approved_by_membership_id,
-                    "created_at": row.created_at,
-                    "total_slots": counts.get("total_slots", 0),
-                    "registered_slots": counts.get("registered_slots", 0),
-                    "completed_slots": counts.get("completed_slots", 0),
-                    "occurrence_slots": counts.get("occurrence_slots", 0),
-                }
-            )
-        return result
+        return _list_week_roster_sync(db, organization_id, week_start_date, status)
 
     query = (
         db.query(models.TeacherWeeklyTimesheet)
@@ -491,24 +416,14 @@ def list_timesheets_sync(
         .filter(models.TeacherWeeklyTimesheet.organization_id == organization_id)
     )
 
-    if week_start_date:
-        query = query.filter(models.TeacherWeeklyTimesheet.week_start_date == week_start_date)
     if status:
         query = query.filter(models.TeacherWeeklyTimesheet.status == status)
 
     timesheets = query.all()
 
-    # WBS Fase 7.3: enriquecer com contagens de slots
-    slot_counts: dict[int, dict] = {}
-    if timesheets and week_start_date:
-        teacher_ids = [t.teacher_id for t in timesheets]
-        slot_counts = _compute_slot_counts_for_teachers(
-            db, organization_id, teacher_ids, week_start_date
-        )
-
     result = []
     for t in timesheets:
-        counts = slot_counts.get(t.teacher_id, {})
+        counts = {}
         result.append(
             {
                 "id": t.id,

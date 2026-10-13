@@ -10,8 +10,8 @@ The committed lockfiles are the complete transitive dependency inventories. The 
 | --- | --- | --- |
 | Node.js | 24.19.0 (`.nvmrc`); `>=24.15.0` engine floor | `.nvmrc`, `frontend/package.json`, `frontend/Dockerfile` |
 | Python | 3.14.7 in containers; `>=3.12` remains the package support floor | `backend/Dockerfile`, `backend/pyproject.toml` |
-| PostgreSQL | 16-alpine, digest-pinned | Compose files and CI |
-| Redis | 7-alpine, digest-pinned | Compose files and CI |
+| PostgreSQL | 18-alpine, digest-pinned | Compose files and CI |
+| Redis | 8.2-alpine, digest-pinned | Compose files and CI |
 | Nginx | `nginx-unprivileged` 1.29-alpine, digest-pinned | `frontend/Dockerfile` |
 
 ## Frontend direct dependencies (`frontend/package.json`)
@@ -71,7 +71,8 @@ It includes `requirements.in`, then adds `pip==26.2.1`, `pip-audit==2.10.1`, `pi
 
 ## Update and security controls
 
-- Dependabot checks GitHub Actions, Docker (`/backend` and `/frontend`), npm, and pip weekly, with production/development grouping for npm and pip.
+- Dependabot checks GitHub Actions, Docker (`/backend` and `/frontend`), root Docker Compose, npm, and pip weekly.
+- npm and pip updates use production/development grouping.
 - `frontend/package-lock.json`, `backend/requirements.txt`, and `backend/requirements-dev.txt` are regenerated lockfiles; Python locks include hashes.
 - `npm run audit:production` in `frontend/` audits the production dependencies. `pip-audit` in the backend development tooling audits the Python lock.
 - ESLint remains on the 9.x line.

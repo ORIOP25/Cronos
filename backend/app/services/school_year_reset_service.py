@@ -69,15 +69,6 @@ class SchoolYearResetService:
         now = datetime.now(UTC)
         affected: dict[str, int] = {}
         result = await self._db.execute(
-            update(models.ActiveScheduleBlock)
-            .where(
-                models.ActiveScheduleBlock.organization_id == organization_id,
-                models.ActiveScheduleBlock.status == models.ActiveScheduleBlockStatus.ACTIVE,
-            )
-            .values(status=models.ActiveScheduleBlockStatus.REMOVED, updated_at=now)
-        )
-        affected["active_schedule_blocks"] = result.rowcount or 0
-        result = await self._db.execute(
             update(models.OperationalScheduleBlock)
             .where(
                 models.OperationalScheduleBlock.organization_id == organization_id,
@@ -90,31 +81,6 @@ class SchoolYearResetService:
             )
         )
         affected["operational_schedule_blocks"] = result.rowcount or 0
-        result = await self._db.execute(
-            update(models.PlannedRecoveryLink)
-            .where(
-                models.PlannedRecoveryLink.organization_id == organization_id,
-                models.PlannedRecoveryLink.status == models.PlannedRecoveryLinkStatus.PLANNED,
-            )
-            .values(status=models.PlannedRecoveryLinkStatus.CANCELED, updated_at=now)
-        )
-        affected["planned_recovery_links"] = result.rowcount or 0
-
-        pending_drafts = list(
-            await self._db.scalars(
-                select(models.ScheduleDraft).where(
-                    models.ScheduleDraft.organization_id == organization_id,
-                    models.ScheduleDraft.draft_state == models.ScheduleDraftState.PENDING,
-                )
-            )
-        )
-        for draft in pending_drafts:
-            draft.draft_state = models.ScheduleDraftState.INVALIDATED
-            draft.invalidated_reason = "School year reset by an administrator."
-            draft.decided_by_membership_id = reset_by_membership_id
-            draft.decided_at = now
-        affected["pending_drafts"] = len(pending_drafts)
-
         if active_year is not None:
             affected.update(
                 await self._reset_v1_year(

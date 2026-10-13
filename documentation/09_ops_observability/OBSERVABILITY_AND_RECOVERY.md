@@ -18,14 +18,14 @@ The API exposes liveness, readiness, and a public API health route.
 The backend emits structured logs. It does not send request data to an external error tracker.
 It writes colored console logs locally and JSON logs in every other environment.
 A request-id context variable binds each log line to the `X-Request-ID` response header.
-Scheduler, occurrence, and teacher services store operational telemetry.
+Scheduler jobs store status, diagnostics, and search evidence.
 
 There is no Sentry or other error-tracker integration. Incident detection relies on Railway platform logs and alerts.
 
 ## Why the Behavior Exists
 
 Health endpoints separate process availability from dependency readiness.
-Persisted event summaries support tenant-scoped operational review without logging request PII.
+Persisted job evidence supports tenant-scoped operational review without logging request PII.
 
 ## Components and Ownership
 
@@ -37,8 +37,6 @@ Persisted event summaries support tenant-scoped operational review without loggi
 | Structured logging | `backend/app/core/logging.py` |
 | Request identity | `backend/app/main.py` (`X-Request-ID` context variable) |
 | Scheduler diagnostics | `backend/app/scheduler/infrastructure/diagnostics.py`, `backend/app/scheduler_v1_worker.py` |
-| Occurrence telemetry | `backend/app/models.py`, `backend/app/services/occurrence_service.py` |
-| Teacher telemetry | `backend/app/services/teacher_observability_service.py` |
 | Rate limiting | `backend/app/core/ratelimit.py` |
 | Integrity audits | `backend/scripts/audit_triggers.py`, `backend/scripts/audit_database_integrity.py` |
 
@@ -46,8 +44,8 @@ Persisted event summaries support tenant-scoped operational review without loggi
 
 1. A monitor calls `/health/live`.
 2. A readiness check runs PostgreSQL `SELECT 1` and a Redis ping.
-3. Scheduler phases and services record structured operational events.
-4. Operators inspect logs, job fields, and event summaries.
+3. Scheduler phases record structured log events and job evidence.
+4. Operators inspect logs and job fields.
 5. Operators use the recovery procedure for the affected component.
 
 ## Contracts and Invariants
@@ -121,8 +119,6 @@ back when the reference indicates a systemic failure.
 - `backend/app/core/ratelimit.py`
 - `backend/app/scheduler/infrastructure/diagnostics.py`
 - `backend/app/scheduler_v1_worker.py`
-- `backend/app/services/teacher_observability_service.py`
-- `backend/app/services/occurrence_service.py`
 - `backend/scripts/audit_triggers.py`
 - `backend/scripts/audit_database_integrity.py`
 

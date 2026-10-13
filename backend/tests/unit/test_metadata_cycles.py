@@ -2,7 +2,6 @@ import warnings
 
 from sqlalchemy.exc import SAWarning
 
-from app import models
 from app.db.database import Base
 
 
@@ -21,9 +20,3 @@ def test_cycle_breaking_foreign_keys_are_named_and_deferred():
     ]
     assert deferred
     assert all(constraint.name for constraint in deferred)
-    lesson_scope = next(
-        constraint
-        for constraint in models.LessonOccurrence.__table__.foreign_key_constraints
-        if constraint.name == "fk_lesson_occurrence_active_block_scope"
-    )
-    assert lesson_scope.use_alter is True

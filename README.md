@@ -8,8 +8,8 @@ Cronos is a Software-as-a-Service (SaaS) platform for course scheduling and oper
 | :--- | :--- |
 | **Backend API** | Python 3.14, FastAPI, Async SQLAlchemy, Pydantic v2, Celery |
 | **Frontend UI** | React 19, Vite 8, CoreUI, React Query, Clerk Auth |
-| **Database** | PostgreSQL 16 with forced Row-Level Security |
-| **Cache / Queue** | Redis 7 |
+| **Database** | PostgreSQL 18 with forced Row-Level Security |
+| **Cache / Queue** | Redis 8.2 |
 | **Scheduler Engine** | Google OR-Tools CP-SAT (Scheduler v1) |
 
 ## Supported User Roles

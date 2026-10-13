@@ -1159,6 +1159,12 @@ async def load_version_lessons(
                 SchedulerLessonV1.organization_id == organization_id,
                 SchedulerLessonV1.school_year_id == school_year_id,
                 SchedulerLessonV1.version_id == version.id,
+                SchedulerLessonV1.id.not_in(
+                    select(SchedulerLessonLogV1.lesson_id).where(
+                        SchedulerLessonLogV1.organization_id == organization_id,
+                        SchedulerLessonLogV1.withdrawn_at.is_not(None),
+                    )
+                ),
             )
             .order_by(SchedulerLessonV1.id)
         )

@@ -19,7 +19,7 @@ const pendingSlot = {
   week_timesheet_status: 'OPEN',
   timeslot: { end_time: '09:00:00' },
   timesheet_id: 1,
-  active_schedule_block_id: 2,
+  scheduler_lesson_id: 2,
   is_past: true,
 }
 
@@ -66,7 +66,7 @@ describe('LessonLogModal permissions', () => {
           week_timesheet_status: 'SUBMITTED',
           timeslot: { end_time: '09:00:00' },
           timesheet_id: 1,
-          active_schedule_block_id: 2,
+          scheduler_lesson_id: 2,
           is_past: true,
         }}
       />,

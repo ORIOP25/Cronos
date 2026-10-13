@@ -17,8 +17,8 @@ and [Observability and Recovery](OBSERVABILITY_AND_RECOVERY.md).
 
 ## What the Procedure Does
 
-The correction adds explicit decisions to v1 lesson logs and v1 origins to
-operational blocks. The migration classifies nothing automatically.
+The consolidated baseline includes explicit decisions on v1 lesson logs and v1 origins on operational blocks.
+The schema classifies no historical records automatically.
 
 The procedure inventories affected records, classifies them with evidence, and
 applies explicit compensations. Each step is read-only until the operator
@@ -120,47 +120,24 @@ Repeat the Step 1 queries and compare results.
 - Ambiguous records stop the procedure.
 - A missing reference leaves the record open.
 - A failed transaction changes nothing.
-- A downgrade of migration 0018 is refused while any decision, revocation
-  metadata, or v1 operational block exists.
+- A baseline downgrade removes all application data. It is not a reconciliation action.
 
-## Known Residue
+## Reconciliation of Historical Residue
 
-The report describes a synthetic TAS 10 future lesson decided as given and a
-synthetic QA teacher. Revert the lesson through the corrected reversal flow.
-Verify the 50-minute compensation and the preserved history. Archive or remove
-the teacher with the normal administrative operation after checking
-references.
-
-The 4 October read-only inventory identified organization `27` and active version `22`.
-The QA log is `1`, revision `4`, for lesson `279321`, with source lesson `230239`.
-Execution `9`, origin `lesson-log:230239`, credits 50 minutes. Its reason explicitly identifies a synthetic QA trial.
-Use the administrative occurrence reversal after deploying the correction. Do not delete the execution or edit its credit.
-Verify one negative 50-minute credit referencing execution `9`. Verify that a repeated reversal adds no credit.
-The QA member is `684`; its teacher profile is `657`. Open availability through the team action.
-The six archived approved classes are `743` through `748`. Their presence explains the 54-class denominator.
-The active catalog contains 48 classes. Do not delete approved history to equalize these populations.
-Production data was inspected inside `READ ONLY` transactions. Applying a correction requires separate operator authorization.
-
-The 5 October report records that log `1` was reversed through the administrative interface.
-The debt page still included 50 minutes for TAS 10, while the dashboard showed zero debt.
-The corrected dashboard reads the v1 ledger. Debt aggregation counts remaining minutes per claim.
-Cancellation now reverses execution before cancelling reopened debt, following the published lesson lineage.
-For an already revoked log, repeat its cancellation in an open week with the normal administrative endpoint.
-This operation preserves revocation metadata and appends only the missing debt revision.
-Older publications can lack source links. Reconciliation also matches the same stable identity and exact UTC interval.
-The match stays within the organization, school year and curricular assignment. It excludes other physical lessons.
-Publication maps stable identities to database identifiers when it writes each source reference.
-The post-correction read-only inventory found log `1` on lesson `279339`, without a source reference.
-Debt `1` still references lesson `230239` and contains 50 open minutes.
-Both lessons belong to organization `27`, school year `27`, and assignment `6649`.
-They share stable key `6649000001` and the interval `2026-10-12 08:00–08:50 UTC`.
-Their QA summary and debt reason also match. This evidence identifies the residual claim without using its balance alone.
-Verify zero remaining debt for this QA occurrence and preserve unrelated claims.
+Historical test-data inventories remain in Git history. Their identifiers do not describe a database installed from the consolidated baseline.
+Inventory the target database before any correction.
+The dashboard and debt page read the same v1 ledger. Each claim contributes its remaining balance.
+Cancellation reverses execution before cancelling reopened debt, following published lesson lineage.
+For an already revoked log, repeat cancellation in an open week through the administrative endpoint.
+This preserves revocation metadata and appends only missing debt revisions.
+When older publications lack source links, reconciliation can match stable identity and the exact UTC interval.
+The match stays within organization, school year, and curricular assignment.
+Verify that the affected debt closes and unrelated claims remain unchanged.
 Do not classify future debt as invalid solely from its date. An explicit gap decision can create future debt.
 
 ## Source Map
 
-- Migration: `backend/alembic/versions/0018_occurrence_decisions.py`
+- Baseline: `backend/alembic/versions/0001_scheduler_v1_baseline.py`
 - Occurrence consumer: `backend/app/scheduler/infrastructure/occurrences.py`
 - Progress ledger: `backend/app/scheduler/infrastructure/progress.py`
 

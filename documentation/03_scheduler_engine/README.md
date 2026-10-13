@@ -79,27 +79,22 @@ Endpoints under `/api/v1/scheduler` (`backend/app/api/v1/endpoints/scheduler.py`
 | `POST /drafts/{proposal_id}/approve` | Atomic approval with revalidation. |
 | `POST /drafts/{proposal_id}/reject` | Audited rejection. |
 
-## Laboratory
+## Test fixtures and verification
 
-Run a campaign through the existing runner:
+The retained `backend/app/scheduler/lab/` modules build deterministic minimal, scale, annual, recovery, and typology fixtures.
+Unit tests use those fixtures to verify the actual engine and independent validator.
+Historical campaign commands, JSON corpora, matrix reports, and stored-candidate revalidation tools were removed.
 
-```text
-node scripts/test.mjs campaign [--manifest <path>] [--out <dir>] [--case <id>]... [--mode witness|generator|repair|trajectory|longitudinal] [--time-limit <s>] [--workers <n>] [--resume]
-```
-
-Manifests live in `backend/tests/scheduler_lab/`. The `repair` mode evaluates AdaptiveRecovery against a published baseline; `trajectory` records the incumbent trajectory and replays stopping policies; `longitudinal` chains simulated execution and events over an annual baseline. Results are one JSON file per case plus `report.json`.
-
-Matrix coverage from a campaign report:
+Run maintained checks through the root runner:
 
 ```text
-python -m app.scheduler.lab.matrix --manifest <manifest> --report <report.json> --out <matrix_report.json>
+node scripts/test.mjs critical --scope backend
+node scripts/test.mjs integration
+node scripts/test.mjs capacity-smoke
 ```
 
-Revalidate a stored candidate without running the solver:
-
-```text
-python -m app.scheduler.lab.revalidate <case.json>
-```
+The 48-class correctness regression lives in `backend/tests/unit/test_scheduler_typology_v1.py`.
+It uses the configured 900-second safety budget and validates the first complete candidate.
 
 ## Current limitations
 

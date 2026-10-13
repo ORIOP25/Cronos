@@ -106,6 +106,64 @@ async def _mark_stale(
     await _reject_pending_grid_version(db, organization_id, job)
 
 
+async def _fresh_proposal_snapshot(db, organization_id, job, state, bundle, candidate, now_utc):
+    # Revalidate the candidate with the current clock under the state lock. A
+    # midnight crossing, a new execution or a new version invalidates the
+    # proposal; the renewal clock must not move in that case.
+    try:
+        fresh = await load_snapshot(
+            db,
+            organization_id,
+            strategy=SchedulingStrategy(job.strategy),
+            now_utc=now_utc,
+            school_year_id=job.school_year_id,
+            grid_version_id=job.grid_version_id,
+        )
+    except SnapshotConfigurationError:
+        fresh = None
+    if (
+        fresh is None
+        or fresh.digest != job.snapshot_digest
+        or fresh.base_version_id != job.base_version_id
+        or fresh.input_revision != job.input_revision_used
+        or fresh.planning_revision != job.planning_revision_used
+        or state.input_revision != job.input_revision_used
+        or state.planning_revision != job.planning_revision_used
+    ):
+        job.status = "STALE"
+        job.result_code = "STALE"
+        job.stop_reason = "INPUT_CHANGED"
+        job.finished_at = now_utc
+        await _reject_pending_grid_version(db, organization_id, job)
+        await db.commit()
+        return PersistOutcome(None, "STALE")
+    # Revalidate against the generation clock, not the persist clock. A long
+    # job can cross a grid period boundary; the current clock would then protect
+    # a lesson that was future when the candidate was built. Data freshness is
+    # already enforced by the digest and revision comparison above, and a change
+    # of school day still invalidates the proposal.
+    generation_now = bundle.snapshot.now_utc
+    zone = ZoneInfo(fresh.snapshot.timezone_name)
+    if fresh.snapshot.now_utc.astimezone(zone).date() != generation_now.astimezone(zone).date():
+        job.status = "STALE"
+        job.result_code = "STALE"
+        job.stop_reason = "INPUT_CHANGED"
+        job.finished_at = now_utc
+        await _reject_pending_grid_version(db, organization_id, job)
+        await db.commit()
+        return PersistOutcome(None, "STALE")
+    report = validate_candidate(replace(fresh.snapshot, now_utc=generation_now), candidate)
+    if not report.valid:
+        job.status = "STALE"
+        job.result_code = "STALE"
+        job.stop_reason = "REVALIDATION_FAILED"
+        job.finished_at = now_utc
+        await _reject_pending_grid_version(db, organization_id, job)
+        await db.commit()
+        return PersistOutcome(None, "STALE")
+    return fresh
+
+
 async def persist_proposal(
     db: AsyncSession,
     *,
@@ -158,60 +216,11 @@ async def persist_proposal(
         await _reject_pending_grid_version(db, organization_id, job)
         await db.commit()
         return PersistOutcome(None, "CANCELLED")
-    # Revalidate the candidate with the current clock under the state lock. A
-    # midnight crossing, a new execution or a new version invalidates the
-    # proposal; the renewal clock must not move in that case.
-    try:
-        fresh = await load_snapshot(
-            db,
-            organization_id,
-            strategy=SchedulingStrategy(job.strategy),
-            now_utc=now_utc,
-            school_year_id=job_reference.school_year_id,
-            grid_version_id=job.grid_version_id,
-        )
-    except SnapshotConfigurationError:
-        fresh = None
-    if (
-        fresh is None
-        or fresh.digest != job.snapshot_digest
-        or fresh.base_version_id != job.base_version_id
-        or fresh.input_revision != job.input_revision_used
-        or fresh.planning_revision != job.planning_revision_used
-        or state.input_revision != job.input_revision_used
-        or state.planning_revision != job.planning_revision_used
-    ):
-        job.status = "STALE"
-        job.result_code = "STALE"
-        job.stop_reason = "INPUT_CHANGED"
-        job.finished_at = now_utc
-        await _reject_pending_grid_version(db, organization_id, job)
-        await db.commit()
-        return PersistOutcome(None, "STALE")
-    # Revalidate against the generation clock, not the persist clock. A long
-    # job can cross a grid period boundary; the current clock would then protect
-    # a lesson that was future when the candidate was built. Data freshness is
-    # already enforced by the digest and revision comparison above, and a change
-    # of school day still invalidates the proposal.
-    generation_now = bundle.snapshot.now_utc
-    zone = ZoneInfo(fresh.snapshot.timezone_name)
-    if fresh.snapshot.now_utc.astimezone(zone).date() != generation_now.astimezone(zone).date():
-        job.status = "STALE"
-        job.result_code = "STALE"
-        job.stop_reason = "INPUT_CHANGED"
-        job.finished_at = now_utc
-        await _reject_pending_grid_version(db, organization_id, job)
-        await db.commit()
-        return PersistOutcome(None, "STALE")
-    report = validate_candidate(replace(fresh.snapshot, now_utc=generation_now), candidate)
-    if not report.valid:
-        job.status = "STALE"
-        job.result_code = "STALE"
-        job.stop_reason = "REVALIDATION_FAILED"
-        job.finished_at = now_utc
-        await _reject_pending_grid_version(db, organization_id, job)
-        await db.commit()
-        return PersistOutcome(None, "STALE")
+    fresh = await _fresh_proposal_snapshot(
+        db, organization_id, job, state, bundle, candidate, now_utc
+    )
+    if isinstance(fresh, PersistOutcome):
+        return fresh
     bundle = fresh
     version = SchedulerVersionV1(
         organization_id=organization_id,
@@ -351,50 +360,7 @@ async def persist_proposal(
     return PersistOutcome(proposal_id, None)
 
 
-async def approve_proposal(
-    db: AsyncSession,
-    *,
-    organization_id: int,
-    proposal_id: int,
-    decided_by_membership_id: int | None,
-    now_utc: datetime,
-    expected_input_revision: int | None = None,
-) -> ApprovalResult:
-    """Revalidate and activate one pending proposal in a single transaction."""
-    proposal = await db.scalar(
-        select(SchedulerProposalV1).where(
-            SchedulerProposalV1.id == proposal_id,
-            SchedulerProposalV1.organization_id == organization_id,
-        )
-    )
-    if proposal is None:
-        raise LookupError("Scheduler proposal was not found.")
-    state = await db.scalar(
-        select(models.SchedulerSchoolYearState)
-        .where(
-            models.SchedulerSchoolYearState.organization_id == organization_id,
-            models.SchedulerSchoolYearState.school_year_id == proposal.school_year_id,
-        )
-        .with_for_update()
-    )
-    proposal = await db.scalar(
-        select(SchedulerProposalV1)
-        .where(
-            SchedulerProposalV1.id == proposal_id,
-            SchedulerProposalV1.organization_id == organization_id,
-        )
-        .with_for_update()
-    )
-    if state is None:
-        raise LookupError("Scheduler school-year state was not found.")
-    job = await db.scalar(
-        select(SchedulerJobV1).where(
-            SchedulerJobV1.id == proposal.job_id,
-            SchedulerJobV1.organization_id == organization_id,
-        )
-    )
-    if job is None:
-        raise LookupError("Scheduler job was not found.")
+async def _previous_approval(db, organization_id, proposal, state, now_utc):
     if proposal.status == "APPROVED":
         approved_version = await db.scalar(
             select(SchedulerVersionV1).where(
@@ -421,51 +387,10 @@ async def approve_proposal(
             "Esta proposta foi substituída por uma versão mais recente.",
             context={"proposal_status": proposal.status},
         )
-    if proposal.status != "PENDING":
-        raise ProposalConflict(
-            "proposal_not_pending",
-            "Esta proposta já não está pendente.",
-            context={"proposal_status": proposal.status},
-        )
-    if expected_input_revision is not None and expected_input_revision != state.input_revision:
-        raise ProposalConflict(
-            "scheduler_state_changed",
-            "O horário foi alterado entretanto. Atualize a página e volte a tentar.",
-            context={"input_revision": state.input_revision},
-        )
-    if (
-        state.input_revision != proposal.input_revision_used
-        or state.planning_revision != proposal.planning_revision_used
-    ):
-        await _mark_stale(
-            db, organization_id, proposal, reason="REVISIONS_CHANGED", now_utc=now_utc, job=job
-        )
-        await db.commit()
-        raise ProposalConflict(
-            "proposal_stale",
-            "Existem alterações mais recentes. Gere uma nova proposta.",
-            context={"proposal_status": "STALE"},
-        )
-    current_active = await load_active_version_id(db, organization_id, proposal.school_year_id)
-    if current_active != proposal.base_version_id:
-        await _mark_stale(
-            db, organization_id, proposal, reason="BASE_VERSION_CHANGED", now_utc=now_utc, job=job
-        )
-        await db.commit()
-        raise ProposalConflict(
-            "proposal_stale",
-            "O horário publicado foi alterado entretanto. Gere uma nova proposta.",
-            context={"proposal_status": "STALE"},
-        )
-    version = await db.scalar(
-        select(SchedulerVersionV1).where(
-            SchedulerVersionV1.id == proposal.version_id,
-            SchedulerVersionV1.organization_id == organization_id,
-            SchedulerVersionV1.school_year_id == proposal.school_year_id,
-        )
-    )
-    if version is None:
-        raise LookupError("Scheduler version was not found.")
+    return None
+
+
+async def _validate_pending_grid(db, organization_id, job, proposal, now_utc):
     if job.grid_version_id is not None:
         grid_version = await db.scalar(
             select(models.GridVersion)
@@ -490,6 +415,11 @@ async def approve_proposal(
                 "A grelha proposta foi alterada entretanto. Gere uma nova proposta.",
                 context={"proposal_status": "STALE"},
             )
+
+
+async def _validate_approval_candidate(
+    db, organization_id, proposal, job, version, now_utc, current_active
+):
     try:
         bundle = await load_snapshot(
             db,
@@ -557,6 +487,105 @@ async def approve_proposal(
                 "violations": [violation.code.value for violation in report.violations[:5]],
             },
         )
+    return bundle
+
+
+async def approve_proposal(
+    db: AsyncSession,
+    *,
+    organization_id: int,
+    proposal_id: int,
+    decided_by_membership_id: int | None,
+    now_utc: datetime,
+    expected_input_revision: int | None = None,
+) -> ApprovalResult:
+    """Revalidate and activate one pending proposal in a single transaction."""
+    proposal = await db.scalar(
+        select(SchedulerProposalV1).where(
+            SchedulerProposalV1.id == proposal_id,
+            SchedulerProposalV1.organization_id == organization_id,
+        )
+    )
+    if proposal is None:
+        raise LookupError("Scheduler proposal was not found.")
+    state = await db.scalar(
+        select(models.SchedulerSchoolYearState)
+        .where(
+            models.SchedulerSchoolYearState.organization_id == organization_id,
+            models.SchedulerSchoolYearState.school_year_id == proposal.school_year_id,
+        )
+        .with_for_update()
+    )
+    proposal = await db.scalar(
+        select(SchedulerProposalV1)
+        .where(
+            SchedulerProposalV1.id == proposal_id,
+            SchedulerProposalV1.organization_id == organization_id,
+        )
+        .with_for_update()
+    )
+    if state is None:
+        raise LookupError("Scheduler school-year state was not found.")
+    job = await db.scalar(
+        select(SchedulerJobV1).where(
+            SchedulerJobV1.id == proposal.job_id,
+            SchedulerJobV1.organization_id == organization_id,
+        )
+    )
+    if job is None:
+        raise LookupError("Scheduler job was not found.")
+    previous_approval = await _previous_approval(db, organization_id, proposal, state, now_utc)
+    if previous_approval is not None:
+        return previous_approval
+    if proposal.status != "PENDING":
+        raise ProposalConflict(
+            "proposal_not_pending",
+            "Esta proposta já não está pendente.",
+            context={"proposal_status": proposal.status},
+        )
+    if expected_input_revision is not None and expected_input_revision != state.input_revision:
+        raise ProposalConflict(
+            "scheduler_state_changed",
+            "O horário foi alterado entretanto. Atualize a página e volte a tentar.",
+            context={"input_revision": state.input_revision},
+        )
+    if (
+        state.input_revision != proposal.input_revision_used
+        or state.planning_revision != proposal.planning_revision_used
+    ):
+        await _mark_stale(
+            db, organization_id, proposal, reason="REVISIONS_CHANGED", now_utc=now_utc, job=job
+        )
+        await db.commit()
+        raise ProposalConflict(
+            "proposal_stale",
+            "Existem alterações mais recentes. Gere uma nova proposta.",
+            context={"proposal_status": "STALE"},
+        )
+    current_active = await load_active_version_id(db, organization_id, proposal.school_year_id)
+    if current_active != proposal.base_version_id:
+        await _mark_stale(
+            db, organization_id, proposal, reason="BASE_VERSION_CHANGED", now_utc=now_utc, job=job
+        )
+        await db.commit()
+        raise ProposalConflict(
+            "proposal_stale",
+            "O horário publicado foi alterado entretanto. Gere uma nova proposta.",
+            context={"proposal_status": "STALE"},
+        )
+    version = await db.scalar(
+        select(SchedulerVersionV1).where(
+            SchedulerVersionV1.id == proposal.version_id,
+            SchedulerVersionV1.organization_id == organization_id,
+            SchedulerVersionV1.school_year_id == proposal.school_year_id,
+        )
+    )
+    if version is None:
+        raise LookupError("Scheduler version was not found.")
+    await _validate_pending_grid(db, organization_id, job, proposal, now_utc)
+    await _validate_approval_candidate(
+        db, organization_id, proposal, job, version, now_utc, current_active
+    )
     await _repoint_lesson_logs(
         db,
         organization_id,

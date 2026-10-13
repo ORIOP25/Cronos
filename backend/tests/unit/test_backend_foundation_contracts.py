@@ -156,10 +156,6 @@ def test_tenant_audit_columns_reference_memberships() -> None:
         },
         "member_access_operation": {"created_by_membership_id"},
         "scheduler_school_year_state": {"reset_by_membership_id"},
-        "schedule_drafts": {
-            "created_by_membership_id",
-            "decided_by_membership_id",
-        },
         "scheduler_state_version_events": {"changed_by_membership_id"},
         "lesson_occurrence": {
             "created_by_membership_id",
@@ -190,8 +186,6 @@ def test_migration_scopes_tenant_audit_keys_to_the_same_organization() -> None:
         "fk_organization_membership_updated_by_membership_id_org",
         "fk_member_access_operation_created_by_membership_id_org",
         "fk_scheduler_school_year_state_reset_by_membership_id_org",
-        "fk_schedule_drafts_created_by_membership_id_org",
-        "fk_schedule_drafts_decided_by_membership_id_org",
         "fk_scheduler_state_version_events_changed_by_membership_id_org",
         "fk_lesson_occurrence_created_by_membership_id_org",
         "fk_lesson_occurrence_revoked_by_membership_id_org",

@@ -34,3 +34,7 @@ Git tracks `.agents/skills/cronos-*` and `.agents/skills/ponytail/`, because AGE
 The actual codebase implementation and unit test suite are the sole source of truth.
 Deployment contracts also live in `docker-compose*.yml`, `backend/railway/*.json`,
 `.github/workflows/ci.yml`, and the environment example files.
+
+Local, test, and CI stacks use PostgreSQL 18 and Redis 8.2.
+Fresh databases use the frozen `0001_scheduler_v1_baseline` migration.
+Railway JSON files record intended settings. Verify their dashboard application before deployment.

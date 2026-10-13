@@ -118,6 +118,27 @@ def _resource_ids(
     return teacher_id, (base, base + 1)
 
 
+def _annual_subject_rows(lessons_per_week, slots, weeks, week_periods):
+    module_plans: list[tuple[ModuleRequirement, ...]] = []
+    subject_rows: list[list[tuple[Period, int]]] = []
+    cursor = 0
+    for weekly in lessons_per_week:
+        subject_slots = slots[cursor : cursor + weekly]
+        cursor += weekly
+        total_lessons = weekly * len(weeks)
+        first_module = (total_lessons + 1) // 2
+        module_plans.append(
+            (
+                ModuleRequirement(1, 1, first_module * SLOT_MINUTES),
+                ModuleRequirement(2, 2, (total_lessons - first_module) * SLOT_MINUTES),
+            )
+        )
+        subject_rows.append(
+            [(week_periods[week][slot], SLOT_MINUTES) for week in weeks for slot in subject_slots]
+        )
+    return module_plans, subject_rows
+
+
 def build_annual_fixture(
     class_count: int,
     *,
@@ -167,27 +188,9 @@ def build_annual_fixture(
     for index in range(class_count):
         class_id = index + 1
         slots = _weekly_slots(profile, index, teacher_group, room_group)
-        module_plans: list[tuple[ModuleRequirement, ...]] = []
-        subject_rows: list[list[tuple[Period, int]]] = []
-        cursor = 0
-        for weekly in lessons_per_week:
-            subject_slots = slots[cursor : cursor + weekly]
-            cursor += weekly
-            total_lessons = weekly * len(weeks)
-            first_module = (total_lessons + 1) // 2
-            module_plans.append(
-                (
-                    ModuleRequirement(1, 1, first_module * SLOT_MINUTES),
-                    ModuleRequirement(2, 2, (total_lessons - first_module) * SLOT_MINUTES),
-                )
-            )
-            subject_rows.append(
-                [
-                    (week_periods[week][slot], SLOT_MINUTES)
-                    for week in weeks
-                    for slot in subject_slots
-                ]
-            )
+        module_plans, subject_rows = _annual_subject_rows(
+            lessons_per_week, slots, weeks, week_periods
+        )
         for subject_index, rows in enumerate(subject_rows, start=1):
             assignment_id = class_id * 10 + subject_index
             module = module_plans[subject_index - 1]

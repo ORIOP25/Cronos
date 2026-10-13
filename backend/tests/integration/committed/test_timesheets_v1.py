@@ -116,73 +116,14 @@ async def test_a_v1_week_with_a_future_lesson_cannot_be_submitted(db_session, mo
     assert "futuro" in future.value.detail
 
 
-async def _legacy_duplicate_block(db_session, seed, timeslot_id: int):
-    """A published legacy block for the same teacher and week."""
-    datetime(2026, 9, 21, 18, tzinfo=UTC)
-    draft = models.ScheduleDraft(
-        organization_id=seed.organization.id,
-        school_year_id=seed.year.id,
-        strategy=models.ScheduleGenerationStrategy.COMPLETE_GENERATION,
-        result_category=models.ScheduleGenerationResultCategory.COMPLETE_SUCCESS,
-        trigger_type=models.ScheduleGenerationTrigger.FIRST_GENERATION,
-        generation_input_fingerprint="a" * 64,
-        scheduler_state_version_used=0,
-        debt_basis_fingerprint="b" * 64,
-        repair_policy_snapshot_json={"repair_stability_window_days": 0},
-        repair_policy_snapshot_hash="c" * 64,
-        editable_start_date=date(2026, 9, 1),
-        projected_completion_date=date(2027, 6, 30),
-        hard_end_date=seed.year.hard_end_date,
-        summary_json={},
-        created_by_membership_id=seed.membership.id,
-    )
-    db_session.add(draft)
-    await db_session.flush()
-    draft_block = models.ScheduleDraftBlock(
-        organization_id=seed.organization.id,
-        school_year_id=seed.year.id,
-        draft_id=draft.id,
-        stable_block_key="legacy-1",
-        class_id=seed.class_.id,
-        subject_id=seed.subject.id,
-        teacher_id=seed.assignment.teacher_id,
-        room_id=seed.room.id,
-        room_type_id=models.RoomType.normal,
-        date=PAST_DAY,
-        timeslot_id=timeslot_id,
-        duration_minutes=50,
-        change_type=models.ScheduleDraftBlockChangeType.ADDED,
-    )
-    db_session.add(draft_block)
-    await db_session.flush()
-    db_session.add(
-        models.ActiveScheduleBlock(
-            organization_id=seed.organization.id,
-            school_year_id=seed.year.id,
-            schedule_version_id="legacy-version",
-            stable_block_key="legacy-1",
-            class_id=seed.class_.id,
-            subject_id=seed.subject.id,
-            teacher_id=seed.assignment.teacher_id,
-            room_id=seed.room.id,
-            date=PAST_DAY,
-            timeslot_id=timeslot_id,
-            duration_minutes=50,
-            source_draft_block_id=draft_block.id,
-        )
-    )
-
-
-async def test_admin_counts_follow_v1_and_ignore_legacy_duplicates(db_session):
+async def test_admin_counts_follow_v1_and_ignore_superseded_versions(db_session):
     seed, version = await _seed_v1_week(db_session, suffix="counts")
     first = await _add_past_lesson(db_session, seed, version, key="l1")
     second = await _add_past_lesson(db_session, seed, version, key="l2", day=date(2026, 9, 22))
     _log_lesson(db_session, seed, first, "COMPLETED")
     _log_lesson(db_session, seed, second, "OCCURRENCE")
-    timeslot_id = await db_session.scalar(
-        select(models.Timeslot.id).where(models.Timeslot.organization_id == seed.organization.id)
-    )
-    await _legacy_duplicate_block(db_session, seed, timeslot_id)
+    superseded = await add_version(db_session, seed, status="SUPERSEDED")
+    await _add_past_lesson(db_session, seed, superseded, key="historical-duplicate")
     await db_session.commit()
 
     rows = await db_session.run_sync(

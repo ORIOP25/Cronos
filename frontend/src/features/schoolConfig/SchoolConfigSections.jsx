@@ -54,6 +54,21 @@ const EMPTY_CALENDAR_EVENT = {
   name: '', start_date: '', end_date: '', event_type: 'school_break', class_ids: [],
 }
 
+function flowResultMessage(result) {
+  if (result.removedCount > 0) return `${result.removedCount} aula(s) saíram do horário ativo. `
+  if (result.scopeChanged) return 'As datas ficaram bloqueadas para as turmas associadas. '
+  if (result.isEdit) return 'O nome foi atualizado sem alterar o horário. '
+  return 'O fluxo ficou sem turmas associadas e não altera o horário. '
+}
+
+function deleteEventMessage(event) {
+  if (!event) return ''
+  if (event.event_type === 'internship_flow') {
+    return `O fluxo “${event.name}” será eliminado. As aulas já retiradas não são repostas automaticamente.`
+  }
+  return `O evento “${event.name}” será eliminado. Esta ação não pode ser desfeita.`
+}
+
 export const CalendarSection = () => {
   const [newEvent, setNewEvent] = useState(EMPTY_CALENDAR_EVENT)
   const [editingFlowId, setEditingFlowId] = useState(null)
@@ -321,13 +336,7 @@ export const CalendarSection = () => {
               </button>
             ) : null}
           >
-            {lastFlowResult.removedCount > 0
-              ? `${lastFlowResult.removedCount} aula(s) saíram do horário ativo. `
-              : lastFlowResult.scopeChanged
-                ? 'As datas ficaram bloqueadas para as turmas associadas. '
-                : lastFlowResult.isEdit
-                  ? 'O nome foi atualizado sem alterar o horário. '
-                  : 'O fluxo ficou sem turmas associadas e não altera o horário. '}
+            {flowResultMessage(lastFlowResult)}
             Fluxo “{lastFlowResult.name}” guardado.
           </FeedbackBanner>
         </div>
@@ -420,9 +429,8 @@ export const CalendarSection = () => {
                   onChange={(e) => setClassFilter(e.target.value)}
                   aria-describedby="eventClassSearchHelp"
                 />
-                <div
+                <fieldset
                   id="eventClassOptions"
-                  role="group"
                   aria-label="Turmas abrangidas"
                   className="border rounded p-2 mt-2"
                   style={{ maxHeight: '180px', overflowY: 'auto' }}
@@ -444,7 +452,7 @@ export const CalendarSection = () => {
                       }))}
                     />
                   ))}
-                </div>
+                </fieldset>
                 <div id="eventClassSearchHelp" className="form-text">
                   Sem turmas, o fluxo não bloqueia aulas. As aulas afetadas saem do horário quando guardar.
                 </div>
@@ -516,7 +524,7 @@ export const CalendarSection = () => {
             </CTableHead>
             <CTableBody>
               {previewState?.affected_lessons.map((lesson) => (
-                <CTableRow key={lesson.active_schedule_block_id}>
+                <CTableRow key={lesson.lesson_id}>
                   <CTableDataCell>{lesson.class_name ?? 'Turma'}</CTableDataCell>
                   <CTableDataCell className="text-nowrap">{formatDate(lesson.date)}</CTableDataCell>
                   <CTableDataCell>{lesson.subject_name ?? 'Disciplina'}</CTableDataCell>
@@ -577,11 +585,7 @@ export const CalendarSection = () => {
           }))
         }}
         title="Eliminar evento"
-        message={deleteTarget
-          ? (deleteTarget.event_type === 'internship_flow'
-            ? `O fluxo “${deleteTarget.name}” será eliminado. As aulas já retiradas não são repostas automaticamente.`
-            : `O evento “${deleteTarget.name}” será eliminado. Esta ação não pode ser desfeita.`)
-          : ''}
+        message={deleteEventMessage(deleteTarget)}
         confirmText="Eliminar evento"
         isLoading={deleteMutation.isPending}
       />
@@ -1037,9 +1041,9 @@ const GridChangeImpactPanel = ({ preview, decisions, onDecision, onPropose, isPr
 
         <div className="d-flex justify-content-end align-items-center gap-3">
           {preview.can_propose && missing.length > 0 && (
-            <span className="text-danger small" role="status">
+            <output className="text-danger small">
               Faltam decisões para {missing.length} bloco(s) afetado(s).
-            </span>
+            </output>
           )}
           <CButton
             type="button"

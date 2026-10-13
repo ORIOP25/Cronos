@@ -5,6 +5,8 @@ from urllib.parse import urlparse
 from pydantic import EmailStr, PostgresDsn, RedisDsn, SecretStr, computed_field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+LOCAL_FRONTEND_ORIGIN = "http://localhost:5173"
+
 
 def _normalize_http_origin(value: str, field_name: str) -> str:
     candidate = value.strip().rstrip("/")
@@ -52,7 +54,7 @@ class Settings(BaseSettings):
     CLERK_WEBHOOK_MAX_ATTEMPTS: int = 5
     CLERK_WEBHOOK_RETRY_BASE_SECONDS: int = 60
     CLERK_ACCESS_TIMEOUT_SECONDS: int = 10
-    FRONTEND_URL: str = "http://localhost:5173"
+    FRONTEND_URL: str = LOCAL_FRONTEND_ORIGIN
     CLERK_AUTHORIZED_PARTIES: str = ""
     CLERK_INVITATION_REDIRECT_URL: str = ""
     # Clerk emits short-lived JWTs. Permit a small, bounded difference between
@@ -73,7 +75,7 @@ class Settings(BaseSettings):
             ]
         if self.ENVIRONMENT == "local":
             return [
-                "http://localhost:5173",
+                LOCAL_FRONTEND_ORIGIN,
                 "http://127.0.0.1:5173",
                 "http://localhost:3000",
                 "http://localhost",
@@ -93,7 +95,7 @@ class Settings(BaseSettings):
             "localhost",
             "127.0.0.1",
         }:
-            origins.extend(["http://localhost:5173", "http://127.0.0.1:5173"])
+            origins.extend([LOCAL_FRONTEND_ORIGIN, "http://127.0.0.1:5173"])
         return list(dict.fromkeys(origins))
 
     # --- Infraestrutura (Redis & Celery) ---

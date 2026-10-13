@@ -27,6 +27,9 @@ from .models import (
 )
 from .scheduler.domain.timetable import BreakOverride, build_daily_slots
 
+END_BEFORE_START_MESSAGE = "A data de fim não pode ser anterior à data de início"
+DUPLICATE_CLASSES_MESSAGE = "As turmas não podem estar duplicadas."
+
 
 class OperationalOccurrenceState(StrEnum):
     OPEN_PENDING = "OPEN_PENDING"
@@ -1144,11 +1147,11 @@ class SchoolCalendarEventCreate(BaseModel):
     @model_validator(mode="after")
     def validate_payload(self):
         if self.end_date < self.start_date:
-            raise ValueError("A data de fim não pode ser anterior à data de início")
+            raise ValueError(END_BEFORE_START_MESSAGE)
         if self.class_ids and self.event_type != CalendarEventType.internship_flow:
             raise ValueError("Só um fluxo de estágio pode abranger turmas.")
         if len(set(self.class_ids)) != len(self.class_ids):
-            raise ValueError("As turmas não podem estar duplicadas.")
+            raise ValueError(DUPLICATE_CLASSES_MESSAGE)
         return self
 
 
@@ -1162,9 +1165,9 @@ class SchoolCalendarEventUpdate(BaseModel):
     @model_validator(mode="after")
     def validate_payload(self):
         if self.end_date < self.start_date:
-            raise ValueError("A data de fim não pode ser anterior à data de início")
+            raise ValueError(END_BEFORE_START_MESSAGE)
         if len(set(self.class_ids)) != len(self.class_ids):
-            raise ValueError("As turmas não podem estar duplicadas.")
+            raise ValueError(DUPLICATE_CLASSES_MESSAGE)
         return self
 
 
@@ -1184,14 +1187,14 @@ class CalendarEventChangePreviewRequest(BaseModel):
             if self.name is None or self.start_date is None or self.end_date is None:
                 raise ValueError("Indique o nome e as datas do fluxo.")
             if self.end_date < self.start_date:
-                raise ValueError("A data de fim não pode ser anterior à data de início")
+                raise ValueError(END_BEFORE_START_MESSAGE)
         if len(set(self.class_ids)) != len(self.class_ids):
-            raise ValueError("As turmas não podem estar duplicadas.")
+            raise ValueError(DUPLICATE_CLASSES_MESSAGE)
         return self
 
 
 class AffectedLessonRead(BaseModel):
-    active_schedule_block_id: int
+    lesson_id: int
     class_id: int
     class_name: str | None = None
     subject_id: int
@@ -1505,7 +1508,6 @@ class LessonOccurrenceRead(BaseModel):
 
     id: int
     organization_id: int
-    active_schedule_block_id: int | None = None
     date: date
     status: LessonOccurrenceStatus | None = None
     operational_state: OperationalOccurrenceState
@@ -1738,7 +1740,6 @@ class WeekSliceRead(BaseModel):
 class WeekSlotRead(BaseModel):
     """Um bloco de aula numa semana: slot planeado + ocorrência real."""
 
-    active_schedule_block_id: int | None = None
     operational_block_id: int | None = None
     block_source: Literal["planned", "active", "operational"] = "planned"
     date: str | None = None
@@ -1795,7 +1796,6 @@ class LessonLogRead(BaseModel):
 
     id: int
     organization_id: int
-    active_schedule_block_id: int | None = None
     operational_block_id: int | None = None
     status: LessonLogStatus
     summary: str | None = None

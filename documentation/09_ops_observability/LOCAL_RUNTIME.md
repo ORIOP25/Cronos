@@ -15,9 +15,12 @@ Copy `.env.example` to `.env` and `backend/.env.example` to `backend/.env`.
 
 ## What the System Does
 
-The root `docker-compose.yml` runs PostgreSQL 16, Redis 7, API, worker, scheduler supervisor, Beat, and the Nginx SPA built from the `local` target of `frontend/Dockerfile` (`FROM ci`, which serves with `nginx.ci.conf` so Clerk development origins are allowed; the production image uses `nginx.conf`).
+The root `docker-compose.yml` runs PostgreSQL 18, Redis 8.2, API, worker, scheduler supervisor, Beat, and the Nginx SPA.
+The `local` target of `frontend/Dockerfile` inherits `ci` and uses `nginx.ci.conf` for Clerk development origins.
+The production image uses `nginx.conf`.
 `docker-compose.dev.yml` overrides only the `frontend` service, replacing it with Vite hot reload; the other services are unchanged.
-Production runs newer PostgreSQL and Redis majors; see the [Deployment Runbook](DEPLOYMENT_RUNBOOK.md#production-topology).
+Local, test, and CI stacks use PostgreSQL 18 and Redis 8.2, pinned by digest.
+Verify managed provider versions separately; see the [Deployment Runbook](DEPLOYMENT_RUNBOOK.md#production-topology).
 The API dispatches `scheduler.v1.run_next_job` through Redis; the worker imports and executes that task.
 
 ## Why the Behavior Exists
@@ -29,7 +32,7 @@ This prevents concurrent services from changing production-like schemas during s
 
 | Service | Host access | Purpose |
 | :--- | :--- | :--- |
-| `db` | `127.0.0.1:5432` | PostgreSQL 16 |
+| `db` | `127.0.0.1:5432` | PostgreSQL 18 |
 | `redis` | Internal only | Celery broker and rate-limit storage |
 | `provision-db` | Maintenance profile | Create and rotate database roles |
 | `db-maintenance` | Maintenance profile | Run Alembic migrations |
@@ -85,6 +88,8 @@ The development override changes only the frontend service.
 - Unprovisioned roles prevent migrations or application connections.
 - Missing migrations cause application schema errors.
 - Redis failure affects rate limits, readiness, and background dispatch.
+- A PostgreSQL 16 data volume cannot start with the PostgreSQL 18 image.
+  Back up required data and use a fresh volume or a supported database upgrade before switching majors.
 
 ## Safe Stop and Cleanup
 

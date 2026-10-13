@@ -24,7 +24,7 @@ Install Python 3.14, Node 24, and npm 11. The root test runner checks these vers
 - Run formatter check: `ruff format --check .`
 - Run linter check: `ruff check .`
 - Database migrations: Use Alembic for all schema alterations (`alembic revision --autogenerate -m "description"`).
-- Keep one linear migration chain from the baseline `0001_scheduler_v1_baseline` to the head `0018_occurrence_decisions`. Do not create branches or merge revisions.
+- Keep one linear migration chain from `0001_scheduler_v1_baseline` in `backend/alembic/versions/`. Do not create branches or merge revisions.
 - Run migrations with the privileged `cronos_migrator` role through the maintenance container.
 - Never execute destructive database operations without migration scripts.
 

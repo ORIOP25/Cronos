@@ -75,7 +75,7 @@ export default function AvailabilityGrid({ timeslots = [], availabilityMap, onCh
   return (
     <>
     <p className="small text-muted d-lg-none mb-1">Deslize horizontalmente para ver todos os dias.</p>
-    <div className="availability-grid-scroll" role="region" aria-label="Grelha de preferências de disponibilidade" tabIndex="0">
+    <section className="availability-grid-scroll" aria-label="Grelha de preferências de disponibilidade" tabIndex="0">
       <div className="availability-grid" style={{ '--availability-days': model.days.length }}>
         <div className="availability-grid__header">Hora</div>
         {model.days.map((day) => <div className="availability-grid__header" key={day}>{DAY_LABELS[day] ?? `Dia ${day + 1}`}</div>)}
@@ -85,6 +85,7 @@ export default function AvailabilityGrid({ timeslots = [], availabilityMap, onCh
             {model.days.map((day) => {
               const slot = model.slotByKey.get(`${day}:${time}`)
               if (!slot) return <div className="availability-grid__empty" key={`${day}-${time}`} aria-label="Bloco indisponível">—</div>
+              const dayLabel = DAY_LABELS[day] ?? `Dia ${day + 1}`
               const score = getScore(slot.id)
               const preference = PREFERENCE_LEVELS[score]
               const selected = effectiveFocusedId === slot.id
@@ -100,7 +101,7 @@ export default function AvailabilityGrid({ timeslots = [], availabilityMap, onCh
                   className="availability-grid__cell"
                   style={{ '--preference-color': preference.color }}
                   tabIndex={selected ? 0 : -1}
-                  aria-label={`${DAY_LABELS[day] ?? `Dia ${day + 1}`}, ${time}, estado guardado: ${preference.label}, ferramenta ativa: ${PREFERENCE_LEVELS[selectedMode].label}`}
+                  aria-label={`${dayLabel}, ${time}, estado guardado: ${preference.label}, ferramenta ativa: ${PREFERENCE_LEVELS[selectedMode].label}`}
                   onFocus={() => setFocusedId(slot.id)}
                   onKeyDown={(event) => handleKeyDown(event, slot)}
                   onPointerDown={(event) => {
@@ -121,7 +122,7 @@ export default function AvailabilityGrid({ timeslots = [], availabilityMap, onCh
           </div>
         ))}
       </div>
-    </div>
+    </section>
     </>
   )
 }

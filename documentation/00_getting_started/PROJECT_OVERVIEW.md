@@ -33,7 +33,7 @@ Schedules must account for resource conflicts, availability, calendar events, ex
 | Scheduler | Complete generation and adaptive repair | Google OR-Tools CP-SAT |
 | Worker | Background generation jobs | Celery and Redis |
 | Beat | Hourly member reconciliation | Celery Beat and Redis |
-| Database | Tenant data, RLS, audit records | PostgreSQL 16 |
+| Database | Tenant data, RLS, audit records | PostgreSQL 18 |
 | Identity | Users, organizations, roles, webhooks | Clerk |
 
 ## Data or Request Flow

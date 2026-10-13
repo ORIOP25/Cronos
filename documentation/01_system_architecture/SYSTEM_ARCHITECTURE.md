@@ -52,7 +52,7 @@ flowchart TD
     SPA -->|Bearer JWT or public request| API[FastAPI API]
     API --> Auth[Clerk verification]
     API --> Services[Application services]
-    Services --> DB[(PostgreSQL 16 + forced RLS)]
+    Services --> DB[(PostgreSQL 18 + forced RLS)]
     API --> Dispatcher[Celery task dispatcher]
     Dispatcher -->|scheduler.v1.run_next_job| Redis[(Redis)]
     Redis --> Worker[Celery worker]

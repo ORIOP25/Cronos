@@ -34,12 +34,11 @@ Separate scheduler v1 records preserve curricular demand, execution evidence, de
 | Curriculum | `course`, `class`, `subject`, `module`, `course_subject_link`, `teacher_subject_link`, `class_subject_link` |
 | Resources | `room`, `timeslot`, `grid_version`, `availability`, `constraint` |
 | School calendar | `organization_settings`, `organization_grid_settings`, `school_calendar_event`, `school_calendar_event_class` |
-| Scheduler lifecycle | `scheduler_school_year`, `scheduler_school_year_state`, `schedule_generation_job`, `schedule_drafts`, `schedule_draft_blocks`, `schedule_diff_entries`, `active_schedule_blocks`, `scheduler_state_version_events` |
-| Recovery | `lesson_occurrence`, `operational_schedule_block`, `planned_recovery_links` |
+| Scheduler lifecycle | `scheduler_school_year`, `scheduler_school_year_state`, `scheduler_state_version_events` |
+| Operational records | `lesson_occurrence`, `operational_schedule_block` |
 | Execution | `lesson_log`, `progress_ledger_entry`, `teacher_weekly_timesheet` |
 | Scheduler v1 curriculum | `curricular_assignment`, `curricular_requirement`, `curricular_execution`, `curricular_execution_credit`, `curricular_debt`, `curricular_debt_revision`, `curricular_debt_settlement` |
 | Scheduler v1 schedule | `scheduler_version_v1`, `scheduler_lesson_v1`, `scheduler_lesson_slice_v1`, `scheduler_recovery_reservation_v1`, `scheduler_lesson_log_v1`, `scheduler_job_v1`, `scheduler_proposal_v1` |
-| Observability | `occurrence_operational_event`, `teacher_endpoint_operational_event` |
 | Definitions | `backend/app/models.py` and `backend/app/scheduler/infrastructure/models.py` |
 
 ## Data or Request Flow
@@ -52,9 +51,8 @@ erDiagram
     COURSE ||--o{ CLASS : groups
     CLASS ||--o{ CLASS_SUBJECT_LINK : assigns
     SUBJECT ||--o{ MODULE : orders
-    ACTIVE_SCHEDULE_BLOCKS ||--o{ LESSON_OCCURRENCE : records
-    ACTIVE_SCHEDULE_BLOCKS ||--o| LESSON_LOG : logs
-    LESSON_OCCURRENCE ||--o{ OPERATIONAL_SCHEDULE_BLOCK : creates
+    SCHEDULER_LESSON_LOG_V1 ||--o{ OPERATIONAL_SCHEDULE_BLOCK : creates
+    OPERATIONAL_SCHEDULE_BLOCK ||--o| LESSON_LOG : logs
     MODULE ||--o{ PROGRESS_LEDGER_ENTRY : measures
     CURRICULAR_ASSIGNMENT ||--o{ CURRICULAR_REQUIREMENT : requires
     CURRICULAR_ASSIGNMENT ||--o{ CURRICULAR_DEBT : owes
@@ -81,18 +79,16 @@ erDiagram
 
 ## States and Transitions
 
-- Generation jobs in `schedule_generation_job` use `QUEUED`, `RUNNING`, `CANCEL_REQUESTED`, `CANCELED`, `SUCCEEDED`, `FAILED`, or `NO_VALID_OUTPUT`.
-- Drafts in `schedule_drafts` use `PENDING`, `APPROVED`, `REJECTED`, `REPLACED`, `STALE`, or `INVALIDATED`.
 - Generation strategies are `COMPLETE_GENERATION`, `ADAPTIVE_REPAIR`, or `GRID_CHANGE`.
 - Generation triggers are `FIRST_GENERATION`, `EXPLICIT_DEBT`, `SCHEDULER_CHANGE`, `MIXED`, or `GRID_CHANGE`.
 - Scheduler v1 jobs in `scheduler_job_v1` use `QUEUED`, `RUNNING`, `VALIDATING`, `SUCCEEDED`, `CANCELLED`, `STALE`, `FAILED`, `INFEASIBLE`, or `INCONCLUSIVE`.
 - Scheduler v1 proposals in `scheduler_proposal_v1` use `PENDING`, `APPROVED`, `REJECTED`, `STALE`, or `SUPERSEDED`.
 - Scheduler v1 versions in `scheduler_version_v1` use `CANDIDATE`, `ACTIVE`, or `SUPERSEDED`.
 - Scheduler v1 lesson logs use `COMPLETED`, `OCCURRENCE`, or `REVOKED`.
+- `scheduler_lesson_log_v1.withdrawn_at` records an internship-flow withdrawal without deleting the published lesson.
 - `LessonOccurrenceStatus` uses `GIVEN`, `GAP`, `SUBSTITUTED`, or `REVOKED`; NULL means open.
 - The API maps occurrences to `OPEN_PENDING`, `DECIDED_GIVEN`, `DECIDED_GAP`, `DECIDED_SUBSTITUTED`, or `REVOKED`.
 - `lesson_log` uses `PENDING`, `COMPLETED`, or `OCCURRENCE`.
-- Recovery links use `PLANNED`, `DELIVERED`, `CANCELED`, or `REPLACED`.
 - Timesheets use `OPEN`, `SUBMITTED`, or `APPROVED`.
 - Grid versions use `PENDING`, `ACTIVE`, or `REJECTED`.
 - Scheduler state change scopes are `FUTURE_IMPACTING`, `PAST_ONLY`, `NO_OP`, or `INACTIVE_RESOURCE`.

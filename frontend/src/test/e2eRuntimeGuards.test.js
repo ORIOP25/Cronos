@@ -200,15 +200,15 @@ describe('E2E runtime guard classifiers', () => {
   it('fails an unexpected API 404 unless it is explicitly allowlisted', () => {
     const response = {
       status: 404,
-      url: `${baseUrl}/api/v1/schedule/active-blocks/42/log`,
+      url: `${baseUrl}/api/v1/schedule/lessons/42/log`,
     }
 
     expect(getApiResponseError(response, [])).toBe(
-      `API 404: ${baseUrl}/api/v1/schedule/active-blocks/42/log`,
+      `API 404: ${baseUrl}/api/v1/schedule/lessons/42/log`,
     )
     expect(getApiResponseError(response, [{
       status: 404,
-      url: '/api/v1/schedule/active-blocks/',
+      url: '/api/v1/schedule/lessons/',
     }])).toBeNull()
   })
 

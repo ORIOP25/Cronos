@@ -4,7 +4,7 @@ import WeekGrid from '../components/WeekGrid'
 import { buildWeekGridModel } from '../utils/weekGridModel'
 
 const baseSlot = {
-  active_schedule_block_id: 501,
+  scheduler_lesson_id: 501,
   date: '2026-04-20',
   timeslot: {
     id: 9,
@@ -24,7 +24,7 @@ const baseSlot = {
 
 describe('buildWeekGridModel', () => {
   it('builds collisions, baseline times, dates, and locked slots', () => {
-    const collision = { ...baseSlot, active_schedule_block_id: 502, week_timesheet_status: 'APPROVED' }
+    const collision = { ...baseSlot, scheduler_lesson_id: 502, week_timesheet_status: 'APPROVED' }
     const baseline = { id: 10, day_of_week: 1, start_time: '11:00:00', end_time: '12:00:00' }
     const model = buildWeekGridModel([baseSlot, collision], [baseSlot.timeslot, baseline], '2026-04-20')
     expect(model.slotMap['0:09:00']).toHaveLength(2)
@@ -191,7 +191,7 @@ describe('WeekGrid (Ponto 8.1)', () => {
     const onOpenOperationalAction = vi.fn()
     const activeSlot = {
       ...baseSlot,
-      active_schedule_block_id: 902,
+      scheduler_lesson_id: 902,
       block_source: 'active',
     }
 
@@ -209,7 +209,7 @@ describe('WeekGrid (Ponto 8.1)', () => {
     fireEvent.click(screen.getByRole('button', { name: /abrir registo/i }))
     expect(onOpenOperationalAction).toHaveBeenCalledWith(
       expect.objectContaining({
-        active_schedule_block_id: 902,
+        scheduler_lesson_id: 902,
         block_source: 'active',
       })
     )
@@ -262,7 +262,7 @@ describe('WeekGrid (Ponto 8.1)', () => {
     expect(onOpenOperationalAction).toHaveBeenCalledTimes(1)
     expect(onOpenOperationalAction).toHaveBeenCalledWith(
       expect.objectContaining({
-        active_schedule_block_id: 501,
+        scheduler_lesson_id: 501,
         occurrence_id: 321,
         can_create_occurrence: false,
         can_decide_occurrence: true,
@@ -350,14 +350,14 @@ describe('WeekGrid (W07.3 grid versions)', () => {
   const mondaySlot = {
     ...baseSlot,
     date: '2026-09-21',
-    active_schedule_block_id: 601,
+    scheduler_lesson_id: 601,
     timeslot: { id: 20, day_of_week: 0, start_time: '09:00', end_time: '09:50' },
     subject: { id: 2, name: 'Programação' },
   }
   const wednesdaySlot = {
     ...baseSlot,
     date: '2026-09-23',
-    active_schedule_block_id: 602,
+    scheduler_lesson_id: 602,
     timeslot: { id: 21, day_of_week: 2, start_time: '10:00', end_time: '10:50' },
     subject: { id: 3, name: 'Matemática' },
   }

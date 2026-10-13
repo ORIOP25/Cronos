@@ -469,11 +469,12 @@ async def update_class_progress(
         )
 
     # 3. Construir mapa de módulos válidos: {module_id: hours_total}
-    valid_modules = {}
-    for link in links:
-        if link.subject:
-            for module in link.subject.modules:
-                valid_modules[module.id] = module.hours_total
+    valid_modules = {
+        module.id: module.hours_total
+        for link in links
+        if link.subject is not None
+        for module in link.subject.modules
+    }
 
     # 4. Validar que todos os module_ids pertencem às disciplinas da turma
     for update in progress_updates:

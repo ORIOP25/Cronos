@@ -9,12 +9,16 @@ from app.scheduler.domain.constraint_policy import (
     SchoolConstraintPolicy,
     assess_room_eligibility,
 )
+from app.scheduler.infrastructure.models import SchedulerProposalV1
 from app.services import grid_version_service
 from app.services.availability_matrix_service import AvailabilityMatrixInspector
 from app.services.scheduler_fingerprint_service import SchedulerFingerprintService
 from app.services.scheduler_state_service import SchedulerStateService
 
 logger = structlog.get_logger(__name__)
+
+
+CONFIG_ROUTE = "/config"
 
 
 async def _get_latest_settings_with_dates(
@@ -320,7 +324,7 @@ class PreflightService:
                     code="ACTIVE_SCHOOL_YEAR_REQUIRED",
                     severity="BLOCKER",
                     message="Defina o ano letivo ativo antes de gerar.",
-                    route="/config",
+                    route=CONFIG_ROUTE,
                 )
             )
 
@@ -331,7 +335,7 @@ class PreflightService:
                     code="MISSING_CALENDAR",
                     severity="BLOCKER",
                     message="Datas do ano letivo não configuradas.",
-                    route="/config",
+                    route=CONFIG_ROUTE,
                 )
             )
 
@@ -349,7 +353,7 @@ class PreflightService:
                     code="MISSING_TIMESLOTS",
                     severity="BLOCKER",
                     message="Nenhum bloco de horário configurado.",
-                    route="/config",
+                    route=CONFIG_ROUTE,
                 )
             )
 
@@ -527,14 +531,14 @@ class PreflightService:
                 )
 
         pending_conditions = [
-            models.ScheduleDraft.organization_id == organization_id,
-            models.ScheduleDraft.draft_state == models.ScheduleDraftState.PENDING,
+            SchedulerProposalV1.organization_id == organization_id,
+            SchedulerProposalV1.status == "PENDING",
         ]
         if school_year_id is not None:
-            pending_conditions.append(models.ScheduleDraft.school_year_id == school_year_id)
+            pending_conditions.append(SchedulerProposalV1.school_year_id == school_year_id)
         has_pending = (
             await self.db.scalar(
-                sa_select(func.count(models.ScheduleDraft.id)).where(*pending_conditions)
+                sa_select(func.count(SchedulerProposalV1.id)).where(*pending_conditions)
             )
             or 0
         )

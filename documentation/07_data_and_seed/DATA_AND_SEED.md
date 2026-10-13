@@ -73,7 +73,7 @@ Then run `pytest backend/tests/integration/committed/test_prepare_e2e_clerk_stat
 ## Source Map
 - Session bootstrap: `backend/app/services/session_bootstrap_service.py`
 - Foundation service: `backend/app/services/foundation_service.py`
-- E2E state service: `backend/app/services/e2e_clerk_state.py`
+- E2E state preparation: `backend/scripts/e2e_clerk_state.py`
 - E2E preparation script: `backend/scripts/prepare_e2e_clerk_state.py`
 - Bulk import policy: `backend/app/services/bulk_import_policy.py`
 - Bulk import service: `backend/app/services/bulk_import_service.py`

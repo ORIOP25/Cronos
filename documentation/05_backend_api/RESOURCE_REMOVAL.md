@@ -44,9 +44,8 @@ Unknown errors stay HTTP 500.
 
 ## Database migration
 
-Revision `0016_resource_archive_flags` adds `is_archived` to `room`, `subject`,
-and `course`. The column is additive, `NOT NULL`, and defaults to `false`.
-Existing rows stay unchanged. `class.is_archived` already exists.
+The consolidated baseline defines `is_archived` on `room`, `subject`, `course`, and `class`.
+The column is `NOT NULL` and defaults to `false`.
 
 ## Current management
 

@@ -560,6 +560,7 @@ class SchedulerLessonLogV1(Base):
     decision: Mapped[str | None] = mapped_column(String(20), nullable=True)
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     decided_by_membership_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    withdrawn_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     revoked_by_membership_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     revoked_reason: Mapped[str | None] = mapped_column(String(250), nullable=True)

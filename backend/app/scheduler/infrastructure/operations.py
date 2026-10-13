@@ -77,6 +77,14 @@ def local_times(lesson: SchedulerLessonV1, zone: ZoneInfo) -> tuple[time, time]:
     return time(start.hour, start.minute), time(end.hour, end.minute)
 
 
+def _week_log_states(log: SchedulerLessonLogV1 | None) -> tuple[str | None, str | None]:
+    if log is None:
+        return None, None
+    if log.status == "REVOKED":
+        return "REVOKED", "PENDING"
+    return log.decision or "PENDING", log.status
+
+
 def _module_summary(
     module_id: int | None, required_minutes: int | None, name: str | None
 ) -> dict | None:
@@ -158,6 +166,11 @@ async def week_schedule(
         lessons_query = lessons_query.where(CurricularAssignment.class_id == class_id)
     if teacher_id is not None:
         lessons_query = lessons_query.where(CurricularAssignment.teacher_id == teacher_id)
+    withdrawn = select(SchedulerLessonLogV1.lesson_id).where(
+        SchedulerLessonLogV1.organization_id == organization_id,
+        SchedulerLessonLogV1.withdrawn_at.is_not(None),
+    )
+    lessons_query = lessons_query.where(SchedulerLessonV1.id.not_in(withdrawn))
     rows = (await db.execute(lessons_query)).all()
     block_query = (
         select(models.OperationalScheduleBlock)
@@ -320,14 +333,15 @@ async def week_schedule(
         ).all()
     }
     slots: list[dict] = []
-    for lesson, _assignment, subject, teacher, class_model, room in rows:
-        if lesson.id in hidden_lesson_ids:
-            continue
+
+    def _planned_week_slot(row):
+        (lesson, _assignment, subject, teacher, class_model, room) = row
         start_local, end_local = local_times(lesson, zone)
         position = slices_by_lesson.get(lesson.id, [])
         module_id = position[0][1].id if position else None
         module_minutes = position[0][1].required_minutes if position else None
         log = logs.get(lesson.id)
+        occurrence_status, lesson_log_status = _week_log_states(log)
         timesheet = timesheet_status.get(teacher.id)
         lesson_finished = execution_allowed(moment, lesson.ends_at)
         timesheet_locked = timesheet is not None and timesheet.status in (
@@ -343,69 +357,58 @@ async def week_schedule(
             blocked_reason = "week_locked"
         else:
             blocked_reason = None
-        slots.append(
-            {
-                "scheduler_lesson_id": lesson.id,
-                "active_schedule_block_id": None,
-                "operational_block_id": None,
-                "block_source": "planned",
-                "date": lesson.school_date.isoformat(),
-                "timeslot": {
-                    "id": timeslots.get((lesson.school_date.weekday(), start_local, end_local), 0),
-                    "day_of_week": lesson.school_date.weekday(),
-                    "start_time": start_local.strftime("%H:%M"),
-                    "end_time": end_local.strftime("%H:%M"),
-                },
-                "subject": {"id": subject.id, "name": subject.name},
-                "teacher": {"id": teacher.id, "name": teacher.name},
-                "room": {"id": room.id, "name": room.name},
-                "class_info": {"id": class_model.id, "name": class_model.name},
-                "module": _module_summary(module_id, module_minutes, module_names.get(module_id)),
-                "is_past": lesson.school_date < reference_today,
-                "occurrence_status": (
-                    None
-                    if log is None
-                    else ("REVOKED" if log.status == "REVOKED" else log.decision or "PENDING")
-                ),
-                "hours_given": None,
-                "occurrence_id": (
-                    log.id
-                    if log is not None
-                    and (log.status in ("OCCURRENCE", "REVOKED") or log.decision is not None)
-                    else None
-                ),
-                "occurrence_decided_at": log.decided_at if log is not None else None,
-                "can_create_occurrence": log is None or log.status == "REVOKED",
-                "can_decide_occurrence": False,
-                "lesson_log_id": log.id if log else None,
-                "lesson_log_status": (
-                    "PENDING"
-                    if log is not None and log.status == "REVOKED"
-                    else log.status
-                    if log
-                    else None
-                ),
-                "lesson_log_summary": log.summary if log else None,
-                "lesson_log_notes": log.notes if log else None,
-                "lesson_log_logged_at": log.logged_at if log else None,
-                "week_timesheet_status": timesheet.status.value if timesheet else "OPEN",
-                "timesheet_id": timesheet.id if timesheet else None,
-                "is_substituted_block": False,
-                "credit_minutes": lesson.credit_minutes,
-                "slices": [
-                    _slice_payload(
-                        slice_row,
-                        module,
-                        executed.get(lesson.assignment_id, {}).get(module.id, 0),
-                    )
-                    for slice_row, module in position
-                ],
-                "substitute_execution_status": None,
-                "ends_at": lesson.ends_at,
-                "can_complete": can_complete,
-                "blocked_reason": blocked_reason,
-            }
-        )
+        return {
+            "scheduler_lesson_id": lesson.id,
+            "operational_block_id": None,
+            "block_source": "planned",
+            "date": lesson.school_date.isoformat(),
+            "timeslot": {
+                "id": timeslots.get((lesson.school_date.weekday(), start_local, end_local), 0),
+                "day_of_week": lesson.school_date.weekday(),
+                "start_time": start_local.strftime("%H:%M"),
+                "end_time": end_local.strftime("%H:%M"),
+            },
+            "subject": {"id": subject.id, "name": subject.name},
+            "teacher": {"id": teacher.id, "name": teacher.name},
+            "room": {"id": room.id, "name": room.name},
+            "class_info": {"id": class_model.id, "name": class_model.name},
+            "module": _module_summary(module_id, module_minutes, module_names.get(module_id)),
+            "is_past": lesson.school_date < reference_today,
+            "occurrence_status": occurrence_status,
+            "hours_given": None,
+            "occurrence_id": (
+                log.id
+                if log is not None
+                and (log.status in ("OCCURRENCE", "REVOKED") or log.decision is not None)
+                else None
+            ),
+            "occurrence_decided_at": log.decided_at if log is not None else None,
+            "can_create_occurrence": log is None or log.status == "REVOKED",
+            "can_decide_occurrence": False,
+            "lesson_log_id": log.id if log else None,
+            "lesson_log_status": lesson_log_status,
+            "lesson_log_summary": log.summary if log else None,
+            "lesson_log_notes": log.notes if log else None,
+            "lesson_log_logged_at": log.logged_at if log else None,
+            "week_timesheet_status": timesheet.status.value if timesheet else "OPEN",
+            "timesheet_id": timesheet.id if timesheet else None,
+            "is_substituted_block": False,
+            "credit_minutes": lesson.credit_minutes,
+            "slices": [
+                _slice_payload(
+                    slice_row,
+                    module,
+                    executed.get(lesson.assignment_id, {}).get(module.id, 0),
+                )
+                for slice_row, module in position
+            ],
+            "substitute_execution_status": None,
+            "ends_at": lesson.ends_at,
+            "can_complete": can_complete,
+            "blocked_reason": blocked_reason,
+        }
+
+    slots.extend(_planned_week_slot(row) for row in rows if row[0].id not in hidden_lesson_ids)
     if block_rows:
         block_logs = {
             row.operational_block_id: row
@@ -420,16 +423,9 @@ async def week_schedule(
                 )
             ).all()
         }
-        for (
-            block,
-            source_lesson,
-            source_log,
-            subject,
-            teacher,
-            class_model,
-            room,
-            module,
-        ) in block_rows:
+
+        def _operational_week_slot(row):
+            (block, source_lesson, source_log, subject, teacher, class_model, room, module) = row
             local_start, local_end = local_times(source_lesson, zone)
             timesheet = timesheet_status.get(block.teacher_id)
             timesheet_locked = timesheet is not None and timesheet.status in (
@@ -448,51 +444,50 @@ async def week_schedule(
             else:
                 blocked_reason = None
             block_log = block_logs.get(block.id)
-            slots.append(
-                {
-                    "scheduler_lesson_id": None,
-                    "active_schedule_block_id": None,
-                    "operational_block_id": block.id,
-                    "block_source": "operational",
-                    "date": block.date.isoformat(),
-                    "timeslot": {
-                        "id": block.timeslot_id,
-                        "day_of_week": block.date.weekday(),
-                        "start_time": local_start.strftime("%H:%M"),
-                        "end_time": local_end.strftime("%H:%M"),
-                    },
-                    "subject": {"id": subject.id, "name": subject.name},
-                    "teacher": {"id": teacher.id, "name": teacher.name},
-                    "room": {"id": room.id, "name": room.name} if room is not None else None,
-                    "class_info": {"id": class_model.id, "name": class_model.name},
-                    "module": _module_summary(
-                        block.module_id,
-                        module.required_minutes if module else None,
-                        module.name if module else None,
-                    ),
-                    "is_past": block.date < reference_today,
-                    "occurrence_status": "SUBSTITUTED",
-                    "hours_given": None,
-                    "occurrence_id": block.source_v1_lesson_log_id,
-                    "occurrence_decided_at": source_log.decided_at,
-                    "can_create_occurrence": False,
-                    "can_decide_occurrence": False,
-                    "lesson_log_id": block_log.id if block_log else None,
-                    "lesson_log_status": block_log.status if block_log else None,
-                    "lesson_log_summary": block_log.summary if block_log else None,
-                    "lesson_log_notes": block_log.notes if block_log else None,
-                    "lesson_log_logged_at": block_log.logged_at if block_log else None,
-                    "week_timesheet_status": timesheet.status.value if timesheet else "OPEN",
-                    "timesheet_id": timesheet.id if timesheet else None,
-                    "is_substituted_block": True,
-                    "credit_minutes": source_lesson.credit_minutes,
-                    "slices": [],
-                    "substitute_execution_status": block.execution_status.value,
-                    "ends_at": source_lesson.ends_at,
-                    "can_complete": can_complete,
-                    "blocked_reason": blocked_reason,
-                }
-            )
+            return {
+                "scheduler_lesson_id": None,
+                "operational_block_id": block.id,
+                "block_source": "operational",
+                "date": block.date.isoformat(),
+                "timeslot": {
+                    "id": block.timeslot_id,
+                    "day_of_week": block.date.weekday(),
+                    "start_time": local_start.strftime("%H:%M"),
+                    "end_time": local_end.strftime("%H:%M"),
+                },
+                "subject": {"id": subject.id, "name": subject.name},
+                "teacher": {"id": teacher.id, "name": teacher.name},
+                "room": {"id": room.id, "name": room.name} if room is not None else None,
+                "class_info": {"id": class_model.id, "name": class_model.name},
+                "module": _module_summary(
+                    block.module_id,
+                    module.required_minutes if module else None,
+                    module.name if module else None,
+                ),
+                "is_past": block.date < reference_today,
+                "occurrence_status": "SUBSTITUTED",
+                "hours_given": None,
+                "occurrence_id": block.source_v1_lesson_log_id,
+                "occurrence_decided_at": source_log.decided_at,
+                "can_create_occurrence": False,
+                "can_decide_occurrence": False,
+                "lesson_log_id": block_log.id if block_log else None,
+                "lesson_log_status": block_log.status if block_log else None,
+                "lesson_log_summary": block_log.summary if block_log else None,
+                "lesson_log_notes": block_log.notes if block_log else None,
+                "lesson_log_logged_at": block_log.logged_at if block_log else None,
+                "week_timesheet_status": timesheet.status.value if timesheet else "OPEN",
+                "timesheet_id": timesheet.id if timesheet else None,
+                "is_substituted_block": True,
+                "credit_minutes": source_lesson.credit_minutes,
+                "slices": [],
+                "substitute_execution_status": block.execution_status.value,
+                "ends_at": source_lesson.ends_at,
+                "can_complete": can_complete,
+                "blocked_reason": blocked_reason,
+            }
+
+        slots.extend(_operational_week_slot(row) for row in block_rows)
         slots.sort(
             key=lambda row: (
                 row["date"],
@@ -673,6 +668,10 @@ async def record_lesson_log(
         )
         .with_for_update()
     )
+    if log is not None and log.withdrawn_at is not None:
+        raise OperationsError(
+            "lesson_withdrawn", "A aula foi retirada por fluxo de estágio.", status_code=409
+        )
     previous_status = log.status if log is not None else None
     if (
         log is not None
@@ -712,8 +711,10 @@ async def record_lesson_log(
             db, organization_id, context, membership_id=membership_id, now_utc=now_utc
         )
     if status == "COMPLETED" and previous_status != "COMPLETED":
-        credits = tuple(ModuleCredit(row.module_id, row.minutes) for row in context.slices)
-        if not credits:
+        execution_credits = tuple(
+            ModuleCredit(row.module_id, row.minutes) for row in context.slices
+        )
+        if not execution_credits:
             raise OperationsError(
                 "lesson_without_slices",
                 "A aula não tem minutos curriculares associados.",
@@ -723,7 +724,7 @@ async def record_lesson_log(
             revision,
             membership_id,
             (summary or "Aula registada").strip() or "Aula registada",
-            credits,
+            execution_credits,
             recorded_at=now_utc,
         )
         await record_execution(
@@ -734,7 +735,7 @@ async def record_lesson_log(
             entry,
             planning_relevant=planning_relevant,
         )
-        credited = sum(credit.minutes for credit in credits)
+        credited = sum(credit.minutes for credit in execution_credits)
     # A pending occurrence only signals a problem. Debt is created by the
     # direction decision, never by the registration itself.
     if log is None:
@@ -835,12 +836,12 @@ async def reverse_lesson_execution(
             continue
         for credit in entry.credits:
             reversed_by_module[credit.module_id] += abs(credit.minutes)
-    credits = tuple(
+    execution_credits = tuple(
         ModuleCredit(credit.module_id, -(credit.minutes - reversed_by_module[credit.module_id]))
         for credit in source.credits
         if credit.minutes - reversed_by_module[credit.module_id] > 0
     )
-    if not credits:
+    if not execution_credits:
         return
     next_revision = (
         max((entry.revision for entry in entries if entry.origin == origin), default=0) + 1
@@ -855,7 +856,7 @@ async def reverse_lesson_execution(
             next_revision,
             membership_id,
             "Registo de aula revertido",
-            credits,
+            execution_credits,
             reversal_of=source.key,
             recorded_at=now_utc,
         ),
@@ -888,7 +889,7 @@ async def _reverse_origin_executions(
     for entry in entries:
         if entry.origin != origin or entry.reversal_of is not None:
             continue
-        credits = tuple(
+        execution_credits = tuple(
             ModuleCredit(
                 credit.module_id,
                 -(credit.minutes - reversed_by.get((entry.key, credit.module_id), 0)),
@@ -896,7 +897,7 @@ async def _reverse_origin_executions(
             for credit in entry.credits
             if credit.minutes - reversed_by.get((entry.key, credit.module_id), 0) > 0
         )
-        if not credits:
+        if not execution_credits:
             continue
         await record_execution(
             db,
@@ -908,7 +909,7 @@ async def _reverse_origin_executions(
                 next_revision,
                 membership_id,
                 reason,
-                credits,
+                execution_credits,
                 reversal_of=entry.key,
                 recorded_at=now_utc,
             ),
@@ -1044,7 +1045,7 @@ async def record_operational_lesson_log(
                 assignment_id, {}
             )
             try:
-                credits = frontier_credit(requirements, executed, lesson.credit_minutes)
+                execution_credits = frontier_credit(requirements, executed, lesson.credit_minutes)
             except ValueError as exc:
                 raise OperationsError(
                     "substitute_without_capacity",
@@ -1064,7 +1065,7 @@ async def record_operational_lesson_log(
                     revision,
                     membership_id,
                     "Aula substituta concluída",
-                    credits,
+                    execution_credits,
                     recorded_at=now_utc,
                 ),
                 planning_relevant=True,

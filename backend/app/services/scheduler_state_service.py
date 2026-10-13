@@ -28,14 +28,6 @@ class SchedulerStateIntegrityError(SchedulerStateError):
     pass
 
 
-class InvalidSchedulerStateTransitionError(SchedulerStateError):
-    pass
-
-
-class PendingDraftConflictError(SchedulerStateError):
-    pass
-
-
 class SchedulerStateService:
     """Owns tenant/year scheduler lifecycle reads and transitions."""
 
@@ -168,127 +160,6 @@ class SchedulerStateService:
         state = await self.get_or_create_state(organization_id, school_year.id)
         return school_year, state
 
-    async def get_pending_draft(
-        self,
-        organization_id: int,
-        school_year_id: int,
-        *,
-        for_update: bool = False,
-    ) -> models.ScheduleDraft | None:
-        state = await self.get_state(
-            organization_id,
-            school_year_id,
-            for_update=for_update,
-        )
-        if state is None:
-            raise SchedulerStateNotFoundError("Scheduler school-year state does not exist.")
-
-        query = select(models.ScheduleDraft).where(
-            models.ScheduleDraft.organization_id == organization_id,
-            models.ScheduleDraft.school_year_id == school_year_id,
-            models.ScheduleDraft.draft_state == models.ScheduleDraftState.PENDING,
-        )
-        if for_update:
-            query = query.with_for_update()
-        result = await self._db.execute(query)
-        pending = result.scalar_one_or_none()
-
-        pending_id = pending.id if pending is not None else None
-        if state.pending_draft_id != pending_id:
-            raise SchedulerStateIntegrityError(
-                "Pending draft pointer does not match the tenant/year pending draft."
-            )
-        return pending
-
-    async def set_pending_draft(
-        self,
-        organization_id: int,
-        school_year_id: int,
-        draft_id: int,
-    ) -> models.SchedulerSchoolYearState:
-        state = await self._require_locked_state(organization_id, school_year_id)
-        draft = await self._db.scalar(
-            select(models.ScheduleDraft).where(
-                models.ScheduleDraft.id == draft_id,
-                models.ScheduleDraft.organization_id == organization_id,
-                models.ScheduleDraft.school_year_id == school_year_id,
-                models.ScheduleDraft.draft_state == models.ScheduleDraftState.PENDING,
-            )
-        )
-        if draft is None:
-            raise SchedulerStateIntegrityError(
-                "Pending draft must exist in the same tenant and school year."
-            )
-        if state.pending_draft_id not in (None, draft_id):
-            raise PendingDraftConflictError("A different pending draft already exists.")
-        if state.pending_draft_id != draft_id:
-            state.pending_draft_id = draft_id
-            state.lock_version += 1
-            await self._db.flush()
-        return state
-
-    async def clear_pending_draft(
-        self,
-        organization_id: int,
-        school_year_id: int,
-        *,
-        expected_draft_id: int,
-    ) -> models.SchedulerSchoolYearState:
-        state = await self._require_locked_state(organization_id, school_year_id)
-        if state.pending_draft_id != expected_draft_id:
-            raise PendingDraftConflictError("Pending draft changed before it could be cleared.")
-        state.pending_draft_id = None
-        state.lock_version += 1
-        await self._db.flush()
-        return state
-
-    async def mark_published(
-        self,
-        organization_id: int,
-        school_year_id: int,
-        *,
-        active_schedule_version_id: str,
-        approved_scheduler_state_version: int,
-        approved_draft_id: int,
-    ) -> models.SchedulerSchoolYearState:
-        if not active_schedule_version_id.strip():
-            raise InvalidSchedulerStateTransitionError(
-                "Published state requires an active schedule version."
-            )
-        if approved_scheduler_state_version < 0:
-            raise InvalidSchedulerStateTransitionError(
-                "Approved scheduler state version cannot be negative."
-            )
-
-        state = await self._require_locked_state(organization_id, school_year_id)
-        if state.pending_draft_id != approved_draft_id:
-            raise PendingDraftConflictError("The approved draft is no longer pending.")
-        if approved_scheduler_state_version != state.scheduler_state_version:
-            raise InvalidSchedulerStateTransitionError(
-                "Approval version does not match current scheduler state."
-            )
-        pending_draft = await self._db.scalar(
-            select(models.ScheduleDraft)
-            .where(
-                models.ScheduleDraft.id == approved_draft_id,
-                models.ScheduleDraft.organization_id == organization_id,
-                models.ScheduleDraft.school_year_id == school_year_id,
-                models.ScheduleDraft.draft_state == models.ScheduleDraftState.PENDING,
-            )
-            .with_for_update()
-        )
-        if pending_draft is None:
-            raise InvalidSchedulerStateTransitionError(
-                "Only the current pending draft can be published."
-            )
-        state.school_year_publication_state = models.SchoolYearPublicationState.PUBLISHED
-        state.active_schedule_version_id = active_schedule_version_id
-        state.approved_scheduler_state_version = approved_scheduler_state_version
-        state.pending_draft_id = None
-        state.lock_version += 1
-        await self._db.flush()
-        return state
-
     async def reset_year(
         self,
         organization_id: int,
@@ -300,7 +171,6 @@ class SchedulerStateService:
         state = await self._require_locked_state(organization_id, school_year_id)
         state.school_year_publication_state = models.SchoolYearPublicationState.UNPUBLISHED
         state.active_schedule_version_id = None
-        state.pending_draft_id = None
         state.approved_scheduler_state_version = None
         state.reset_by_membership_id = reset_by_membership_id
         state.reset_at = reset_at or datetime.now(UTC)

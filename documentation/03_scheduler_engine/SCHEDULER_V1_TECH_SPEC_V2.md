@@ -1,657 +1,433 @@
-# Especificação técnica — Cronos Scheduler v1 (Revisão 2)
+# Cronos Scheduler v1 Technical Specification (Revision 2)
 
-Data: 25 de setembro de 2026.
+Updated: 13 October 2026.
 
-Estado: a v1 está ativa em produção. Todas as secções descrevem o comportamento implementado e testado (o código e os testes são a fonte da verdade). As decisões de produto D01–D31 estão na secção 1.1. O plano de execução e o WBS originais (pacotes W00–W14, concluídos) foram removidos e permanecem no histórico do git.
+## Purpose
 
-## 1. Objetivo, autoridade e âmbito
+This specification defines scheduler contracts, product decisions, mathematical rules, persistence, and verification.
+Code, configuration, migrations, and tests are the source of truth.
+Historical execution plans remain in Git history. This document does not certify an external deployment.
 
-Substituir o gerador, os seus contratos e os consumidores incompatíveis por uma nova baseline.
-O resultado obrigatório é um horário completo, verificável e publicável mediante aprovação.
-Uma proposta parcial nunca representa sucesso.
+## Intended Reader
 
-As decisões do plano prevalecem sobre os documentos da implementação anterior.
-Esta especificação concretiza essas decisões. Não introduz compatibilidade com o solver antigo.
-Os parâmetros experimentais têm critérios de seleção explícitos. Não constituem valores de produção aprovados.
+This document targets scheduler engineers, reviewers, and operators.
 
-| Pergunta | Resposta técnica |
+## Prerequisites
+
+Read the [Glossary](../00_getting_started/GLOSSARY.md), [Data Model](../01_system_architecture/DATA_MODEL.md), and [Testing and CI](../08_security_quality/TESTING_AND_CI.md).
+
+## What the System Does
+
+The scheduler generates complete proposals and repairs published schedules.
+An administrator approves each proposal before publication. A partial candidate never represents success.
+The engine preserves execution, curricular minutes, debt, and protected physical positions.
+
+### Binding product decisions
+
+| ID | Decision |
 | :--- | :--- |
-| O quê? | Domínio curricular, geração, recuperação, persistência, fila, APIs e consumidores coerentes com a nova v1. |
-| Porquê? | Produzir horários completos com boas datas de conclusão, estabilidade controlada e contabilização correta. |
-| Quem? | Implementação por quem executar este plano; validação funcional e aceitação pelo proprietário. |
-| Onde? | Desenvolvimento e ensaios no Docker local; Railway e Cloudflare só depois do gate local. |
-| Quando? | Entregue; sem prazos de desempenho inventados. |
+| D01 | Use a new baseline without compatibility with the previous generator. |
+| D02 | Existing test data can be removed before real school use. |
+| D03 | Run one schedule job globally. Queue other requests. |
+| D04 | A job can use multiple internal CP-SAT workers. Compare 1, 2, 4, and 8 workers when calibration is required. |
+| D05 | There is no fixed p95 target. Previous 15-minute and two-minute values are not targets. |
+| D06 | Measure performance by size and difficulty family. Initially, p95 is an observed result. |
+| D07 | Search stops through proof, sufficient certified proximity, or low estimated additional return. A p95 never stops search. |
+| D08 | Apply a separate safety timeout. Interruption never proves infeasibility. |
+| D09 | The school defines the start, preferred completion, and absolute end dates. |
+| D10 | Initial generation must finish by the preferred date and seek earlier completion. |
+| D11 | Adaptive recovery progressively protects available margin. After the preferred date, reducing excess takes priority over editable-future disruption. |
+| D12 | Improve the latest class completions first. Earlier classes can release capacity to help later classes. |
+| D13 | Do not delay a class merely to equalize dates without helping another class. |
+| D14 | The school defines the stability window. Count days present in the weekly grid, not calendar days. |
+| D15 | Protect all physical changes inside the window, including recovery insertions. Preserve past lessons and execution. |
+| D16 | A module is not a permanent identity of a future lesson. It follows the subject's minute sequence. |
+| D17 | One lesson can finish a module and start subsequent modules. Exact minute credits never overlap. |
+| D18 | Recalculate future modular projection automatically, including inside the window. Never rewrite execution evidence. |
+| D19 | The grid defines maximum capacity. Do not introduce implicit daily, weekly, or consecutive-load limits. |
+| D20 | Mandatory unavailability excludes periods. An unfavorable preference still permits placement. |
+| D21 | Between equivalent higher-priority solutions, reduce teacher gaps first, then class gaps. |
+| D22 | The school assigns each class subject's teacher. The solver does not allocate teaching service. |
+| D23 | An administrator always starts generation. Events never start the solver automatically. |
+| D24 | Allow initial generation, justified updates, retries without a complete result, or eligible periodic renewal. |
+| D25 | Offer manual optimization after 28 calendar days without a completed generation. |
+| D26 | A validated, persisted complete generation resets the clock. Failure, cancellation, and queue residence do not. |
+| D27 | Explain proven infeasibility and suggest basic actions. The administrator changes inputs or conditions. |
+| D28 | Manual progress corrections recalculate demand and can justify repair. The solver never invents execution. |
+| D29 | Use school language in the interface. Keep CP-SAT, scopes, fingerprints, workers, and mathematical gaps in technical evidence. |
+| D30 | Preserve proposals and administrative approval. Generation never publishes automatically. |
+| D31 | Develop and verify locally first. Verify Railway and Cloudflare after a solid local release candidate. |
 
-Notas normativas desta revisão:
+Out of scope: simultaneous schedule solves, automatic teacher selection, automatic publication, and compatibility with old database schemas.
+Do not introduce new microservices, another broker, another solver, or machine learning without concrete evidence.
+Do not invent pedagogical load limits or certify administrative execution decisions as legally correct.
+Retain FastAPI, SQLAlchemy, PostgreSQL, Celery, Redis, React, and OR-Tools. Lockfiles define dependency versions.
 
-1. Os ganhos históricos de aproximadamente 90 para 22 segundos pertencem às medições anteriores (registos de campanha de 24–25 de setembro de 2026, Docker local, um worker). Esta revisão não os apresenta como nova comparação controlada nem como garantia universal.
-2. A antecipação das conclusões resulta da política aprovada (D10–D12). Distribuir procura ao longo do ano exige decisão explícita de produto. Não introduzir limites semanais ou penalizações de antecipação para obter uma aparência mais uniforme.
-3. O agrupamento de salas equivalentes e a calibração 1/2/4/8 workers foram fechados nas campanhas de calibração do laboratório.
+## Why the Behavior Exists
 
-### 1.1 Decisões de produto vinculativas
+Complete proposals preserve accounting and make publication reviewable.
+Independent validation prevents solver mistakes from becoming published school data.
+Explicit priorities prevent aesthetic improvements from delaying curricular completion.
+The stability window limits disruption while preserving executed history.
 
-| ID | Decisão vinculativa |
+## Components and Ownership
+
+The implementation lives in `backend/app/scheduler/`.
+
+| Layer | Sources and responsibilities |
 | :--- | :--- |
-| D01 | Nova baseline, sem obrigação de compatibilidade com o gerador anterior. |
-| D02 | Os dados de teste atuais podem ser eliminados. Não há escolas utilizadoras a migrar. |
-| D03 | Um único job de horários em execução globalmente. Os outros pedidos aguardam em fila. |
-| D04 | O job pode usar vários workers internos CP-SAT. Testar 1, 2, 4, 8 e configurações superiores justificadas pelo hardware. |
-| D05 | Não existe hoje qualquer meta fixa de p95, nem mesmo os anteriores 15 minutos ou dois minutos. |
-| D06 | Medir desempenho por famílias de tamanho e dificuldade. O p95 é inicialmente um resultado observado. |
-| D07 | A pesquisa termina por prova, proximidade certificada suficiente ou baixo retorno adicional estimado. Não termina por atingir um p95. |
-| D08 | Há um timeout de segurança distinto. Interrupção nunca significa impossibilidade. |
-| D09 | A escola define início, conclusão preferencial e limite absoluto. |
-| D10 | A geração inicial deve terminar até à data preferencial e procurar antecipar as conclusões. |
-| D11 | O adaptativo protege progressivamente a margem. Depois da data preferencial, reduzir o excesso prevalece sobre perturbação do futuro editável. |
-| D12 | Priorizar sucessivamente as conclusões mais tardias. Permitir ceder capacidade de turmas adiantadas para ajudar turmas atrasadas. |
-| D13 | Não atrasar uma turma apenas para igualar datas sem benefício para outras turmas. |
-| D14 | A escola define a janela de estabilidade. Contar dias presentes na grelha semanal, não dias corridos. |
-| D15 | Proteger qualquer alteração física dentro da janela, incluindo inserções de reposições. Preservar também passado e execução. |
-| D16 | O módulo não é uma identidade permanente da aula futura. Resulta da sequência de minutos da disciplina. |
-| D17 | Uma aula pode terminar um módulo e iniciar os seguintes. Os créditos têm minutos exatos e não se sobrepõem. |
-| D18 | Recalcular automaticamente a previsão modular, inclusive dentro da janela. Não reescrever evidência executada. |
-| D19 | A grelha define a capacidade máxima. Não transportar tetos implícitos de carga diária, semanal ou consecutiva. |
-| D20 | Indisponibilidade obrigatória exclui períodos. Uma preferência desfavorável continua a permitir a colocação. |
-| D21 | Entre soluções equivalentes nas prioridades superiores, reduzir primeiro furos dos professores, depois furos das turmas. |
-| D22 | A escola atribui o professor a cada disciplina da turma. O solver não distribui serviço docente. |
-| D23 | O administrador inicia sempre a geração. Nenhum evento inicia automaticamente o solver. |
-| D24 | Só permitir geração inicial, atualização justificada, repetição de tentativa sem resultado ou renovação periódica elegível. |
-| D25 | Após 28 dias corridos sem geração completa concluída, disponibilizar nova otimização manual. |
-| D26 | Uma geração completa validada e persistida reinicia o relógio. Falha, cancelamento ou permanência em fila não reiniciam. |
-| D27 | Se existir impossibilidade demonstrada, explicar os motivos e sugerir ações básicas. O diretor altera os dados ou as condições. |
-| D28 | Acertos manuais de progresso recalculam procura e podem justificar reparação. O solver nunca inventa execução. |
-| D29 | A interface usa linguagem escolar. Não apresenta CP-SAT, scopes, fingerprints, workers ou gaps matemáticos como linguagem do produto. |
-| D30 | Manter proposta e aprovação administrativa. Gerar não publica automaticamente. |
-| D31 | Desenvolver e testar primeiro no Docker local. Só validar Railway/Cloudflare após uma release candidate local sólida. |
+| Composition | `composition.py`: `generate_schedule` and `repair_published_schedule` |
+| Application | `contracts.py`, `generation.py`, `recovery.py`, `publishing.py`: use cases, ports, and result contracts |
+| Domain input | `candidate.py`, `calendar.py`, `capacity.py`, `constraint_policy.py`, `grid_versions.py`, `lesson_time.py` |
+| Domain accounting | `demand.py`, `debt.py`, `projection.py`: execution, debt, and modular projection |
+| Domain verification | `candidate_validation.py`, `diagnostics.py`, `oracle.py`: validation, capacity evidence, and tiny-instance test oracle |
+| Domain policy | `quality.py`, `recovery.py`, `eligibility.py`, `results.py`, `stop.py`, `timetable.py` |
+| Domain serialization | `serialization.py`: canonical snapshot representation and digest |
+| Persistence | `infrastructure/models.py`, `progress.py`, `proposals.py`, `operations.py`, `occurrences.py`, `queries.py` |
+| Solver | `infrastructure/annual_model.py`, `constructive.py`, `placement_model.py`, `search.py` |
+| Runtime | `infrastructure/snapshot.py`, `jobs.py`, `diagnostics.py`, `curriculum.py`, `task_dispatcher.py` |
+| Test fixtures | `lab/fixtures.py`, `scale.py`, `annual.py`, `recovery.py`, `typology.py` |
 
-Fora do âmbito: vários horários resolvidos simultaneamente; microserviços novos, mudança de linguagem ou troca de solver sem evidência concreta; escolha automática de docentes ou substitutos pelo gerador; limites pedagógicos de carga que a escola não definiu; publicação ou geração automática após ocorrências; compatibilidade com bases de dados da versão antiga; certificação legal das decisões administrativas sobre execução; garantias de optimalidade global sem certificado correspondente.
-
-Manter FastAPI, SQLAlchemy, PostgreSQL, Celery, Redis, React e OR-Tools já presentes.
-Não adicionar microserviços, outro broker, framework de otimização ou modelo de aprendizagem automática.
-As versões verificadas incluem Python 3.14.7 e OR-Tools 9.15.6755; os lockfiles prevalecem.
-
-## 2. Fronteiras e estrutura de código
-
-Estrutura implementada em `backend/app/scheduler/`:
+Allowed dependencies:
 
 ```text
-backend/app/scheduler/
-  composition.py             # Raiz de composição: generate_schedule e repair_published_schedule
-  application/
-    contracts.py             # Portas (pesquisa, dispatch, avaliação) e contratos de resultado
-    generation.py            # CompleteGeneration, avaliação de recuperabilidade e relatório
-    recovery.py              # AdaptiveRecovery, perturbação e comparação de qualidade
-    publishing.py            # Payload de proposta inicial e de reparação
-  domain/
-    candidate.py             # Snapshot, candidato, identidades estáveis, almoço e estratégias
-    candidate_validation.py  # Validador independente (v4, 21 códigos tipados)
-    calendar.py              # Períodos, grelha e fronteira de estabilidade
-    capacity.py              # Elegibilidade conjunta e pré-verificação agregada
-    constraint_policy.py     # Política de restrições configuradas
-    demand.py                # Ledger de execução append-only com reversões
-    debt.py                  # Dívida, reservas, liquidações e reconciliação
-    diagnostics.py           # Diagnósticos de défice por recurso
-    projection.py            # Projeção modular exata
-    quality.py               # Vetores de qualidade, evidência de pesquisa e comparadores
-    recovery.py              # Política de reparação e custo de perturbação
-    eligibility.py           # Motivos para geração manual
-    lesson_time.py           # Regra temporal: execução só após o fim planeado da aula
-    grid_versions.py         # Versionamento da grelha escolar
-    oracle.py                # Oráculo enumerativo para instâncias mínimas (50 000 combinações)
-    results.py               # Resultados tipados do motor
-    serialization.py         # Representação canónica do snapshot
-    stop.py                  # Política de exploração e paragem
-    timetable.py             # Estruturas de horário auxiliares
-  infrastructure/
-    models.py                # Modelos SQLAlchemy v1 (14 tabelas)
-    progress.py              # Transações de execução/dívida/recuperação sob lock de estado
-    annual_model.py          # Master anual CP-SAT (plan_annual_quotas, hint, no-goods, poda)
-    constructive.py          # Construção cronológica e prioridade de progresso
-    placement_model.py       # Detalhe por janelas, salas, orçamento, cache e exclusividade
-    search.py                # Coordenação master/detalhe com realimentação de cortes
-    snapshot.py              # Carregamento de snapshot, almoço e janela de estabilidade
-    jobs.py                  # Fila, claim, heartbeat, cancelamento e recuperação
-    proposals.py             # Persistência, aprovação e rejeição de propostas
-    operations.py            # Sumários e ocorrências
-    occurrences.py           # Ocorrências operacionais
-    queries.py               # Estado, fila e diffs para a API
-    diagnostics.py           # Fases, tamanho de modelo e memória de cgroup
-    curriculum.py            # Apoio à compilação curricular
-    task_dispatcher.py       # Transporte Celery
-  lab/
-    fixtures.py              # Fixtures mínimas com testemunhos e 13 mutações
-    scale.py                 # Fixtures de semana única por seed (10–60 turmas)
-    annual.py                # Fixtures anuais com testemunhos construídos
-    combined.py, boundaries.py, baseline.py, calibration.py  # Campanhas combinadas e calibração
-    longitudinal.py          # Replays anuais com eventos
-    manifest.py              # Manifests, digests SHA-256 e serialização de snapshots
-    campaign.py              # CLI de campanhas com retoma por proveniência
-    matrix.py                # Matriz de fatores a partir de relatórios
-    reports.py               # Relatórios e comparação de regressões
-    revalidate.py            # Revalidação independente de candidatos armazenados
-    payload.py               # Serialização de validação/qualidade/evidência
+API/Celery -> composition -> application -> domain
+infrastructure --------------------------> domain
 ```
 
-Dependências permitidas:
+The domain receives dates and instants explicitly. It never reads clocks, databases, or environment variables.
+Use immutable dataclasses, enums, integers, and ordered collections.
+Domain contracts contain no ORM models, SQLAlchemy sessions, CP-SAT objects, or untyped `Any` values.
+The validator examines materialized blocks independently of solver variables.
+The enumerative oracle is a test reference, never a production fallback.
+Only the v1 engine runs. There is no selectable legacy engine.
 
-```text
-API/Celery -> composição de dependências -> aplicação -> domínio
-infraestrutura -------------------------------> domínio
-```
+## Data or Request Flow
 
-O domínio recebe datas e instantes explicitamente. Nunca consulta relógio, base de dados ou variáveis de ambiente.
-Usar dataclasses imutáveis, enums próprios, inteiros e coleções ordenadas.
-Não transportar modelos ORM, `Any`, objetos CP-SAT ou sessões SQLAlchemy nos contratos de domínio.
-O validador verifica blocos materializados. Não consulta variáveis ou restrições construídas pelo solver.
-O oráculo enumerativo é implementação de teste; nunca é fallback de produção.
-A produção executa o motor v1. O motor legado foi removido; não existe caminho de fallback.
+1. An administrator submits an idempotent generation request.
+2. The backend validates eligibility and records the snapshot revisions.
+3. The global executor claims the next eligible request.
+4. The engine constructs candidates and recalculates quality.
+5. Independent validation checks the complete candidate.
+6. The backend persists the proposal atomically.
+7. An administrator approves or rejects it.
+8. Approval revalidates current inputs before activating the version.
+9. Sumários and occurrences append accounting evidence.
 
-## 3. Vocabulário e contratos imutáveis (implementado)
+### Immutable vocabulary
 
-| Conceito | Campos essenciais e semântica |
+| Contract | Essential fields and meaning |
 | :--- | :--- |
-| `Assignment` | `class_id`, `subject_id`, professor atribuído, salas elegíveis e restrições obrigatórias. |
-| `ModuleRequirement` | Identificador, ordem estável e minutos positivos. |
-| `Period` | Data escolar, início/fim local, instante UTC e duração física positiva. |
-| `ScheduledLesson` | Identidade estável, atribuição, período, sala e minutos curriculares previstos. |
-| `ModuleSlice` | Aula, módulo, offset curricular inicial e minutos; várias parcelas por aula. |
-| `ExecutionEntry` | Facto executado ou acerto, minutos assinados, origem, revisão, autor e motivo. |
-| `DebtClaim` | Origem de minutos em falta; não constitui procura adicional. |
-| `RecoveryAllocation` | Reserva de minutos de uma aula futura para uma dívida. |
-| `PlanningSnapshot` | Estratégia, datas de origem/preferencial/absoluta, timezone, grelha, atribuições, execução, bloqueios, indisponibilidades, aulas protegidas, reservas e dívida aberta. |
-| `CandidateSchedule` | Conjunto completo de aulas futuras, identidades preservadas e salas atribuídas. |
-| `ValidationReport` | Validade, violações estruturadas e totais recalculados. |
-| `QualityVector` | Componentes ordenadas, métricas auxiliares e versão da política. |
-| `SearchEvidence` | Objetivo, âmbito, incumbente, limite, tolerância, etapas provadas/reutilizadas e motivo de fim. |
+| `Assignment` | Class, subject, assigned teacher, eligible rooms, mandatory constraints |
+| `ModuleRequirement` | Identifier, stable order, positive minutes |
+| `Period` | School date, local start/end, UTC instant, positive physical duration |
+| `ScheduledLesson` | Stable identity, assignment, period, room, planned curricular minutes |
+| `ModuleSlice` | Lesson, module, curricular offset, minutes; several slices can belong to one lesson |
+| `ExecutionEntry` | Execution or correction, signed minutes, origin, revision, author, reason |
+| `DebtClaim` | Origin of missing minutes; not additional demand |
+| `RecoveryAllocation` | Reservation of future lesson minutes against debt |
+| `PlanningSnapshot` | Strategy, dates, timezone, grid, assignments, execution, exclusions, protected lessons, reservations, open debt |
+| `CandidateSchedule` | Complete future lessons, preserved identities, assigned rooms |
+| `ValidationReport` | Validity, structured violations, recalculated totals |
+| `QualityVector` | Ordered components, auxiliary metrics, policy version |
+| `SearchEvidence` | Objective, scope, incumbent, bound, tolerance, proven/reused stages, termination reason |
 
-Identificadores mantêm o tipo nativo do projeto. O solver utiliza índices densos internos e conserva um mapa explícito para os identificadores originais.
-Identidades novas nunca reutilizam identificadores de aulas publicadas.
+Identifiers retain their native types. Internal dense indices map explicitly to original identifiers.
+New lesson identities never reuse published lesson identifiers.
+Curricular minutes and durations are integers. Hour conservation never uses `float`.
+School dates use the school timezone. Audit instants use timezone-aware UTC.
+Search durations use a monotonic clock. Physical intervals are half-open `[start, end)`.
+Reject ambiguous or nonexistent local times during timezone transitions. Never silently repair invalid periods.
 
-Unidades obrigatórias:
+## Contracts and Invariants
 
-- Minutos curriculares e durações: inteiros; nunca `float` em conservação de horas.
-- Datas escolares: `date` na timezone da escola.
-- Instantes de auditoria: UTC com timezone.
-- Durações de pesquisa: relógio monotónico.
-- Intervalos físicos: semiabertos `[início, fim)`; aulas adjacentes não colidem.
+### Curricular conservation
 
-Horários ambíguos ou inexistentes numa transição de timezone falham na normalização.
-Não corrigir silenciosamente períodos inválidos.
-
-## 4. Procura, execução, dívida e módulos (implementado)
-
-### 4.1 Conservação curricular
-
-Para cada atribuição `a = (turma, disciplina)`:
+For each assignment `a = (class, subject)`:
 
 ```text
-Q[a] = soma dos minutos obrigatórios dos módulos
-E[a] = soma efetiva dos créditos executados e acertos auditados
+Q[a] = sum of required module minutes
+E[a] = effective execution credits and audited corrections
 R[a] = Q[a] - E[a]
 
 0 <= E[a] <= Q[a]
-soma(credit_minutes das aulas futuras de a) = R[a]
-0 < credit_minutes[aula] <= duração física[aula]
+sum(future lesson credit_minutes for a) = R[a]
+0 < credit_minutes[lesson] <= physical_duration[lesson]
 ```
 
-Rejeitar um acerto que viole os limites. Não esconder o erro com `max(0, R)`.
-Executar uma aula substitui previsão por execução, uma única vez.
-Uma proposta pendente não altera `E`, nem reduz a dívida efetiva.
-O mesmo evento repetido não pode acrescentar créditos.
-A fórmula `procura = Q - E + dívida` fica proibida. A dívida identifica parte dos minutos já incluídos em `R`.
+Reject corrections outside these limits. Do not hide errors with `max(0, R)`.
+Execution replaces planned credit once. A pending proposal changes neither execution nor effective debt.
+Repeated events cannot add duplicate credit.
+The formula `demand = Q - E + debt` is prohibited. Debt identifies minutes already included in `R`.
 
-### 4.2 Projeção modular
+### Exact modular projection
 
-Representar os módulos como intervalos consecutivos de minutos curriculares.
-Depois de considerar créditos efetivos, percorrer as aulas futuras por data, início e identidade estável.
-Distribuir cada crédito pelos intervalos curriculares ainda abertos.
-Não criar variáveis de posição por módulo no solver temporal.
-
-Exemplo obrigatório:
+Represent modules as consecutive curricular-minute intervals.
+After effective execution, process future lessons by date, start, and stable identity.
+Allocate credits across remaining module intervals. Do not add module-position variables to the temporal solver.
 
 ```text
-M1 = 75 minutos; M2 = 75 minutos; períodos = 50 minutos
-Aula 1: M1 50
-Aula 2: M1 25 + M2 25
-Aula 3: M2 50
+M1 = 75 minutes; M2 = 75 minutes; periods = 50 minutes
+Lesson 1: M1 50
+Lesson 2: M1 25 + M2 25
+Lesson 3: M2 50
 ```
 
-Cancelar terça e repor quinta pode alterar o módulo previsto de quarta, sem mover quarta.
-Essa alteração é permitida dentro da janela de estabilidade.
-O diff distingue alteração física de atualização curricular.
-Os factos executados conservam a evidência original; sumários atrasados ou correções retroativas nunca a sobrescrevem.
+Cancelling Tuesday and recovering Thursday can change Wednesday's projected module without moving Wednesday.
+That change is allowed inside the stability window. Diffs separate physical changes from curricular projection updates.
+Late Sumários and retroactive corrections never overwrite original execution evidence.
 
-### 4.3 Crédito parcial e duração variável
+### Partial credit and variable duration
 
-Uma aula de 30 minutos curriculares num período de 50 ocupa os 50 minutos físicos.
-Não atribuir os 20 minutos restantes a outra disciplina, turma ou professor.
-Não arredondar módulos individualmente.
-Na geração inicial, preencher os períodos selecionados e permitir apenas a última aula parcial por atribuição.
-Na reparação, preservar os créditos das aulas protegidas; conservar uma aula parcial publicada apenas quando a estabilidade o exige.
-Se créditos protegidos excederem `R`, reportar conflito; não apagar execução nem alterar a janela silenciosamente.
-Não assumir períodos universais de 50 minutos. Os modelos agregados distinguem durações; o detalhe verifica a soma exata.
+A lesson with 30 curricular minutes in a 50-minute period occupies all 50 physical minutes.
+The remaining 20 minutes cannot host another subject, class, or teacher.
+Do not round modules individually. Initial generation permits only the final lesson of each assignment to have partial credit.
+Recovery preserves protected lesson credits. Preserve a published partial lesson when stability requires it.
+Report conflicts when protected credits exceed `R`. Never delete execution or silently change the window.
+Do not assume universal 50-minute periods. Aggregate models distinguish durations; detailed placement checks exact totals.
 
-### 4.4 Reconciliação de dívida
-
-Por dívida:
+### Debt reconciliation
 
 ```text
-aberta = criada + revisões - liquidada_por_execução - liquidada_por_acerto
-0 <= reservada_em_horário_ativo <= aberta
-soma(dívida aberta da atribuição) <= R[atribuição]
+open = created + revisions - execution_settlements - correction_settlements
+0 <= reserved_in_active_schedule <= open
+sum(open assignment debt) <= R[assignment]
 ```
 
-Uma aula pode liquidar várias dívidas. Uma dívida pode ser repartida por várias aulas.
-As parcelas de recuperação não podem exceder o crédito curricular da aula.
-Reservas pertencem à versão ativa; propostas têm reservas separadas até aprovação.
-Ao cancelar uma recuperação, libertar a reserva existente.
-Não recriar como dívida nova os minutos que já estavam em dívida.
-Acertos positivos reconciliam dívida aberta por data de origem e identificador (mais antiga primeiro), salvo origem explicitamente indicada.
-Acertos negativos revertem liquidações associadas quando existir essa relação.
-Uma substituição por outra disciplina credita apenas a disciplina realmente lecionada.
-Proibir crédito duplicado por sumário, substituição e recuperação sobre a mesma execução.
+One lesson can settle several debts. One debt can span several lessons.
+Recovery allocations never exceed the lesson's curricular credit.
+Reservations belong to a version. Proposals keep separate reservations until approval.
+Cancelling recovery releases its reservation. Existing debt minutes never become new duplicate debt.
+Positive corrections settle oldest debt first by origin date and identifier, unless an explicit origin is supplied.
+Negative corrections reverse linked settlements when that relationship exists.
+A substitution credits only the subject actually taught.
+Prevent duplicate credit through Sumário, substitution, and recovery for the same execution.
 
-## 5. Calendário e estabilidade (implementado)
+### Calendar and stability
 
-Validar `start_date <= preferred_end_date <= hard_end_date`.
-CompleteGeneration usa `preferred_end_date` como limite obrigatório.
-AdaptiveRecovery usa `hard_end_date` e penaliza o excesso sobre a preferência. O validador já aplica o ramo por estratégia.
-
-`grid_dates` são as datas cujo dia da semana existe na grelha escolar.
-Feriados impedem colocação, mas a contagem da janela segue os dias da grelha.
-A janela de estabilidade protege apenas um horário já publicado. O snapshot calcula `protected_dates` apenas quando existe uma `SchedulerVersionV1` ACTIVE; a primeira geração tem `protected_dates` vazio.
+Validate `start_date <= preferred_end_date <= hard_end_date`.
+CompleteGeneration uses the preferred date as a mandatory limit.
+AdaptiveRecovery uses the absolute limit and penalizes excess beyond the preference.
+`grid_dates` contains dates whose weekday exists in the school grid.
+Holidays block placement but do not change how grid days count toward stability.
+Only a published ACTIVE version creates protected dates. Initial generation has no protected dates.
 
 ```text
-protected_dates = primeiras N grid_dates a partir de school_today, inclusive
-editable_from = primeira grid_date depois dessas N datas
+protected_dates = first N grid_dates from school_today, inclusive
+editable_from = first grid_date after those N dates
 ```
 
-Com `N=0`, permitir apenas períodos ainda não iniciados.
-Preservar sempre aulas executadas e passado, independentemente de `N`.
-Proteger inserção, remoção, mudança de data, período, professor, sala, disciplina e crédito físico/curricular confirmado.
-A projeção modular futura constitui a exceção explícita.
-Uma ocorrência pode registar que uma aula protegida não aconteceu; isso não autoriza o solver a reescrever esse passado.
-A aprovação recalcula a fronteira com a data atual.
-Uma proposta antes editável pode tornar-se inválida enquanto aguarda aprovação.
+With `N=0`, only unstarted periods are editable. Always preserve execution and past lessons.
+Protect insertions, deletions, dates, periods, teachers, rooms, subjects, and confirmed physical/curricular credit.
+Future modular projection is the explicit exception.
+An occurrence can state that a protected lesson did not happen; it cannot authorize rewriting that past position.
+Approval recalculates the boundary. A proposal can become invalid while awaiting approval.
 
-## 6. Modelo de dados da baseline (implementado)
+### Persistence and revisions
 
-O schema v1 parte da baseline Alembic `0001_scheduler_v1_baseline`; as migrações `0011`..`0018` estendem-na.
+Use the consolidated Alembic baseline `0001_scheduler_v1_baseline` in `backend/alembic/versions/`.
+The [Data Model](../01_system_architecture/DATA_MODEL.md) maps retained lifecycle, operational, and v1 tables.
+Tenant foreign keys include organization identifiers where required.
+Force RLS on school tables and use an explicit organization context with a role that cannot bypass RLS.
+Enforce origin/revision idempotency, one active job, one current proposal, and one active version per school year.
+Lesson identities are unique within a version. Durations and credits are positive; credit cannot exceed physical duration.
+Published class, teacher, and room intervals cannot overlap.
 
-| Entidade | Campos ou relações essenciais |
-| :--- | :--- |
-| Estado escolar do planeamento | Organização/ano únicos; revisões `input/planning`; versão ativa; última geração válida; motivos pendentes. |
-| Configuração anual | Início, preferência, limite, timezone, grelha e tamanho da janela. |
-| Atribuição curricular | Turma/disciplina únicas; professor explícito; requisitos e restrições normalizadas. |
-| Ledger de progresso | Origem/revisão idempotentes; minutos assinados; referência de reversão; auditoria. |
-| Parcelas de execução | Crédito por módulo, offsets, execução e revisão efetiva. |
-| Dívida e liquidações | Origem, revisões e parcelas liquidadas; sem duplicar procura. |
-| Versão de horário | Organização/ano, origem, estado, datas de aprovação e versão anterior. |
-| Aula de versão | Identidade estável, atribuição, intervalo, sala, crédito e referência à origem. |
-| Parcelas curriculares | Aula, módulo, offset e minutos; projeção versionada. |
-| Reservas de recuperação | Versão/aula/dívida/minutos; relação muitos-para-muitos. |
-| Job | Pedido, snapshot, estados, tentativa, heartbeat, cancelamento e resultado. |
-| Proposta | Job único, baseline, validade, política, métricas, diff e aprovação/rejeição. |
+`input_revision` changes whenever snapshot validity changes, including normal execution.
+`planning_revision` changes for meaningful inputs that can justify manual generation.
+School commands lock the state row first and update data and revisions in one transaction.
+Semantic no-ops do not advance planning revision. Normal execution creates no regeneration reason.
+Snapshot serialization orders collections and includes mathematically relevant inputs.
+Presentation names without mathematical effects are excluded. The canonical representation has a SHA-256 digest.
+Requests retain the observed revisions and active version. Queue execution checks freshness again.
 
-Constraints implementadas:
-
-- Chaves estrangeiras incluem organização quando necessário para impedir referências entre escolas.
-- RLS forçada em todas as tabelas escolares; sessão com organização explícita e role sem bypass.
-- Índice único de idempotência por organização, origem e revisão.
-- Um job não terminal por organização/ano; uma proposta corrente por organização/ano.
-- Versão ativa única; aulas únicas por identidade dentro da versão.
-- Durações positivas, créditos positivos e crédito não superior à ocupação física.
-- Sem sobreposição física para turma, professor ou sala na versão publicada.
-
-O deployment deve detetar schema antigo e falhar com orientação de reset após a consolidação.
-Inventariar identidades, autenticação e integrações externas antes do reset final.
-
-## 7. Snapshot, revisões e consistência (implementado)
-
-Duas revisões com finalidades distintas:
-
-- `input_revision`: qualquer alteração que afete a validade de um snapshot, incluindo execução normal.
-- `planning_revision`: alteração relevante que pode justificar uma nova geração manual.
-
-Cada comando escolar bloqueia primeiro a linha de estado, altera dados e incrementa as revisões aplicáveis na mesma transação (implementado em `infrastructure/progress`).
-Atualizações sem efeito semântico não incrementam `planning_revision`.
-Executar normalmente uma aula incrementa `input_revision`, mas não cria motivo de regeneração.
-
-O snapshot é imutável, com representação canónica serializável e digest SHA-256 (implementado em `lab/manifest`).
-Coleções ordenadas; configuração, restrições, progresso, dívida, aulas e políticas relevantes incluídos.
-Nomes de apresentação sem impacto matemático são excluídos.
-O pedido grava as revisões e a versão ativa observadas; a verificação de atualidade na fila está implementada (T24).
-
-## 8. Modelo matemático de colocação (implementado com as nove otimizações)
-
-### 8.1 Conjuntos e elegibilidade conjunta
+### Joint eligibility and exclusivity
 
 ```text
-A = atribuições turma/disciplina/professor
-P = períodos concretos do calendário
-R = salas concretas
-K[a,p] = salas elegíveis para a em p
-d[p] = duração física do período
-x[a,p] ∈ {0,1} = atribuição colocada no período
+A = class/subject/teacher assignments
+P = concrete calendar periods
+R = concrete rooms
+K[a,p] = eligible rooms for assignment a in period p
+d[p] = physical period duration
+x[a,p] in {0,1} = assignment placed in period
 ```
 
-`capacity.eligible_periods` é a interseção única usada pela pré-verificação, pelo master anual, pelo detalhe e pelo oráculo:
+`capacity.eligible_periods` supplies prevalidation, annual planning, placement, and oracle eligibility.
+Eligibility intersects dates, timezone, grid weekdays, mandatory availability, rooms, and fixed-resource occupancy.
+Unfavorable preferences add cost without excluding a placement.
+New lessons cannot start before the final protected lesson ends.
+The validator independently recomputes eligibility. Never build the full annual assignment-period-room Cartesian product.
+Do not invent four-lesson daily, three-consecutive, or two-recovery limits.
 
-- Mesma timezone que o snapshot; datas dentro de origem..limite (preferencial em COMPLETE_GENERATION, absoluto em ADAPTIVE_RECOVERY);
-- Datas não bloqueadas e não fisicamente protegidas (datas protegidas e instantes passados via `now_utc`);
-- Dia da semana presente na grelha;
-- Turma e docente disponíveis (indisponibilidade obrigatória exclui; preferência desfavorável mantém elegibilidade e acrescenta custo);
-- Pelo menos uma sala elegível livre;
-- Sem sobreposição com períodos fixados por aulas protegidas da mesma turma/docente;
-- Novas aulas não começam antes de a última aula protegida terminar.
-
-O validador e o oráculo recompõem esta interseção de forma independente. Não criar o produto cartesiano anual atribuição × período × sala.
-Não copiar limites de quatro aulas diárias, três consecutivas ou duas recuperações.
-
-O almoço é um intervalo contínuo obrigatório dentro da janela configurada, por turma e por docente nos dias com atividade. Intervalos separados nunca somam; só um intervalo ininterrupto satisfaz a regra. O modelo CP-SAT constrói opções de almoço e o validador impõe `LUNCH_BREAK_VIOLATION`. Uma configuração parcial falha o snapshot com `LUNCH_CONFIGURATION_INCOMPLETE`.
-
-Para cada recurso e conjunto de períodos fisicamente sobrepostos:
+Each active class and teacher requires one continuous lunch interval in the configured window.
+Separate breaks cannot combine to satisfy lunch.
+Partial lunch configuration produces `LUNCH_CONFIGURATION_INCOMPLETE`.
+Independent validation reports `LUNCH_BREAK_VIOLATION`.
 
 ```text
-soma(ocupações selecionadas e fixas) <= 1
+sum(selected and fixed occupancy for a resource over overlapping periods) <= 1
 ```
 
-A implementação compacta agrupa opções com o mesmo intervalo exato (turma, docente e sala) e aplica `AddAtMostOne`; grupos que só se sobrepõem por transitividade nunca são fundidos, para manter disponíveis os extremos de uma cadeia de sobreposições. Esta forma substituiu as restrições par a par para evitar `OOM`.
+Compact exclusivity groups equal intervals and uses `AddAtMostOne`.
+Do not merge groups linked only by transitive overlap. The ends of an overlap chain must remain selectable.
 
-### 8.2 Créditos sem arredondamento
+### Exact credits and annual quotas
 
-Para a parte editável de cada atribuição, descontar primeiro créditos protegidos.
-Se o residual editável for positivo, selecionar uma última colocação `l[a,p]`:
+Subtract protected credits before planning each editable assignment residual.
+For a positive residual, select exactly one final placement:
 
 ```text
-l[a,p] ∈ {0,1}; l[a,p] <= x[a,p]; soma_p l[a,p] = 1
-u[a,p] ∈ [0, d[p]-1]; u[a,p] <= (d[p]-1) * l[a,p]
+l[a,p] in {0,1}; l[a,p] <= x[a,p]; sum_p l[a,p] = 1
+u[a,p] in [0, d[p]-1]; u[a,p] <= (d[p]-1) * l[a,p]
 credit[a,p] = d[p] * x[a,p] - u[a,p]
-soma_p credit[a,p] = residual_editável[a]
+sum_p credit[a,p] = editable_residual[a]
 ```
 
-Nenhuma colocação selecionada depois de `l`. Quando o residual é zero, todas estas variáveis são zero.
-Créditos de aulas protegidas ficam constantes; a projeção modular é calculada após materialização.
-A verificação de materialização confirma que o detalhe coincide exatamente com a distribuição anual.
-
-### 8.3 Master anual com hint greedy e poda pelo incumbente
-
-Definir `q[a,w,d]` como número de períodos de duração `d` atribuídos à semana `w`.
-Definir `f[a,w,d]` para o grupo que contém a última colocação e o desperdício `u`.
+No selected placement follows the final placement. All variables are zero when residual demand is zero.
+Protected credits remain constant. Calculate modular projection after materialization.
+For annual week/duration quotas:
 
 ```text
-q >= f; soma f = 1; 0 <= u[a,w,d] <= (d-1)*f[a,w,d]
-soma(w,d)(d*q[a,w,d] - u[a,w,d]) = residual_editável[a]
-nenhuma quota positiva depois da semana final selecionada
+q[a,w,d] = count of periods of duration d in week w
+f[a,w,d] = group containing the final placement
+q >= f; sum f = 1; 0 <= u[a,w,d] <= (d-1)*f[a,w,d]
+sum(w,d)(d*q[a,w,d] - u[a,w,d]) = editable_residual[a]
+no positive quota after the selected final week
 ```
 
-Capacidades semanais por turma, docente e conjuntos de salas, descontando ocupações fixas.
-Uma soma semanal suficiente não prova que as aulas cabem nos mesmos períodos disponíveis; o detalhe certifica cada distribuição.
+Weekly capacities subtract fixed occupancy for classes, teachers, and eligible room sets.
+Enough weekly capacity does not prove joint period feasibility. Detailed placement certifies the quota distribution.
+An earliest-week greedy hint seeds search without proving detailed feasibility.
+Chronological construction prioritizes less advanced classes through progress fractions and `started_classes`.
+The annual master minimizes the latest completion week, then waste.
+Incumbent pruning permits the same completion week so later quality components can improve.
+Keep the relaxed bound separately from the incumbent.
 
-Hint greedy earliest-week: construção gulosa a partir da semana mais precoce, respeitando capacidade por turma, docente e sala; injetada por `AddHint`. É um arranque de pesquisa; não prova viabilidade detalhada.
-A construção cronológica prioriza as turmas menos avançadas, usando a fração de progresso `(required - remaining) / required` e `started_classes`; as quotas anuais são planeadas por `annual_model.plan_annual_quotas`.
+### Valid feedback and room allocation
 
-Objetivo do master: minimizar a semana de conclusão mais tardia; depois, com essa fixada, minimizar o desperdício.
-Poda: `latest <= semana_do_incumbente`, com a mesma semana permitida para melhorar os restantes componentes. O limite relaxado é conservado separadamente do incumbente.
+Only proven placement infeasibility creates a no-good.
+The cut describes the complete excluded combination: positive counts, conditional zero counts, final group, and waste.
+Timeout, partial solutions, and failed heuristic matching never justify cuts.
+Reopen earlier arbitrary choices or include their conditions explicitly in the cut.
+Discard invalid cuts when inputs change. Reopen windows; never permanently freeze arbitrary window choices.
+Record finite feedback rounds. Tiny enumerated instances remain the exact test reference.
 
-### 8.4 Realimentação correta
-
-Quando uma janela é demonstradamente impossível para uma distribuição, devolver um no-good que exclui integralmente essa combinação: contagens positivas, contagens nulas condicionadas, grupo final e desperdício.
-Nunca produzir cortes a partir de timeout, solução parcial ou matching heurístico falhado.
-Não excluir uma quota porque uma escolha anterior arbitrária ocupou o recurso necessário; reabrir essa escolha ou incluir explicitamente a condição no corte.
-Ao mudar o snapshot, descartar cortes que não sejam válidos para os novos dados.
-Janelas são reabertas, não congeladas; o número de rondas de realimentação é finito e registado.
-Para instâncias pequenas, o oráculo enumerativo mantém-se como referência exata nos testes.
-
-### 8.5 Salas: matching global após posições
-
-Agrupar apenas salas com elegibilidade realmente equivalente para o contexto. Lotação, equipamento, reservas e restrições específicas participam na equivalência. O agrupamento adicional de salas equivalentes como otimização de simetria foi fechado nas medições do laboratório (calibração de desempenho).
-
-Após escolher posições, resolver o matching aula–sala como modelo global:
+Rooms are equivalent only when capacity, equipment, reservations, and restrictions produce the same eligibility.
+After temporal placement, solve room assignment globally with positions fixed:
 
 ```text
-choice[(aula, sala)] ∈ {0,1}
-soma_sala choice = 1 por aula com múltiplas salas elegíveis
-soma(ocupações por sala em períodos sobrepostos, incluindo fixas e protegidas) <= 1
+choice[(lesson, room)] in {0,1}
+sum_room choice = 1 for each lesson with multiple eligible rooms
+sum(room occupancy over overlapping periods, including fixed lessons) <= 1
 ```
 
-As posições continuam fixas durante o matching.
-Etapas lexicográficas: custo de preferências de sala; depois excesso de continuidade por (turma, disciplina).
-Proveniência: o estágio de salas só é provado quando o valor final de mudanças é zero.
-Se não existir matching completo, devolver conflito ao modelo temporal.
-Refinamento: reabrir posições da mesma semana apenas quando o vetor de qualidade completo melhora estritamente.
-Em modo de janela única, a continuidade é otimizada dentro da própria janela.
-Validar salas concretas antes de reconhecer uma solução completa.
+Optimize room preferences before excess continuity changes per class/subject.
+The room stage is certified only when the final change count is zero.
+Return unmatched positions as a temporal conflict. Reopen same-week positions only for strict full-vector improvement.
+Single-window mode optimizes continuity inside that window. Validate concrete rooms before accepting completeness.
 
-### 8.6 Conclusões por contagens de limiar
+### Quality priorities, stage evidence, and caching
 
-Por turma concluinte, uma variável `dia[turma]`. Por valor distinto `v`, uma contagem:
+`C[c]` is the final date required to complete a class. Include relevant execution completion.
+An incomplete class has no invented completion date. Sort dates descending as `C↓`.
+Measure days from a common origin, never week numbers across year boundaries.
+Gaps count unused school minutes between a resource's first and last daily lessons, excluding lunch and nonexistent grid periods.
+Teacher gaps precede class gaps. Mandatory unavailability is not a preference violation.
+`measure_initial_quality` recalculates metrics independently of the solver.
+Progress metrics include `minimum_class_progress_per_mille` and `class_progress_spread_per_mille`.
+
+Initial generation minimizes lexicographically:
 
 ```text
-count_ge[v] = número de turmas cujo dia de conclusão >= v
+(C↓, teacher_gap_minutes, class_gap_minutes, preference_cost, room_change_cost)
 ```
 
-Minimizar os limiares sequencialmente, do valor mais alto para o mais baixo.
-Esta minimização é equivalente a minimizar o vetor ordenado `C↓` (mais tardia primeiro).
-
-Condições vinculativas:
-
-- Abranger todas as turmas; turma sem cobertura não recebe data fictícia.
-- A equivalência com o vetor ordenado é verificada contra o oráculo enumerativo, incluindo seeds aleatorizadas; é regressão permanente.
-- Não substituir a semântica de `C↓` (D12) por somas de datas nem por médias.
-
-### 8.7 Congelamento de prioridades e orçamento por janela
-
-Congelamento: após cada etapa, fixar o valor atingido antes da etapa seguinte.
-Uma etapa é provada quando termina `OPTIMAL`. Valor conservado heuristicamente (viável, não provado) fica congelado mas sem certificado.
-O prefixo certificado é a sequência contígua de etapas provadas. `SAFETY` des-certifica todas as etapas da janela.
-
-Orçamento por janela:
-
-- As janelas são resolvidas da mais tardia para a mais precoce.
-- Reserva de finalização de salas (fração do orçamento, com teto fixo de laboratório).
-- Divisão igual do restante pelas janelas pendentes; prazos monótonos verificados em regressão.
-- Pré-solve de viabilidade antes das etapas de qualidade, com limite próprio; inviabilidade provada no pré-solve devolve corte ao master sem gastar as etapas.
-- Verificações de orçamento entre etapas, com tempo mínimo de etapa.
-- Construção e finalização contam no orçamento. Etapa omitida por orçamento nunca é certificada.
-
-### 8.8 Cache de janelas provadas
-
-A chave da cache inclui tudo o que condiciona a janela: âmbitos de atribuição, turmas concluintes, dias protegidos e modo de continuidade.
-Uma janela entra na cache apenas quando terminou `OPTIMAL` em todas as etapas.
-Uma janela reutilizada tem as etapas marcadas como reutilizadas.
-Uma janela interrompida nunca é cacheada nem reutilizada como ótima.
-Mudança de protegidos, baseline ou fronteira editável invalida a chave.
-
-## 9. Política de qualidade executável
-
-### 9.1 Métricas comuns (implementado)
-
-`C[c]` é a última data necessária para concluir toda a procura da turma.
-Incluir conclusão executada quando relevante; uma turma incompleta não recebe uma data fictícia.
-Ordenar `C` por ordem decrescente: `C↓`.
-Usar dias desde uma origem comum do snapshot; não números de semana com mudanças de ano.
-Furos representam minutos escolares desocupados entre a primeira e última aula do recurso no dia.
-Excluir almoço e períodos inexistentes na grelha.
-Contar furos de professores antes dos das turmas.
-Indisponibilidade obrigatória não é violação de preferência; o relatório decompõe os intervalos contados.
-`measure_initial_quality` recalcula todas as componentes a partir de snapshot e candidato, sem consultar o solver.
-A qualidade agregada expõe ainda `minimum_class_progress_per_mille` e `class_progress_spread_per_mille` como medida de progresso equilibrado entre turmas.
-
-### 9.2 Geração inicial (implementado)
-
-Minimizar lexicograficamente:
+Completion threshold counts implement the sorted vector:
 
 ```text
-(C↓, minutos_de_furos_professores, minutos_de_furos_turmas,
- custo_preferências, custo_mudanças_de_sala)
+count_ge[v] = number of classes with completion_day >= v
 ```
 
-Implementação: etapas de limiar (secção 8.6) seguidas de furos de professores, furos de turmas, preferências e salas, com congelamento entre etapas (secção 8.7).
-Datas nunca ultrapassam a preferência na geração inicial.
-Uma melhoria da conclusão mais tardia prevalece sobre estética ou soma das restantes datas.
-Não atrasar uma turma apenas para igualar datas.
-Não usar pesos gigantes: a lexicografia é implementada por etapas e congelamento, com equivalência ao oráculo verificada.
-Fixar um prefixo como ótimo apenas quando houver prova; um prefixo conservado heuristicamente limita a pesquisa, não certifica optimalidade global.
+Minimize thresholds from highest to lowest. Tests compare this with the enumerative oracle across seeds.
+Never replace the completion vector with sums or averages. Do not use oversized weights to imitate lexicography.
+Freeze the achieved value after each stage.
+`OPTIMAL` certifies a stage; a feasible heuristic value remains uncertified.
+The certified prefix consists only of consecutive proven stages. `SAFETY` removes window stage certification.
 
-### 9.3 Recuperação: datas e perturbação (implementado)
+Solve windows latest first. Reserve room-finalization time and distribute remaining time across pending windows.
+Feasibility presolve has its own limit. Proven infeasibility feeds the master without running quality stages.
+Budgets include construction and finalization. Omitted stages never receive certificates.
+Cache only windows with every stage `OPTIMAL`.
+Cache keys include assignment scopes, completing classes, protected dates, and continuity mode.
+Reused stages are marked as reused. Interrupted windows are never cached as optimal.
+Protected data, published baseline, or editable-boundary changes invalidate the key.
 
-Definir `O[c] = max(0, C[c] - preferred_end_date)` e ordenar `O↓`.
-Minimizar primeiro `O↓`, antes de qualquer perturbação do futuro editável.
-Assim, reduzir excesso prevalece sobre conservar aulas móveis.
-Nenhum objetivo permite atravessar o limite absoluto.
+### Adaptive quality
 
-Dentro do mesmo vetor de excessos, usar uma função crescente convexa `g` até à preferência.
-Definir perturbação `D` por diferenças reais em relação à versão publicada:
-
-```text
-D = soma_por_aula(custo_tipo_alteração * urgência * reincidência)
-```
-
-Inserções, remoções, movimentos e mudanças de sala têm custos explícitos.
-Contar cada transformação uma vez. Urgência aumenta junto da fronteira editável; reincidência depende de alterações anteriores auditadas.
-Alteração apenas modular não aumenta perturbação física.
-
-Formulação proposta:
+Let `O[c] = max(0, C[c] - preferred_end_date)` and sort it descending as `O↓`.
+Minimize excess before disruption. No objective can cross the absolute date limit.
+Within equal excess vectors, use an increasing convex function `g` up to the preferred date.
+Physical disruption compares against the published snapshot reference:
 
 ```text
+D = sum(change_type_cost * urgency * repeated_change_cost for each lesson)
 B[i] = g(min(C↓[i], preferred_end_date)) + lambda * D
 QualityAdaptive = (O↓, B[1], ..., B[n], C↓, D,
-                   furos_professores, furos_turmas, preferências, salas)
+                   teacher_gaps, class_gaps, preferences, rooms)
 ```
 
-Minimizar lexicograficamente. `lambda` é positivo; `g` usa coeficientes inteiros e declives estritamente positivos.
-O comparador `adaptive_quality_vector` já existe como política experimental com T15–T18 verdes ao nível do comparador.
-Esta fórmula é uma decisão técnica sujeita à calibração de laboratório, não uma escala universal de qualidade.
-Guardar `quality_policy_version`, coeficientes e exemplos de ordenação junto de cada benchmark.
-Não escolher coeficientes numéricos antes desses ensaios.
-Uma alteração da fórmula ou das prioridades exige atualizar especificação, oráculos e baseline.
+Count insertions, deletions, moves, and room changes once per transformation.
+Urgency increases near the editable boundary. Repeated-change cost uses audited history.
+Modular-only changes do not increase physical disruption.
+`lambda` is positive; `g` has integer coefficients and strictly positive slopes.
+`adaptive_quality_vector` implements an experimental comparator. Coefficients require explicit measured calibration, not arbitrary production claims.
+Record the quality policy version, coefficients, and ordering examples with measurements.
+Policy changes require corresponding specification, oracle, and baseline updates.
+Measure incremental disruption against the previous version and accumulated disruption against the first approval.
 
-Medir impacto incremental contra a versão anterior e acumulado contra a primeira aprovação.
-O comparador usa a referência publicada do snapshot, nunca uma proposta intermédia da própria pesquisa.
+### Generation and recovery algorithms
 
-## 10. Algoritmos de geração e recuperação
+CompleteGeneration normalizes inputs, compiles demand, and applies aggregate capacity prechecks.
+Annual quotas feed detailed window placement, room matching, full-vector comparison, and independent validation.
+Materialization must match annual quotas exactly.
+Generation also evaluates recoverability after cancellation of the last planned lesson.
+Preserve incumbents outside solver objects and record stage scopes, bounds, certificates, and termination reasons.
+Finite round exhaustion and safety interruption remain honest termination reasons.
 
-### 10.1 CompleteGeneration (implementado)
+With `SCHEDULER_V1_STOP_AT_FIRST_COMPLETE=True`, recovery uses budgeted constructive search.
+It compares retaining valid published positions with a dense reconstruction of editable future lessons.
+Both candidates use the global evaluator and independent validation. Neither receives an optimality certificate.
+Failure to construct a complete candidate returns `INCONCLUSIVE`, never proven infeasibility.
+With the setting false, master/detail recovery remains available.
 
-```text
-normalizar snapshot e compilar procura
-pré-verificação agregada com défices mínimos provados (INFEASIBLE com evidência)
-master anual: hint greedy, poda pela semana do incumbente, no-goods de rondas anteriores
-detalhe por janelas: pré-solve, limiares, congelamento, orçamento, cache
-verificação de materialização contra a distribuição
-salas: matching global e refinamento da mesma semana
-incumbente pelo vetor completo; cortes apenas de inviabilidade provada
-validação independente e métricas recalculadas fora do solver
-avaliação de recuperabilidade de um cenário (cancelamento da última aula planeada)
-evidência por etapa: âmbito, incumbente, limite, etapas provadas/reutilizadas, motivo de fim
-```
+Recovery respects calendars, lunch, availability, room eligibility, preferences, and corrected execution.
+Preserve physical protected positions while recalculating future module slices.
+`COMPLETED` and `OCCURRENCE` logs remain operational history between versions.
+An unperformed lesson leaves uncovered demand and never contributes protected planned credit.
+Manual corrections do not classify unlogged future lessons as executed history.
+New debt reservations belong after the stability window. Previously frozen reservations remain attached.
+Execution settles debt; proposals only reserve recovery.
 
-A primeira solução completa é um marco de pesquisa, não o critério automático de paragem.
-Guardar o incumbente fora do objeto solver para sobreviver ao encerramento de uma fase.
-O número de rondas de realimentação é finito e registado; limites honestos de fim: distribuições esgotadas, limite de segurança, limite de rondas.
+Master/detail recovery expands affected neighborhoods through class, teacher, room, and period conflicts.
+Allow distant-week chains and capacity transfers between classes.
+Exterior lessons remain fixed occupancy and contribute to global quality.
+Neighborhood number and attempt order never become product priorities.
+Reopened windows, exact no-goods, certified stages, budgets, pruning, room matching, and cache keys retain the generation rules.
+Neighborhood infeasibility does not prove global infeasibility. Only exhaustive admissible search can support that conclusion.
 
-### 10.2 AdaptiveRecovery (implementado)
+### Search outcomes and stopping
 
-A configuração de produção `SCHEDULER_V1_STOP_AT_FIRST_COMPLETE=True` usa construção limitada pelo orçamento existente.
-Retém posições publicadas válidas e preenche a procura residual nos primeiros recursos disponíveis.
-Compara essa reparação com uma reconstrução densa do futuro, usando a referência semanal publicada.
-O avaliador global escolhe o candidato; ambos passam validação independente e não recebem certificado de optimalidade.
-Sem candidato completo, devolve `INCONCLUSIVE`; uma tentativa construtiva falhada nunca prova impossibilidade.
+Keep feasibility, quality, and termination evidence separate.
+`INFEASIBLE` requires a proof within its declared scope. Interrupted search without a complete result is inconclusive.
+A complete validated candidate can be publishable without an optimality certificate.
+The configured first-complete mode stops at a complete candidate; it never claims globally optimal quality.
+Alternative stop policies distinguish proof, certified proximity, estimated marginal return, and safety interruption.
+Safety limits include construction, solve, memory, and finalization.
+Empirical marginal-return decisions require comparable measurements and uncertainty records.
+Uncalibrated families require conservative exploration. No p95 enters a stopping rule.
 
-Ambas as alternativas leem calendário, pausas, indisponibilidades, preferências, elegibilidade de salas e execução corrigida.
-As posições físicas protegidas permanecem intactas; a projeção modular futura pode mudar.
-As consultas de capacidade indexam as aulas protegidas por data, evitando varrer toda a janela em cada consulta.
-
-Registos `COMPLETED` e `OCCURRENCE` são histórico operacional preservado entre versões.
-Uma aula não realizada deixa procura por cobrir e nunca conta como crédito previsto protegido.
-Acertos manuais não classificam aulas futuras sem registo operacional como histórico executado.
-Novas reservas de dívida ficam depois da janela; reservas anteriores já congeladas são conservadas.
-A execução efetiva liquida a dívida; a proposta apenas reserva reposições.
-
-A pesquisa master/detail seguinte mantém-se disponível com `SCHEDULER_V1_STOP_AT_FIRST_COMPLETE=False`.
-
-Compilar residual contra execução efetiva e horário publicado.
-Detetar falta de cobertura, excesso, recursos inválidos e alterações relevantes.
-Começar por inserção e movimentos nos recursos afetados.
-Expandir o bairro por conflitos entre professor, turma, sala e períodos.
-Permitir cadeias entre semanas afastadas e cedência de capacidade entre turmas.
-
-Manter blocos exteriores ao bairro como ocupações fixas, sem esquecer o seu custo global.
-Recalcular conclusões e furos dos dias afetados com o contexto exterior incluído.
-Comparar sempre candidatos pelo avaliador global do snapshot.
-Não usar número do bairro, distância de expansão ou ordem de tentativa como prioridade de produto.
-
-Integração com as nove otimizações consolidadas:
-
-- Movimentos reabrem as janelas afetadas; cortes continuam a descrever integralmente o subproblema excluído.
-- O hint pode partir do baseline publicado; nunca prova viabilidade detalhada.
-- As conclusões por limiar abrangem todas as turmas também na reparação; a equivalência ao vetor ordenado mantém-se como regressão.
-- O congelamento distingue provado de conservado em todos os estágios de reparação.
-- O orçamento por janela conta construção e finalização da reparação; sem starvation; etapas omitidas não são certificadas.
-- A poda usa a semana do incumbente de reparação; a mesma semana é permitida.
-- As salas voltam a matching global após os movimentos; posições fixas; refinamento só com melhoria estrita do vetor completo.
-- A elegibilidade conjunta é a mesma interseção única, incluindo passado, datas protegidas e timezone.
-- O cache de janelas provadas invalida quando protegidos, baseline ou fronteira editável mudam; janela interrompida nunca é ótima.
-
-Se houver solução com excesso, procurar alternativas sem excesso antes de aceitar baixo retorno.
-O controlador regista se essa exploração foi local ou global.
-Impossibilidade num bairro apenas justifica expansão ou diagnóstico local.
-Só uma prova válida para todo o espaço autorizado permite declarar impossibilidade do pedido.
-
-## 11. Paragem, certificados e diagnóstico
-
-### 11.1 Resultado tipado (implementado)
-
-| Resultado | Proposta | Significado | Estado |
-| :--- | :--- | :--- |
-| `COMPLETE` | Sim | Solução completa, validada e atual. | Implementado. |
-| `INFEASIBLE` | Não | Impossibilidade demonstrada no âmbito integral aplicável. | Implementado (pré-verificação e detalhe provado). |
-| `INCONCLUSIVE` | Não | Não existe solução completa nem prova de impossibilidade. | Implementado. |
-| `CANCELLED` | Não | Cancelamento administrativo ganhou a corrida de finalização. | Implementado. |
-| `STALE` | Não | Dados ou fronteira já não permitem finalizar aquela proposta. | Implementado. |
-| `FAILED` | Não | Erro de execução, infraestrutura ou validação interna. | Implementado. |
-
-Input inválido (residual negativo, configuração inconsistente) é rejeitado na fronteira com `INVALID_INPUT`, sem entrar no solver.
-Uma solução completa pode ter `stop_reason=SAFETY_LIMIT`; nesse caso, mostrar que a melhoria foi interrompida; não atribuir certificado inexistente.
-Um erro do validador nunca é convertido em sucesso degradado.
-
-### 11.2 Evidência matemática (implementada por etapa)
-
-Guardar objetivo exato, sentido, incumbente, limite, tolerância e âmbito por etapa; marcar cada etapa como provada ou conservada, e as reutilizadas da cache como reutilizadas.
-Não transformar `OPTIMAL` de uma janela em prova do ano.
-Não somar gaps locais para fabricar um gap global.
-Para um vetor lexicográfico, indicar o prefixo certificado (sequência contígua de etapas provadas).
-O limite relaxado do master é conservado separadamente do incumbente; nunca substitui um candidato materializado.
-Tolerâncias nativas requerem registar os valores, além do status retornado.
-Os estados CP-SAT e os campos de limites pertencem ao contrato do solver; verificar o comportamento na versão fixada antes de expor certificados.
-
-### 11.3 Controlo por retorno adicional (implementado)
-
-Entradas: trajetória de incumbentes, limites, esforço, bairros explorados e família de dificuldade.
-Saídas: continuar, mudar bairro/fase ou finalizar com motivo explícito.
-
-Começar com regras determinísticas, calibradas em trajetórias prolongadas:
-
-1. Exigir solução completa antes de parar por qualidade suficiente.
-2. Verificar exploração mínima dos objetivos superiores e recursos críticos.
-3. Medir frequência e dimensão das melhorias numa janela de esforço.
-4. Consultar ganhos posteriores observados em casos comparáveis do corpus de calibração.
-5. Continuar quando existirem sinais úteis; terminar quando o ganho adicional esperado for pequeno.
-
-Usar dias, alterações e furos para interpretar ganho; não uma percentagem inventada de perfeição.
-Guardar a incerteza da estimativa empírica.
-Instâncias fora das famílias calibradas recebem exploração conservadora até certificado ou limite de segurança documentado.
-Nenhum p95, global ou por bloco, entra na regra de paragem.
-Os limites de segurança são finitos, configurados por ambiente e versionados nos ensaios.
-Cobrem construção, solve, memória e finalização; não apenas o tempo dentro de CP-SAT.
-
-### 11.4 Diagnóstico
-
-Pré-verificações (implementadas) provam défices necessários de capacidade por recurso, com classes afetadas e minutos mínimos em falta.
-Conflitos CP-SAT podem identificar grupos incompatíveis, sem garantir um conjunto mínimo.
-Marcar sempre o âmbito e a natureza da evidência.
-Um cálculo relaxado fornece um limite inferior de défice; não o apresentar como défice exato.
+Capacity prechecks can prove resource deficits and report affected classes and minimum missing minutes.
+Relaxations provide lower bounds, not exact deficits. Conflict sets need not be minimal.
 
 ```json
 {
@@ -663,42 +439,83 @@ Um cálculo relaxado fornece um limite inferior de défice; não o apresentar co
 }
 ```
 
-Quantidades só aparecem quando suportadas pelo cálculo.
-"Rever horas registadas" significa corrigir execução real ou trabalho reconhecido pela escola.
-Nunca recomendar inventar horas para satisfazer o solver.
-Não prometer que aumentar a data resolve um conflito de professor ou sala sem validar essa hipótese.
-Explicações completas por conflito identificado estão implementadas (C15).
+Only report supported quantities. Reviewing recorded progress means correcting actual recognized work, never inventing execution.
+Do not promise that later dates resolve room or teacher conflicts without validating that hypothesis.
 
-## 12. Fila global e execução operacional (implementado)
+### Global queue and execution
 
-Uma réplica do serviço solver; Celery com concorrência um e prefetch um.
-Um job pode configurar `num_search_workers` com vários workers CP-SAT.
-Não executar várias janelas simultâneas na v1; primeiro medir o paralelismo interno do solver.
+Use one solver service replica, Celery concurrency one, and prefetch one.
+Internal CP-SAT workers do not create simultaneous jobs. Do not solve windows concurrently without measured justification.
+The database stores FIFO order. Celery messages wake the executor; the database selects the next eligible request.
+Global queue access reads only required operational metadata. Load school data after establishing its RLS organization context.
+Never disable RLS globally. Duplicate transport delivery cannot create another execution.
 
-Pedidos têm ordem FIFO persistida na base de dados.
-A mensagem Celery acorda o executor; a base de dados decide o próximo pedido elegível.
-O acesso global à fila limita-se aos metadados operacionais necessários para escolher o pedido.
-Carregar dados escolares apenas depois de estabelecer a organização desse pedido e a respetiva sessão RLS.
-Não desativar RLS globalmente. Uma entrega duplicada não cria nova execução.
+A dedicated PostgreSQL connection holds the global advisory lock during execution.
+Do not retain an open write transaction during solving.
+Each claim increments `attempt_token`; result writes verify that token.
+Heartbeat and cancellation use a separate connection. Process supervision covers construction and finalization stalls.
+Recovery cannot depend on a terminated process writing its own final state.
+Loss of the lock connection requires solver termination. A token fences writes but does not prove old CPU work stopped.
+Confirm previous process termination before another solve. Deployments must prevent solver replica overlap.
+Reconcile abandoned jobs before consuming new requests. Failed dispatch remains recoverable.
+Re-delivering an authorized request is allowed; generating without administrative action is not.
 
-Usar advisory lock global numa ligação PostgreSQL dedicada durante a execução.
-Não manter uma transação de escrita aberta durante o solve.
-Cada claim incrementa `attempt_token`; todas as escritas de resultado verificam esse token.
-Heartbeat e cancelamento usam uma ligação distinta e continuam durante o solve.
-O controlador chama a interrupção suportada pelo solver quando necessário.
-Um supervisor do processo cobre bloqueios na construção e finalização, fora dos callbacks CP-SAT.
-O limite extremo pode terminar o processo; a recuperação não depende de esse processo escrever o estado final.
+### Proposal finalization and approval
 
-Perder a ligação do lock exige parar o processo de cálculo.
-Um token impede escrita antiga, mas não prova que o CPU antigo parou.
-Na v1, usar recuperação conservadora: confirmar terminação do processo anterior antes de iniciar outro solver.
-Deployments usam stop-before-start; não permitir sobreposição de réplicas de cálculo.
+Finalization:
 
-No arranque, reconciliar jobs abandonados antes de consumir novos pedidos.
-Falhas de dispatch deixam o pedido recuperável.
-Reenviar o mesmo pedido autorizado é permitido; criar uma nova geração sem ação administrativa não é.
+1. Validate the candidate outside the write transaction.
+2. Lock school state, then job.
+3. Check revisions, base version, attempt token, and cancellation.
+4. Revalidate current temporal boundaries and affected invariants.
+5. Persist proposal, lessons, slices, reservations, diff, and evidence.
+6. Consume only reasons covered by the snapshot.
+7. Update the clock and finish the job atomically.
 
-## 13. Elegibilidade e máquina de estados (implementado)
+Cancellation before commit prevents a new proposal.
+After confirmed success, cancelling the job has no effect. Rejecting the proposal is a separate action.
+
+Approval:
+
+1. Validate administrator and organization.
+2. Lock school state, then proposal.
+3. Check pending status, base version, and current revisions.
+4. Recalculate demand, debt, calendar, and stability.
+5. Independently validate the complete result.
+6. Activate the version and reconcile recovery reservations.
+7. Append audit evidence and commit atomically.
+
+Never run the solver inside approval. Conflicts roll back the full transaction.
+Idempotent repeated approval returns the existing result. Readers never observe mixed old and new schedules.
+
+### API and interface
+
+The server chooses generation or recovery according to whether a published version exists.
+Routes under `/api/v1/scheduler`:
+
+| Operation | Contract |
+| :--- | :--- |
+| `GET /status` | State, eligibility, reasons, current proposal, dates; read-only |
+| `POST /generate` | Manual idempotent request; job and approximate queue position |
+| `GET /jobs/{id}` | Phase, result, summary; no invented solve percentage |
+| `POST /jobs/{id}/cancel` | Idempotent cancellation |
+| `GET /drafts/current` | Current proposal, product metrics, warnings |
+| `GET /drafts/{id}/diff` | Physical changes and modular projection updates |
+| `POST /drafts/{id}/approve` | Atomic approval and expected-revision check |
+| `POST /drafts/{id}/reject` | Audited rejection without arbitrary reroll eligibility |
+
+Use existing class, Sumário, and occurrence flows. Never create parallel accounting paths.
+Generation accepts idempotency and expected revision, not trusted client organization, worker count, or arbitrary strategy.
+Return `202` for acceptance, `409` for state/revision conflicts, and `422` for invalid configuration.
+Preserve the error envelope: `code`, `message`, `reference`, `retryable`, `fields`, and `context`.
+Never expose tracebacks, complete snapshots, or another school's data.
+The interface maps stable codes without parsing prose.
+Show understandable queue, preparation, organization, improvement, and review phases.
+Keep a persistent warning for completion beyond preference.
+Separate open debt, planned recovery, and effective execution. Support multiple module slices in all consumers.
+Preserve keyboard navigation, accessibility, and field errors. Keep exact Portuguese UI labels and domain terms.
+
+## States and Transitions
 
 ```text
 QUEUED -> RUNNING -> VALIDATING -> SUCCEEDED
@@ -706,309 +523,109 @@ QUEUED -> RUNNING -> VALIDATING -> SUCCEEDED
    +----------+-----------+-> CANCELLED / STALE / FAILED
               +-------------> INFEASIBLE / INCONCLUSIVE
 
-Proposta: PENDING -> APPROVED / REJECTED / STALE / SUPERSEDED
+Proposal: PENDING -> APPROVED / REJECTED / STALE / SUPERSEDED
+Version: CANDIDATE -> ACTIVE -> SUPERSEDED
 ```
 
-Estados terminais não regressam a `RUNNING`.
-Uma repetição administrativa cria nova tentativa identificável e conserva a anterior para diagnóstico.
-Uma reentrega do transporte referencia a mesma tentativa e é idempotente.
+Terminal jobs never return to `RUNNING`. An administrative retry records a new identifiable attempt.
+Transport redelivery refers to the same attempt and is idempotent.
+Eligibility requires no active job plus initial generation, uncovered input changes, an incomplete attempt, or 28 elapsed calendar days.
+Count 28 days by the school's local date while retaining the auditable UTC instant.
+Persisting a complete proposal resets the clock in the same transaction.
+Approval, rejection, failure, and cancellation do not reset it.
+Rejection without changed inputs creates no new reason. Submission revalidates eligibility; the frontend is not authoritative.
 
-Elegibilidade exige ausência de job ativo e pelo menos uma condição (implementado em `domain/eligibility`, testado T21–T22):
+## Failure Modes
 
-- Primeira geração ainda sem proposta completa para o mesmo estado.
-- Alteração relevante não coberta pela última proposta completa.
-- Tentativa anterior sem resultado completo.
-- Passaram 28 dias corridos desde `last_successful_generation_at`.
+- Invalid inputs fail normalization or prevalidation.
+- Proven resource deficits produce scoped infeasibility evidence.
+- Timeout or failed construction without proof produces an inconclusive result.
+- Changed inputs invalidate queued work or pending proposals.
+- Lost locks, stalled heartbeats, or killed processes trigger supervised recovery.
+- Migration drift, tenant isolation failures, and invalid accounting block release.
+- Old database schemas require the explicit baseline-reset procedure, never automatic legacy fallback.
 
-Contar os 28 dias pela data local da escola, mantendo o instante UTC auditável.
-Persistir proposta completa e atualizar o relógio na mesma transação.
-Aprovação e rejeição não reiniciam o relógio.
-Uma rejeição sem mudança de dados não cria motivo novo.
-Revalidar motivos ao submeter; o frontend não é a autoridade de elegibilidade.
+## Verification Procedure
 
-## 14. Transações de proposta e aprovação (implementado)
+The independent validator recalculates coverage, identity uniqueness, references, resource collisions, eligibility, dates, and protected history.
+It also checks module slices, debt reservations, protected credit, completion metrics, physical gaps, and continuous lunch.
+Index intervals by resource/date and sort them; avoid quadratic comparison.
+Store validator version and candidate digest. Solver-declared metrics never replace recalculated metrics.
+Deliberately corrupted candidates must fail with the correct violation code.
 
-### 14.1 Finalização
+Use TDD for non-trivial rules: observable failing example, smallest correct implementation, then refactor.
+Domain tests use values without ORM or solver mocks.
+Transactions use PostgreSQL through Alembic, never SQLite. CP-SAT tests assert validity and quality rather than callback order.
 
-1. Validar o candidato fora da transação de escrita.
-2. Bloquear estado escolar e job, nesta ordem em todos os comandos.
-3. Verificar revisões, versão base, tentativa e cancelamento.
-4. Revalidar a fronteira temporal atual e os invariantes afetados.
-5. Persistir proposta, aulas, parcelas, reservas, diff e evidência.
-6. Consumir apenas motivos cobertos pelo snapshot.
-7. Atualizar relógio e terminar o job na mesma transação.
-
-O cancelamento antes do ponto de commit impede nova proposta.
-Após sucesso confirmado, cancelar o job é operação sem efeito; rejeitar a proposta é uma ação distinta.
-
-### 14.2 Aprovação
-
-1. Validar administrador e organização.
-2. Bloquear estado escolar e proposta.
-3. Verificar proposta pendente, versão base e revisões atuais.
-4. Recalcular procura, dívida, calendário e estabilidade.
-5. Executar validador independente sobre o resultado completo.
-6. Ativar a versão e reconciliar reservas de recuperação.
-7. Registar auditoria e concluir atomicamente.
-
-Não executar o solver dentro da transação de aprovação.
-Qualquer conflito causa rollback integral e resposta estruturada.
-Pedidos repetidos de aprovação devolvem o mesmo resultado quando já aprovados pelo mesmo comando idempotente.
-Leitores nunca observam meio horário antigo e meio horário novo.
-
-## 15. API e adaptação do frontend (implementado)
-
-Reutilizar a área `/api/v1/scheduler`, atualizando schemas sem adaptadores de payload legado.
-O servidor escolhe CompleteGeneration ou AdaptiveRecovery conforme exista baseline publicada.
-
-| Operação | Contrato |
+| Area | Required observable evidence |
 | :--- | :--- |
-| `GET /status` | Estado, elegibilidade, motivos, proposta corrente e datas; sem escritas. |
-| `POST /generate` | Pedido manual idempotente; devolve job e posição aproximada na fila. |
-| `GET /jobs/{id}` | Fase, resultado e resumo; sem percentagem fictícia do solve. |
-| `POST /jobs/{id}/cancel` | Regista cancelamento idempotente. |
-| `GET /drafts/current` | Proposta corrente, métricas de produto e avisos. |
-| `GET /drafts/{id}/diff` | Alterações físicas e projeções modulares separadas. |
-| `POST /drafts/{id}/approve` | Aprovação atómica com revisão esperada. |
-| `POST /drafts/{id}/reject` | Rejeição auditada; não desbloqueia reroll arbitrário. |
+| Curriculum | 75+75/50 slicing, several modules per lesson, partial credit, mixed durations |
+| Progress and debt | Idempotency, reversals, late Sumários, correction bounds, shared debt allocations |
+| Stability | Different grid weekdays, N=0, holidays, execution, later approval |
+| Resources | Shared teachers, room restrictions, overlapping intervals, soft preferences, lunch |
+| Quality | Sorted completion-vector equivalence to tiny-instance oracle; adaptive priority comparisons |
+| Diagnostics | Proven impossible inputs, local conflicts with globally feasible alternatives, timeout without proof |
+| Lifecycle | Double submission, redelivery, changed inputs during queue, solve, and approval |
+| Recovery | Killed processes, lost locks, failed dispatch, cancellation during validation |
+| Isolation | Scoped queries and foreign keys, real RLS role, ignored client organization |
+| UI | Configure, generate, approve, decide occurrence, repair, execute, correct, renew |
 
-Usar os endpoints existentes de turma, sumários e ocorrências para comandos desses domínios.
-Adaptá-los ao novo ledger; não criar caminhos paralelos de contabilização.
+Metamorphic checks cover entity renaming, input permutation, additional availability, and enumerated optimal vectors.
+The retained lab modules provide deterministic test fixtures. Historical campaign CLI, JSON corpora, and campaign reports were removed.
+Use the maintained unit, integration, and capacity suites instead of removed campaign commands.
+The 48-class correctness regression uses the configured 900-second safety budget and validates a complete candidate.
 
-`POST /generate` recebe chave idempotente e revisão esperada.
-Não recebe organização confiada ao cliente, número de workers ou escolha livre de estratégia.
-Responder `202` para pedido aceite; `409` para estado/revisão incompatível; `422` para configuração inválida.
-Manter o envelope de erro existente com `code`, `message`, `reference`, `retryable`, `fields` e `context`.
-Não expor traceback, snapshot completo ou dados de outras escolas.
+For performance comparisons, fix inputs, hardware, policy, versions, and safety limits.
+Record seeds, image/commit identity, input digest, CPU/RAM limits, workers, phase durations, outcomes, quality vectors, and bounds.
+Separate queue time from processing. Include failures, OOM, and censored runs.
+Report sample size and uncertainty. Do not combine local and Railway measurements into one baseline.
+Compare validity and completion first, then quality and resources. Avoid averages that conceal difficult-school regressions.
+Calibration can compare 1/2/4/8 internal workers; eight workers do not guarantee eight CPU cores.
+Evaluate stop-policy changes against independent cases and record missed late improvements.
+Historical timings are not a current controlled benchmark or universal guarantee.
 
-O frontend traduz códigos estáveis; não interpreta texto para decidir comportamento.
-Mostrar fila, preparação, organização, melhoria e revisão como fases compreensíveis.
-Mostrar alerta persistente enquanto houver conclusão depois da preferência.
-Separar dívida aberta, recuperação planeada e horas efetivamente cumpridas.
-Atualizar detalhe de turma, calendário, mapas, sumários e relatórios para múltiplas parcelas modulares.
-Preservar acessibilidade, navegação por teclado e erros junto dos campos.
-
-## 16. Validador independente e estratégia TDD
-
-### 16.1 Verificações obrigatórias (implementado, versão 4)
-
-O validador recebe snapshot e candidato, sem acesso à construção do modelo.
-Recalcula:
-
-1. Cobertura exata por atribuição e conservação de minutos.
-2. Unicidade de identidade e integridade das referências.
-3. Colisões físicas de turma, professor e sala.
-4. Elegibilidade, disponibilidade, calendário e limites de datas (ramo por estratégia).
-5. Preservação histórica e janela de estabilidade.
-6. Parcelas modulares sem lacunas ou sobreposição curricular.
-7. Reservas de dívida sem dupla liquidação.
-8. Cronologia das aulas protegidas e prestação de contas do crédito protegido.
-9. Métricas de conclusão, perturbação e furos (via `measure_initial_quality`).
-10. Almoço: pausa contínua obrigatória por turma e docente dentro da janela (`LUNCH_BREAK_VIOLATION`).
-
-Indexar por recurso/data e ordenar intervalos; evitar comparação quadrática.
-Guardar versão do validador e digest do candidato.
-Métricas declaradas pelo solver nunca substituem métricas recalculadas.
-Cada um dos 21 códigos de violação tem teste próprio; candidatos deliberadamente adulterados são rejeitados pelo motivo correto.
-
-### 16.2 Ciclo TDD por fatia
-
-Escrever primeiro um exemplo observável que falha.
-Implementar a menor regra correta e refatorar após verde.
-Testes de domínio usam apenas valores; não precisam de mocks ORM ou solver.
-Testes de transação usam PostgreSQL real no Docker local, não SQLite.
-Testes CP-SAT verificam validade e qualidade, não sequências exatas de callbacks.
-
-| Grupo | Estado | Oráculo |
-| :--- | :--- | :--- |
-| Currículo | Verde | 75+75/50; aula cruza três módulos; minutos parciais; durações heterogéneas. |
-| Progresso | Verde | Crédito único, reversão, sumário atrasado, acerto positivo/negativo e limites. |
-| Dívida | Verde | Uma dívida em várias aulas; várias dívidas numa aula; cancelar recuperação sem duplicação. |
-| Estabilidade | Verde | Grelhas de 3/5/7 dias; N=0; feriado; data atual; aprovação posterior. |
-| Recursos | Verde | Mesmo professor em turmas distintas; salas específicas; intervalos sobrepostos; preferência soft. |
-| Capacidade | Verde | Semana agregada suficiente com períodos conjuntos insuficientes (T10). |
-| Qualidade inicial | Verde | Oráculo enumerado com vetor de conclusões, não soma de datas; limiares equivalentes ao vetor com seeds. |
-| Qualidade adaptativa | Verde (solver) | Ceder recursos à turma atrasada; estabilidade versus margem; excesso domina perturbação (T15–T18). |
-| Diagnóstico | Verde | Impossível conhecido; bairro impossível mas global viável; timeout sem prova (T26). |
-| Ciclo de vida | Verde | Duplo clique, entrega duplicada, dados alterados em fila/solve/aprovação (T23–T25, T27–T28). |
-| Recuperação operacional | Verde | Processo morto, lock perdido, dispatch falhado, cancelamento durante validação. |
-| Isolamento | Verde | Consultas e FKs entre escolas; role RLS real; org do cliente ignorada (T28). |
-| UI/E2E | Verde | Configurar → gerar → aprovar → ocorrência → reparar → executar → acertar → renovar. |
-
-Propriedades metamórficas verificadas: renomear entidades não altera qualidade; permutar entradas não altera o comparador; mais disponibilidade não destrói testemunho válido; o vetor completo iguala o ótimo enumerado em instâncias mínimas (40 casos comparados, zero divergências no audit).
-
-### 16.3 Loops experimentais obrigatórios
-
-Executar as campanhas do laboratório (manifests em `backend/tests/scheduler_lab/`) durante a implementação, não apenas antes do lançamento.
-Cada campanha encadeia baseline, mutação controlada, aumento de pressão e recuperação.
-Uma falha exige reprodução, redução do caso, teste vermelho, correção e repetição dos cenários afetados.
-Cada caso declara expectativa: viável com testemunho, impossível demonstrado, input inválido ou exploratório sem viabilidade conhecida.
-Testar o validador com candidatos deliberadamente adulterados.
-Um timeout num caso viável conhecido é insuficiência de pesquisa, não prova de impossibilidade.
-
-## 17. Corpus, benchmarks e seleção de parâmetros
-
-### 17.1 Artefactos reproduzíveis (estado e plano)
-
-Implementado: fixtures canónicas no repositório; manifests `scheduler-lab-v3` com digests SHA-256; seeds de fixture, eventos e solver separadas; corpora:
-
-- `manifest.json`: 3 casos witness (campanha `w03-minimal`).
-- `generation_manifest.json`: 26 casos de geração (campanha `w04-generation`; famílias C01–C10, contraexemplos T10–T14/T19, escala 10/30/45/60).
-- `annual_manifest.json`: 12 casos anuais (campanha `w04-annual`; 10/30/45/60 turmas × perfis `loose`/`shared-teacher`/`scarce-rooms`).
-
-Entregues: corpus de reparações (`repair_manifest.json`), sequências anuais com eventos (`annual_replay_manifest.json`), matriz combinada e conjunto reservado final (`reserved_manifest.json`, `reserved_annual_manifest.json`).
-Cobertura continua a exigir 10/30/45/60 turmas, partilha docente, salas escassas, calendários restritos, reparações de 1h/10h/50h com distribuições de conflito diferentes e replays anuais (tranquilo, irregular, crises, saturação).
-
-Explorar pouca/muita procura com pouco/muito espaço efetivamente elegível, capacidade exata, um minuto além, conflitos de interseção e abundância de alternativas equivalentes.
-Medir disponibilidade conjunta de turma, professor atribuído, sala, período e fronteira editável.
-Professores adicionais sem atribuições não aumentam capacidade curricular automaticamente.
-Cobertura por níveis isolados, pares válidos e interações críticas de três ou mais fatores, com exclusões declaradas no manifesto.
-
-### 17.2 Medições por execução
-
-```text
-commit, image_digest, fixture_digest, seed, policy_version
-CPU/modelo/quota, RAM/limite, sistema, versões, workers
-queue_wait, snapshot_time, build_time, first_complete_time
-search_time, validation_time, persistence_time, total_processing_time
-peak_RSS, CPU_seconds, candidate_count, model_variables, model_constraints
-complete_valid, outcome, stop_reason, objective_vector
-bounds_with_scope, trajectory, certified_stages, reused_stages
-changed_lessons, class_completion_dates
-```
-
-Separar espera na fila de processamento.
-Guardar falhas, OOM e censura; não excluir execuções difíceis para melhorar o p95.
-Publicar tamanho da amostra e incerteza.
-Não misturar Docker local e Railway na mesma baseline.
-
-O modo `campaign` do runner existe:
-
-```text
-node scripts/test.mjs campaign --manifest <manifest> --mode generator [--case <id>]... [--time-limit <s>] [--workers <n>] [--resume]
-```
-
-Revalidação independente de candidatos armazenados:
-
-```text
-python -m app.scheduler.lab.revalidate <case.json>
-```
-
-### 17.3 Protocolo de comparação
-
-Fixar fixture, hardware, política, versões e limites de segurança.
-Intercalar ordem das configurações para reduzir efeito de aquecimento.
-Executar várias seeds do solver; uma seed não elimina não determinismo multithread.
-
-Comparar primeiro validade e taxa de conclusão.
-Depois comparar o vetor de qualidade, a trajetória e recursos consumidos.
-Evitar uma média única que esconda regressões nas escolas mais difíceis.
-Traçar a fronteira qualidade/tempo/CPU/RAM e identificar configurações dominadas.
-
-Executar 1, 2, 4 e 8 workers internos na calibração, respeitando os limites do host.
-Não confundir oito workers com oito cores garantidos.
-Selecionar a configuração com ganhos sustentados e custo aceitável, não apenas menor wall time.
-
-### 17.4 Calibração da paragem
-
-Executar trajetórias prolongadas apenas no laboratório com limites finitos.
-Reproduzir offline as decisões de paragem candidatas.
-Medir tempo poupado e melhorias relevantes perdidas depois da paragem simulada.
-Avaliar no conjunto reservado antes de fixar a política.
-
-Parâmetros a fechar por evidência: declives de `g`, `lambda`, custos de perturbação, exploração mínima e limiar de retorno.
-Também fechar workers, limites de segurança e reserva de finalização.
-Nenhum destes campos recebe um default silencioso de produção.
-O manifesto de ensaio exige valores explícitos e identifica-os como experimentais até aceitação.
-
-### 17.5 Evidência e prevenção de sobreajuste
-
-Guardar IDs de campanha/caso, versão, cenário pai, mutação e seeds separadas.
-Associar cada resultado ao commit, política, hardware, limites e digest dos inputs.
-Preservar sequência de eventos, validação independente e análise da próxima ação.
-Reutilizar o runner e `.test-artifacts/`.
-
-Registar falhas de pesquisa separadamente de erros de domínio, fixtures incorretas e impossibilidades reais.
-Após correção, repetir o caso mínimo, a família de origem e as famílias afetadas pela mesma regra.
-Uma alteração arquitetural ou de política exige nova comparação ampla antes do gate.
-
-Se resultados reservados influenciarem alterações, promovê-los a regressões conhecidas.
-Criar avaliação reservada nova para a candidate seguinte.
-
-## 18. Observabilidade e critérios de aceitação
-
-Logs estruturados incluem `job_id`, tentativa, organização, fase e código de resultado.
-Não registar dados pessoais ou conteúdo integral dos snapshots nos logs.
-Métricas agregadas evitam labels de cardinalidade ilimitada.
-Evidência detalhada permanece associada ao job, com acesso administrativo autorizado.
-
-Alertas operacionais: fila sem consumo, heartbeat parado, falhas repetidas, memória e persistência inconsistente.
-Alertas escolares: proposta desatualizada, impossibilidade demonstrada e conclusão além da preferência.
-Um heartbeat parado é suspeita operacional; não prova inviabilidade do horário.
-
-Critérios objetivos para aceitar a candidate local:
-
-- Zero violações no validador em todos os resultados apresentados como completos.
-- Zero perda/duplicação de minutos, execução ou dívida nos testes sequenciais.
-- Zero alterações físicas protegidas e zero aprovações de snapshots desatualizados.
-- Um único cálculo global nos testes concorrentes e de recuperação.
-- Corpus de 60 turmas e recuperações representativas concluído conforme o gate do plano.
-- Qualidade confirmada por oráculos pequenos e evidência comparativa nos grandes.
-- As nove condições de correção das otimizações verdes em geração e reparação.
-- Política de paragem avaliada em casos reservados e parâmetros documentados.
-- Campanhas do laboratório concluídas nos casos obrigatórios, com análise entre mutações e replays anuais completos ou corretamente diagnosticados.
-- Matriz de cobertura, regressões reduzidas e resultados inconclusivos incluídos no dossier; nenhum caso omitido silenciosamente.
-- Instalação vazia, reset e recuperação de falhas ensaiados localmente.
-- Frontend e consumidores sem dependência dos contratos antigos.
-- Aceitação funcional do proprietário com resultados concretos.
-
-## 19. Remoção do legado e verificações
-
-Não manter duas implementações selecionáveis em produção.
-Ao remover código, pesquisar referências em backend, frontend, migrations, testes, scripts e documentação antes de concluir a remoção.
-
-Verificações a reutilizar, dentro do fluxo Docker local:
+Run the maintained Docker workflow:
 
 ```text
 node scripts/test.mjs setup --scope all
 node scripts/test.mjs doctor --profile all
 node scripts/test.mjs fast --scope all
+node scripts/test.mjs critical --scope backend
 node scripts/test.mjs integration
 node scripts/test.mjs e2e --project app
+node scripts/test.mjs capacity-smoke
 node scripts/test.mjs all --scope all
-node scripts/test.mjs campaign --manifest backend/tests/scheduler_lab/generation_manifest.json --mode generator
 ```
 
-Manter Ruff, checks frontend, contratos, segurança, integridade e verificações Alembic aplicáveis.
-Atualizar testes de contratos antigos; não preservá-los contrariando a nova baseline.
-Recriar a imagem frontend após mudanças para que o teste manual use o código recente.
+Retain Ruff, frontend checks, contracts, security, integrity audits, and Alembic checks.
+Search callers and documentation before deleting code. Refresh the frontend Docker image after frontend changes.
+After every push, monitor associated CI until it passes.
+Local test commands never reset or deploy Railway or Cloudflare.
 
-Ensaios locais não executam testes, resets ou deployments Railway/Cloudflare.
-CI GitHub pode verificar código sem deployment. Após cada push, acompanhar CI até passar.
-Validar numa candidate identificada por commit e imagens; repetir configurações finalistas no hardware remoto.
-Não transportar automaticamente a configuração vencedora do computador local para Railway.
+Acceptance requires zero validator violations, duplicated minutes, protected physical changes, or stale approvals.
+Concurrency tests must prove one global calculation.
+Quality requires small-instance oracles and honest large-instance evidence.
+Verify empty installation, baseline reset, process recovery, API, queue, generation, approval, and the frontend.
+Record known limitations and selected runtime parameters. Functional acceptance uses concrete reviewable results.
+The implementation is complete only when accounting, quality, operations, and publication work together.
 
-Antes do corte final, impedir novos pedidos e terminar ou cancelar o job ativo.
-Instalar a baseline limpa e verificar API, fila, geração, aprovação e frontend publicados.
-Recuperar uma release apenas com artefactos compatíveis com a nova baseline.
-Não definir rollback para o solver antigo como estratégia de recuperação da v1.
+## Source Map
 
-## 20. Rastreabilidade e entrega completa
+- [Scheduler composition](../../backend/app/scheduler/composition.py)
+- [Canonical serialization](../../backend/app/scheduler/domain/serialization.py)
+- [Independent validator](../../backend/app/scheduler/domain/candidate_validation.py)
+- [Quality policy](../../backend/app/scheduler/domain/quality.py)
+- [Search orchestration](../../backend/app/scheduler/infrastructure/search.py)
+- [Job lifecycle](../../backend/app/scheduler/infrastructure/jobs.py)
+- [Proposal transactions](../../backend/app/scheduler/infrastructure/proposals.py)
+- [Scheduler API](../../backend/app/api/v1/endpoints/scheduler.py)
+- [48-class and fixture regressions](../../backend/tests/unit/test_scheduler_typology_v1.py)
+- [Worker process recovery](../../backend/tests/integration/committed/test_worker_process_recovery.py)
 
-| Decisões | Secções desta especificação | Evidência principal |
-| :--- | :--- | :--- |
-| D01–D02 | 1, 6, 19 | Instalação vazia, inventário e remoção de consumidores antigos. |
-| D03–D04 | 12, 17 | Exclusão global e comparação 1/2/4/8 workers. |
-| D05–D08 | 11, 17 | Trajetórias, limites, censura e paragem calibrada. |
-| D09–D13 | 5, 8–10 | Oráculos de conclusão e cedência de capacidade. |
-| D14–D18 | 4–5, 14 | Estabilidade, projeção e preservação de execução. |
-| D19–D22 | 8–9 | Disponibilidade, carga densa, docente fixo e prioridade de furos. |
-| D23–D26 | 7, 12–15 | Pedidos manuais, elegibilidade, 28 dias e snapshots. |
-| D27–D28 | 4, 11, 16 | Diagnósticos sustentados e acertos conservativos. |
-| D29–D30 | 14–15 | Aprovação atómica, E2E e revisão de linguagem. |
-| D31 | 17–19 | Gate local e relatório remoto separado. |
+## Related Documents
 
-A entrega inclui código, testes, corpus, manifests, relatórios e runbook de operação.
-Inclui ainda parâmetros selecionados, limitações conhecidas e documentação atualizada dos contratos públicos.
-Uma implementação que apenas encontra horários não satisfaz esta especificação.
-A v1 só fica concluída quando contabilização, qualidade, operação e publicação estiverem demonstradas em conjunto.
+- [Scheduler Overview](README.md)
+- [Data Model](../01_system_architecture/DATA_MODEL.md)
+- [Occurrences and Substitutions](../04_operational_features/OCCURRENCES_AND_SUBSTITUTIONS.md)
+- [Testing and CI](../08_security_quality/TESTING_AND_CI.md)
+- [Deployment Runbook](../09_ops_observability/DEPLOYMENT_RUNBOOK.md)

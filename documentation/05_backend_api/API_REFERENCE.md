@@ -115,7 +115,6 @@ Stable route families keep frontend features and provider webhooks independent f
 | `GET` | `/api/v1/teachers/{teacher_id}/availability` | Active; self or admin |
 | `PUT` | `/api/v1/teachers/{teacher_id}/availability` | Admin |
 | `GET` | `/api/v1/teachers/me/progress` | Teacher |
-| `GET` | `/api/v1/teachers/observability/summary` | Admin |
 
 ### Administrative CSV import
 
@@ -159,37 +158,29 @@ Valid calendar replacements do not produce a constraint conflict. Invalid date c
 | `POST` | `/api/v1/scheduler/jobs/{job_id}/cancel` | Admin |
 | `GET` | `/api/v1/scheduler/drafts/current` | Active |
 | `GET` | `/api/v1/scheduler/drafts/{proposal_id}/diff` | Active |
-| `GET` | `/api/v1/scheduler/drafts/{proposal_id}/lessons` | Admin |
 | `POST` | `/api/v1/scheduler/drafts/{proposal_id}/approve` | Admin |
 | `POST` | `/api/v1/scheduler/drafts/{proposal_id}/reject` | Admin |
 | `POST` | `/api/v1/schedule/constraints/` | Admin |
 | `GET` | `/api/v1/schedule/week` | Active; teacher scope is restricted; rate limit `60/minute;600/hour` |
 | `GET` | `/api/v1/schedule/me/horizon` | Teacher; rate limit `300/hour` |
-| `PUT` | `/api/v1/schedule/active-blocks/{id}/log` | Active; assigned teacher or admin |
 | `PUT` | `/api/v1/schedule/operational-blocks/{id}/log` | Active; assigned teacher or admin |
 | `PUT` | `/api/v1/schedule/lessons/{lesson_id}/log` | Active; assigned teacher or admin |
 
-Proposal lesson reads return persisted intervals, resource IDs, credit minutes, and module slices.
-They also expose the source lesson ID and the current or inherited operational log status.
-Each page includes exact effective execution minutes per assignment and module for that school year.
-Execution totals replay compensations and omit zero balances. They are current observations, not the proposal's original snapshot.
 Scheduler status exposes `active_proposal_id` for the approved proposal linked to the active version, or `null` when absent.
-Use `skip` from zero and `limit` from one through 2000. The default limit is 500.
-Pages retain the proposal version ID and total lesson count. Reads do not approve or publish proposals.
-Other schools receive `404`. Teachers receive `403`.
+Weekly schedule reads return published lesson intervals, resource identifiers, module projections, and operational log state.
+There is no separate proposal-lesson listing route.
 
 ### Occurrences, timesheets, and webhooks
 
 | Method | Route | Access |
 | :--- | :--- | :--- |
-| `GET` / `POST` | `/api/v1/occurrences/` | Admin; create returns `201` or `200` on reuse |
+| `GET` | `/api/v1/occurrences/` | Admin |
 | `GET` | `/api/v1/occurrences/{occurrence_id}` | Admin |
 | `PATCH` | `/api/v1/occurrences/{occurrence_id}` | Admin |
 | `POST` | `/api/v1/occurrences/{occurrence_id}/cancel` | Admin |
 | `GET` | `/api/v1/occurrences/debts` | Admin |
 | `GET` | `/api/v1/occurrences/{occurrence_id}/substitutes/recommendations` | Admin |
 | `GET` | `/api/v1/occurrences/{occurrence_id}/substitutes/diagnostics` | Admin |
-| `GET` | `/api/v1/occurrences/observability/summary` | Admin |
 | `GET` | `/api/v1/timesheets/` | Admin |
 | `GET` | `/api/v1/timesheets/me/{week_start_date}` | Teacher |
 | `POST` | `/api/v1/timesheets/me/{week_start_date}/submit` | Teacher |

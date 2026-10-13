@@ -162,7 +162,7 @@ describe('SchoolConfig internship flows', () => {
           confirmation_fingerprint: 'fp-1',
           affected_lessons: [
             {
-              active_schedule_block_id: 5,
+              lesson_id: 5,
               class_id: 1,
               class_name: '10A',
               subject_id: 2,

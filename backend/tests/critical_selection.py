@@ -43,7 +43,6 @@ UNIT_PATHS: tuple[str, ...] = (
     "tests/unit/test_scheduler_debt_domain.py",
     "tests/unit/test_scheduler_module_projection.py",
     "tests/unit/test_lesson_time_rule.py",
-    "tests/unit/test_occurrence_transition_plan.py",
     "tests/unit/test_task_dispatcher.py",
     "tests/unit/test_member_capability_policy.py",
     "tests/unit/test_tenant_context_helpers.py",
@@ -66,6 +65,7 @@ DB_PATHS: tuple[str, ...] = (
     "tests/integration/transactional/test_clerk_auth.py",
     "tests/integration/transactional/test_scheduler_state_service.py",
     "tests/integration/committed/test_scheduler_tenant_isolation.py",
+    "tests/integration/committed/test_scheduler_v1_occurrences.py",
     "tests/integration/committed/test_privacy_maintenance.py",
     "tests/integration/committed/test_privacy_administrative_erasure.py",
 )

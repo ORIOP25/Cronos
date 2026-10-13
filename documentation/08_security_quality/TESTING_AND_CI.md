@@ -27,10 +27,11 @@ node scripts/test.mjs e2e --project public
 node scripts/test.mjs capacity-smoke
 node scripts/test.mjs all --scope all
 node scripts/test.mjs benchmark --profile fast
-node scripts/test.mjs campaign --manifest backend/tests/scheduler_lab/manifest.json
 ```
 
-The runner exposes `setup`, `doctor`, `fast`, `critical`, `integration`, `e2e`, `capacity`, `capacity-smoke`, `all`, `benchmark`, and `campaign`. The `e2e` command accepts `--project public|auth|app|isolated|readonly|provider|capacity`. The `critical` command accepts only `--scope backend` and is the backend CI gate. E2E starts its own stack on port `5174`.
+The runner exposes `setup`, `doctor`, `fast`, `critical`, `integration`, `e2e`, `capacity`, `capacity-smoke`, `all`, and `benchmark`.
+The `e2e` command accepts `--project public|auth|app|isolated|readonly|provider|capacity`.
+The `critical` command accepts only `--scope backend` and is the backend CI gate. E2E starts its own stack on port `5174`.
 
 `fast` never starts Docker or installs packages. Forwarded arguments are accepted only after `--` by `fast` and `integration`, and are passed as separate process arguments. Run artefacts are written to `.test-artifacts/`.
 
@@ -83,7 +84,7 @@ This prevents organization activation during a sign-in navigation while the brow
 | Job | Timeout | What it enforces |
 | :--- | ---: | :--- |
 | `already-verified` | default | On a push to `main` only. Looks up the merged pull request of the pushed commit and reports `verified=true` when that head has the same Git tree and the `backend`, `frontend`, `e2e-runtime` and `e2e-browser` checks all succeeded. |
-| `backend` | 45 min | `postgres:16-alpine` and `redis:7-alpine` services (pinned by digest). Provisions roles with `sh backend/scripts/provision_database.sh`, then the `cronos_test_gw0`..`cronos_test_gw3` databases. Installs `requirements-dev.txt` with `--require-hashes`. One stage runs `pip check` and `pip-audit` in the background, `ruff format --check`, `ruff check`, Alembic `upgrade head`, `check`, `downgrade base`, `upgrade head`, then `scripts.audit_triggers` and `scripts.audit_database_integrity` with the migrator credential. Then `node ../scripts/test.mjs critical --scope backend`. For pull requests from forks only it also builds the `runtime` image and checks the `privacy.run_maintenance` task. |
+| `backend` | 45 min | PostgreSQL 18 and Redis 8.2 services, pinned by digest. Provisions roles and xdist databases. Installs locked dependencies; runs dependency audits, Ruff, Alembic upgrade/check/reset, trigger and integrity audits, and the backend critical gate. Fork pull requests also build the runtime image and verify the privacy task. |
 | `frontend` | 20 min | `npm ci --ignore-scripts`, `npm run verify:critical:fast`, then `node scripts/loc-report.mjs`. |
 | `e2e-browser` | 30 min | Skipped for Dependabot and fork pull requests (it needs Clerk). Builds `docker-compose.ci.yml`, verifies the production image and the privacy task, starts `db` and `redis`, provisions roles with the `provision-db` service, migrates with `db-maintenance`, starts `backend worker beat frontend`, prepares the Clerk test state, then runs `node scripts/test.mjs e2e` and `capacity-smoke`. |
 | `e2e-runtime` | 25 min | Needs no Clerk or provider credential, so it runs on every pull request. Native PostgreSQL/Redis. Runs `npm run lint`, `audit:production`, `test:scripts`, `lint:dead-code`, `lint:dead-code:production` and `build`; then `test_worker_process_recovery.py` plus `test_forty_eight_classes_generate_a_complete_valid_schedule`. A script fails the job if fewer than 10 cases were collected, if any case was skipped or failed, or if the three required case names are missing. |
@@ -102,6 +103,10 @@ The workflows use exactly one secret and one variable:
 | `VITE_CLERK_PUBLISHABLE_KEY` | variable | `e2e-browser` (must start with `pk_test_`). |
 
 Database passwords are generated per run (`openssl rand -hex 24`), masked and never stored. No `CLERK_WEBHOOK_SECRET`, Cloudflare, Sonar or Postgres password secret exists. E2E identities are dedicated Clerk reserved test users (`+clerk_test@example.com`); the job revokes its invitations at the end.
+
+SonarQube Cloud automatic analysis reads `.sonarcloud.properties`.
+It separates source and test paths and excludes generated migration revisions from source analysis.
+Automatic analysis does not import coverage reports. CI coverage gates remain authoritative.
 
 ### Critical and full selections
 

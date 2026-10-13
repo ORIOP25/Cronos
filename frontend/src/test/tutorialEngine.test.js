@@ -20,6 +20,15 @@ import {
 } from '../features/tutorial/tutorialScenario'
 
 describe('tutorial v3 domain', () => {
+  it('requires secure randomness when a tutorial run starts', () => {
+    vi.stubGlobal('crypto', {})
+    try {
+      expect(() => applyTutorialTransition(INITIAL_TUTORIAL_STATE, { type: 'START' })).toThrow()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('declares the 13 feature steps in two chapters', () => {
     expect(TUTORIAL_VERSION).toBe(3)
     expect(TUTORIAL_STEPS).toHaveLength(13)

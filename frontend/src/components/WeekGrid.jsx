@@ -133,7 +133,7 @@ const SlotCell = ({ slotEntries, isOperationalEnabled, onOpenOperationalAction }
   const canOpenOperationalAction = Boolean(
     isOperationalEnabled
     && !hasCollision
-    && (slot.active_schedule_block_id || slot.operational_block_id || slot.scheduler_lesson_id)
+    && (slot.operational_block_id || slot.scheduler_lesson_id)
     && slot.date
     && typeof onOpenOperationalAction === 'function'
   )
@@ -142,7 +142,7 @@ const SlotCell = ({ slotEntries, isOperationalEnabled, onOpenOperationalAction }
   if (isOperationalEnabled && !canOpenOperationalAction && !isWeekLocked) {
     if (hasCollision) {
       operationalBlockReason = 'Conflito neste bloco. Use a página Faltas para análise.'
-    } else if (!(slot.active_schedule_block_id || slot.operational_block_id) || !slot.date) {
+    } else if (!(slot.scheduler_lesson_id || slot.operational_block_id) || !slot.date) {
       operationalBlockReason = 'Este bloco ainda não pode ser registado.'
     }
   }
@@ -291,11 +291,11 @@ const WeekGrid = ({
   }
 
   return (
-    <div className="week-grid-scroll" tabIndex="0" role="region" aria-label="Grelha semanal de horários. Use Shift e roda do rato para deslocar horizontalmente.">
+    <section className="week-grid-scroll" tabIndex="0" aria-label="Grelha semanal de horários. Use Shift e roda do rato para deslocar horizontalmente.">
       {transitionInWeek ? (
-        <p className="week-grid__transition-notice" role="status">
+        <output className="week-grid__transition-notice d-block">
           Nova grelha em vigor a partir de {formatDate(gridTransitionDate)}
-        </p>
+        </output>
       ) : null}
       <table
         className={`week-grid${fitViewport ? ' week-grid--fit-viewport' : ''}`}
@@ -369,7 +369,6 @@ const WeekGrid = ({
               <tr key={time}>
                 <td
                   className="week-grid__time"
-                  scope="row"
                   aria-label={timeAriaLabel}
                 >
                   <span className="week-grid__time-start">{time}</span>
@@ -388,7 +387,7 @@ const WeekGrid = ({
           })}
         </tbody>
       </table>
-    </div>
+    </section>
   )
 }
 

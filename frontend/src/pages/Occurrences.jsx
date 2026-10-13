@@ -1,8 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'react-hot-toast'
 import PageHeader from '../components/PageHeader'
-import { useSearchParams } from 'react-router-dom'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import {
   CCard, CCardBody, CCol, CRow, CBadge, CSpinner,
   CButton, CFormSelect, CFormLabel, CTabs, CTabList, CTab,
@@ -332,9 +331,9 @@ const EditOccurrenceModal = ({
             </CButton>
           </CButtonGroup>
           {lessonNotFinished && (
-            <p className="small text-muted mt-2" role="status">
+            <output className="small text-muted mt-2 d-block">
               Só pode decidir “Dada” depois do término desta aula.
-            </p>
+            </output>
           )}
         </div>
 

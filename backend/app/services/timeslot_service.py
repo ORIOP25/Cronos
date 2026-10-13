@@ -2,12 +2,13 @@ from dataclasses import dataclass
 from datetime import date, time
 
 import structlog
-from sqlalchemy import delete, func, or_, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models, schemas
 from app.core.exceptions import AppError
 from app.scheduler.domain.timetable import BreakOverride, build_daily_slots
+from app.scheduler.infrastructure.models import SchedulerProposalV1
 from app.services import grid_version_service
 from app.services.scheduler_state_service import record_scheduler_change
 
@@ -200,8 +201,9 @@ async def _protected_dependency_counts(
 ) -> dict[str, int]:
     counts = {
         "published_state": int(published),
-        "draft_blocks": await _count_for_org(db, models.ScheduleDraftBlock, organization_id),
-        "active_blocks": await _count_for_org(db, models.ActiveScheduleBlock, organization_id),
+        "pending_proposals": await _count_for_org(
+            db, SchedulerProposalV1, organization_id, SchedulerProposalV1.status == "PENDING"
+        ),
         "operational_blocks": await _count_for_org(
             db, models.OperationalScheduleBlock, organization_id
         ),
@@ -210,15 +212,6 @@ async def _protected_dependency_counts(
             models.LessonOccurrence,
             organization_id,
             models.LessonOccurrence.planned_timeslot_id.in_(current_slot_ids),
-        ),
-        "schedule_diffs": await _count_for_org(
-            db,
-            models.ScheduleDiffEntry,
-            organization_id,
-            or_(
-                models.ScheduleDiffEntry.before_timeslot_id.in_(current_slot_ids),
-                models.ScheduleDiffEntry.after_timeslot_id.in_(current_slot_ids),
-            ),
         ),
     }
     constraints = list(

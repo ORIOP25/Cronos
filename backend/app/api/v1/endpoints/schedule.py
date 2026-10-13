@@ -11,7 +11,7 @@ from app.core.exceptions import AppError
 from app.core.ratelimit import limiter
 from app.scheduler.infrastructure import operations
 from app.scheduler.infrastructure.models import SchedulerVersionV1
-from app.services import lesson_log_service, schedule_service
+from app.services import schedule_service
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)
@@ -161,20 +161,8 @@ async def get_teacher_schedule_horizon(
                 SchedulerVersionV1.status == "ACTIVE",
             )
         ).scalar()
-        if v1_version_id is not None:
-            payload["active_generation_id"] = f"v1-{v1_version_id}"
-            return payload
-        latest_generation_row = (
-            sync_db.query(models.ActiveScheduleBlock.schedule_version_id)
-            .filter(
-                models.ActiveScheduleBlock.organization_id == current_user.organization_id,
-                models.ActiveScheduleBlock.status == models.ActiveScheduleBlockStatus.ACTIVE,
-            )
-            .order_by(models.ActiveScheduleBlock.id.desc())
-            .first()
-        )
         payload["active_generation_id"] = (
-            latest_generation_row[0] if latest_generation_row else None
+            f"v1-{v1_version_id}" if v1_version_id is not None else None
         )
         return payload
 
@@ -234,19 +222,7 @@ async def get_week_schedule(
         class_id=effective_class_id,
         teacher_id=effective_teacher_id,
     )
-    if v1_slots is not None:
-        return v1_slots
-
-    def _run(sync_db):
-        return schedule_service.get_week_schedule_sync(
-            sync_db,
-            organization_id=current_user.organization_id,
-            week_start=week_start,
-            class_id=effective_class_id,
-            teacher_id=effective_teacher_id,
-        )
-
-    return await db.run_sync(_run)
+    return v1_slots or []
 
 
 # ==========================================
@@ -274,51 +250,6 @@ def _authorize_lesson_log_teacher(
     """Restrict teacher-only actors to blocks assigned to their teacher profile."""
     if not is_admin and block_teacher_id != current_user.teacher_id:
         _raise_schedule_error(403, "lesson_log_teacher_mismatch", LESSON_LOG_OTHER_TEACHER_DENIED)
-
-
-@router.put(
-    "/active-blocks/{active_schedule_block_id}/log",
-    response_model=schemas.LessonLogRead,
-    summary="Registar execucao de bloco do horario ativo",
-)
-async def upsert_active_lesson_log(
-    active_schedule_block_id: int,
-    payload: schemas.LessonLogCreate,
-    db: deps.DbSession,
-    current_user: deps.ActiveActor,
-):
-    is_admin = _require_lesson_log_actor(current_user)
-
-    def _run(sync_db):
-        block = (
-            sync_db.query(models.ActiveScheduleBlock)
-            .filter(
-                models.ActiveScheduleBlock.id == active_schedule_block_id,
-                models.ActiveScheduleBlock.organization_id == current_user.organization_id,
-                models.ActiveScheduleBlock.status == models.ActiveScheduleBlockStatus.ACTIVE,
-            )
-            .first()
-        )
-        if block is None:
-            _raise_schedule_error(
-                404, "active_schedule_block_not_found", "Bloco do horario ativo nao encontrado."
-            )
-
-        _authorize_lesson_log_teacher(
-            current_user,
-            block_teacher_id=block.teacher_id,
-            is_admin=is_admin,
-        )
-
-        return lesson_log_service.upsert_active_lesson_log_sync(
-            sync_db,
-            organization_id=current_user.organization_id,
-            membership_id=current_user.membership_id,
-            active_schedule_block_id=active_schedule_block_id,
-            payload=payload,
-        )
-
-    return await db.run_sync(_run)
 
 
 @router.put(
@@ -352,29 +283,17 @@ async def upsert_operational_lesson_log(
         is_admin=is_admin,
     )
 
-    if block.origin_kind == models.OperationalBlockOrigin.V1:
-        try:
-            return await operations.record_operational_lesson_log(
-                db,
-                current_user.organization_id,
-                membership_id=current_user.membership_id,
-                operational_block_id=operational_block_id,
-                payload=payload,
-                now_utc=datetime.now(UTC),
-            )
-        except operations.OperationsError as exc:
-            _raise_operations_error(exc)
-
-    def _run(sync_db):
-        return lesson_log_service.upsert_operational_lesson_log_sync(
-            sync_db,
-            organization_id=current_user.organization_id,
+    try:
+        return await operations.record_operational_lesson_log(
+            db,
+            current_user.organization_id,
             membership_id=current_user.membership_id,
             operational_block_id=operational_block_id,
             payload=payload,
+            now_utc=datetime.now(UTC),
         )
-
-    return await db.run_sync(_run)
+    except operations.OperationsError as exc:
+        _raise_operations_error(exc)
 
 
 @router.put(

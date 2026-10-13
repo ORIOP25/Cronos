@@ -17,9 +17,7 @@ from fastapi import APIRouter, Query
 
 from app import schemas
 from app.api import deps
-from app.core.exceptions import AppError
 from app.scheduler.infrastructure import occurrences as occurrences_v1
-from app.services import occurrence_service
 
 # Constante reutilizada (SonarQube S1192)
 OCCURRENCE_NOT_FOUND_MSG = "Ocorrência não encontrada"
@@ -54,32 +52,16 @@ async def list_occurrences(
     """Devolve ocorrências de aulas com filtros opcionais."""
     organization_id = current_user.organization_id
 
-    if await occurrences_v1.is_active(db, organization_id):
-        return await occurrences_v1.list_occurrences(
-            db,
-            organization_id,
-            class_id=class_id,
-            date_from=date_from,
-            date_to=date_to,
-            status_filter=status,
-            skip=skip,
-            limit=limit,
-        )
-
-    try:
-        return await occurrence_service.list_occurrences(
-            db,
-            organization_id,
-            class_id=class_id,
-            date_from=date_from,
-            date_to=date_to,
-            skip=skip,
-            limit=limit,
-            status_filter=status,
-            as_page=True,
-        )
-    except AppError:
-        raise
+    return await occurrences_v1.list_occurrences(
+        db,
+        organization_id,
+        class_id=class_id,
+        date_from=date_from,
+        date_to=date_to,
+        status_filter=status,
+        skip=skip,
+        limit=limit,
+    )
 
 
 @router.get(
@@ -95,10 +77,7 @@ async def list_debts(
     """Devolve as horas em dívida (faltas não recuperadas) agrupadas por turma/disciplina."""
     organization_id = current_user.organization_id
 
-    if await occurrences_v1.is_active(db, organization_id):
-        return await occurrences_v1.get_debts(db, organization_id, class_id=class_id)
-
-    return await occurrence_service.get_debts(db, organization_id, class_id=class_id)
+    return await occurrences_v1.get_debts(db, organization_id, class_id=class_id)
 
 
 @router.get(
@@ -117,19 +96,7 @@ async def get_substitute_recommendations(
 ):
     organization_id = current_user.organization_id
 
-    if await occurrences_v1.is_active(db, organization_id):
-        return await occurrences_v1.get_substitute_recommendations(
-            db, organization_id, occurrence_id
-        )
-
-    try:
-        return await occurrence_service.get_substitute_recommendations(
-            db,
-            organization_id=organization_id,
-            occurrence_id=occurrence_id,
-        )
-    except AppError:
-        raise
+    return await occurrences_v1.get_substitute_recommendations(db, organization_id, occurrence_id)
 
 
 @router.get(
@@ -146,31 +113,7 @@ async def get_substitute_diagnostics(
     """Devolve candidatos e os motivos estruturados que os excluem."""
     organization_id = current_user.organization_id
 
-    if await occurrences_v1.is_active(db, organization_id):
-        return await occurrences_v1.get_substitute_diagnostics(db, organization_id, occurrence_id)
-
-    recommendations = await occurrence_service.get_substitute_recommendations(
-        db,
-        organization_id=organization_id,
-        occurrence_id=occurrence_id,
-    )
-    candidates = [
-        {
-            "teacher_id": row.teacher_id,
-            "teacher_name": row.teacher_name,
-            "subject_id": row.subject_id,
-            "subject_name": row.subject_name,
-            "eligible": True,
-            "exclusions": [],
-        }
-        for row in recommendations
-    ]
-    return {
-        "occurrence_id": occurrence_id,
-        "eligible_count": len(candidates),
-        "candidates": candidates,
-        "setup_actions": [],
-    }
+    return await occurrences_v1.get_substitute_diagnostics(db, organization_id, occurrence_id)
 
 
 @router.get(
@@ -187,10 +130,7 @@ async def get_occurrence(
     """Devolve uma ocorrência pelo ID."""
     organization_id = current_user.organization_id
 
-    if await occurrences_v1.is_active(db, organization_id):
-        return await occurrences_v1.get_occurrence(db, organization_id, occurrence_id)
-
-    return await occurrence_service.get_occurrence(db, occurrence_id, organization_id)
+    return await occurrences_v1.get_occurrence(db, organization_id, occurrence_id)
 
 
 @router.patch(
@@ -212,19 +152,10 @@ async def update_occurrence(
     """Permite ao diretor marcar uma ocorrência como GAP ou SUBSTITUTED."""
     organization_id = current_user.organization_id
 
-    if await occurrences_v1.is_active(db, organization_id):
-        return await occurrences_v1.update_occurrence(
-            db,
-            organization_id,
-            occurrence_id,
-            payload,
-            decided_by_membership_id=current_user.membership_id,
-        )
-
-    return await occurrence_service.update_occurrence(
+    return await occurrences_v1.update_occurrence(
         db,
-        occurrence_id,
         organization_id,
+        occurrence_id,
         payload,
         decided_by_membership_id=current_user.membership_id,
     )
@@ -244,23 +175,12 @@ async def cancel_occurrence(
     """Cancela uma ocorrência (OPEN ou decidida), revertendo o LessonLog para PENDING."""
     organization_id = current_user.organization_id
 
-    if await occurrences_v1.is_active(db, organization_id):
-        return await occurrences_v1.cancel_occurrence(
-            db,
-            organization_id,
-            occurrence_id,
-            version=payload.version,
-            reason=occurrence_service.ADMINISTRATIVE_REVERSAL,
-            cancelled_by_membership_id=current_user.membership_id,
-            cancel_completed_substitute_log=payload.cancel_completed_substitute_log,
-        )
-
-    return await occurrence_service.cancel_occurrence(
+    return await occurrences_v1.cancel_occurrence(
         db,
-        organization_id=organization_id,
-        occurrence_id=occurrence_id,
-        cancelled_by_membership_id=current_user.membership_id,
+        organization_id,
+        occurrence_id,
         version=payload.version,
-        reason=occurrence_service.ADMINISTRATIVE_REVERSAL,
+        reason="ADMINISTRATIVE_REVERSAL",
+        cancelled_by_membership_id=current_user.membership_id,
         cancel_completed_substitute_log=payload.cancel_completed_substitute_log,
     )

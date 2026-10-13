@@ -15,7 +15,9 @@ Do not treat this document as proof that an external dashboard is configured.
 
 ## What the System Does
 
-The repository defines Railway configuration for one API service, one worker, one supervisor, one Beat service, and a database bootstrap job that runs only on demand. Production also runs managed `Postgres` and `Redis` services in the same Railway project.
+The repository stores deployment settings for one API service, one worker, one supervisor, one Beat service, and an on-demand bootstrap job.
+The provider topology requires private PostgreSQL and Redis services.
+Railway JSON files record the intended settings. Configure equivalent dashboard settings when the provider rejects config-file attachment.
 The frontend builds from `frontend/` and produces `frontend/dist`.
 The build emits `index.html`, `app-shell.html`, one marketing HTML file per route, and the `_worker.js` edge handler.
 
@@ -38,21 +40,23 @@ The bootstrap job creates restricted roles before runtime deployment.
 
 ### Production topology
 
-This table records the external setup last observed in the provider dashboards. The repository cannot prove it; re-check the dashboards before relying on it.
+This table defines the provider configuration to verify before release.
+Repository files and historical conversation reports do not prove the current external state.
 
 | Where | Item | State |
 | :--- | :--- | :--- |
-| Railway (project `hopeful-enthusiasm`, environment `production`) | `api` | Custom domain `api.cronos.pt`; config file `/backend/railway/api.json`. |
-| | `worker` | Config file `/backend/railway/worker.json`. |
-| | `beat` | Config file `/backend/railway/beat.json`. |
-| | `scheduler-supervisor` | Start command set in the dashboard. The service has no config-file path, so `backend/railway/supervisor.json` is not applied; keep the dashboard command identical to that file. |
-| | `Postgres` | Image `ghcr.io/railwayapp-templates/postgres-ssl:18` (PostgreSQL 18). |
-| | `Redis` | Image `redis:8.2.9`. |
-| Cloudflare | DNS for `cronos.pt` | Pages serves the apex; `www` answers `301` to the apex; `api` is a CNAME to Railway. |
-| Hostinger | Mailbox mail for `cronos.pt` | MX `mx1.hostinger.com` and `mx2.hostinger.com`; SPF `include:_spf.mail.hostinger.com`; DKIM `hostingermail-a`, `-b`, `-c`; DMARC `p=none` without reporting. |
-| Resend | Contact form delivery | Sends from the `forms.cronos.pt` subdomain (DKIM `resend._domainkey.forms`; SPF and MX on `send.forms`). `website@forms.cronos.pt` delivers to `contacto@cronos.pt`. |
+| Railway | `api` | Verify `api.cronos.pt` and the settings recorded in `backend/railway/api.json`. |
+| | `worker` | Verify the settings recorded in `backend/railway/worker.json`. |
+| | `beat` | Verify the settings recorded in `backend/railway/beat.json`. |
+| | `scheduler-supervisor` | Verify the command, Dockerfile builder, `ON_FAILURE` restart policy, and five retries from `backend/railway/supervisor.json`. |
+| | `Postgres` | Verify PostgreSQL 18 and private runtime/migration connections. |
+| | `Redis` | Verify Redis 8.2 and private broker access. |
+| Cloudflare | DNS for `cronos.pt` | Verify Pages apex delivery, permanent `www` redirection, and the Railway API CNAME. |
+| Hostinger | Mailbox mail for `cronos.pt` | Preserve Hostinger MX/SPF/DKIM records. Verify DMARC policy and reporting separately. |
+| Resend | Contact form delivery | Verify `forms.cronos.pt` sender authentication and delivery from `website@forms.cronos.pt` to `contacto@cronos.pt`. |
 
-Version drift: production runs PostgreSQL 18 and Redis 8, while Docker Compose, the test stack and CI run `postgres:16-alpine` and `redis:7-alpine`. Migrations and tests are therefore not exercised on the production major versions. Align them or accept the risk explicitly.
+Docker Compose, isolated tests, and CI use `postgres:18-alpine` and `redis:8.2-alpine`, pinned by digest.
+Deleting a GitHub secret does not revoke its provider token. Confirm any required Cloudflare or Sonar token revocation in that provider.
 
 ## Data or Request Flow
 
@@ -70,7 +74,8 @@ Version drift: production runs PostgreSQL 18 and Redis 8, while Docker Compose, 
 
 ### Railway API
 
-Use root directory `/backend` and config file `/backend/railway/api.json`.
+Use root directory `/backend` and the settings recorded in `/backend/railway/api.json`.
+Verify applied dashboard settings when config-file attachment is unavailable.
 Set `DATABASE_POOLING_ENABLED=true` and `PORT=8000`.
 Use the `cronos_app` URL for runtime access.
 Use the `cronos_migrator` URL for migrations.
@@ -79,7 +84,8 @@ Do not import `app.scheduler_v1_worker` in the API process.
 
 ### Railway worker and Beat
 
-Use root directory `/backend` and their matching JSON files (`worker.json`, `beat.json`; `supervisor.json` as noted in the topology table).
+Use root directory `/backend` and the settings in `worker.json`, `beat.json`, and `supervisor.json`.
+Confirm the dashboard commands match those files.
 Set `DATABASE_POOLING_ENABLED=false`.
 Use private PostgreSQL and Redis URLs.
 Run one worker and one Beat replica.
@@ -88,7 +94,7 @@ The supervisor command includes `--include=app.scheduler_recovery_worker` and co
 
 ### Database bootstrap
 
-Create a temporary service from `backend/railway/bootstrap.json` and delete it afterwards.
+Create a temporary service with the settings in `backend/railway/bootstrap.json` and delete it afterwards.
 Set `BOOTSTRAP_DATABASE_URL`, `CRONOS_MIGRATOR_PASSWORD`, and `CRONOS_APP_PASSWORD` only on that job.
 The job creates `cronos_migrator`, `cronos_app`, and `cronos_auth_definer`.
 Run it twice to verify idempotency.
@@ -154,15 +160,20 @@ The frontend build variables (`VITE_API_BASE_URL`, `VITE_CLERK_PUBLISHABLE_KEY`,
 
 ### Scheduler v1 baseline reset
 
-To reinstall an empty consolidated baseline before real use, run the tested downgrade/upgrade cycle on the API service. The config file limits `preDeployCommand` to one shell line.
+Reinstall the consolidated baseline only before real school use and with explicit reset authorization.
+The reset drops all application tables. Preserve a backup and verify it before starting.
 
-1. Stop job intake and scale the solver, supervisor, and Beat services to zero replicas.
-2. Set the API `preDeployCommand` to `["alembic downgrade base && alembic upgrade head"]`.
-3. Deploy the API at that revision. The pre-deploy drops every table and reinstalls the baseline.
-4. Restore the API `preDeployCommand` to `["alembic upgrade head"]` and deploy again.
-5. Restore the solver, supervisor, and Beat replicas.
+1. Stop job intake and stop API writes, solver, supervisor, and Beat processes.
+2. Confirm that no generation job is active.
+3. Keep the old revision deployed while running `alembic downgrade base` with the migrator credential.
+4. Verify the old schema and Alembic revision were removed.
+5. Deploy the consolidated-baseline revision with the normal `alembic upgrade head` pre-deploy command.
+6. Verify schema, forced RLS, health, bootstrap, and release identity.
+7. Restore application processes and verify generation and approval.
 
-Never run this cycle after real school data exists. Confirm that no generation job is active before step 2.
+Do not deploy the new baseline before the old downgrade.
+The new migration tree cannot resolve removed old revision identifiers.
+For an already consolidated disposable database, local downgrade/upgrade checks use the same revision tree.
 
 ## Contracts and Invariants
 
@@ -196,7 +207,7 @@ downgrade the additive database migration during rollback.
 ## Verification Procedure
 
 1. Check API `/health/live` and `/health/ready`.
-2. Confirm the migration chain head is `0018_occurrence_decisions` (latest file in `backend/alembic/versions/`).
+2. Compare `alembic current` with `alembic heads` for the deployed revision.
 3. Confirm worker registration for `scheduler.v1.run_next_job`.
 4. Confirm Beat schedules `members.run_scheduled_reconciliation`, `privacy.run_maintenance`, and `scheduler.v1.supervise`.
 5. Check that API, worker, Beat, frontend, and migration reference the intended SHA.

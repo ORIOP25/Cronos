@@ -117,14 +117,14 @@ export const useUpsertLessonLog = () => {
   const orgId = useOrganization().organization?.id
 
   return useMutation({
-    mutationFn: async ({ activeScheduleBlockId, operationalBlockId, schedulerLessonId, payload }) => {
+    mutationFn: async ({ operationalBlockId, schedulerLessonId, payload }) => {
       let endpoint
       if (schedulerLessonId) {
         endpoint = `/schedule/lessons/${schedulerLessonId}/log`
       } else if (operationalBlockId) {
         endpoint = `/schedule/operational-blocks/${operationalBlockId}/log`
       } else {
-        endpoint = `/schedule/active-blocks/${activeScheduleBlockId}/log`
+        throw new Error('Não foi possível identificar a aula deste registo.')
       }
       return apiClient.put(endpoint, payload)
     },

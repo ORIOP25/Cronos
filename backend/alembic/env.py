@@ -6,11 +6,13 @@ from alembic import context
 from app.config import settings
 from app.models import Base
 
+DATABASE_URL_KEY = "sqlalchemy.url"
+
 config = context.config
-configured_url = config.get_main_option("sqlalchemy.url") or settings.MIGRATION_DATABASE_URL
+configured_url = config.get_main_option(DATABASE_URL_KEY) or settings.MIGRATION_DATABASE_URL
 if configured_url is None:
     raise RuntimeError("MIGRATION_DATABASE_URL is required for Alembic")
-config.set_main_option("sqlalchemy.url", str(configured_url))
+config.set_main_option(DATABASE_URL_KEY, str(configured_url))
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
@@ -36,7 +38,7 @@ def include_object(object_, name, type_, reflected, compare_to):
 
 def run_migrations_offline() -> None:
     """Emit SQL without connecting to the database."""
-    url = config.get_main_option("sqlalchemy.url")
+    url = config.get_main_option(DATABASE_URL_KEY)
     context.configure(
         url=url,
         target_metadata=target_metadata,
