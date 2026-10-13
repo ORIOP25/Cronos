@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import re
 from dataclasses import FrozenInstanceError
 from pathlib import Path
 
@@ -108,7 +109,7 @@ def test_timeslot_generation_has_one_public_route() -> None:
 def test_production_lock_avoids_platform_conditional_uvicorn_extra() -> None:
     direct_requirements = (BACKEND / "requirements.in").read_text(encoding="utf-8")
 
-    assert "uvicorn==0.52.4" in direct_requirements.splitlines()
+    assert any(re.fullmatch(r"uvicorn==[0-9.]+", line) for line in direct_requirements.splitlines())
     assert "uvicorn[standard]" not in direct_requirements
 
 
@@ -116,9 +117,12 @@ def test_development_lock_pins_unsafe_build_requirements() -> None:
     direct_requirements = (BACKEND / "requirements-dev.in").read_text(encoding="utf-8")
     lock = (BACKEND / "requirements-dev.txt").read_text(encoding="utf-8")
 
-    assert "pip==26.2.1" in direct_requirements.splitlines()
+    pip_pins = [
+        line for line in direct_requirements.splitlines() if re.fullmatch(r"pip==[0-9.]+", line)
+    ]
+    assert len(pip_pins) == 1
     assert "# WARNING:" not in lock
-    assert "\npip==26.2.1 " in lock
+    assert f"\n{pip_pins[0]} " in lock
     assert "\nsetuptools==" in lock
 
 
