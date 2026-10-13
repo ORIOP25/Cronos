@@ -1,6 +1,7 @@
 import { observeAcceptanceRuntime } from './acceptance-runtime.js'
 import { expect } from '@playwright/test'
 import { readSchoolResource } from './ui-school.js'
+import { campaignSchoolLabel } from './acceptance-policy.js'
 
 // Bounded normal transition for the real provider UI. A managed challenge that
 // auto-completes inside this window still passes; only a persistent, visible
@@ -206,7 +207,7 @@ export async function loginPersistentActor(page, school, actor, password) {
   expect(await page.evaluate(() => window.Clerk.user.id)).toBe(actor.id)
   if (await page.evaluate(() => window.Clerk.organization?.id) !== school.clerk_id) {
     await page.getByRole('group', { name: 'Selecionar escola', exact: true }).getByRole('button', { name: 'Abrir seletor de organizações', exact: true }).click()
-    await page.getByText(`Cronos Aceitação ${school.creation_run_id}`, { exact: true }).click()
+    await page.getByText(`Cronos Aceitação ${campaignSchoolLabel(school.creation_run_id)}`, { exact: true }).click()
   }
   await expect.poll(() => page.evaluate(() => window.Clerk.organization?.id)).toBe(school.clerk_id)
   const member = await readSchoolResource(page, 'members/me')

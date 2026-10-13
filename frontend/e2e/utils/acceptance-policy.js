@@ -5,6 +5,13 @@ export const COMPONENTS = ['frontend', 'api', 'worker', 'supervisor', 'beat']
 
 // The single observed production sender must be known before any account effect.
 // Presence stays a dependency; a present but malformed value is a hard failure.
+// Clerk rejects an organization name with a phone-like digit run, so a school
+// name carries the run id with each digit spelled as a letter (0 → a … 9 → j).
+export function campaignSchoolLabel(runId) {
+  if (!/^[a-z0-9-]+$/.test(runId || '')) throw new Error('A campaign run identity is required')
+  return runId.replace(/\d/g, digit => 'abcdefghij'[digit])
+}
+
 export function validateCodeSender(value) {
   if (!CODE_SENDER_PATTERN.test(value || '')) throw new Error('Configure the observed production code sender')
   return value

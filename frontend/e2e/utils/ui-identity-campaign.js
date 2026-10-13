@@ -10,7 +10,7 @@ import { exerciseSchoolIsolation } from '../utils/ui-isolation.js'
 import { exercisePendingOccurrenceAndGap } from '../utils/ui-occurrences.js'
 import { awaitAuthStage, expectIdentity, login, freshSession, withSignUpTestingToken } from '../utils/ui-auth.js'
 import { mintClerkTestingToken } from '../../../scripts/cleanup-production-campaign.mjs'
-import { validateCodeSender } from './acceptance-policy.js'
+import { campaignSchoolLabel, validateCodeSender } from './acceptance-policy.js'
 import { test, expect } from '@playwright/test'
 
 async function rejectOldPassword(page, runtime, testInfo, email, password) {
@@ -144,8 +144,9 @@ export async function runIdentityCampaign({ page, browser, provenance, delivered
   // Clerk initialises this field from its async creation defaults (the instance
   // prefills a default name); filling earlier submits an empty name (422).
   await expect(schoolName).not.toHaveValue('')
-  await schoolName.fill(`Cronos Aceitação ${runId}`)
-  await expect(schoolName).toHaveValue(`Cronos Aceitação ${runId}`)
+  const schoolTitle = `Cronos Aceitação ${campaignSchoolLabel(runId)}`
+  await schoolName.fill(schoolTitle)
+  await expect(schoolName).toHaveValue(schoolTitle)
   // Signed write-ahead organization intent before Clerk creates the school.
   const organizationIntentId = await provenance.beginOrganizationCreation()
   await page.getByRole('button', { name: /^(continuar|continue)$/i }).click()
@@ -188,7 +189,7 @@ export async function runIdentityCampaign({ page, browser, provenance, delivered
     const converted = await inviteImportedTeacher(loginPage, original, imported, teacherEmail, testInfo)
     const invitation = await deliveredMail('teacher', {
       recipient: teacherEmail, senders: ['invitations@cronos.pt'],
-      subject: new RegExp(`^Invitation to join Cronos Aceitação ${runId}$`), purpose: 'invitation',
+      subject: new RegExp(`^Invitation to join Cronos Aceitação ${campaignSchoolLabel(runId)}$`), purpose: 'invitation',
       after: converted.requestedAt, before: converted.requestedAt + 120_000,
       linkHosts: ['clerk.cronos.pt'], linkPath: '/v1/tickets/accept',
     })

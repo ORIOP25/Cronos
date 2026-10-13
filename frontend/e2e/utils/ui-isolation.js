@@ -1,6 +1,7 @@
 import { expect } from '@playwright/test'
 import { readFile } from 'node:fs/promises'
 import { recordCheckpoint } from './acceptance-proof.js'
+import { campaignSchoolLabel } from './acceptance-policy.js'
 import { validateImportedData } from './expected-results.js'
 import { completeFoundation, futureSchoolPeriod, importOriginalData, readImportedData, readSchoolResource } from './ui-school.js'
 
@@ -128,7 +129,7 @@ export async function exerciseSchoolIsolation(page, testInfo, provenance, origin
   await page.getByText('Criar organização', { exact: true }).click()
   const dialog = page.getByRole('dialog')
   await expect(dialog.getByRole('heading', { name: 'Criar organização', exact: true })).toBeVisible()
-  const secondName = `Cronos Isolamento ${runId}`
+  const secondName = `Cronos Isolamento ${campaignSchoolLabel(runId)}`
   await dialog.getByLabel('Nome da organização', { exact: true }).fill(secondName)
   // Signed write-ahead organization intent before the second Clerk school exists.
   const creationIntentId = await provenance.beginOrganizationCreation()
