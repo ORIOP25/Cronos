@@ -227,12 +227,12 @@ export async function runIdentityCampaign({ page, browser, provenance, delivered
       accepted.searchParams.set('__clerk_ticket', ticket)
       accepted.searchParams.set('__clerk_status', 'sign_up')
       await teacherPage.goto(accepted.toString())
-      await expect(teacherPage).toHaveURL(/^https:\/\/cronos\.pt\/(login|register)(?:[/?#]|$)/)
       await awaitClerkLoaded(teacherPage)
-      if (new URL(teacherPage.url()).pathname.startsWith('/login')) {
-        await teacherPage.getByRole('link', { name: /Registar|Criar conta/ }).click()
-      }
+      // Clerk turns the sign-up ticket into its continue-registration step by
+      // itself; clicking during that redirect raced the form it renders.
+      await expect(teacherPage).toHaveURL(/^https:\/\/cronos\.pt\/register(?:[/?#]|$)/, { timeout: 30_000 })
       await expect(teacherPage.getByLabel('Palavra-passe', { exact: true })).toBeVisible()
+      await awaitClerkLoaded(teacherPage)
       for (const [label, value] of [['Nome', 'Cronos'], ['Apelido', 'Professor'], ['Email', teacherEmail]]) {
         const field = teacherPage.getByLabel(label, { exact: true })
         if (await field.isVisible() && await field.isEditable()) await field.fill(value) // NOSONAR - one page must navigate and assert sequentially

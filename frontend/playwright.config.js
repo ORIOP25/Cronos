@@ -132,7 +132,8 @@ export default defineConfig({
       fullyParallel: false,
       workers: 1,
       retries: 0,
-      use: { ...devices['Desktop Chrome'], channel: 'chrome', trace: 'on' },
+      // Production actions fail fast with their step instead of waiting for the test timeout.
+      use: { ...devices['Desktop Chrome'], channel: 'chrome', trace: 'on', actionTimeout: 30_000, navigationTimeout: 60_000 },
     }] : []),
     ...(preparationReport ? [{
       name: 'preparation',
@@ -140,7 +141,8 @@ export default defineConfig({
       fullyParallel: false,
       workers: 1,
       retries: 0,
-      use: { ...devices['Desktop Chrome'], channel: 'chrome', trace: 'on' },
+      // Production actions fail fast with their step instead of waiting for the test timeout.
+      use: { ...devices['Desktop Chrome'], channel: 'chrome', trace: 'on', actionTimeout: 30_000, navigationTimeout: 60_000 },
     }] : []),
     ...(process.env.CAPACITY_ENABLED === '1' ? [{
       name: 'capacity',
