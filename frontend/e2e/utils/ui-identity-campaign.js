@@ -216,7 +216,17 @@ export async function runIdentityCampaign({ page, browser, provenance, delivered
     let preferenceSlot
     await freshSession(browser, testInfo, 'teacher-invitation', async teacherPage => {
       await withSignUpTestingToken(teacherPage, await signUpToken(), async () => {
-      await teacherPage.goto(invitation.link)
+      // Clerk's ticket redirect (clerk.cronos.pt/v1/tickets/accept) sits behind a
+      // Cloudflare check that automation cannot pass, even with the token. Like the
+      // authorised sign-up token, the campaign skips only that hop: it opens the
+      // documented destination (the invitation redirect URL with the delivered
+      // ticket); Clerk still validates the ticket when the teacher signs up.
+      const ticket = new URL(invitation.link).searchParams.get('ticket')
+      if (!ticket) throw new Error('The delivered invitation carries no ticket')
+      const accepted = new URL('/login', 'https://cronos.pt')
+      accepted.searchParams.set('__clerk_ticket', ticket)
+      accepted.searchParams.set('__clerk_status', 'sign_up')
+      await teacherPage.goto(accepted.toString())
       await expect(teacherPage).toHaveURL(/^https:\/\/cronos\.pt\/(login|register)(?:[/?#]|$)/)
       await awaitClerkLoaded(teacherPage)
       if (new URL(teacherPage.url()).pathname.startsWith('/login')) {
