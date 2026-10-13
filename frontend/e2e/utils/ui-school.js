@@ -241,8 +241,10 @@ export async function importOriginalData(page, testInfo, { checkpoint = true } =
     const path = testInfo.outputPath(templateName)
     await download.saveAs(path)
     const bytes = await readFile(path)
-    const header = value => value.replace(/^\uFEFF/, '').split(/\r?\n/)[0]
-    expect(header(bytes.toString('utf8'))).toBe(header(await readFile(originalPath, 'utf8')))
+    // The app's models use ';' (Portuguese spreadsheets); the owner's files use ','.
+    // The importer detects the delimiter, so the columns are what must match.
+    const columns = value => value.replace(/^\uFEFF/, '').split(/\r?\n/)[0].split(/[;,]/).map(column => column.trim())
+    expect(columns(bytes.toString('utf8'))).toEqual(columns(await readFile(originalPath, 'utf8')))
     expect(bytes.toString('utf8').split(/\r?\n/).filter(line => line.trim()).length).toBeGreaterThan(1)
     await testInfo.attach(`downloaded-${resource}-model`, { path, contentType: 'text/csv' })
     await page.locator(`#import-${resource}`).setInputFiles(originalPath)
