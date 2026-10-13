@@ -186,8 +186,19 @@ export async function withSignUpTestingToken(page, token, perform) {
   }
 }
 
+// A poll read during a navigation sees a destroyed context; that read simply
+// has no value yet. Any other page error still fails the poll.
+export async function evaluateAcrossNavigation(page, read) {
+  try {
+    return await page.evaluate(read)
+  } catch (error) {
+    if (/Execution context was destroyed/.test(error?.message || '')) return undefined
+    throw error
+  }
+}
+
 export async function expectIdentity(page, email) {
-  await expect.poll(() => page.evaluate(() => ({
+  await expect.poll(() => evaluateAcrossNavigation(page, () => ({
     email: window.Clerk?.user?.primaryEmailAddress?.emailAddress,
     verified: window.Clerk?.user?.primaryEmailAddress?.verification?.status,
     session: Boolean(window.Clerk?.session),
@@ -209,7 +220,7 @@ export async function loginPersistentActor(page, school, actor, password) {
     await page.getByRole('group', { name: 'Selecionar escola', exact: true }).getByRole('button', { name: 'Abrir seletor de organizações', exact: true }).click()
     await page.getByText(`Cronos Aceitação ${campaignSchoolLabel(school.creation_run_id)}`, { exact: true }).click()
   }
-  await expect.poll(() => page.evaluate(() => window.Clerk.organization?.id)).toBe(school.clerk_id)
+  await expect.poll(() => evaluateAcrossNavigation(page, () => window.Clerk.organization?.id)).toBe(school.clerk_id)
   const member = await readSchoolResource(page, 'members/me')
   expect(member.organization_id).toBe(school.local_id)
   return member

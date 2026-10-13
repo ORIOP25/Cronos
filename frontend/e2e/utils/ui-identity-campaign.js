@@ -8,7 +8,7 @@ import { completeAndResumeGuide } from '../utils/ui-guide.js'
 import { restartDisposableSchoolYear } from '../utils/ui-year.js'
 import { exerciseSchoolIsolation } from '../utils/ui-isolation.js'
 import { exercisePendingOccurrenceAndGap } from '../utils/ui-occurrences.js'
-import { awaitAuthStage, expectIdentity, login, freshSession, withSignUpTestingToken } from '../utils/ui-auth.js'
+import { awaitAuthStage, evaluateAcrossNavigation, expectIdentity, login, freshSession, withSignUpTestingToken } from '../utils/ui-auth.js'
 import { mintClerkTestingToken } from '../../../scripts/cleanup-production-campaign.mjs'
 import { campaignSchoolLabel, validateCodeSender } from './acceptance-policy.js'
 import { test, expect } from '@playwright/test'
@@ -176,7 +176,7 @@ export async function runIdentityCampaign({ page, browser, provenance, delivered
   })
   // End the founder session through the UI before recovery invalidates older sessions.
   await page.getByRole('button', { name: 'Terminar sessão', exact: true }).click()
-  await expect.poll(() => page.evaluate(() => Boolean(window.Clerk?.loaded && !window.Clerk.user && !window.Clerk.session))).toBe(true)
+  await expect.poll(() => evaluateAcrossNavigation(page, () => Boolean(window.Clerk?.loaded && !window.Clerk.user && !window.Clerk.session))).toBe(true)
 
   await freshSession(browser, testInfo, 'fresh-login', loginPage => login(loginPage, email, password))
   await recordCheckpoint(testInfo, ['E2E-02/admin-login-logout', 'E2E-02/new-context-login'], { requires: 'actor' })
@@ -246,7 +246,7 @@ export async function runIdentityCampaign({ page, browser, provenance, delivered
       preferenceSlot = await saveTeacherPreference(teacherPage, testInfo)
       await expect(teacherPage.getByRole('button', { name: 'Terminar sessão', exact: true })).toBeVisible()
       await teacherPage.getByRole('button', { name: 'Terminar sessão', exact: true }).click()
-      await expect.poll(() => teacherPage.evaluate(() => Boolean(window.Clerk?.loaded && !window.Clerk.user && !window.Clerk.session))).toBe(true)
+      await expect.poll(() => evaluateAcrossNavigation(teacherPage, () => Boolean(window.Clerk?.loaded && !window.Clerk.user && !window.Clerk.session))).toBe(true)
     })
     await recordCheckpoint(testInfo, 'E2E-04/invitation-acceptance', { requires: 'school' })
     await freshSession(browser, testInfo, 'teacher-fresh-login', async teacherPage => {
@@ -314,7 +314,7 @@ export async function runIdentityCampaign({ page, browser, provenance, delivered
     await loginPage.getByRole('link', { name: 'Ir para o painel', exact: true }).click()
     await expect(loginPage).toHaveURL(/\/dashboard$/)
     await loginPage.getByRole('button', { name: 'Terminar sessão', exact: true }).click()
-    await expect.poll(() => loginPage.evaluate(() => Boolean(window.Clerk?.loaded && !window.Clerk.user && !window.Clerk.session))).toBe(true)
+    await expect.poll(() => evaluateAcrossNavigation(loginPage, () => Boolean(window.Clerk?.loaded && !window.Clerk.user && !window.Clerk.session))).toBe(true)
     await loginPage.goto('/dashboard')
     await expect(loginPage).toHaveURL(/\/login(?:[/?#]|$)/)
     await expect(loginPage.getByLabel('Email', { exact: true })).toBeVisible()
