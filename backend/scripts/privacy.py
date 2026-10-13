@@ -23,7 +23,7 @@ from sqlalchemy.pool import NullPool
 
 from app import models
 from app.config import settings
-from app.db.database import Base, SessionLocal
+from app.db.database import Base, SessionLocal, async_database_url
 from app.db.tenant import set_async_tenant_context
 from app.scheduler.infrastructure.models import JOB_ACTIVE_STATUSES, SchedulerJobV1
 
@@ -36,7 +36,7 @@ def _administrative_url() -> str:
     )
     if not url:
         raise ValueError("An administrative database URL is required for erasure.")
-    return url.replace("+psycopg2", "+asyncpg")
+    return async_database_url(url)
 
 
 def _administrative_sessions():
