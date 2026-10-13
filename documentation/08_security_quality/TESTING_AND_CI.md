@@ -3,12 +3,12 @@
 Cronos has one test suite with one result.
 The browser E2E journeys prove that the application works end to end through the visible UI.
 The backend and frontend gates cover only the essential core, so they stay fast.
-After a green run on `main`, one read-only job confirms that production serves that commit.
+After every push to `main`, the separate Deploy check workflow confirms that production serves that commit.
 There is no separate production test campaign.
 
 Cronos runs backend, frontend, and end-to-end suites through one root runner.
 GitHub Actions enforces the same gates on every pull request and on every push to `main`.
-A push to `main` skips the suites when its merged pull request head has the same tree and already passed `backend`, `frontend`, `e2e-browser` and `e2e`.
+A push to `main` skips the suites when its merged pull request head has the same tree and already passed `backend`, `frontend`, `e2e-runtime` and `e2e-browser`.
 Any other push to `main` runs every gate again.
 A feature branch with an open pull request runs the full pipeline once through the pull request, instead of a second identical push run.
 A branch pushed without a pull request has no automatic CI and requires an explicit manual `workflow_dispatch` checkpoint.
@@ -92,7 +92,7 @@ Backend gates use Python 3.14 with `postgres:16` and `redis:7` services. The job
 
 Frontend gates use Node 24 with `npm ci --ignore-scripts` and then the self-contained `npm run verify:critical:fast`, which runs the legal, marketing-build, edge, asset and critical-coverage steps. The full-source lint, the production dependency audit and the repository script tests run in the long `e2e-runtime` job instead. The job also runs `node scripts/loc-report.mjs` against `documentation/08_security_quality/loc-baseline.json`.
 
-E2E is two jobs plus one aggregate. `e2e-runtime` needs no Clerk or provider credential, so it is mandatory on every pull request, including Dependabot and forks; it runs 9 real worker-recovery cases plus the single full 48-class typology proof, 10 collected with zero skips, against native PostgreSQL/Redis, and it also runs the whole-source frontend lint, the production dependency audit, the repository script tests, the whole-system frontend Knip and the production build. `e2e-browser` runs the browser UI journeys against the full CI stack and the 2 capacity cases; the Dependabot or fork policy skips only this job, which needs the Clerk SDK. The aggregate `e2e` job fails unless `e2e-runtime` succeeded and `e2e-browser` succeeded or was skipped by that policy. The guarded upload keeps the runner `run.json` metadata always and the Playwright `e2e-all.xml` only when the E2E step passed; it never adds auth state, binaries, logs or private files.
+E2E is two parallel jobs. `e2e-runtime` needs no Clerk or provider credential, so it is mandatory on every pull request, including Dependabot and forks; it runs 9 real worker-recovery cases plus the single full 48-class typology proof, 10 collected with zero skips, against native PostgreSQL/Redis, and it also runs the whole-source frontend lint, the production dependency audit, the repository script tests, the whole-system frontend Knip and the production build. `e2e-browser` runs the browser UI journeys against the full CI stack and the 2 capacity cases; the Dependabot or fork policy skips only this job, which needs the Clerk SDK. The guarded upload keeps the runner `run.json` metadata always and the Playwright `e2e-all.xml` only when the E2E step passed; it never adds auth state, binaries, logs or private files.
 
 ### Critical and full selections
 
@@ -137,7 +137,7 @@ Skipped tests, retries, missing artifacts and migration drift are release failur
 
 ## Production deployment check
 
-The `production` job runs only for a push to `main`, after `backend`, `frontend` and `e2e` pass or the merge is already verified.
+`.github/workflows/deploy-check.yml` runs the `production` job on every push to `main`, independently of CI, because Railway and Cloudflare Pages deploy every push.
 It runs `scripts/verify-production-deploy.mjs` with the pushed commit as `EXPECTED_REVISION`.
 The script waits up to 20 minutes, because the deployments start on the same push as CI.
 
@@ -158,4 +158,4 @@ A failure prints each unmet condition as a workflow error.
 - [Contributing Guidelines](../00_getting_started/CONTRIBUTING.md)
 - [Security and Tenant Isolation](SECURITY_AND_TENANT_ISOLATION.md)
 - [Local Runtime](../09_ops_observability/LOCAL_RUNTIME.md)
-- Workflow: `.github/workflows/ci.yml`
+- Workflows: `.github/workflows/ci.yml`, `.github/workflows/deploy-check.yml`

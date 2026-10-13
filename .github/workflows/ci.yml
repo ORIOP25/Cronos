@@ -50,7 +50,7 @@ jobs:
             if [ -n "$pushed_tree" ] && [ "$pushed_tree" = "$head_tree" ]; then
               # e2e-browser must have run: a skipped browser job (Dependabot, forks) is no proof.
               green=$(gh api "repos/$REPO/commits/$head/check-runs?filter=latest&per_page=100" \
-                --jq '[.check_runs[] | select((.name == "backend" or .name == "frontend" or .name == "e2e-browser" or .name == "e2e") and .conclusion == "success") | .name] | unique | length')
+                --jq '[.check_runs[] | select((.name == "backend" or .name == "frontend" or .name == "e2e-runtime" or .name == "e2e-browser") and .conclusion == "success") | .name] | unique | length')
               if [ "$green" = 4 ]; then verified=true; fi
             fi
           fi
@@ -675,80 +675,3 @@ jobs:
           path: backend/runtime-results.xml
           if-no-files-found: warn
           retention-days: 3
-
-  # Aggregated required status for the E2E group, keeping the branch-protection
-  # name `e2e`. The native runtime proof must always pass; the browser job must
-  # pass unless it was skipped by the Dependabot/fork policy.
-  e2e:
-    if: always()
-    needs: [already-verified, e2e-runtime, e2e-browser]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Verify the E2E statuses
-        run: |
-          if [ "${{ needs.already-verified.outputs.verified }}" = "true" ]; then
-            echo "the merged pull request head already passed with the same tree"
-            exit 0
-          fi
-          runtime="${{ needs.e2e-runtime.result }}"
-          browser="${{ needs.e2e-browser.result }}"
-          if [ "$runtime" != "success" ]; then
-            echo "e2e-runtime did not pass: ${runtime}"
-            exit 1
-          fi
-          if [ "$browser" = "success" ]; then
-            echo "e2e statuses are green"
-            exit 0
-          fi
-          if [ "$browser" != "skipped" ]; then
-            echo "e2e-browser did not pass: ${browser}"
-            exit 1
-          fi
-          if [ "${{ github.actor }}" = "dependabot[bot]" ]; then
-            echo "e2e-browser skipped for Dependabot"
-            exit 0
-          fi
-          if [ "${{ github.event_name }}" = "pull_request" ] && [ "${{ github.event.pull_request.head.repo.full_name }}" != "${{ github.repository }}" ]; then
-            echo "e2e-browser skipped for a fork pull request"
-            exit 0
-          fi
-          echo "e2e-browser was unexpectedly skipped"
-          exit 1
-
-  # After a green run on main (or an already verified merge), confirm production
-  # serves this commit and its health checks pass. Read-only: no credentials, accounts or business writes.
-  production:
-    if: >-
-      !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' &&
-      (needs.already-verified.outputs.verified == 'true' ||
-      (needs.backend.result == 'success' && needs.frontend.result == 'success' && needs.e2e.result == 'success'))
-    needs: [already-verified, backend, frontend, e2e]
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 2
-
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-
-      - name: Verify the production deployment
-        run: |
-          if git diff --quiet HEAD~1 HEAD -- backend/; then export BACKEND_CHANGED=false; fi
-          node scripts/verify-production-deploy.mjs
-        env:
-          EXPECTED_REVISION: ${{ github.sha }}
-
-      - name: Install the browser
-        working-directory: frontend
-        run: |
-          npm ci --ignore-scripts
-          npx --no-install playwright install chromium
-
-      - name: Open the public site and the login in a browser
-        working-directory: frontend
-        run: node scripts/verify-production-browser.mjs

@@ -1,0 +1,48 @@
+name: Deploy check
+
+# Railway and Cloudflare Pages deploy every push to main. This confirms that
+# production serves that commit and works. Read-only: no credentials, accounts
+# or business writes.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-check
+  cancel-in-progress: true
+
+jobs:
+  production:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Wait for the deployment and check its health
+        run: |
+          if git diff --quiet HEAD~1 HEAD -- backend/; then export BACKEND_CHANGED=false; fi
+          node scripts/verify-production-deploy.mjs
+        env:
+          EXPECTED_REVISION: ${{ github.sha }}
+
+      - name: Install the browser
+        working-directory: frontend
+        run: |
+          npm ci --ignore-scripts
+          npx --no-install playwright install chromium
+
+      - name: Open the public site and the login in a browser
+        working-directory: frontend
+        run: node scripts/verify-production-browser.mjs
