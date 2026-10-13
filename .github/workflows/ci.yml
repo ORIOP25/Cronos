@@ -172,7 +172,7 @@ jobs:
       # `verify:critical:fast` runs the legal, marketing-build and edge
       # contracts, the marketing assets and the critical coverage. The
       # whole-source lint, the production dependency audit, the
-      # acceptance-infrastructure tests, the production build and the dead-code
+      # repository script tests, the production build and the dead-code
       # checks stay mandatory in the long e2e-runtime job.
       - name: Verify frontend critical core
         working-directory: frontend
@@ -289,7 +289,7 @@ jobs:
           docker run --rm \
             -e DATABASE_URL=postgresql+asyncpg://ci:ci@localhost:5432/cronos_test_db \
             cronos-backend:test python -c \
-            "from app.celery_worker import celery_app; import app.privacy_maintenance_worker; import scripts.cleanup_e2e_run; assert 'privacy.run_maintenance' in celery_app.tasks"
+            "from app.celery_worker import celery_app; import app.privacy_maintenance_worker; import scripts.privacy; assert 'privacy.run_maintenance' in celery_app.tasks"
 
       - name: Start CI infrastructure
         run: docker compose -f docker-compose.ci.yml up -d --wait db redis
@@ -524,7 +524,7 @@ jobs:
           cache-dependency-path: backend/requirements-dev.txt
       # The whole-source frontend lint, production build and dead-code checks
       # are required on every PR, so they live in this long allowed job. The
-      # production dependency audit and the acceptance-infrastructure tests
+      # production dependency audit and the repository script tests
       # also run here, condition-free, after the frontend install.
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -562,7 +562,7 @@ jobs:
         working-directory: frontend
         run: npm ci --ignore-scripts
       # The whole-source frontend lint, the production dependency audit and the
-      # acceptance-infrastructure Node tests are mandatory, but they no longer
+      # repository script Node tests are mandatory, but they no longer
       # belong to the fast frontend gate. They run here, unconditionally, in the
       # long job that every pull request (including Dependabot and forks)
       # already runs.
@@ -572,9 +572,9 @@ jobs:
       - name: Audit production dependencies
         working-directory: frontend
         run: npm run audit:production
-      - name: Test acceptance infrastructure
+      - name: Test the repository scripts
         working-directory: frontend
-        run: npm run test:acceptance-infrastructure
+        run: npm run test:scripts
       - name: Frontend dead code (default)
         working-directory: frontend
         run: npm run lint:dead-code
@@ -668,3 +668,26 @@ jobs:
           fi
           echo "e2e-browser was unexpectedly skipped"
           exit 1
+
+  # After a green run on main, confirm production serves this commit and its
+  # health checks pass. Read-only: no credentials, accounts or business writes.
+  production:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [backend, frontend, e2e]
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Verify the production deployment
+        run: |
+          if git diff --quiet HEAD~1 HEAD -- backend/; then export BACKEND_CHANGED=false; fi
+          node scripts/verify-production-deploy.mjs
+        env:
+          EXPECTED_REVISION: ${{ github.sha }}
