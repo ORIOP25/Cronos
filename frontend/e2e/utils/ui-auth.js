@@ -280,8 +280,12 @@ export async function login(page, email, password, readCode, runtime) {
       if (typeof readCode !== 'function') throw new Error('New-device sign-in requires the delivered code reader')
       // A throttled send gets no email: wait as Clerk asks, then use the visible resend control.
       for (let attempt = 0; ; attempt += 1) {
-        await expect.poll(() => sends.length, { timeout: 15_000 }).toBeGreaterThan(0)
-        if (sends.some(send => send.status < 300)) break
+        // The two concurrent sends may answer in either order: a duplicate's 429
+        // can arrive before the send that delivered the email.
+        const delivered = await expect.poll(() => sends.some(send => send.status < 300), { timeout: 15_000 })
+          .toBe(true).then(() => true, () => false)
+        if (delivered) break
+        if (sends.length === 0) throw new Error('Clerk answered no new-device code send')
         const wait = Math.max(30, ...sends.map(send => send.retryAfter))
         if (attempt === 2 || wait > 600) throw new Error(`Clerk throttled the new-device code: ${sends.map(send => `${send.status}/${send.retryAfter}s`).join(', ')}`)
         sends.length = 0
