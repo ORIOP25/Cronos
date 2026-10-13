@@ -8,7 +8,7 @@ import { completeAndResumeGuide } from '../utils/ui-guide.js'
 import { restartDisposableSchoolYear } from '../utils/ui-year.js'
 import { exerciseSchoolIsolation } from '../utils/ui-isolation.js'
 import { exercisePendingOccurrenceAndGap } from '../utils/ui-occurrences.js'
-import { awaitAuthStage, awaitClerkLoaded, deliveredCodeReader, evaluateAcrossNavigation, expectIdentity, login, freshSession, withSignUpTestingToken } from '../utils/ui-auth.js'
+import { awaitAuthStage, awaitClerkLoaded, deliveredCodeReader, evaluateAcrossNavigation, expectIdentity, login, freshSession, signOutThroughUi, withSignUpTestingToken } from '../utils/ui-auth.js'
 import { mintClerkTestingToken } from '../../../scripts/cleanup-production-campaign.mjs'
 import { campaignSchoolLabel, validateCodeSender } from './acceptance-policy.js'
 import { test, expect } from '@playwright/test'
@@ -73,7 +73,8 @@ async function verifyTeacherPermissions(page) {
 }
 
 export async function runIdentityCampaign({ page, browser, provenance, deliveredMail, registerSecret, runtime }, testInfo, { persistent = false, persistCredentials, onPrepared } = {}) {
-  test.setTimeout(1_200_000)
+  // Recovery waits for Clerk's per-account code window after the school work.
+  test.setTimeout(2_700_000)
   if (persistent && (typeof persistCredentials !== 'function' || typeof onPrepared !== 'function')) throw new Error('Persistent preparation requires protected credentials and observed publication evidence')
   const schoolType = persistent ? 'persistent' : 'disposable'
   const runId = process.env.E2E_RUN_ID
@@ -182,40 +183,20 @@ export async function runIdentityCampaign({ page, browser, provenance, delivered
   await page.getByRole('button', { name: 'Terminar sessão', exact: true }).click()
   await expect.poll(() => evaluateAcrossNavigation(page, () => Boolean(window.Clerk?.loaded && !window.Clerk.user && !window.Clerk.session))).toBe(true)
 
-  await freshSession(browser, testInfo, 'fresh-login', loginPage => login(loginPage, email, password, adminCode))
+  // Option (a), trusted devices: one browser per actor. The founder proves a
+  // sign-in on a new context once; later sessions reuse that device as a person
+  // would, because Clerk throttles verification codes per account.
+  const registrationDevice = page.context()
+  const adminDevice = await browser.newContext({ baseURL: 'https://cronos.pt' })
+  const teacherDevice = await browser.newContext({ baseURL: 'https://cronos.pt' })
+  try {
+  await freshSession(browser, testInfo, 'fresh-login', loginPage => login(loginPage, email, password, adminCode), { context: adminDevice })
   await recordCheckpoint(testInfo, ['E2E-02/admin-login-logout', 'E2E-02/new-context-login'], { requires: 'actor' })
-  await freshSession(browser, testInfo, 'recovery', async recoveryPage => {
-    // A refused code request shows the app's alert; report it instead of a bare timeout.
-    const codeStep = recoveryPage.getByRole('heading', { name: 'Introduza o código', exact: true })
-    const refusal = recoveryPage.getByRole('alert')
-    let recoveryRequestedAt
-    for (let attempt = 0; ; attempt += 1) {
-      await recoveryPage.goto('/recuperar-palavra-passe')
-      await awaitClerkLoaded(recoveryPage)
-      await recoveryPage.getByLabel('Email', { exact: true }).fill(email)
-      recoveryRequestedAt = Date.now()
-      await recoveryPage.getByRole('button', { name: 'Enviar código', exact: true }).click()
-      await expect(codeStep.or(refusal).first()).toBeVisible()
-      if (await codeStep.isVisible()) break
-      const reason = (await refusal.first().innerText()).replaceAll(email, '<email>')
-      // Clerk asks a throttled account to wait at least 30 seconds before another code.
-      if (attempt === 3 || !/Too many verification code requests/i.test(reason)) throw new Error(`Password recovery refused the code request: ${reason}`)
-      await recoveryPage.waitForTimeout(35_000 * 2 ** attempt)
-    }
-    const recovery = await deliveredMail('admin', criteria(recoveryRequestedAt, /^\d{6} is your reset password code$/, resetSender))
-    await recoveryPage.getByLabel('Código de verificação', { exact: true }).fill(recovery.code)
-    await recoveryPage.getByRole('button', { name: 'Verificar código', exact: true }).click()
-    await recoveryPage.getByLabel('Nova palavra-passe', { exact: true }).fill(recoveredPassword)
-    await recoveryPage.getByLabel('Confirmar palavra-passe', { exact: true }).fill(recoveredPassword)
-    await recoveryPage.getByRole('button', { name: 'Guardar e entrar', exact: true }).click()
-    await expectIdentity(recoveryPage, email)
-  })
-  await recordCheckpoint(testInfo, 'E2E-03/delivered-recovery', { requires: 'actor' })
-  await freshSession(browser, testInfo, 'old-password-rejected', (loginPage, runtime) => rejectOldPassword(loginPage, runtime, testInfo, email, password))
-  await recordCheckpoint(testInfo, 'E2E-03/credential-change', { requires: 'actor' })
-  await freshSession(browser, testInfo, 'recovered-login', async (loginPage, runtime) => {
-    await login(loginPage, email, recoveredPassword, adminCode)
-    await recordCheckpoint(testInfo, 'E2E-03/recovered-login', { requires: 'actor', observation: { recovered: true } })
+  await freshSession(browser, testInfo, 'admin-school', async (loginPage, runtime) => {
+    // The trusted admin device still holds the session from the new-context sign-in.
+    await loginPage.goto('/dashboard')
+    await awaitClerkLoaded(loginPage)
+    await expectIdentity(loginPage, email)
     await importOriginalData(loginPage, testInfo)
     const imported = await verifyImportedData(loginPage, original, testInfo)
     const converted = await inviteImportedTeacher(loginPage, original, imported, teacherEmail, testInfo)
@@ -264,7 +245,7 @@ export async function runIdentityCampaign({ page, browser, provenance, delivered
       await expect(teacherPage.getByRole('button', { name: 'Terminar sessão', exact: true })).toBeVisible()
       await teacherPage.getByRole('button', { name: 'Terminar sessão', exact: true }).click()
       await expect.poll(() => evaluateAcrossNavigation(teacherPage, () => Boolean(window.Clerk?.loaded && !window.Clerk.user && !window.Clerk.session))).toBe(true)
-    })
+    }, { context: teacherDevice })
     await recordCheckpoint(testInfo, 'E2E-04/invitation-acceptance', { requires: 'school' })
     await freshSession(browser, testInfo, 'teacher-fresh-login', async teacherPage => {
       await login(teacherPage, teacherEmail, teacherPassword, teacherCode)
@@ -272,7 +253,7 @@ export async function runIdentityCampaign({ page, browser, provenance, delivered
       await expect(teacherPage).toHaveURL(/\/my-schedules$/)
       await verifyTeacherPreference(teacherPage, preferenceSlot)
       await verifyTeacherPermissions(teacherPage)
-    })
+    }, { context: teacherDevice })
     await recordCheckpoint(testInfo, [
       'E2E-02/teacher-login-logout', 'E2E-15/teacher-admin-routes-denied', 'E2E-15/denied-actions-no-effects',
     ], { requires: 'school', observation: { denied_routes: 13, denied_writes: 0 } })
@@ -306,10 +287,51 @@ export async function runIdentityCampaign({ page, browser, provenance, delivered
       await verifyInitialProgress(teacherPage, testInfo, original, imported, member.teacher_id)
       if (persistent) return
       await freshSession(browser, testInfo, 'concurrent-admin-occurrence-decision', async (concurrentPage, concurrentRuntime) => {
-        await login(concurrentPage, email, recoveredPassword, adminCode)
+        // A second tab on the admin's trusted device shares its live session.
+        await concurrentPage.goto('/dashboard')
+        await awaitClerkLoaded(concurrentPage)
+        await expectIdentity(concurrentPage, email)
         operationalHistory = await exercisePendingOccurrenceAndGap(teacherPage, loginPage, testInfo, week, original, imported.identities, { page: concurrentPage, runtime: concurrentRuntime })
-      })
-    })
+      }, { context: adminDevice })
+    }, { context: teacherDevice })
+    // Recovery runs after the school work, once the sign-up and new-device codes
+    // have left Clerk's per-account window, on the founder's registration device.
+    await freshSession(browser, testInfo, 'recovery', async recoveryPage => {
+      // A refused code request shows the app's alert; report it instead of a bare timeout.
+      const codeStep = recoveryPage.getByRole('heading', { name: 'Introduza o código', exact: true })
+      const refusal = recoveryPage.getByRole('alert')
+      let recoveryRequestedAt
+      for (let attempt = 0; ; attempt += 1) {
+        await recoveryPage.goto('/recuperar-palavra-passe')
+        await awaitClerkLoaded(recoveryPage)
+        await recoveryPage.getByLabel('Email', { exact: true }).fill(email)
+        recoveryRequestedAt = Date.now()
+        await recoveryPage.getByRole('button', { name: 'Enviar código', exact: true }).click()
+        await expect(codeStep.or(refusal).first()).toBeVisible()
+        if (await codeStep.isVisible()) break
+        const reason = (await refusal.first().innerText()).replaceAll(email, '<email>')
+        // Clerk asks a throttled account to wait; its window is several minutes.
+        if (attempt === 4 || !/Too many verification code requests/i.test(reason)) throw new Error(`Password recovery refused the code request: ${reason}`)
+        await recoveryPage.waitForTimeout(60_000 * 2 ** Math.min(attempt, 2))
+      }
+      const recovery = await deliveredMail('admin', criteria(recoveryRequestedAt, /^\d{6} is your reset password code$/, resetSender))
+      await recoveryPage.getByLabel('Código de verificação', { exact: true }).fill(recovery.code)
+      await recoveryPage.getByRole('button', { name: 'Verificar código', exact: true }).click()
+      await recoveryPage.getByLabel('Nova palavra-passe', { exact: true }).fill(recoveredPassword)
+      await recoveryPage.getByLabel('Confirmar palavra-passe', { exact: true }).fill(recoveredPassword)
+      await recoveryPage.getByRole('button', { name: 'Guardar e entrar', exact: true }).click()
+      await expectIdentity(recoveryPage, email)
+    }, { context: registrationDevice })
+    await recordCheckpoint(testInfo, 'E2E-03/delivered-recovery', { requires: 'actor' })
+    await freshSession(browser, testInfo, 'old-password-rejected', async (rejectPage, rejectRuntime) => {
+      await rejectPage.goto('/dashboard')
+      await awaitClerkLoaded(rejectPage)
+      await signOutThroughUi(rejectPage)
+      await rejectOldPassword(rejectPage, rejectRuntime, testInfo, email, password)
+    }, { context: registrationDevice })
+    await recordCheckpoint(testInfo, 'E2E-03/credential-change', { requires: 'actor' })
+    await login(loginPage, email, recoveredPassword, adminCode)
+    await recordCheckpoint(testInfo, 'E2E-03/recovered-login', { requires: 'actor', observation: { recovered: true } })
     if (persistent) {
       await onPrepared({ page: loginPage, original, imported, converted, generated, schoolPeriod })
       return
@@ -335,5 +357,8 @@ export async function runIdentityCampaign({ page, browser, provenance, delivered
     await loginPage.goto('/dashboard')
     await expect(loginPage).toHaveURL(/\/login(?:[/?#]|$)/)
     await expect(loginPage.getByLabel('Email', { exact: true })).toBeVisible()
-  })
+  }, { context: adminDevice })
+  } finally {
+    await Promise.allSettled([adminDevice.close(), teacherDevice.close()])
+  }
 }

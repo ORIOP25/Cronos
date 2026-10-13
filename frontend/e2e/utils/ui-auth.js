@@ -227,9 +227,24 @@ export function deliveredCodeReader(deliveredMail, mailbox, recipient) {
     purpose: 'code', after, before: after + 120_000, latest: true })).code
 }
 
+// Ends a live session through the visible control; the device stays trusted.
+export async function signOutThroughUi(page) {
+  if (!(await evaluateAcrossNavigation(page, () => Boolean(window.Clerk?.user)))) return
+  await page.goto('/dashboard')
+  await awaitClerkLoaded(page)
+  await page.getByRole('button', { name: 'Terminar sessão', exact: true }).click()
+  await expect.poll(() => evaluateAcrossNavigation(page, () => Boolean(window.Clerk?.loaded && !window.Clerk.user && !window.Clerk.session))).toBe(true)
+}
+
 export async function login(page, email, password, readCode) {
   await page.goto('/login')
   await awaitClerkLoaded(page)
+  // A trusted device may still hold an earlier session; end it first, as a person would.
+  if (await evaluateAcrossNavigation(page, () => Boolean(window.Clerk?.user))) {
+    await signOutThroughUi(page)
+    await page.goto('/login')
+    await awaitClerkLoaded(page)
+  }
   await page.getByLabel('Email', { exact: true }).fill(email)
   await page.getByLabel('Palavra-passe', { exact: true }).fill(password)
   const requestedAt = Date.now()
@@ -258,8 +273,10 @@ export async function loginPersistentActor(page, school, actor, password, readCo
   return member
 }
 
-export async function freshSession(browser, testInfo, label, perform) {
-  const context = await browser.newContext({ baseURL: 'https://cronos.pt' })
+// A session opens a new page on its own new browser context or, with
+// `context`, on an actor's trusted device, which stays open for later sessions.
+export async function freshSession(browser, testInfo, label, perform, { context: device } = {}) {
+  const context = device ?? await browser.newContext({ baseURL: 'https://cronos.pt' })
   let page, runtime, primaryError
   // The acceptance projects trace every context natively (`trace: 'on'`).
   try {
@@ -273,7 +290,7 @@ export async function freshSession(browser, testInfo, label, perform) {
         body: await page.screenshot({ fullPage: true, mask: [page.locator('input, textarea')] }), contentType: 'image/png',
       })
     } catch (error) { primaryError ??= error }
-    try { await context.close() } catch (error) { primaryError ??= error }
+    try { await (device ? page?.close() : context.close()) } catch (error) { primaryError ??= error }
     runtime?.dispose()
   }
   if (primaryError) throw primaryError
