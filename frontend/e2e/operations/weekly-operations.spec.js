@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { formatDateLong } from '../../src/utils/formatUtils.js'
+import { getLessonLogStatus } from '../../src/utils/presentation.js'
 import {
   allowApiFailure,
   attachRuntimeGuards,
@@ -157,12 +158,12 @@ test('teacher records an occurrence in advance and the admin decides it once', a
       expect(await apiRequest(page, 'GET', '/occurrences/debts')).toEqual(debtsAfter)
     })
 
-    await test.step('teacher sees the decided gap in the published week', async () => {
+    await test.step('teacher sees the occurrence in the published week', async () => {
       await openTeacherWeek(teacherPage, horizon, week.weekStart)
       const row = (await apiRequest(teacherPage, 'GET', weekPath)).find((item) => item.scheduler_lesson_id === lesson.scheduler_lesson_id)
       expect(row).toMatchObject({ occurrence_id: occurrence.id, occurrence_status: 'GAP' })
       await expect(teacherPage.getByRole('table', { name: 'Grelha semanal de horários', exact: true })
-        .getByRole('gridcell', { name: `${lesson.subject.name}, ${lesson.teacher.name}, ${lesson.room.name}, Falta ✗`, exact: true })
+        .getByRole('gridcell', { name: `${lesson.subject.name}, ${lesson.teacher.name}, ${lesson.room.name}, ${getLessonLogStatus('OCCURRENCE').label}`, exact: true })
         .first()).toBeVisible()
     })
   } finally {
