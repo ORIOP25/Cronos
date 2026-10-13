@@ -63,9 +63,9 @@ async function verifyTeacherPermissions(page) {
   page.on('request', observe)
   try {
     for (const route of ['/dashboard', '/members', '/rooms', '/subjects', '/courses', '/config', '/schedules', '/absences', '/timesheets', '/imports', '/foundation', '/guide']) {
-      await page.goto(route)
-      await expect(page).toHaveURL(/\/my-schedules$/)
-      for (const name of ['Nova Sala', 'Novo Curso', 'Adicionar membro', 'Ativar Escola']) await expect(page.getByRole('button', { name, exact: true })).toHaveCount(0)
+      await page.goto(route) // NOSONAR - one page must navigate and assert sequentially
+      await expect(page).toHaveURL(/\/my-schedules$/) // NOSONAR - one page must navigate and assert sequentially
+      for (const name of ['Nova Sala', 'Novo Curso', 'Adicionar membro', 'Ativar Escola']) await expect(page.getByRole('button', { name, exact: true })).toHaveCount(0) // NOSONAR - one page must navigate and assert sequentially
     }
     expect(writes, 'Denied administrative UI routes cannot issue write requests').toEqual([])
   } finally { page.off('request', observe) }
@@ -210,7 +210,7 @@ export async function runIdentityCampaign({ page, browser, provenance, delivered
       await expect(teacherPage.getByLabel('Palavra-passe', { exact: true })).toBeVisible()
       for (const [label, value] of [['Nome', 'Cronos'], ['Apelido', 'Professor'], ['Email', teacherEmail]]) {
         const field = teacherPage.getByLabel(label, { exact: true })
-        if (await field.isVisible() && await field.isEditable()) await field.fill(value)
+        if (await field.isVisible() && await field.isEditable()) await field.fill(value) // NOSONAR - one page must navigate and assert sequentially
       }
       await teacherPage.getByLabel('Palavra-passe', { exact: true }).fill(teacherPassword)
       const consent = teacherPage.getByRole('checkbox', { name: /poderes para a vincular/ })
