@@ -185,16 +185,23 @@ export async function runIdentityCampaign({ page, browser, provenance, delivered
   await freshSession(browser, testInfo, 'fresh-login', loginPage => login(loginPage, email, password, adminCode))
   await recordCheckpoint(testInfo, ['E2E-02/admin-login-logout', 'E2E-02/new-context-login'], { requires: 'actor' })
   await freshSession(browser, testInfo, 'recovery', async recoveryPage => {
-    await recoveryPage.goto('/recuperar-palavra-passe')
-    await awaitClerkLoaded(recoveryPage)
-    await recoveryPage.getByLabel('Email', { exact: true }).fill(email)
-    const recoveryRequestedAt = Date.now()
-    await recoveryPage.getByRole('button', { name: 'Enviar código', exact: true }).click()
     // A refused code request shows the app's alert; report it instead of a bare timeout.
     const codeStep = recoveryPage.getByRole('heading', { name: 'Introduza o código', exact: true })
     const refusal = recoveryPage.getByRole('alert')
-    await expect(codeStep.or(refusal).first()).toBeVisible()
-    if (!(await codeStep.isVisible())) throw new Error(`Password recovery refused the code request: ${(await refusal.first().innerText()).replaceAll(email, '<email>')}`)
+    let recoveryRequestedAt
+    for (let attempt = 0; ; attempt += 1) {
+      await recoveryPage.goto('/recuperar-palavra-passe')
+      await awaitClerkLoaded(recoveryPage)
+      await recoveryPage.getByLabel('Email', { exact: true }).fill(email)
+      recoveryRequestedAt = Date.now()
+      await recoveryPage.getByRole('button', { name: 'Enviar código', exact: true }).click()
+      await expect(codeStep.or(refusal).first()).toBeVisible()
+      if (await codeStep.isVisible()) break
+      const reason = (await refusal.first().innerText()).replaceAll(email, '<email>')
+      // Clerk asks a throttled account to wait at least 30 seconds before another code.
+      if (attempt === 3 || !/Too many verification code requests/i.test(reason)) throw new Error(`Password recovery refused the code request: ${reason}`)
+      await recoveryPage.waitForTimeout(35_000 * 2 ** attempt)
+    }
     const recovery = await deliveredMail('admin', criteria(recoveryRequestedAt, /^\d{6} is your reset password code$/, resetSender))
     await recoveryPage.getByLabel('Código de verificação', { exact: true }).fill(recovery.code)
     await recoveryPage.getByRole('button', { name: 'Verificar código', exact: true }).click()
