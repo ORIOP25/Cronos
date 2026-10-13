@@ -6,12 +6,16 @@ from sqlalchemy.pool import NullPool
 
 from app.config import settings
 
-raw_url = str(settings.DATABASE_URL)
-base_url = raw_url.replace("+asyncpg", "").replace("+psycopg2", "")
-if base_url.startswith("postgres://"):
-    base_url = base_url.replace("postgres://", "postgresql://", 1)
 
-async_db_url = base_url.replace("postgresql://", "postgresql+asyncpg://")
+def async_database_url(raw_url: str) -> str:
+    """Return any PostgreSQL URL form with the asyncpg driver."""
+    base_url = raw_url.replace("+asyncpg", "").replace("+psycopg2", "")
+    if base_url.startswith("postgres://"):
+        base_url = base_url.replace("postgres://", "postgresql://", 1)
+    return base_url.replace("postgresql://", "postgresql+asyncpg://")
+
+
+async_db_url = async_database_url(str(settings.DATABASE_URL))
 
 
 async_engine_kwargs = {"echo": False}
