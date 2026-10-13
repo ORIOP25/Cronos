@@ -8,6 +8,8 @@ There is no separate production test campaign.
 
 Cronos runs backend, frontend, and end-to-end suites through one root runner.
 GitHub Actions enforces the same gates on every pull request and on every push to `main`.
+A push to `main` skips the suites when its merged pull request head has the same tree and already passed `backend`, `frontend` and `e2e`.
+Any other push to `main` runs every gate again.
 A feature branch with an open pull request runs the full pipeline once through the pull request, instead of a second identical push run.
 A branch pushed without a pull request has no automatic CI and requires an explicit manual `workflow_dispatch` checkpoint.
 
@@ -135,7 +137,7 @@ Skipped tests, retries, missing artifacts and migration drift are release failur
 
 ## Production deployment check
 
-The `production` job runs only for a push to `main`, after `backend`, `frontend` and `e2e` pass.
+The `production` job runs only for a push to `main`, after `backend`, `frontend` and `e2e` pass or the merge is already verified.
 It runs `scripts/verify-production-deploy.mjs` with the pushed commit as `EXPECTED_REVISION`.
 The script waits up to 20 minutes, because the deployments start on the same push as CI.
 
