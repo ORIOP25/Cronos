@@ -353,3 +353,15 @@ test('the sign-up token route lets a navigation such as an invitation ticket thr
   })
   assert.deepEqual(seen, { continued: true })
 })
+
+test('the authenticated stage keeps polling across a navigation', async () => {
+  let reads = 0
+  const page = fakePage({ target: true })
+  page.evaluate = async () => {
+    reads += 1
+    if (reads === 1) throw new Error('page.evaluate: Execution context was destroyed, most likely because of a navigation')
+    return true
+  }
+  await awaitAuthStage(page, { stage: 'authenticated', timeoutMs: 2000 })
+  assert.ok(reads >= 2)
+})
