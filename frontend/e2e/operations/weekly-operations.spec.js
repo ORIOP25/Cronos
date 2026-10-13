@@ -18,18 +18,13 @@ const addDays = (isoDate, days) => new Date(Date.parse(`${isoDate}T00:00:00Z`) +
 const isApi = (response, path, method) => new URL(response.url()).pathname === `/api/v1/${path}`
   && response.request().method() === method
 
-// The CI school year starts two weeks in the past, so these lessons really ended.
-async function firstEndedWeek(page, horizon) {
-  const today = new Date().toISOString().slice(0, 10)
-  for (let weekStart = horizon.min_week_start; weekStart <= today; weekStart = addDays(weekStart, 7)) {
-    const rows = await apiRequest(page, 'GET', `/schedule/week?week_start=${weekStart}`)
-    const lessons = rows.filter((row) => row.scheduler_lesson_id)
-    if (lessons.length >= 2 && lessons.length === rows.length
-      && rows.every((row) => Date.parse(row.ends_at) <= Date.now() && !row.lesson_log_id && row.week_timesheet_status === 'OPEN')) {
-      return { weekStart, rows: [...rows].sort((a, b) => Date.parse(a.ends_at) - Date.parse(b.ends_at)) }
-    }
+// The engine publishes only into periods that have not started, so every lesson is still ahead.
+async function firstPublishedWeek(page, horizon) {
+  for (let weekStart = horizon.min_week_start; weekStart <= horizon.hard_end_date; weekStart = addDays(weekStart, 7)) {
+    const rows = (await apiRequest(page, 'GET', `/schedule/week?week_start=${weekStart}`)).filter((row) => row.scheduler_lesson_id)
+    if (rows.length) return { weekStart, rows: [...rows].sort((a, b) => Date.parse(a.ends_at) - Date.parse(b.ends_at)) }
   }
-  throw new Error('The CI school year has no ended, open week with two lessons')
+  throw new Error('The published CI schedule has no lessons for the teacher')
 }
 
 async function openTeacherWeek(page, horizon, weekStart) {
@@ -64,23 +59,11 @@ async function openLessonRecord(page, row, status) {
   throw new Error(`Lesson ${row.scheduler_lesson_id} is not visible in the week grid`)
 }
 
-async function recordLesson(page, row, summary, action) {
-  const dialog = await openLessonRecord(page, row, 'Planeado')
-  await dialog.getByLabel('Sumário', { exact: true }).fill(summary)
-  const saved = page.waitForResponse((response) => isApi(response, `schedule/lessons/${row.scheduler_lesson_id}/log`, 'PUT'))
-  await dialog.getByRole('button', { name: action, exact: true }).click()
-  if (action === 'Criar Ocorrência') {
-    await expect(dialog.getByText('Criar ocorrência?', { exact: true })).toBeVisible()
-    await dialog.getByRole('button', { name: 'Sim, criar ocorrência', exact: true }).click()
-  }
-  expect((await saved).status()).toBe(200)
-  await expect(page.getByText('Registo guardado.', { exact: true })).toBeVisible()
-  await expect(dialog).toBeHidden()
-}
-
-async function decideGiven(page, occurrence) {
+async function decideGap(page, occurrence) {
   const dialog = page.getByRole('dialog')
-  await dialog.getByRole('button', { name: 'Dada', exact: true }).click()
+  // A lesson that has not ended cannot be decided as given.
+  await expect(dialog.getByRole('button', { name: 'Dada', exact: true })).toBeDisabled()
+  await dialog.getByRole('button', { name: 'Furo', exact: true }).click()
   await expect(dialog.getByRole('button', { name: 'Confirmar decisão', exact: true })).toBeDisabled()
   await dialog.getByLabel('Confirmo esta decisão operacional para a ocorrência selecionada.', { exact: true }).check()
   const decided = page.waitForResponse((response) => isApi(response, `occurrences/${occurrence.id}`, 'PATCH'))
@@ -88,29 +71,12 @@ async function decideGiven(page, occurrence) {
   const response = await decided
   expect(response.status()).toBe(200)
   expect(response.request().postDataJSON()).toEqual({
-    status: 'GIVEN', version: occurrence.version, substitute_teacher_id: null, substitute_subject_id: null,
+    status: 'GAP', version: occurrence.version, substitute_teacher_id: null, substitute_subject_id: null,
   })
   await expect(page.getByText('Decisão registada.', { exact: true })).toBeVisible()
 }
 
-async function openTimesheetWeek(page, weekStart) {
-  const roster = page.waitForResponse((response) => new URL(response.url()).pathname === '/api/v1/timesheets/'
-    && new URL(response.url()).searchParams.has('week_start_date'))
-  await goTo(page, '/timesheets')
-  await expect(page.getByRole('heading', { name: 'Fecho Semanal', exact: true })).toBeVisible()
-  let visibleWeek = new URL((await roster).url()).searchParams.get('week_start_date')
-  while (visibleWeek !== weekStart) {
-    const backwards = visibleWeek > weekStart
-    const requested = addDays(visibleWeek, backwards ? -7 : 7)
-    const loaded = page.waitForResponse((response) => new URL(response.url()).pathname === '/api/v1/timesheets/'
-      && new URL(response.url()).searchParams.get('week_start_date') === requested)
-    await page.getByRole('button', { name: backwards ? 'Semana anterior' : 'Próxima semana', exact: true }).click()
-    expect((await loaded).status()).toBe(200)
-    visibleWeek = requested
-  }
-}
-
-test('teacher records ended lessons, admin decides the occurrence and closes the week', async ({ page, browser }) => {
+test('teacher records an occurrence in advance and the admin decides it once', async ({ page, browser }) => {
   test.setTimeout(300_000)
   attachRuntimeGuards(page)
   allowApiFailure(page, { status: 404, url: '/api/v1/scheduler/drafts/current' })
@@ -125,102 +91,75 @@ test('teacher records ended lessons, admin decides the occurrence and closes the
     attachRuntimeGuards(teacherPage)
     await loginAsTeacherReal(teacherPage)
     const horizon = await apiRequest(teacherPage, 'GET', '/schedule/me/horizon')
-    const week = await firstEndedWeek(teacherPage, horizon)
+    const week = await firstPublishedWeek(teacherPage, horizon)
     const weekPath = `/schedule/week?week_start=${week.weekStart}`
-    const occurrenceRow = week.rows.at(-1)
+    const lesson = week.rows[0]
     const debtsBefore = await apiRequest(page, 'GET', '/occurrences/debts')
-
-    await test.step('teacher cannot submit a week with unregistered lessons', async () => {
-      await openTeacherWeek(teacherPage, horizon, week.weekStart)
-      await expect(teacherPage.getByRole('button', { name: 'Submeter Semana', exact: true })).toBeDisabled()
+    const writes = []
+    teacherPage.on('request', (request) => {
+      if (new URL(request.url()).pathname.startsWith('/api/v1/') && request.method() !== 'GET') writes.push(request.method())
     })
 
-    await test.step('teacher records given lessons and an occurrence through the lesson dialog', async () => {
-      for (const row of week.rows.slice(0, -1)) {
-        await recordLesson(teacherPage, row, `CI: aula ${row.scheduler_lesson_id} dada.`, 'Aula Dada')
-      }
-      await recordLesson(teacherPage, occurrenceRow, 'CI: ocorrência após o término.', 'Criar Ocorrência')
-      const rows = await apiRequest(teacherPage, 'GET', weekPath)
-      for (const row of rows) {
-        expect(row.lesson_log_status).toBe(row.scheduler_lesson_id === occurrenceRow.scheduler_lesson_id ? 'OCCURRENCE' : 'COMPLETED')
-      }
+    await test.step('teacher cannot execute a lesson or submit a week before the lessons end', async () => {
+      await openTeacherWeek(teacherPage, horizon, week.weekStart)
+      const submit = teacherPage.getByRole('button', { name: 'Submeter Semana', exact: true })
+      await expect(submit).toBeDisabled()
+      await expect(submit).toHaveAttribute('title', /aula futura.*não registada/)
+      const dialog = await openLessonRecord(teacherPage, lesson, 'Planeado')
+      await expect(dialog.getByText(
+        'Só pode concluir esta aula depois do seu término. Pode preencher o sumário e criar ocorrência antecipadamente.',
+        { exact: true },
+      )).toBeVisible()
+      await dialog.getByLabel('Sumário', { exact: true }).fill('CI: aula ainda por dar.')
+      await expect(dialog.getByRole('button', { name: 'Aula Dada', exact: true })).toBeDisabled()
+      await dialog.getByRole('button', { name: 'Cancelar', exact: true }).click()
+      await expect(teacherPage.getByRole('dialog')).toHaveCount(0)
+      expect(writes).toEqual([])
+    })
+
+    let occurrence
+    await test.step('teacher creates the occurrence in advance through the lesson dialog', async () => {
+      const dialog = await openLessonRecord(teacherPage, lesson, 'Planeado')
+      await dialog.getByLabel('Sumário', { exact: true }).fill('CI: falta prevista.')
+      await dialog.getByRole('button', { name: 'Criar Ocorrência', exact: true }).click()
+      await expect(dialog.getByText('Criar ocorrência?', { exact: true })).toBeVisible()
+      const saved = teacherPage.waitForResponse((response) => isApi(response, `schedule/lessons/${lesson.scheduler_lesson_id}/log`, 'PUT'))
+      await dialog.getByRole('button', { name: 'Sim, criar ocorrência', exact: true }).click()
+      const response = await saved
+      expect(response.status()).toBe(200)
+      expect(response.request().postDataJSON()).toEqual({ status: 'OCCURRENCE', summary: 'CI: falta prevista.', notes: '' })
+      await expect(teacherPage.getByText('Registo guardado.', { exact: true })).toBeVisible()
+      await expect(dialog).toBeHidden()
+
+      const row = (await apiRequest(teacherPage, 'GET', weekPath)).find((item) => item.scheduler_lesson_id === lesson.scheduler_lesson_id)
+      expect(row).toMatchObject({ lesson_log_status: 'OCCURRENCE', can_complete: false })
+      occurrence = await apiRequest(page, 'GET', `/occurrences/${row.occurrence_id}`)
+      expect(occurrence).toMatchObject({ operational_state: 'OPEN_PENDING', decided_at: null })
       // A pending occurrence creates no debt before the admin decides it.
       expect(await apiRequest(page, 'GET', '/occurrences/debts')).toEqual(debtsBefore)
     })
 
-    await test.step('admin decides the occurrence as given, and repeating it changes nothing', async () => {
-      const row = (await apiRequest(teacherPage, 'GET', weekPath)).find((item) => item.scheduler_lesson_id === occurrenceRow.scheduler_lesson_id)
-      expect(row.occurrence_id).toBeGreaterThan(0)
-      const pending = await apiRequest(page, 'GET', `/occurrences/${row.occurrence_id}`)
-      expect(pending).toMatchObject({ operational_state: 'OPEN_PENDING', decided_at: null })
-      await goTo(page, `/absences?occurrence_id=${pending.id}`)
-      await decideGiven(page, pending)
-      const given = await apiRequest(page, 'GET', `/occurrences/${pending.id}`)
-      expect(given).toMatchObject({ id: pending.id, operational_state: 'DECIDED_GIVEN', substitute_block_id: null })
-      expect(await apiRequest(page, 'GET', '/occurrences/debts')).toEqual(debtsBefore)
+    await test.step('admin decides the gap once, and repeating it changes nothing', async () => {
+      await goTo(page, `/absences?occurrence_id=${occurrence.id}`)
+      await decideGap(page, occurrence)
+      const gap = await apiRequest(page, 'GET', `/occurrences/${occurrence.id}`)
+      expect(gap).toMatchObject({ id: occurrence.id, operational_state: 'DECIDED_GAP' })
+      const debtsAfter = await apiRequest(page, 'GET', '/occurrences/debts')
+      expect(debtsAfter.total_hours_owed).toBeGreaterThan(debtsBefore.total_hours_owed)
 
       await page.reload()
-      await decideGiven(page, given)
-      expect(await apiRequest(page, 'GET', `/occurrences/${pending.id}`)).toEqual(given)
-      expect(await apiRequest(page, 'GET', '/occurrences/debts')).toEqual(debtsBefore)
+      await decideGap(page, gap)
+      expect(await apiRequest(page, 'GET', `/occurrences/${occurrence.id}`)).toEqual(gap)
+      expect(await apiRequest(page, 'GET', '/occurrences/debts')).toEqual(debtsAfter)
     })
 
-    let timesheet
-    await test.step('teacher submits the fully registered week', async () => {
+    await test.step('teacher sees the decided gap in the published week', async () => {
       await openTeacherWeek(teacherPage, horizon, week.weekStart)
-      const submit = teacherPage.getByRole('button', { name: 'Submeter Semana', exact: true })
-      await expect(submit).toBeEnabled()
-      await submit.click()
-      const submitted = teacherPage.waitForResponse((response) => isApi(response, `timesheets/me/${week.weekStart}/submit`, 'POST'))
-      await teacherPage.getByRole('dialog').getByRole('button', { name: 'Submeter', exact: true }).click()
-      const response = await submitted
-      expect(response.status()).toBe(200)
-      timesheet = await response.json()
-      expect(timesheet).toMatchObject({ status: 'SUBMITTED', week_start_date: week.weekStart })
-      await expect(teacherPage.getByText('Semana submetida.', { exact: true })).toBeVisible()
-    })
-
-    await test.step('admin approves the week and the teacher can no longer edit it', async () => {
-      await openTimesheetWeek(page, week.weekStart)
-      const roster = await apiRequest(page, 'GET', `/timesheets/?week_start_date=${week.weekStart}`)
-      const record = roster.find((item) => item.id === timesheet.id)
-      expect(record).toMatchObject({ status: 'SUBMITTED', total_slots: week.rows.length, registered_slots: week.rows.length })
-      await page.getByRole('button').filter({ hasText: record.teacher_name }).click()
-      const approved = page.waitForResponse((response) => isApi(response, `timesheets/${timesheet.id}/status`, 'PATCH'))
-      await page.getByRole('button', { name: 'Aprovar', exact: true }).click()
-      const response = await approved
-      expect(response.status()).toBe(200)
-      expect(response.request().postDataJSON()).toEqual({ status: 'APPROVED' })
-      await expect(page.getByText('Semana aprovada.', { exact: true })).toBeVisible()
-
-      await openTeacherWeek(teacherPage, horizon, week.weekStart)
-      const closed = await apiRequest(teacherPage, 'GET', weekPath)
-      expect(closed.every((row) => row.week_timesheet_status === 'APPROVED' && !row.can_complete)).toBe(true)
-      await expect(teacherPage.getByRole('button', { name: 'Submeter Semana', exact: true })).toBeDisabled()
-      const locked = await openLessonRecord(teacherPage, week.rows[0], 'Concluída')
-      await expect(locked.getByLabel('Sumário', { exact: true })).toBeDisabled()
-      await expect(locked.getByRole('button', { name: 'Guardar alterações', exact: true })).toHaveCount(0)
-      await locked.getByRole('button', { name: 'Cancelar', exact: true }).click()
-    })
-
-    await test.step('admin reopens the week and the teacher can edit again', async () => {
-      await page.getByRole('button', { name: 'Reabrir', exact: true }).click()
-      const reopened = page.waitForResponse((response) => isApi(response, `timesheets/${timesheet.id}/status`, 'PATCH'))
-      const confirmation = page.getByRole('dialog')
-      await expect(confirmation).toContainText('Confirmar Reabertura')
-      await confirmation.getByRole('button', { name: 'Sim, reabrir', exact: true }).click()
-      const response = await reopened
-      expect(response.status()).toBe(200)
-      expect(response.request().postDataJSON()).toEqual({ status: 'OPEN' })
-      await expect(page.getByText('Semana reaberta.', { exact: true })).toBeVisible()
-
-      await openTeacherWeek(teacherPage, horizon, week.weekStart)
-      const open = await apiRequest(teacherPage, 'GET', weekPath)
-      expect(open.every((row) => row.week_timesheet_status === 'OPEN')).toBe(true)
-      const editable = await openLessonRecord(teacherPage, week.rows[0], 'Concluída')
-      await expect(editable.getByLabel('Sumário', { exact: true })).toBeEnabled()
-      await expect(editable.getByRole('button', { name: 'Guardar alterações', exact: true })).toBeEnabled()
-      await editable.getByRole('button', { name: 'Cancelar', exact: true }).click()
+      const row = (await apiRequest(teacherPage, 'GET', weekPath)).find((item) => item.scheduler_lesson_id === lesson.scheduler_lesson_id)
+      expect(row).toMatchObject({ occurrence_id: occurrence.id, occurrence_status: 'GAP' })
+      await expect(teacherPage.getByRole('table', { name: 'Grelha semanal de horários', exact: true })
+        .getByRole('gridcell', { name: `${lesson.subject.name}, ${lesson.teacher.name}, ${lesson.room.name}, Falta ✗`, exact: true })
+        .first()).toBeVisible()
     })
   } finally {
     await teacherContext.close()
