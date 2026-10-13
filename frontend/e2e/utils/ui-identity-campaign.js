@@ -141,7 +141,11 @@ export async function runIdentityCampaign({ page, browser, provenance, delivered
   await page.goto('/foundation')
   const schoolName = page.locator('input[name="name"]')
   await expect(schoolName).toBeVisible()
+  // Clerk initialises this field from its async creation defaults (the instance
+  // prefills a default name); filling earlier submits an empty name (422).
+  await expect(schoolName).not.toHaveValue('')
   await schoolName.fill(`Cronos Aceitação ${runId}`)
+  await expect(schoolName).toHaveValue(`Cronos Aceitação ${runId}`)
   // Signed write-ahead organization intent before Clerk creates the school.
   const organizationIntentId = await provenance.beginOrganizationCreation()
   await page.getByRole('button', { name: /^(continuar|continue)$/i }).click()
