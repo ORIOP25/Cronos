@@ -9,6 +9,7 @@ import {
   awaitAuthUi,
   providerChallengeHost,
   withSignUpTestingToken,
+  evaluateAcrossNavigation,
 } from '../e2e/utils/ui-auth.js'
 
 // Deterministic poll strategy for the pure unit: call the probe at most
@@ -316,4 +317,13 @@ test('the sign-up testing token only appends the parameter and lifts the captcha
   const binary = await routeThrough(handler, 'https://clerk.cronos.pt/v1/tickets/accept', undefined)
   assert.equal(binary.fulfilled.json, undefined)
   assert.ok(binary.fulfilled.response)
+})
+
+test('a poll read survives a navigation but never hides another page error', async () => {
+  const navigating = { evaluate: async () => { throw new Error('page.evaluate: Execution context was destroyed, most likely because of a navigation') } }
+  assert.equal(await evaluateAcrossNavigation(navigating, () => 1), undefined)
+  const settled = { evaluate: async fn => fn() }
+  assert.equal(await evaluateAcrossNavigation(settled, () => 'org_1'), 'org_1')
+  const broken = { evaluate: async () => { throw new Error('page.evaluate: Target page, context or browser has been closed') } }
+  await assert.rejects(evaluateAcrossNavigation(broken, () => 1), /has been closed/)
 })

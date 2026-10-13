@@ -2,13 +2,14 @@ import { expect } from '@playwright/test'
 import { readFile } from 'node:fs/promises'
 import { recordCheckpoint } from './acceptance-proof.js'
 import { campaignSchoolLabel } from './acceptance-policy.js'
+import { evaluateAcrossNavigation } from './ui-auth.js'
 import { validateImportedData } from './expected-results.js'
 import { completeFoundation, futureSchoolPeriod, importOriginalData, readImportedData, readSchoolResource } from './ui-school.js'
 
 async function selectSchool(page, school) {
   await page.getByRole('group', { name: 'Selecionar escola', exact: true }).getByRole('button', { name: 'Abrir seletor de organizações', exact: true }).click()
   await page.getByText(school.name, { exact: true }).click()
-  await expect.poll(() => page.evaluate(() => window.Clerk?.organization?.id)).toBe(school.clerk_id)
+  await expect.poll(() => evaluateAcrossNavigation(page, () => window.Clerk?.organization?.id)).toBe(school.clerk_id)
   await expect(page).toHaveURL(/\/dashboard$/)
   expect((await readSchoolResource(page, 'members/me')).organization_id).toBe(school.local_id)
 }
@@ -106,7 +107,7 @@ async function deleteDisposableSchool(page, testInfo, provenance, first, second,
     return memberships.data.some(item => item.organization.id === id)
   }, second.clerk_id)).toBe(false)
   await page.goto('/dashboard')
-  await expect.poll(() => page.evaluate(() => window.Clerk?.organization?.id)).toBe(first.clerk_id)
+  await expect.poll(() => evaluateAcrossNavigation(page, () => window.Clerk?.organization?.id)).toBe(first.clerk_id)
   expect(await readImportedData(page)).toEqual(firstCatalog)
   await page.getByRole('group', { name: 'Selecionar escola', exact: true })
     .getByRole('button', { name: 'Abrir seletor de organizações', exact: true }).click()
