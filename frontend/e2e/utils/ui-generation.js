@@ -109,8 +109,8 @@ export async function rejectUnpublishedProposal(page, testInfo, generated) {
   const after = await readSchoolResource(page, 'scheduler/status')
   expect(after).toMatchObject({ publication_state: 'UNPUBLISHED', active_version_id: null, active_job: null,
     pending_proposal: null, eligibility: { can_generate: false, reasons: [], blocker: null } })
+  // pending_proposal: null above is the absence proof; drafts/current answers 404 then.
   expect(after.revisions).toEqual(before.revisions)
-  expect(await readSchoolResource(page, 'scheduler/drafts/current')).toBeNull()
   await expect(page.getByRole('button', { name: 'Gerar horário', exact: true })).toHaveCount(0)
   await testInfo.attach('rejected-proposal-without-publication-or-reroll', {
     body: Buffer.from(JSON.stringify({ before, decision, after })), contentType: 'application/json',
