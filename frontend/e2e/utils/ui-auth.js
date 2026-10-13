@@ -226,7 +226,7 @@ export async function expectIdentity(page, email) {
 export function deliveredCodeReader(deliveredMail, mailbox, recipient) {
   const sender = validateCodeSender(process.env.E2E_GMAIL_CODE_SENDER)
   return async (after, exclude = []) => (await deliveredMail(mailbox, { recipient, senders: [sender], subject: /^\d{6} is your verification code$/,
-    purpose: 'code', after, before: after + 120_000, latest: true, exclude })).code
+    purpose: 'code', after, before: after + 1_200_000, latest: true, exclude })).code
 }
 
 // Ends a live session through the visible control; the device stays trusted.
@@ -270,7 +270,7 @@ export async function login(page, email, password, readCode, runtime) {
     if (isCodeSend(response.request())) sends.push({ status: response.status(), retryAfter: Number(response.headers()['retry-after']) || 0 })
   }
   const signIn = async () => {
-    let requestedAt = Date.now()
+    const requestedAt = Date.now()
     await page.getByRole('button', { name: 'Continuar', exact: true }).click()
     // Clerk's client trust asks a new device for an emailed code before the session.
     const code = page.locator('input[autocomplete="one-time-code"]').first()
@@ -279,6 +279,8 @@ export async function login(page, email, password, readCode, runtime) {
     if (await code.isVisible()) {
       if (typeof readCode !== 'function') throw new Error('New-device sign-in requires the delivered code reader')
       // A throttled send gets no email: wait as Clerk asks, then use the visible resend control.
+      // A send the page cancelled may still have been delivered, so every code since the
+      // first click stays a candidate (see the attempt loop below).
       for (let attempt = 0; ; attempt += 1) {
         // The two concurrent sends may answer in either order: a duplicate's 429
         // can arrive before the send that delivered the email.
@@ -290,7 +292,6 @@ export async function login(page, email, password, readCode, runtime) {
         if (attempt === 2 || wait > 600) throw new Error(`Clerk throttled the new-device code: ${sends.map(send => `${send.status}/${send.retryAfter}s`).join(', ')}`)
         sends.length = 0
         await page.waitForTimeout(wait * 1000)
-        requestedAt = Date.now()
         await page.getByRole('button', { name: /Reenviar/ }).click()
       }
       // Two sends mean two emails whose arrival order may differ from the send
