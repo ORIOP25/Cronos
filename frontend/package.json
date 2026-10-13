@@ -25,7 +25,7 @@
     "audit:production": "node scripts/audit-production.mjs",
     "test:marketing-assets": "node scripts/audit-marketing-assets.mjs",
     "test:marketing-build": "node --test scripts/build-marketing-pages.test.mjs scripts/write-build-revision.test.mjs",
-    "test:scripts": "node --test ../scripts/test.test.mjs ../scripts/verify-production-deploy.test.mjs",
+    "test:scripts": "node --test ../scripts/test.test.mjs ../scripts/verify-production-deploy.test.mjs scripts/verify-production-browser.test.mjs",
     "test:legal-contract": "node --test scripts/verify-legal-version-contract.test.mjs && node scripts/verify-legal-version-contract.mjs",
     "legal-manifest:update": "node scripts/verify-legal-version-contract.mjs --write",
     "verify:checks": "npm run lint && npm run lint:dead-code && npm run lint:dead-code:production && npm run test:legal-contract && npm run test:marketing-build && npm run test:scripts && node --test scripts/edge-worker.test.mjs && npm run test:marketing-assets",

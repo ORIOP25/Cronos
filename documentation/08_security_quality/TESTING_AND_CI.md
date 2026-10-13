@@ -8,7 +8,7 @@ There is no separate production test campaign.
 
 Cronos runs backend, frontend, and end-to-end suites through one root runner.
 GitHub Actions enforces the same gates on every pull request and on every push to `main`.
-A push to `main` skips the suites when its merged pull request head has the same tree and already passed `backend`, `frontend` and `e2e`.
+A push to `main` skips the suites when its merged pull request head has the same tree and already passed `backend`, `frontend`, `e2e-browser` and `e2e`.
 Any other push to `main` runs every gate again.
 A feature branch with an open pull request runs the full pipeline once through the pull request, instead of a second identical push run.
 A branch pushed without a pull request has no automatic CI and requires an explicit manual `workflow_dispatch` checkpoint.
@@ -148,6 +148,7 @@ It passes when all of these are true:
 - `https://api.cronos.pt/health/ready` reports `ok`, with PostgreSQL and Redis connected.
 - The API reports the expected commit, when the commit changed `backend/`.
 - `/` and `/login` answer with the application shell.
+- In Chromium, `/` shows its heading and `/login` shows the Clerk email and password fields, with no JavaScript error and no failed `cronos.pt` resource.
 
 Railway redeploys the API only for backend changes, so a frontend-only commit keeps the previous API revision.
 A failure prints each unmet condition as a workflow error.
