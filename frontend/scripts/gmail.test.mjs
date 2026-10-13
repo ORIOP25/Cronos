@@ -245,3 +245,16 @@ test('the latest sign-in code waits for a late second delivery before choosing',
   const reader = await createGmailReader({ clientId: 'client', clientSecret: 'secret', refreshToken: 'refresh', mailbox: 'admincronos100@gmail.com' }, { fetchImpl })
   assert.equal((await reader.poll({ ...criteria, latest: true }, { timeoutMs: 3000, intervalMs: 100, settleMs: 600 })).code, '222222')
 })
+
+test('a latest-code read can skip codes already tried', async () => {
+  const first = message('Your verification code is 111111'), second = message('Your verification code is 222222')
+  first.id = 'mail-1'; second.id = 'mail-2'; second.internalDate = String(criteria.after + 2000)
+  const fetchImpl = async url => {
+    const payload = url.includes('/token') ? { access_token: 'token', scope: 'https://www.googleapis.com/auth/gmail.readonly' }
+      : url.endsWith('/profile') ? { emailAddress: 'admincronos100@gmail.com' }
+        : url.includes('/messages/mail-1') ? first : url.includes('/messages/mail-2') ? second : { messages: [{ id: 'mail-1' }, { id: 'mail-2' }] }
+    return { ok: true, status: 200, json: async () => payload }
+  }
+  const reader = await createGmailReader({ clientId: 'client', clientSecret: 'secret', refreshToken: 'refresh', mailbox: 'admincronos100@gmail.com' }, { fetchImpl })
+  assert.equal((await reader.poll({ ...criteria, latest: true, exclude: ['222222'] }, { timeoutMs: 1000, intervalMs: 100, settleMs: 200 })).code, '111111')
+})

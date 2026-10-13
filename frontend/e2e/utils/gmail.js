@@ -360,7 +360,8 @@ export async function createGmailReader(credentials, { fetchImpl = fetch } = {})
         const matches = []
         const { expired } = await scanPages(query, { deadline }, async item => {
           const delivered = extractMessage(await get(`messages/${encodeURIComponent(messageId(item))}?format=full`, 'message_metadata'), criteria)
-          if (delivered) matches.push(delivered)
+          // A code Clerk already rejected is never offered again.
+          if (delivered && !criteria.exclude?.includes(delivered.code)) matches.push(delivered)
         })
         if (expired) throw new Error(DEADLINE_ERROR)
         // A re-sent code (e.g. Clerk's new-device check) invalidates the earlier one,
