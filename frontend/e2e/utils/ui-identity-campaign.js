@@ -65,7 +65,8 @@ async function verifyTeacherPermissions(page) {
   try {
     for (const route of ['/dashboard', '/members', '/rooms', '/subjects', '/courses', '/config', '/schedules', '/absences', '/timesheets', '/imports', '/foundation', '/guide']) {
       await page.goto(route) // NOSONAR - one page must navigate and assert sequentially
-      await expect(page).toHaveURL(/\/my-schedules$/) // NOSONAR - one page must navigate and assert sequentially
+      // A teacher's default route is the availability page (frontend roleAccess.js).
+      await expect(page).toHaveURL(/\/my-availability$/) // NOSONAR - one page must navigate and assert sequentially
       for (const name of ['Nova Sala', 'Novo Curso', 'Adicionar membro', 'Ativar Escola']) await expect(page.getByRole('button', { name, exact: true })).toHaveCount(0) // NOSONAR - one page must navigate and assert sequentially
     }
     expect(writes, 'Denied administrative UI routes cannot issue write requests').toEqual([])
