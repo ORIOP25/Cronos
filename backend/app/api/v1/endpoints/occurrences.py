@@ -1,11 +1,9 @@
 """Endpoints para gestão de ocorrências de aulas (Sprint 2).
 
 Rotas:
-    POST /occurrences/        — criar/reutilizar ocorrência por bloco planeado
   GET  /occurrences/         — listar ocorrências (com filtros)
   GET  /occurrences/debts    — dívidas de horas agrupadas
-    GET  /occurrences/observability/summary — contadores operacionais por organização
-    GET  /occurrences/{id}/substitutes/recommendations — ranking de elegíveis
+  GET  /occurrences/{id}/substitutes/recommendations — ranking de elegíveis
   GET  /occurrences/{id}     — detalhe de uma ocorrência
   PATCH /occurrences/{id}    — registar falta (GAP) ou substituição
 """
@@ -15,11 +13,11 @@ from __future__ import annotations
 from datetime import date
 from typing import Annotated
 
-from fastapi import APIRouter, Query, Response, status
+from fastapi import APIRouter, Query
 
 from app import schemas
 from app.api import deps
-from app.core.exceptions import AppError, status_code_for_kind
+from app.core.exceptions import AppError
 from app.scheduler.infrastructure import occurrences as occurrences_v1
 from app.services import occurrence_service
 
@@ -84,67 +82,6 @@ async def list_occurrences(
         raise
 
 
-@router.post(
-    "/",
-    response_model=schemas.LessonOccurrenceRead,
-    status_code=status.HTTP_201_CREATED,
-    summary="Criar ocorrência operacional por bloco planeado",
-    responses={
-        404: {"description": "Bloco planeado não encontrado"},
-        409: {"description": "Bloco inválido para criação operacional"},
-        422: {"description": "Contexto de bloco inválido"},
-    },
-)
-async def create_occurrence(
-    payload: schemas.LessonOccurrenceCreate,
-    response: Response,
-    db: deps.DbSession,
-    current_user: deps.AdminActor,
-):
-    """Executa comando CREATE_OCCURRENCE (cria/reutiliza) para um bloco do horário."""
-    organization_id = current_user.organization_id
-
-    try:
-        occurrence, created_now = await occurrence_service.create_occurrence_from_active_block(
-            db,
-            organization_id=organization_id,
-            active_schedule_block_id=payload.active_schedule_block_id,
-            created_by_membership_id=current_user.membership_id,
-            creation_source=payload.mode,
-            reason=occurrence_service.OCCURRENCE_REPORTED,
-        )
-    except AppError as exc:
-        error_status = status_code_for_kind(exc.kind, exc.code)
-        error_detail = exc.detail
-
-        await occurrence_service.log_occurrence_event_safe(
-            db,
-            organization_id=organization_id,
-            event_type=occurrence_service.OBS_EVENT_CREATE,
-            result=occurrence_service.classify_occurrence_error_result(error_status),
-            actor_membership_id=current_user.membership_id,
-            occurrence_id=None,
-            active_schedule_block_id=payload.active_schedule_block_id,
-            detail=f"{error_detail} (active_schedule_block_id={payload.active_schedule_block_id})",
-        )
-        raise
-
-    if not created_now:
-        response.status_code = status.HTTP_200_OK
-
-    await occurrence_service.log_occurrence_event_safe(
-        db,
-        organization_id=organization_id,
-        event_type=occurrence_service.OBS_EVENT_CREATE,
-        result=occurrence_service.OBS_RESULT_SUCCESS,
-        actor_membership_id=current_user.membership_id,
-        occurrence_id=occurrence.id,
-        active_schedule_block_id=occurrence.active_schedule_block_id,
-        detail=None,
-    )
-    return occurrence
-
-
 @router.get(
     "/debts",
     response_model=schemas.DebtListRead,
@@ -162,25 +99,6 @@ async def list_debts(
         return await occurrences_v1.get_debts(db, organization_id, class_id=class_id)
 
     return await occurrence_service.get_debts(db, organization_id, class_id=class_id)
-
-
-@router.get(
-    "/observability/summary",
-    response_model=schemas.OccurrenceObservabilitySummaryRead,
-    summary="Resumo de observabilidade operacional de ocorrências",
-)
-async def get_occurrence_observability_summary(
-    db: deps.DbSession,
-    current_user: deps.AdminActor,
-    window_days: Annotated[int, Query(ge=1, le=90, description="Janela de agregação em dias")] = 7,
-):
-    organization_id = current_user.organization_id
-
-    return await occurrence_service.get_occurrence_observability_summary(
-        db,
-        organization_id=organization_id,
-        window_days=window_days,
-    )
 
 
 @router.get(
@@ -295,77 +213,21 @@ async def update_occurrence(
     organization_id = current_user.organization_id
 
     if await occurrences_v1.is_active(db, organization_id):
-        try:
-            updated_v1 = await occurrences_v1.update_occurrence(
-                db,
-                organization_id,
-                occurrence_id,
-                payload,
-                decided_by_membership_id=current_user.membership_id,
-            )
-        except AppError as exc:
-            error_status = status_code_for_kind(exc.kind, exc.code)
-            await occurrence_service.log_occurrence_event_safe(
-                db,
-                organization_id=organization_id,
-                event_type=occurrence_service.OBS_EVENT_DECIDE,
-                result=occurrence_service.classify_occurrence_error_result(error_status),
-                actor_membership_id=current_user.membership_id,
-                occurrence_id=occurrence_id,
-                active_schedule_block_id=None,
-                detail=exc.detail,
-            )
-            raise
-        await occurrence_service.log_occurrence_event_safe(
+        return await occurrences_v1.update_occurrence(
             db,
-            organization_id=organization_id,
-            event_type=occurrence_service.OBS_EVENT_DECIDE,
-            result=occurrence_service.OBS_RESULT_SUCCESS,
-            actor_membership_id=current_user.membership_id,
-            occurrence_id=occurrence_id,
-            active_schedule_block_id=None,
-            decision_status=updated_v1.get("status"),
-            detail=None,
-        )
-        return updated_v1
-
-    try:
-        updated = await occurrence_service.update_occurrence(
-            db,
-            occurrence_id,
             organization_id,
+            occurrence_id,
             payload,
             decided_by_membership_id=current_user.membership_id,
         )
-    except AppError as exc:
-        error_status = status_code_for_kind(exc.kind, exc.code)
-        error_detail = exc.detail
 
-        await occurrence_service.log_occurrence_event_safe(
-            db,
-            organization_id=organization_id,
-            event_type=occurrence_service.OBS_EVENT_DECIDE,
-            result=occurrence_service.classify_occurrence_error_result(error_status),
-            actor_membership_id=current_user.membership_id,
-            occurrence_id=occurrence_id,
-            active_schedule_block_id=None,
-            detail=error_detail,
-        )
-        raise
-
-    await occurrence_service.log_occurrence_event_safe(
+    return await occurrence_service.update_occurrence(
         db,
-        organization_id=organization_id,
-        event_type=occurrence_service.OBS_EVENT_DECIDE,
-        result=occurrence_service.OBS_RESULT_SUCCESS,
-        actor_membership_id=current_user.membership_id,
-        occurrence_id=updated.id,
-        active_schedule_block_id=updated.active_schedule_block_id,
-        decision_status=updated.status,
-        detail=None,
+        occurrence_id,
+        organization_id,
+        payload,
+        decided_by_membership_id=current_user.membership_id,
     )
-
-    return updated
 
 
 @router.post(

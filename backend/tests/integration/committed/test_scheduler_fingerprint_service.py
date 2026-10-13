@@ -3,11 +3,11 @@ from datetime import UTC, date, datetime, time
 import pytest
 
 from app import models
+from app.scheduler.domain.serialization import canonical_json, payload_digest
 from app.services.scheduler_fingerprint_service import (
     SchedulerFingerprintError,
     SchedulerFingerprintService,
 )
-from app.services.scheduler_serialization import canonical_json_bytes, sha256_json
 from tests._support.db_fixtures import create_teacher_profile
 
 
@@ -15,9 +15,9 @@ def test_canonical_hash_is_stable_across_mapping_and_set_order():
     first = {"b": {3, 1, 2}, "a": {"date": date(2026, 1, 2), "value": 4}}
     second = {"a": {"value": 4, "date": date(2026, 1, 2)}, "b": {2, 3, 1}}
 
-    assert canonical_json_bytes(first) == canonical_json_bytes(second)
-    assert sha256_json(first) == sha256_json(second)
-    assert len(sha256_json(first)) == 64
+    assert canonical_json(first) == canonical_json(second)
+    assert payload_digest(first) == payload_digest(second)
+    assert len(payload_digest(first)) == 64
 
 
 async def test_generation_input_fingerprint_changes_only_for_canonical_inputs(db_session):
@@ -207,7 +207,7 @@ async def test_repair_policy_snapshot_uses_school_local_date_and_allows_zero(db_
         "school_timezone": "Europe/Lisbon",
         "school_today": "2026-06-02",
     }
-    assert result.value == sha256_json(result.snapshot)
+    assert result.value == payload_digest(result.snapshot)
 
     settings.repair_stability_window_days = -1
     await db_session.flush()
@@ -546,19 +546,9 @@ async def test_adaptive_active_schedule_carries_module_identity_from_source_draf
         ]
     )
     await db_session.flush()
-    job = models.ScheduleGenerationJob(
-        organization_id=organization.id,
-        school_year_id=school_year.id,
-        strategy=models.ScheduleGenerationStrategy.COMPLETE_GENERATION,
-        trigger_type=models.ScheduleGenerationTrigger.FIRST_GENERATION,
-        idempotency_key="module-identity-job",
-    )
-    db_session.add(job)
-    await db_session.flush()
     draft = models.ScheduleDraft(
         organization_id=organization.id,
         school_year_id=school_year.id,
-        generation_job_id=job.id,
         strategy=models.ScheduleGenerationStrategy.COMPLETE_GENERATION,
         draft_state=models.ScheduleDraftState.PENDING,
         result_category=models.ScheduleGenerationResultCategory.COMPLETE_SUCCESS,

@@ -9,11 +9,9 @@ from app.scheduler.domain.candidate_validation import validate_candidate
 from app.scheduler.infrastructure.constructive import construct_schedule
 from app.scheduler.lab.fixtures import (
     AssignmentSpec,
-    CaseExpectation,
     FixtureSpec,
     build_snapshot,
 )
-from app.scheduler.lab.manifest import CaseSeeds, LabCase, case_from_dict, case_to_dict
 from app.scheduler.lab.recovery import (
     build_constructed_recovery_case,
     recovery_event,
@@ -85,19 +83,3 @@ def test_construction_never_declares_impossibility():
     assert construct_schedule(snapshot, _normalized_periods(spec)) is None
     with pytest.raises(ValueError, match="witness"):
         build_constructed_recovery_case("constructed-impossible", spec)
-
-
-def test_constructed_witness_mode_roundtrips_through_the_manifest():
-    case = LabCase(
-        "constructed-roundtrip",
-        "C03",
-        1,
-        CaseExpectation.EXPLORATORY_UNKNOWN,
-        _spec(periods=6),
-        CaseSeeds(1, 0, 1),
-        witness_mode="constructed",
-    )
-
-    restored = case_from_dict(case_to_dict(case))
-
-    assert restored.witness_mode == "constructed"

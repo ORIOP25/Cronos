@@ -43,6 +43,7 @@ Thumbs.db
 # --- Agent skills: only the repository's own skills are tracked ---
 .agents/skills/*
 !.agents/skills/cronos-*/
+!.agents/skills/ponytail/
 
 # --- Local documents ---
 *.docx

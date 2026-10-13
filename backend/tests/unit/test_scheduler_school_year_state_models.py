@@ -64,64 +64,12 @@ def table_default(model, column_name):
     return default.arg
 
 
-def test_schedule_generation_job_tracks_lifecycle_and_snapshots():
-    table = models.ScheduleGenerationJob.__table__
-
-    assert {
-        "organization_id",
-        "school_year_id",
-        "requested_by_membership_id",
-        "strategy",
-        "trigger_type",
-        "job_status",
-        "result_category",
-        "generation_input_fingerprint",
-        "debt_basis_fingerprint",
-        "scheduler_state_version_used",
-        "repair_policy_snapshot_hash",
-        "input_snapshot_json",
-        "queued_at",
-        "started_at",
-        "finished_at",
-        "deadline_at",
-        "duration_ms",
-        "cancellation_requested_at",
-        "failure_code",
-        "failure_message",
-        "failure_reference",
-        "idempotency_key",
-    } <= set(table.columns.keys())
-    assert any(
-        constraint.name == "uq_schedule_generation_job_idempotency"
-        for constraint in table.constraints
-    )
-    assert any(
-        constraint.name == "uq_schedule_generation_job_id_scope" for constraint in table.constraints
-    )
-    assert any(
-        constraint.name == "fk_schedule_generation_job_year_scope"
-        for constraint in table.foreign_key_constraints
-    )
-    assert any(
-        constraint.name == "ck_schedule_generation_job_duration_nonnegative"
-        for constraint in table.constraints
-    )
-    assert {
-        "ck_schedule_generation_job_result_consistency",
-        "ck_schedule_generation_job_terminal_finished",
-        "ck_schedule_generation_job_started_after_queued",
-        "ck_schedule_generation_job_finished_after_started",
-    } <= {constraint.name for constraint in table.constraints}
-    assert "uq_schedule_generation_job_active_year" in {index.name for index in table.indexes}
-
-
 def test_schedule_draft_stores_decision_inputs_and_output_summary():
     table = models.ScheduleDraft.__table__
 
     assert {
         "organization_id",
         "school_year_id",
-        "generation_job_id",
         "strategy",
         "draft_state",
         "result_category",
@@ -156,9 +104,7 @@ def test_schedule_draft_enforces_auditable_valid_output_invariants():
     constraint_names = {constraint.name for constraint in table.constraints}
     index_names = {index.name for index in table.indexes}
 
-    assert "uq_schedule_drafts_generation_job" in constraint_names
     assert "uq_schedule_drafts_id_scope" in constraint_names
-    assert "uq_schedule_drafts_id_job_scope" in constraint_names
     assert "ck_schedule_drafts_has_valid_output" in constraint_names
     assert "ck_schedule_drafts_completion_by_hard_end" in constraint_names
     assert {
@@ -170,16 +116,6 @@ def test_schedule_draft_enforces_auditable_valid_output_invariants():
     assert "uq_schedule_drafts_pending_year" in index_names
     assert table_default(models.ScheduleDraft, "draft_state") == models.ScheduleDraftState.PENDING
     assert not table.columns.created_by_membership_id.nullable
-    job_scope = next(
-        constraint
-        for constraint in table.foreign_key_constraints
-        if constraint.name == "fk_schedule_drafts_generation_job_scope"
-    )
-    assert tuple(column.name for column in job_scope.columns) == (
-        "generation_job_id",
-        "organization_id",
-        "school_year_id",
-    )
 
 
 def test_pending_draft_pointer_is_tenant_and_school_year_scoped():
@@ -268,7 +204,6 @@ def test_schedule_diff_entries_preserve_audit_snapshots_and_references():
     assert {
         "organization_id",
         "school_year_id",
-        "generation_job_id",
         "draft_id",
         "class_id",
         "subject_id",
@@ -305,13 +240,12 @@ def test_schedule_diff_entries_are_parent_scoped_and_snapshot_safe():
     draft_scope = next(
         constraint
         for constraint in table.foreign_key_constraints
-        if constraint.name == "fk_schedule_diff_entries_draft_job_scope"
+        if constraint.name == "fk_schedule_diff_entries_draft_scope"
     )
 
     assert "ck_schedule_diff_entries_sides" in constraint_names
     assert tuple(column.name for column in draft_scope.columns) == (
         "draft_id",
-        "generation_job_id",
         "organization_id",
         "school_year_id",
     )

@@ -213,14 +213,6 @@ def user_has_teacher_capability(current_user: Actor) -> bool:
     )
 
 
-def actor_role(current_user: Actor) -> str:
-    if user_has_admin_capability(current_user):
-        return "admin"
-    if user_has_teacher_capability(current_user):
-        return "teacher"
-    return "member"
-
-
 def get_foundation_admin(
     current_user: Annotated[Actor, Depends(get_current_legal_accepted_user)],
 ) -> Actor:

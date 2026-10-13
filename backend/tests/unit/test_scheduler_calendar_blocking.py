@@ -1,10 +1,7 @@
 from datetime import date
 
-from app.scheduler.domain.calendar import (
-    blocked_dates_by_class,
-    blocked_dates_for_class,
-    event_blocks_class,
-)
+from app.models import CalendarEventType
+from app.scheduler.domain.calendar import blocked_dates_by_class
 
 MONDAY = date(2026, 9, 21)
 TUESDAY = date(2026, 9, 22)
@@ -19,8 +16,6 @@ def test_general_events_block_every_class():
         }
     ]
 
-    assert blocked_dates_for_class(events, 1) == {MONDAY, TUESDAY}
-    assert blocked_dates_for_class(events, 2) == {MONDAY, TUESDAY}
     assert blocked_dates_by_class(events, [1, 2]) == {
         1: {MONDAY, TUESDAY},
         2: {MONDAY, TUESDAY},
@@ -37,8 +32,6 @@ def test_internship_flow_blocks_only_its_classes_inclusive_of_both_dates():
         }
     ]
 
-    assert blocked_dates_for_class(events, 1) == set()
-    assert blocked_dates_for_class(events, 2) == {MONDAY, TUESDAY}
     assert blocked_dates_by_class(events, [1, 2, 3]) == {1: set(), 2: {MONDAY, TUESDAY}, 3: set()}
 
 
@@ -52,8 +45,6 @@ def test_internship_flow_without_classes_blocks_nothing():
         }
     ]
 
-    assert event_blocks_class(events[0], 1) is False
-    assert blocked_dates_for_class(events, 1) == set()
     assert blocked_dates_by_class(events, [1]) == {1: set()}
 
 
@@ -72,8 +63,7 @@ def test_overlapping_events_are_unioned_per_class():
         },
     ]
 
-    assert blocked_dates_for_class(events, 7) == {MONDAY, TUESDAY}
-    assert blocked_dates_for_class(events, 8) == {MONDAY}
+    assert blocked_dates_by_class(events, [7, 8]) == {7: {MONDAY, TUESDAY}, 8: {MONDAY}}
 
 
 def test_events_accept_generic_mappings_and_date_values():
@@ -90,8 +80,6 @@ def test_events_accept_generic_mappings_and_date_values():
 
 
 def test_event_type_enum_values_are_supported():
-    from app.models import CalendarEventType
-
     flow = {
         "start_date": "2026-09-21",
         "end_date": "2026-09-21",
@@ -104,6 +92,5 @@ def test_event_type_enum_values_are_supported():
         "event_type": CalendarEventType.national_holiday,
     }
 
-    assert event_blocks_class(flow, 1) is True
-    assert event_blocks_class(flow, 2) is False
-    assert event_blocks_class(holiday, 2) is True
+    assert blocked_dates_by_class([flow], [1, 2]) == {1: {MONDAY}, 2: set()}
+    assert blocked_dates_by_class([holiday], [2]) == {2: {MONDAY}}

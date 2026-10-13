@@ -73,8 +73,6 @@ PRIVACY_TABLES = {
     "member_access_operation": "delete",
     "module": "delete",
     "organization_foundation_draft": "delete",
-    "schedule_generation_job": "delete",
-    "teacher_endpoint_operational_event": "delete",
     "teacher_subject_link": "delete",
     "teacher_weekly_timesheet": "delete",
     "class_subject_link": "delete",
@@ -87,7 +85,6 @@ PRIVACY_TABLES = {
     "active_schedule_blocks": "delete",
     "schedule_diff_entries": "delete",
     "scheduler_state_version_events": "delete",
-    "occurrence_operational_event": "delete",
     "operational_schedule_block": "delete",
     "lesson_log": "delete",
     "planned_recovery_links": "delete",
@@ -271,26 +268,14 @@ async def _counts(db, organization_id: int) -> dict[str, int]:
 
 
 async def active_jobs(db, organization_id: int) -> list[str]:
-    """Read both scheduler generations; callers hold the organization row lock."""
-    legacy = await db.scalars(
-        select(models.ScheduleGenerationJob.id).where(
-            models.ScheduleGenerationJob.organization_id == organization_id,
-            models.ScheduleGenerationJob.job_status.in_(
-                [
-                    models.ScheduleGenerationJobStatus.QUEUED,
-                    models.ScheduleGenerationJobStatus.RUNNING,
-                    models.ScheduleGenerationJobStatus.CANCEL_REQUESTED,
-                ]
-            ),
-        )
-    )
-    current = await db.scalars(
+    """Return active scheduler job ids; callers hold the organization row lock."""
+    active = await db.scalars(
         select(SchedulerJobV1.id).where(
             SchedulerJobV1.organization_id == organization_id,
             SchedulerJobV1.status.in_(JOB_ACTIVE_STATUSES),
         )
     )
-    return [*(f"legacy:{value}" for value in legacy), *(f"v1:{value}" for value in current)]
+    return [f"v1:{value}" for value in active]
 
 
 async def _erase(

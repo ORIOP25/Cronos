@@ -7,10 +7,12 @@ database, solver or environment access.
 
 from __future__ import annotations
 
+import enum
 import hashlib
 import json
 from collections.abc import Mapping
 from datetime import date, datetime, time
+from decimal import Decimal
 from typing import Any
 
 from app.scheduler.domain.calendar import Period, normalize_period
@@ -33,8 +35,46 @@ def time_token(value: time) -> str:
     return value.strftime("%H:%M")
 
 
+class SchedulerSerializationError(ValueError):
+    pass
+
+
+def canonical_json_value(value: Any) -> Any:
+    """Normalize a value into plain JSON types with a deterministic ordering."""
+    if value is None or isinstance(value, (str, int, bool)):
+        return value
+    if isinstance(value, float):
+        if value != value or value in (float("inf"), float("-inf")):
+            raise SchedulerSerializationError("Scheduler snapshots require finite numbers.")
+        return value
+    if isinstance(value, Decimal):
+        return format(value, "f")
+    if isinstance(value, enum.Enum):
+        return canonical_json_value(value.value)
+    if isinstance(value, (date, datetime, time)):
+        return value.isoformat()
+    if isinstance(value, Mapping):
+        return {
+            str(key): canonical_json_value(item)
+            for key, item in sorted(value.items(), key=lambda pair: str(pair[0]))
+        }
+    if isinstance(value, (list, tuple)):
+        return [canonical_json_value(item) for item in value]
+    if isinstance(value, (set, frozenset)):
+        return sorted((canonical_json_value(item) for item in value), key=canonical_json)
+    raise SchedulerSerializationError(
+        f"Unsupported scheduler snapshot value: {type(value).__name__}."
+    )
+
+
 def canonical_json(payload: Any) -> str:
-    return json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return json.dumps(
+        canonical_json_value(payload),
+        ensure_ascii=True,
+        allow_nan=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
 
 
 def payload_digest(payload: Any) -> str:

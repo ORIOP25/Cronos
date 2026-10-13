@@ -100,42 +100,20 @@ async def test_dry_run_reports_counts_without_deleting(db_session):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "generation,status",
-    [
-        ("v1", "QUEUED"),
-        ("v1", "RUNNING"),
-        ("v1", "VALIDATING"),
-        ("legacy", "QUEUED"),
-        ("legacy", "RUNNING"),
-        ("legacy", "CANCEL_REQUESTED"),
-    ],
-)
+@pytest.mark.parametrize("status", ["QUEUED", "RUNNING", "VALIDATING"])
 async def test_erasure_refuses_each_active_job_state_without_changing_the_tenant(
-    db_session, generation, status
+    db_session, status
 ):
-    seed = await seed_v1_assignment(
-        db_session, clerk_org_id=f"privacy_active_{generation}_{status}"
+    seed = await seed_v1_assignment(db_session, clerk_org_id=f"privacy_active_{status}")
+    job = SchedulerJobV1(
+        organization_id=seed.organization.id,
+        school_year_id=seed.year.id,
+        strategy="COMPLETE_GENERATION",
+        status=status,
+        origin="privacy-active",
+        revision=1,
+        queued_at=datetime.now(UTC),
     )
-    if generation == "v1":
-        job = SchedulerJobV1(
-            organization_id=seed.organization.id,
-            school_year_id=seed.year.id,
-            strategy="COMPLETE_GENERATION",
-            status=status,
-            origin="privacy-active",
-            revision=1,
-            queued_at=datetime.now(UTC),
-        )
-    else:
-        job = models.ScheduleGenerationJob(
-            organization_id=seed.organization.id,
-            school_year_id=seed.year.id,
-            strategy=models.ScheduleGenerationStrategy.COMPLETE_GENERATION,
-            trigger_type=models.ScheduleGenerationTrigger.FIRST_GENERATION,
-            idempotency_key="privacy-active",
-            job_status=models.ScheduleGenerationJobStatus(status),
-        )
     db_session.add(job)
     await db_session.commit()
     with pytest.raises(ValueError, match="active jobs"):

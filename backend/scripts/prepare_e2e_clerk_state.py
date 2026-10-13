@@ -12,14 +12,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models, schemas
 from app.db.database import SessionLocal
-from app.services.e2e_clerk_state import (
+from app.services.foundation_service import FoundationService
+from scripts.e2e_clerk_state import (
     E2EClerkPreflightError,
     E2EClerkPrepResult,
     SdkClerkDirectory,
     config_from_env,
     prepare_e2e_clerk_state,
 )
-from app.services.foundation_service import FoundationService
 
 
 async def _ensure_default_legal_acceptance(

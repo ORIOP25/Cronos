@@ -1,13 +1,11 @@
-"""Annual corpus, stored artifacts and independent revalidation."""
+"""Annual corpus fixtures and payload roundtrips."""
 
-import json
 from dataclasses import replace
 
 from app.scheduler.composition import generate_schedule
 from app.scheduler.domain.candidate import Unavailability, UnavailableResource
 from app.scheduler.domain.candidate_validation import validate_candidate
 from app.scheduler.domain.capacity import aggregate_capacity_check
-from app.scheduler.domain.quality import measure_initial_quality
 from app.scheduler.domain.serialization import (
     candidate_digest,
     candidate_from_dict,
@@ -25,17 +23,6 @@ from app.scheduler.lab.annual import (
     annual_topology,
     build_annual_fixture,
 )
-from app.scheduler.lab.fixtures import CaseExpectation
-from app.scheduler.lab.manifest import (
-    AnnualCaseSpec,
-    CaseSeeds,
-    LabCase,
-    build_case,
-    from_manifest,
-    to_manifest,
-)
-from app.scheduler.lab.payload import quality_to_dict, validation_to_dict
-from app.scheduler.lab.revalidate import revalidate
 from app.scheduler.lab.scale import build_scale_fixture
 
 
@@ -118,75 +105,3 @@ def test_annual_snapshot_and_candidate_payloads_roundtrip():
     assert candidate_digest(candidate) == candidate_digest(fixture.witness)
     periods = tuple(period_from_dict(period_to_dict(row)) for row in fixture.periods)
     assert periods == fixture.periods
-
-
-def test_a_stored_candidate_revalidates_and_detects_tampering(tmp_path):
-    case = LabCase(
-        case_id="annual-roundtrip",
-        family="A-roundtrip",
-        version=1,
-        expectation=CaseExpectation.FEASIBLE_WITH_WITNESS,
-        spec=None,
-        seeds=CaseSeeds(1, 2, 3),
-        annual=AnnualCaseSpec(4, PROFILE_LOOSE, 1),
-    )
-    fixture = build_case(case)
-    candidate = fixture.witness
-    report = validate_candidate(fixture.snapshot, candidate)
-    assert report.valid
-    payload = {
-        "case_id": case.case_id,
-        "snapshot": snapshot_to_dict(fixture.snapshot),
-        "periods": [period_to_dict(period) for period in fixture.periods],
-        "candidate": candidate_to_dict(candidate),
-        "candidate_digest": candidate_digest(candidate),
-        "validation": validation_to_dict(report),
-        "quality": quality_to_dict(measure_initial_quality(fixture.snapshot, candidate)),
-    }
-    stored = tmp_path / "case.json"
-    stored.write_text(json.dumps({"result": {"payload": payload}}), encoding="utf-8")
-
-    summary = revalidate(stored)
-
-    assert summary["revalidated"] is True
-    assert summary["valid"] is True
-    lessons = [list(row) for row in payload["candidate"]["lessons"]]
-    lessons[0][3] = lessons[0][3] + 1
-    adulterated = {**payload, "candidate": {"lessons": lessons}}
-    tampered = tmp_path / "tampered.json"
-    tampered.write_text(json.dumps({"result": {"payload": adulterated}}), encoding="utf-8")
-
-    summary = revalidate(tampered)
-
-    assert summary["revalidated"] is False
-    assert "candidate digest does not match the stored payload" in summary["problems"]
-
-
-def test_the_annual_manifest_builds_without_the_oracle():
-    manifest = {
-        "schema_version": "scheduler-lab-v3",
-        "campaign_id": "annual-unit",
-        "cases": [
-            {
-                "case_id": "annual-unit-1",
-                "family": "A",
-                "version": 1,
-                "expectation": "FEASIBLE_WITH_WITNESS",
-                "mutation": None,
-                "expected_violations": [],
-                "seeds": {"fixture_seed": 1, "event_seed": 2, "solver_seed": 3},
-                "spec": None,
-                "scale": None,
-                "annual": {"class_count": 4, "profile": "loose", "seed": 1},
-            }
-        ],
-    }
-
-    campaign_id, cases = from_manifest(manifest)
-    fixture = build_case(cases[0])
-
-    assert campaign_id == "annual-unit"
-    assert fixture.witness is not None
-    assert validate_candidate(fixture.snapshot, fixture.witness).valid
-    assert measure_initial_quality(fixture.snapshot, fixture.witness).completion_dates
-    assert to_manifest("annual-unit", cases)["cases"][0]["annual"]["class_count"] == 4

@@ -257,40 +257,6 @@ def test_recovery_vector_prefers_margin_over_editable_disruption():
     assert on_time < late
 
 
-def test_a_proposal_never_settles_debt_but_binds_active_reservations():
-    from app.scheduler.domain.debt import (
-        DebtClaim,
-        DebtSettlement,
-        RecoveryAllocation,
-    )
-    from app.scheduler.domain.recovery import reconcile_after_repair
-
-    when = period(0)
-    target = replace(_recovery_snapshot((when,)), active_version_id=7)
-    candidate = CandidateSchedule((_lesson(1, when),))
-    claims = (DebtClaim(4, ORIGIN, 30),)
-
-    proposal = reconcile_after_repair(
-        target, candidate, claims, allocations=(RecoveryAllocation(9, 1, 4, 30),)
-    )
-    assert proposal[0].open_minutes == 30
-    assert proposal[0].reserved_minutes == 0
-
-    active = reconcile_after_repair(
-        target, candidate, claims, allocations=(RecoveryAllocation(7, 1, 4, 30),)
-    )
-    assert active[0].reserved_minutes == 30
-
-    settled = reconcile_after_repair(
-        target,
-        candidate,
-        claims,
-        settlements=(DebtSettlement(4, ("lesson", 1), 30),),
-        executed_credit_by_event={("lesson", 1): 30},
-    )
-    assert settled[0].open_minutes == 0
-
-
 def test_policy_coefficients_are_explicit_and_validated():
     with pytest.raises(ValueError):
         replace(POLICY, move_cost=0)

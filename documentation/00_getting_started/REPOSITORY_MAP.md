@@ -65,7 +65,6 @@ MeuProjeto/
 │   ├── nginx.conf                # Production Nginx SPA server configuration
 │   ├── nginx.ci.conf             # Nginx configuration for the CI and local images
 │   └── README.md                 # Frontend workspace documentation
-├── csv_importacao_48_turmas_16_cursos/ # Sample CSV import templates
 ├── documentation/                # Controlled ASD-STE100 technical documentation
 │   ├── 00_getting_started/       # Onboarding and repository guides
 │   │   ├── ONBOARDING.md         # Canonical Foundation and tutorial contract
@@ -89,7 +88,7 @@ MeuProjeto/
 ├── docker-compose.test.yml        # Isolated test Compose deployment
 ├── README.md                      # Root repository quick start guide
 ├── skills-lock.json               # Version lockfile for AI skills
-└── sonar-project.properties       # SonarQube quality analysis configuration
+└── .sonarcloud.properties         # SonarQube Cloud automatic analysis scope
 ```
 
 ## Component Ownership and Boundaries

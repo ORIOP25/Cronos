@@ -16,7 +16,6 @@ from functools import partial
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
-import structlog
 from sqlalchemy import and_, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,7 +23,6 @@ from sqlalchemy.orm import Session, joinedload
 
 from app import models, schemas
 from app.core.exceptions import AppError
-from app.core.logging import safe_exception_frames
 from app.core.task_keys import DEFAULT_REPAIR_WINDOW_DAYS
 from app.scheduler.domain.lesson_time import execution_allowed
 from app.services import internship_flow_service
@@ -89,8 +87,6 @@ OP_STATE_BY_STATUS = {
     models.LessonOccurrenceStatus.REVOKED: OP_STATE_REVOKED,
 }
 
-MAX_EVENT_DETAIL_LENGTH = 240
-
 
 @dataclass(frozen=True, slots=True)
 class OccurrenceTransitionPlan:
@@ -154,17 +150,6 @@ def build_occurrence_transition_plan(
     )
 
 
-OBS_EVENT_CREATE = "CREATE_OCCURRENCE"
-OBS_EVENT_DECIDE = "DECIDE_OCCURRENCE"
-
-OBS_RESULT_SUCCESS = "SUCCESS"
-OBS_RESULT_VALIDATION_FAILURE = "VALIDATION_FAILURE"
-OBS_RESULT_CONFLICT = "CONFLICT"
-OBS_RESULT_ERROR = "ERROR"
-
-logger = structlog.get_logger(__name__)
-
-
 def _occurrence_error(*, status_code: int, detail: str) -> AppError:
     kind = {
         400: "bad_request",
@@ -178,14 +163,6 @@ def _occurrence_error(*, status_code: int, detail: str) -> AppError:
         422: "validation_error",
     }.get(status_code, "bad_request")
     return AppError(kind=kind, code=code, detail=detail)
-
-
-def classify_occurrence_error_result(status_code: int) -> str:
-    if status_code == 409:
-        return OBS_RESULT_CONFLICT
-    if status_code in (400, 404, 422):
-        return OBS_RESULT_VALIDATION_FAILURE
-    return OBS_RESULT_ERROR
 
 
 def get_operational_state(occurrence: models.LessonOccurrence) -> str:
@@ -265,107 +242,6 @@ def _require_lesson_finished_for_given(
             code="lesson_not_finished",
             detail="Só pode concluir esta aula depois do seu término.",
         )
-
-
-def _sanitize_event_detail(detail: str | None) -> str | None:
-    if detail is None:
-        return None
-    text = str(detail).strip()
-    if not text:
-        return None
-    return text[:MAX_EVENT_DETAIL_LENGTH]
-
-
-def log_occurrence_event_safe_sync(
-    db: Session,
-    *,
-    organization_id: int,
-    event_type: str,
-    result: str,
-    actor_membership_id: int | None = None,
-    occurrence_id: int | None = None,
-    active_schedule_block_id: int | None = None,
-    decision_status: models.LessonOccurrenceStatus | str | None = None,
-    detail: str | None = None,
-) -> None:
-    """Persist observability without poisoning the request transaction on failure."""
-    try:
-        with db.begin_nested():
-            db.add(
-                models.OccurrenceOperationalEvent(
-                    organization_id=organization_id,
-                    event_type=event_type,
-                    result=result,
-                    actor_membership_id=actor_membership_id,
-                    occurrence_id=occurrence_id,
-                    active_schedule_block_id=active_schedule_block_id,
-                    # The v1 decision passes the stored status as a plain string.
-                    decision_status=(
-                        models.LessonOccurrenceStatus(decision_status).value
-                        if decision_status
-                        else None
-                    ),
-                    detail=_sanitize_event_detail(detail),
-                )
-            )
-            db.flush()
-    except Exception as exc:
-        logger.warning(
-            "occurrence_observability_write_failed",
-            error_type=type(exc).__name__,
-            exception_frames=safe_exception_frames(exc),
-        )
-
-
-def get_occurrence_observability_summary_sync(
-    db: Session,
-    *,
-    organization_id: int,
-    window_days: int,
-) -> dict:
-    window_days = max(1, int(window_days))
-    start_at = datetime.now(UTC) - timedelta(days=window_days)
-
-    rows = db.execute(
-        select(
-            models.OccurrenceOperationalEvent.event_type,
-            models.OccurrenceOperationalEvent.result,
-            func.count(models.OccurrenceOperationalEvent.id),
-        )
-        .where(
-            and_(
-                models.OccurrenceOperationalEvent.organization_id == organization_id,
-                models.OccurrenceOperationalEvent.created_at >= start_at,
-            )
-        )
-        .group_by(
-            models.OccurrenceOperationalEvent.event_type,
-            models.OccurrenceOperationalEvent.result,
-        )
-    ).all()
-
-    total_events = 0
-    decisions_success = 0
-    validation_failures = 0
-    conflicts = 0
-
-    for event_type, result, count in rows:
-        count_value = int(count)
-        total_events += count_value
-        if event_type == OBS_EVENT_DECIDE and result == OBS_RESULT_SUCCESS:
-            decisions_success += count_value
-        if result == OBS_RESULT_VALIDATION_FAILURE:
-            validation_failures += count_value
-        if result == OBS_RESULT_CONFLICT:
-            conflicts += count_value
-
-    return {
-        "window_days": window_days,
-        "total_events": total_events,
-        "decisions_success": decisions_success,
-        "validation_failures": validation_failures,
-        "conflicts": conflicts,
-    }
 
 
 # ---------------------------------------------------------------------------
@@ -2117,18 +1993,6 @@ async def get_debts(
     )
 
 
-async def get_occurrence_observability_summary(
-    db: AsyncSession, *, organization_id: int, window_days: int
-) -> dict:
-    return await db.run_sync(
-        partial(
-            get_occurrence_observability_summary_sync,
-            organization_id=organization_id,
-            window_days=window_days,
-        )
-    )
-
-
 async def get_substitute_recommendations(
     db: AsyncSession, *, organization_id: int, occurrence_id: int
 ) -> list[schemas.SubstituteRecommendationRead]:
@@ -2179,32 +2043,5 @@ async def cancel_occurrence(
             version=version,
             reason=reason,
             cancel_completed_substitute_log=cancel_completed_substitute_log,
-        )
-    )
-
-
-async def log_occurrence_event_safe(
-    db: AsyncSession,
-    *,
-    organization_id: int,
-    event_type: str,
-    result: str,
-    actor_membership_id: int | None = None,
-    occurrence_id: int | None = None,
-    active_schedule_block_id: int | None = None,
-    decision_status: models.LessonOccurrenceStatus | str | None = None,
-    detail: str | None = None,
-) -> None:
-    await db.run_sync(
-        partial(
-            log_occurrence_event_safe_sync,
-            organization_id=organization_id,
-            event_type=event_type,
-            result=result,
-            actor_membership_id=actor_membership_id,
-            occurrence_id=occurrence_id,
-            active_schedule_block_id=active_schedule_block_id,
-            decision_status=decision_status,
-            detail=detail,
         )
     )

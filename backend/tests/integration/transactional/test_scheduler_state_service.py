@@ -36,18 +36,9 @@ async def _create_org_and_user(db_session):
 
 
 async def _create_pending_draft(db_session, organization, school_year, membership, state):
-    job = models.ScheduleGenerationJob(
-        organization_id=organization.id,
-        school_year_id=school_year.id,
-        requested_by_membership_id=membership.id,
-        strategy=models.ScheduleGenerationStrategy.COMPLETE_GENERATION,
-    )
-    db_session.add(job)
-    await db_session.flush()
     draft = models.ScheduleDraft(
         organization_id=organization.id,
         school_year_id=school_year.id,
-        generation_job_id=job.id,
         strategy=models.ScheduleGenerationStrategy.COMPLETE_GENERATION,
         result_category=models.ScheduleGenerationResultCategory.COMPLETE_SUCCESS,
         trigger_type=models.ScheduleGenerationTrigger.FIRST_GENERATION,

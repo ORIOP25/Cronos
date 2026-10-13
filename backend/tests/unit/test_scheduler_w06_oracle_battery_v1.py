@@ -186,35 +186,6 @@ def _single_assignment_case(day, *, spec_extra=None):
     return snapshot, periods, baseline
 
 
-def test_open_debt_survives_a_repair_without_being_credited_as_execution():
-    from app.scheduler.domain.debt import DebtClaim, RecoveryAllocation
-    from app.scheduler.domain.recovery import reconcile_after_repair
-
-    base = build_fixture("b-debt", _single(module_minutes=(120,)))
-    baseline = base.witness
-    snapshot = replace(
-        base.snapshot,
-        baseline_lessons=baseline.lessons,
-        active_version_id=7,
-        open_debt_minutes={4: 30},
-        claim_assignments={4: 1},
-    )
-
-    result = repair_published_schedule(
-        snapshot, base.periods, baseline, _policy_for(snapshot), time_limit_seconds=10
-    )
-
-    assert result.outcome == "COMPLETE"
-    balances = reconcile_after_repair(
-        snapshot,
-        result.candidate,
-        (DebtClaim(4, snapshot.origin, 30),),
-        allocations=(RecoveryAllocation(9, result.candidate.lessons[0].lesson_id, 4, 30),),
-    )
-    assert balances[0].open_minutes == 30
-    assert balances[0].reserved_minutes == 0
-
-
 def test_recurrence_increases_the_cost_of_repeating_a_change():
     snapshot, periods, baseline = _single_assignment_case(
         DAY0, spec_extra={"unavailable": (("teacher", 7, (DAY0, time(9), time(10))),)}

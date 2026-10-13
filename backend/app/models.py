@@ -116,16 +116,6 @@ class ScheduleGenerationTrigger(enum.StrEnum):
     GRID_CHANGE = "GRID_CHANGE"
 
 
-class ScheduleGenerationJobStatus(enum.StrEnum):
-    QUEUED = "QUEUED"
-    RUNNING = "RUNNING"
-    CANCEL_REQUESTED = "CANCEL_REQUESTED"
-    CANCELED = "CANCELED"
-    SUCCEEDED = "SUCCEEDED"
-    FAILED = "FAILED"
-    NO_VALID_OUTPUT = "NO_VALID_OUTPUT"
-
-
 class ScheduleGenerationResultCategory(enum.StrEnum):
     COMPLETE_SUCCESS = "COMPLETE_SUCCESS"
     PARTIAL_RECOVERY = "PARTIAL_RECOVERY"
@@ -1333,136 +1323,8 @@ class SchedulerSchoolYearState(Base):
     )
 
 
-class ScheduleGenerationJob(Base):
-    """Auditable execution record for one bounded generation attempt."""
-
-    __tablename__ = "schedule_generation_job"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    organization_id: Mapped[int] = mapped_column(
-        ForeignKey(FK_ORG_ID, ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
-    school_year_id: Mapped[int] = mapped_column(
-        nullable=False,
-        index=True,
-    )
-    requested_by_membership_id: Mapped[int | None] = mapped_column(
-        ForeignKey("organization_membership.id", ondelete=ON_DELETE_SET_NULL),
-        nullable=True,
-    )
-    strategy: Mapped[ScheduleGenerationStrategy] = mapped_column(
-        SAEnum(ScheduleGenerationStrategy),
-        nullable=False,
-    )
-    trigger_type: Mapped[ScheduleGenerationTrigger | None] = mapped_column(
-        SAEnum(ScheduleGenerationTrigger),
-        nullable=True,
-    )
-    job_status: Mapped[ScheduleGenerationJobStatus] = mapped_column(
-        SAEnum(ScheduleGenerationJobStatus),
-        nullable=False,
-        default=ScheduleGenerationJobStatus.QUEUED,
-    )
-    result_category: Mapped[ScheduleGenerationResultCategory | None] = mapped_column(
-        SAEnum(ScheduleGenerationResultCategory),
-        nullable=True,
-    )
-    generation_input_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    debt_basis_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    scheduler_state_version_used: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    repair_policy_snapshot_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    input_snapshot_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    queued_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        nullable=False,
-        default=lambda: datetime.now(UTC),
-    )
-    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    deadline_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    cancellation_requested_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True),
-        nullable=True,
-    )
-    failure_code: Mapped[str | None] = mapped_column(String(50), nullable=True)
-    failure_message: Mapped[str | None] = mapped_column(Text, nullable=True)
-    failure_reference: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    idempotency_key: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    # Proposed grid version used by this job's snapshot (NULL = active version)
-    grid_version_id: Mapped[int | None] = mapped_column(nullable=True)
-
-    __table_args__ = (
-        ForeignKeyConstraint(
-            ["school_year_id", "organization_id"],
-            ["scheduler_school_year.id", "scheduler_school_year.organization_id"],
-            name="fk_schedule_generation_job_year_scope",
-            ondelete="CASCADE",
-        ),
-        ForeignKeyConstraint(
-            ["organization_id", "grid_version_id"],
-            ["grid_version.organization_id", "grid_version.id"],
-            name="fk_schedule_generation_job_grid_version_tenant_scoped",
-            ondelete="RESTRICT",
-        ),
-        UniqueConstraint(
-            "id",
-            "organization_id",
-            "school_year_id",
-            name="uq_schedule_generation_job_id_scope",
-        ),
-        UniqueConstraint(
-            "organization_id",
-            "school_year_id",
-            "idempotency_key",
-            name="uq_schedule_generation_job_idempotency",
-        ),
-        CheckConstraint(
-            "duration_ms IS NULL OR duration_ms >= 0",
-            name="ck_schedule_generation_job_duration_nonnegative",
-        ),
-        CheckConstraint(
-            "(job_status = 'SUCCEEDED' AND result_category IN "
-            "('COMPLETE_SUCCESS', 'PARTIAL_RECOVERY')) OR "
-            "(job_status = 'NO_VALID_OUTPUT' AND result_category = 'NO_VALID_OUTPUT') OR "
-            "(job_status NOT IN ('SUCCEEDED', 'NO_VALID_OUTPUT') AND result_category IS NULL)",
-            name="ck_schedule_generation_job_result_consistency",
-        ),
-        CheckConstraint(
-            "(job_status IN ('CANCELED', 'SUCCEEDED', 'FAILED', 'NO_VALID_OUTPUT') "
-            "AND finished_at IS NOT NULL) OR "
-            "(job_status NOT IN ('CANCELED', 'SUCCEEDED', 'FAILED', 'NO_VALID_OUTPUT') "
-            "AND finished_at IS NULL)",
-            name="ck_schedule_generation_job_terminal_finished",
-        ),
-        CheckConstraint(
-            "started_at IS NULL OR started_at >= queued_at",
-            name="ck_schedule_generation_job_started_after_queued",
-        ),
-        CheckConstraint(
-            "finished_at IS NULL OR (started_at IS NOT NULL AND finished_at >= started_at)",
-            name="ck_schedule_generation_job_finished_after_started",
-        ),
-        Index(
-            "uq_schedule_generation_job_active_year",
-            "organization_id",
-            "school_year_id",
-            unique=True,
-            postgresql_where=job_status.in_(
-                (
-                    ScheduleGenerationJobStatus.QUEUED,
-                    ScheduleGenerationJobStatus.RUNNING,
-                    ScheduleGenerationJobStatus.CANCEL_REQUESTED,
-                )
-            ),
-        ),
-    )
-
-
 class ScheduleDraft(Base):
-    """Auditable proposed schedule state produced by a successful generation job."""
+    """Auditable proposed schedule state."""
 
     __tablename__ = "schedule_drafts"
 
@@ -1476,9 +1338,6 @@ class ScheduleDraft(Base):
         ForeignKey("scheduler_school_year.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
-    )
-    generation_job_id: Mapped[int] = mapped_column(
-        nullable=False,
     )
     strategy: Mapped[ScheduleGenerationStrategy] = mapped_column(
         SAEnum(ScheduleGenerationStrategy),
@@ -1534,37 +1393,16 @@ class ScheduleDraft(Base):
 
     __table_args__ = (
         ForeignKeyConstraint(
-            ["generation_job_id", "organization_id", "school_year_id"],
-            [
-                "schedule_generation_job.id",
-                "schedule_generation_job.organization_id",
-                "schedule_generation_job.school_year_id",
-            ],
-            name="fk_schedule_drafts_generation_job_scope",
-            ondelete="RESTRICT",
-        ),
-        ForeignKeyConstraint(
             ["organization_id", "grid_version_id"],
             ["grid_version.organization_id", "grid_version.id"],
             name="fk_schedule_drafts_grid_version_tenant_scoped",
             ondelete="RESTRICT",
         ),
         UniqueConstraint(
-            "generation_job_id",
-            name="uq_schedule_drafts_generation_job",
-        ),
-        UniqueConstraint(
             "id",
             "organization_id",
             "school_year_id",
             name="uq_schedule_drafts_id_scope",
-        ),
-        UniqueConstraint(
-            "id",
-            "generation_job_id",
-            "organization_id",
-            "school_year_id",
-            name="uq_schedule_drafts_id_job_scope",
         ),
         CheckConstraint(
             "projected_completion_date <= hard_end_date",
@@ -1740,7 +1578,6 @@ class ScheduleDiffEntry(Base):
         nullable=False,
         index=True,
     )
-    generation_job_id: Mapped[int] = mapped_column(nullable=False)
     draft_id: Mapped[int] = mapped_column(nullable=False, index=True)
     class_id: Mapped[int] = mapped_column(ForeignKey(FK_CLASS_ID), nullable=False)
     subject_id: Mapped[int] = mapped_column(ForeignKey(FK_SUBJECT_ID), nullable=False)
@@ -1794,14 +1631,13 @@ class ScheduleDiffEntry(Base):
 
     __table_args__ = (
         ForeignKeyConstraint(
-            ["draft_id", "generation_job_id", "organization_id", "school_year_id"],
+            ["draft_id", "organization_id", "school_year_id"],
             [
                 "schedule_drafts.id",
-                "schedule_drafts.generation_job_id",
                 "schedule_drafts.organization_id",
                 "schedule_drafts.school_year_id",
             ],
-            name="fk_schedule_diff_entries_draft_job_scope",
+            name="fk_schedule_diff_entries_draft_scope",
             ondelete="CASCADE",
         ),
         CheckConstraint(
@@ -2380,57 +2216,6 @@ class LessonOccurrence(Base):
         return f"<LessonOccurrence(id={self.id}, date='{self.date}', status='{self.status}')>"
 
 
-class OccurrenceOperationalEvent(Base):
-    """Evento operacional de ocorrências para observabilidade interna (pilot baseline)."""
-
-    __tablename__ = "occurrence_operational_event"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    organization_id: Mapped[int] = mapped_column(
-        ForeignKey(FK_ORG_ID, ondelete="CASCADE"), index=True
-    )
-
-    occurrence_id: Mapped[int | None] = mapped_column(
-        ForeignKey("lesson_occurrence.id", ondelete=ON_DELETE_SET_NULL),
-        nullable=True,
-        index=True,
-    )
-    active_schedule_block_id: Mapped[int | None] = mapped_column(
-        ForeignKey("active_schedule_blocks.id", ondelete="RESTRICT"),
-        nullable=True,
-        index=True,
-    )
-    actor_membership_id: Mapped[int | None] = mapped_column(
-        ForeignKey("organization_membership.id", ondelete=ON_DELETE_SET_NULL),
-        nullable=True,
-        index=True,
-    )
-
-    event_type: Mapped[str] = mapped_column(String(50), nullable=False)
-    result: Mapped[str] = mapped_column(String(50), nullable=False)
-    decision_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    detail: Mapped[str | None] = mapped_column(String(240), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        default=lambda: datetime.now(UTC),
-        nullable=True,
-        index=True,
-    )
-
-    organization: Mapped["Organization"] = relationship()
-    occurrence: Mapped[Optional["LessonOccurrence"]] = relationship()
-    active_schedule_block: Mapped[Optional["ActiveScheduleBlock"]] = relationship()
-    actor_membership: Mapped[Optional["OrganizationMembership"]] = relationship()
-
-    __table_args__ = (Index("ix_occ_event_org_created", "organization_id", "created_at"),)
-
-    def __repr__(self) -> str:
-        return (
-            f"<OccurrenceOperationalEvent(id={self.id}, organization_id={self.organization_id}, "
-            f"event_type='{self.event_type}', result='{self.result}')>"
-        )
-
-
 class OperationalScheduleBlock(Base):
     """Bloco operacional derivado de uma ocorrencia, separado do horario curricular."""
 
@@ -2548,52 +2333,6 @@ class OperationalScheduleBlock(Base):
             postgresql_where=text("status = 'ACTIVE' AND origin_kind = 'V1'"),
         ),
     )
-
-
-class TeacherEndpointOperationalEvent(Base):
-    """Evento operacional por endpoint crítico de professor (Passo 9)."""
-
-    __tablename__ = "teacher_endpoint_operational_event"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    organization_id: Mapped[int] = mapped_column(
-        ForeignKey(FK_ORG_ID, ondelete="CASCADE"), index=True
-    )
-    actor_membership_id: Mapped[int | None] = mapped_column(
-        ForeignKey("organization_membership.id", ondelete=ON_DELETE_SET_NULL),
-        nullable=True,
-        index=True,
-    )
-    actor_role: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    endpoint_key: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
-    http_status: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
-    latency_ms: Mapped[int] = mapped_column(Integer, nullable=False)
-    active_generation_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        default=lambda: datetime.now(UTC),
-        nullable=False,
-        index=True,
-    )
-
-    organization: Mapped["Organization"] = relationship()
-    actor_membership: Mapped[Optional["OrganizationMembership"]] = relationship()
-
-    __table_args__ = (
-        Index("ix_teacher_endpoint_event_org_created", "organization_id", "created_at"),
-        Index(
-            "ix_teacher_endpoint_event_org_endpoint_created",
-            "organization_id",
-            "endpoint_key",
-            "created_at",
-        ),
-    )
-
-    def __repr__(self) -> str:
-        return (
-            f"<TeacherEndpointOperationalEvent(id={self.id}, organization_id={self.organization_id}, "
-            f"endpoint_key='{self.endpoint_key}', http_status={self.http_status})>"
-        )
 
 
 @event.listens_for(LessonOccurrence, "before_delete")

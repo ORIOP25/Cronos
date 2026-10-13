@@ -169,38 +169,6 @@ test('critical pytest arguments keep every manifest path as a separate native ar
   )
 })
 
-test('parses scheduler lab campaign options and rejects them elsewhere', () => {
-  const parsed = parseArgs([
-    'campaign',
-    '--manifest', 'backend/tests/scheduler_lab/manifest.json',
-    '--out', '.test-artifacts/lab',
-    '--case', 'case-a',
-    '--case', 'case-b',
-    '--resume',
-  ])
-  assert.equal(parsed.command, 'campaign')
-  assert.equal(parsed.manifest, 'backend/tests/scheduler_lab/manifest.json')
-  assert.equal(parsed.out, '.test-artifacts/lab')
-  assert.deepEqual(parsed.caseIds, ['case-a', 'case-b'])
-  assert.equal(parsed.resume, true)
-  assert.throws(() => parseArgs(['campaign', '--scope', 'backend']), /not valid for campaign/)
-  assert.throws(() => parseArgs(['fast', '--manifest', 'x']), /only valid for campaign/)
-  assert.throws(() => parseArgs(['campaign', '--unknown', 'x']), /Unknown option/)
-
-  const generator = parseArgs(['campaign', '--mode', 'generator', '--time-limit', '5', '--workers', '2'])
-  assert.equal(generator.mode, 'generator')
-  assert.equal(generator.timeLimit, '5')
-  assert.equal(generator.workers, '2')
-  const repair = parseArgs(['campaign', '--mode', 'repair'])
-  assert.equal(repair.mode, 'repair')
-  const trajectory = parseArgs(['campaign', '--mode', 'trajectory'])
-  assert.equal(trajectory.mode, 'trajectory')
-  const longitudinal = parseArgs(['campaign', '--mode', 'longitudinal'])
-  assert.equal(longitudinal.mode, 'longitudinal')
-  assert.throws(() => parseArgs(['campaign', '--mode', 'unknown']), /Invalid campaign mode/)
-  assert.throws(() => parseArgs(['campaign', '--workers', '0']), /Invalid worker count/)
-})
-
 test('root CI keeps push on main while pull requests and manual dispatch run full checks', () => {
   const lines = readFileSync(join(ROOT, '.github/workflows/ci.yml'), 'utf8').split(/\r?\n/)
   const start = lines.indexOf('on:')

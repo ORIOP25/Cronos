@@ -800,19 +800,10 @@ async def test_teacher_archive_restore_and_qualifications_invalidate_scheduler(d
         school_year_publication_state=models.SchoolYearPublicationState.UNPUBLISHED,
         scheduler_state_version=1,
     )
-    job = models.ScheduleGenerationJob(
-        organization_id=organization.id,
-        school_year_id=school_year.id,
-        requested_by_membership_id=admin_mem.id,
-        strategy=models.ScheduleGenerationStrategy.COMPLETE_GENERATION,
-    )
-    db_session.add(job)
-    await db_session.flush()
 
     pending_draft = models.ScheduleDraft(
         organization_id=organization.id,
         school_year_id=school_year.id,
-        generation_job_id=job.id,
         strategy=models.ScheduleGenerationStrategy.COMPLETE_GENERATION,
         draft_state=models.ScheduleDraftState.PENDING,
         result_category=models.ScheduleGenerationResultCategory.COMPLETE_SUCCESS,

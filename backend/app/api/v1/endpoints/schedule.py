@@ -4,7 +4,6 @@ from typing import Annotated
 import structlog
 from fastapi import APIRouter, Query, Request
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models, schemas
 from app.api import deps
@@ -12,26 +11,13 @@ from app.core.exceptions import AppError
 from app.core.ratelimit import limiter
 from app.scheduler.infrastructure import operations
 from app.scheduler.infrastructure.models import SchedulerVersionV1
-from app.services import lesson_log_service, schedule_service, teacher_observability_service
+from app.services import lesson_log_service, schedule_service
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)
 ERR_TEACHER_PROFILE_REQUIRED = "Professor sem perfil associado"
 ERR_TEACHER_OWN_SCHEDULE_ONLY = "Professor só pode consultar o próprio horário"
 ERR_TEACHER_HORIZON_NOT_FOUND = "Não existe horizonte semanal configurado para a organização"
-
-
-def _track_teacher_read(
-    db: AsyncSession, current_user: deps.Actor, endpoint_key: str, *, enabled: bool = True
-):
-    return teacher_observability_service.track_teacher_endpoint(
-        db,
-        organization_id=current_user.organization_id,
-        actor_membership_id=current_user.membership_id,
-        actor_role=deps.actor_role(current_user),
-        endpoint_key=endpoint_key,
-        enabled=enabled,
-    )
 
 
 def _raise_schedule_error(status_code: int, code: str, detail: str) -> None:
@@ -153,56 +139,50 @@ async def get_teacher_schedule_horizon(
     db: deps.DbSession,
     current_user: deps.ActiveActor,
 ):
-    async with _track_teacher_read(
-        db,
-        current_user,
-        teacher_observability_service.ENDPOINT_SCHEDULE_ME_HORIZON_READ,
-    ) as outcome:
-        if not deps.user_has_teacher_capability(current_user):
-            _raise_schedule_error(403, "teacher_schedule_forbidden", ERR_TEACHER_OWN_SCHEDULE_ONLY)
-        if current_user.teacher_id is None:
-            _raise_schedule_error(403, "teacher_profile_required", ERR_TEACHER_PROFILE_REQUIRED)
+    if not deps.user_has_teacher_capability(current_user):
+        _raise_schedule_error(403, "teacher_schedule_forbidden", ERR_TEACHER_OWN_SCHEDULE_ONLY)
+    if current_user.teacher_id is None:
+        _raise_schedule_error(403, "teacher_profile_required", ERR_TEACHER_PROFILE_REQUIRED)
 
-        def _run(sync_db):
-            settings_rows = (
-                sync_db.query(models.OrganizationSettings)
-                .filter(models.OrganizationSettings.organization_id == current_user.organization_id)
-                .order_by(models.OrganizationSettings.id.desc())
-                .all()
-            )
-            payload = _resolve_teacher_horizon_payload(settings_rows)
-            if payload is None:
-                return None
+    def _run(sync_db):
+        settings_rows = (
+            sync_db.query(models.OrganizationSettings)
+            .filter(models.OrganizationSettings.organization_id == current_user.organization_id)
+            .order_by(models.OrganizationSettings.id.desc())
+            .all()
+        )
+        payload = _resolve_teacher_horizon_payload(settings_rows)
+        if payload is None:
+            return None
 
-            v1_version_id = sync_db.execute(
-                select(SchedulerVersionV1.id).where(
-                    SchedulerVersionV1.organization_id == current_user.organization_id,
-                    SchedulerVersionV1.status == "ACTIVE",
-                )
-            ).scalar()
-            if v1_version_id is not None:
-                payload["active_generation_id"] = f"v1-{v1_version_id}"
-                return payload
-            latest_generation_row = (
-                sync_db.query(models.ActiveScheduleBlock.schedule_version_id)
-                .filter(
-                    models.ActiveScheduleBlock.organization_id == current_user.organization_id,
-                    models.ActiveScheduleBlock.status == models.ActiveScheduleBlockStatus.ACTIVE,
-                )
-                .order_by(models.ActiveScheduleBlock.id.desc())
-                .first()
+        v1_version_id = sync_db.execute(
+            select(SchedulerVersionV1.id).where(
+                SchedulerVersionV1.organization_id == current_user.organization_id,
+                SchedulerVersionV1.status == "ACTIVE",
             )
-            payload["active_generation_id"] = (
-                latest_generation_row[0] if latest_generation_row else None
-            )
+        ).scalar()
+        if v1_version_id is not None:
+            payload["active_generation_id"] = f"v1-{v1_version_id}"
             return payload
+        latest_generation_row = (
+            sync_db.query(models.ActiveScheduleBlock.schedule_version_id)
+            .filter(
+                models.ActiveScheduleBlock.organization_id == current_user.organization_id,
+                models.ActiveScheduleBlock.status == models.ActiveScheduleBlockStatus.ACTIVE,
+            )
+            .order_by(models.ActiveScheduleBlock.id.desc())
+            .first()
+        )
+        payload["active_generation_id"] = (
+            latest_generation_row[0] if latest_generation_row else None
+        )
+        return payload
 
-        horizon_payload = await db.run_sync(_run)
-        if horizon_payload is None:
-            _raise_schedule_error(404, "teacher_horizon_not_found", ERR_TEACHER_HORIZON_NOT_FOUND)
+    horizon_payload = await db.run_sync(_run)
+    if horizon_payload is None:
+        _raise_schedule_error(404, "teacher_horizon_not_found", ERR_TEACHER_HORIZON_NOT_FOUND)
 
-        outcome.active_generation_id = horizon_payload.get("active_generation_id")
-        return horizon_payload
+    return horizon_payload
 
 
 @router.get(
@@ -232,51 +212,41 @@ async def get_week_schedule(
     is_admin = deps.user_has_admin_capability(current_user)
     is_teacher = deps.user_has_teacher_capability(current_user)
 
-    async with _track_teacher_read(
-        db,
-        current_user,
-        teacher_observability_service.ENDPOINT_SCHEDULE_WEEK_TEACHER_READ,
-        enabled=is_teacher,
-    ):
-        if not is_admin and not is_teacher:
+    if not is_admin and not is_teacher:
+        _raise_schedule_error(403, "teacher_schedule_forbidden", ERR_TEACHER_OWN_SCHEDULE_ONLY)
+
+    if is_teacher and not is_admin:
+        if current_user.teacher_id is None:
+            _raise_schedule_error(403, "teacher_profile_required", ERR_TEACHER_PROFILE_REQUIRED)
+        if class_id is not None:
             _raise_schedule_error(403, "teacher_schedule_forbidden", ERR_TEACHER_OWN_SCHEDULE_ONLY)
+        if teacher_id is not None and teacher_id != current_user.teacher_id:
+            _raise_schedule_error(403, "teacher_schedule_forbidden", ERR_TEACHER_OWN_SCHEDULE_ONLY)
+        effective_teacher_id = current_user.teacher_id
 
-        if is_teacher and not is_admin:
-            if current_user.teacher_id is None:
-                _raise_schedule_error(403, "teacher_profile_required", ERR_TEACHER_PROFILE_REQUIRED)
-            if class_id is not None:
-                _raise_schedule_error(
-                    403, "teacher_schedule_forbidden", ERR_TEACHER_OWN_SCHEDULE_ONLY
-                )
-            if teacher_id is not None and teacher_id != current_user.teacher_id:
-                _raise_schedule_error(
-                    403, "teacher_schedule_forbidden", ERR_TEACHER_OWN_SCHEDULE_ONLY
-                )
-            effective_teacher_id = current_user.teacher_id
+    if effective_class_id is None and effective_teacher_id is None:
+        _raise_schedule_error(400, "week_filter_required", WEEK_FILTER_REQUIRED_MSG)
 
-        if effective_class_id is None and effective_teacher_id is None:
-            _raise_schedule_error(400, "week_filter_required", WEEK_FILTER_REQUIRED_MSG)
+    v1_slots = await operations.week_schedule(
+        db,
+        current_user.organization_id,
+        week_start=week_start,
+        class_id=effective_class_id,
+        teacher_id=effective_teacher_id,
+    )
+    if v1_slots is not None:
+        return v1_slots
 
-        v1_slots = await operations.week_schedule(
-            db,
-            current_user.organization_id,
+    def _run(sync_db):
+        return schedule_service.get_week_schedule_sync(
+            sync_db,
+            organization_id=current_user.organization_id,
             week_start=week_start,
             class_id=effective_class_id,
             teacher_id=effective_teacher_id,
         )
-        if v1_slots is not None:
-            return v1_slots
 
-        def _run(sync_db):
-            return schedule_service.get_week_schedule_sync(
-                sync_db,
-                organization_id=current_user.organization_id,
-                week_start=week_start,
-                class_id=effective_class_id,
-                teacher_id=effective_teacher_id,
-            )
-
-        return await db.run_sync(_run)
+    return await db.run_sync(_run)
 
 
 # ==========================================

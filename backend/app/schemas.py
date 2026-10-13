@@ -1498,7 +1498,6 @@ class EligibleTeacherRead(BaseModel):
 # ==========================================
 
 DESC_OCCURRENCE_STATUS = "Estado da ocorrência: GIVEN | GAP | SUBSTITUTED"
-DESC_OCCURRENCE_CREATE_ACTIVE_BLOCK_ID = "ID do bloco publicado para iniciar ocorrência operacional"
 
 
 class LessonOccurrenceRead(BaseModel):
@@ -1556,18 +1555,6 @@ class LessonOccurrenceListRead(BaseModel):
     total: int
     limit: int
     offset: int
-
-
-class LessonOccurrenceCreate(BaseModel):
-    """Payload para criar ocorrência operacional a partir de um bloco do horário."""
-
-    action: Literal["CREATE_OCCURRENCE"] = "CREATE_OCCURRENCE"
-    active_schedule_block_id: int = Field(
-        ..., gt=0, description=DESC_OCCURRENCE_CREATE_ACTIVE_BLOCK_ID
-    )
-    mode: Literal["manual_admin", "lesson_log"] = Field(default="manual_admin", max_length=50)
-
-    model_config = ConfigDict(extra="forbid")
 
 
 class LessonOccurrenceUpdate(BaseModel):
@@ -1683,47 +1670,6 @@ class SubstituteDiagnosticsRead(BaseModel):
     eligible_count: int
     candidates: list[SubstituteDiagnosticCandidateRead]
     setup_actions: list[str]
-
-
-class OccurrenceObservabilitySummaryRead(BaseModel):
-    """Contadores operacionais mínimos de ocorrências por organização."""
-
-    window_days: int
-    total_events: int
-    decisions_success: int
-    validation_failures: int
-    conflicts: int
-
-
-class TeacherEndpointObservabilityEndpointRead(BaseModel):
-    """Métricas agregadas por endpoint crítico do fluxo professor."""
-
-    endpoint_key: str
-    total_requests: int
-    status_2xx: int
-    status_403: int
-    status_5xx: int
-    error_rate_percent: float
-    p95_latency_ms: int
-
-
-class TeacherEndpointAlertRead(BaseModel):
-    """Alerta operacional calculado para o período analisado."""
-
-    endpoint_key: str
-    alert_code: str
-    severity: str
-    threshold: str
-    observed_value: str
-
-
-class TeacherEndpointObservabilitySummaryRead(BaseModel):
-    """Resumo mínimo de monitorização de endpoints do professor."""
-
-    window_minutes: int
-    total_events: int
-    endpoints: list[TeacherEndpointObservabilityEndpointRead]
-    alerts: list[TeacherEndpointAlertRead]
 
 
 # ==========================================
@@ -2142,45 +2088,6 @@ class SchedulerV1StatusRead(BaseModel):
     default_strategy: str
     active_job: SchedulerV1JobRead | None = None
     pending_proposal: SchedulerV1ProposalRead | None = None
-
-
-class SchedulerV1LessonSliceRead(BaseModel):
-    module_id: int
-    offset_minutes: int
-    minutes: int
-
-
-class SchedulerV1ProposalLessonRead(BaseModel):
-    id: int
-    assignment_id: int
-    class_id: int
-    subject_id: int
-    teacher_id: int
-    room_id: int
-    school_date: date
-    starts_at: datetime
-    ends_at: datetime
-    physical_minutes: int
-    credit_minutes: int
-    source_lesson_id: int | None
-    lesson_log_status: str | None
-    slices: list[SchedulerV1LessonSliceRead]
-
-
-class SchedulerV1ExecutedModuleRead(BaseModel):
-    assignment_id: int
-    module_id: int
-    minutes: int
-
-
-class SchedulerV1ProposalLessonsRead(BaseModel):
-    proposal_id: int
-    organization_id: int
-    school_year_id: int
-    version_id: int | None
-    total: int
-    executed: list[SchedulerV1ExecutedModuleRead]
-    lessons: list[SchedulerV1ProposalLessonRead]
 
 
 class SchedulerV1GenerateRequest(BaseModel):

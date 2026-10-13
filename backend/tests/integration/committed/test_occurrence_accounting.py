@@ -137,18 +137,9 @@ async def _occurrence_context(db_session, *, suffix: str) -> SimpleNamespace:
     )
     await db_session.flush()
 
-    job = models.ScheduleGenerationJob(
-        organization_id=organization.id,
-        school_year_id=school_year.id,
-        requested_by_membership_id=membership.id,
-        strategy=models.ScheduleGenerationStrategy.COMPLETE_GENERATION,
-    )
-    db_session.add(job)
-    await db_session.flush()
     draft = models.ScheduleDraft(
         organization_id=organization.id,
         school_year_id=school_year.id,
-        generation_job_id=job.id,
         strategy=models.ScheduleGenerationStrategy.COMPLETE_GENERATION,
         result_category=models.ScheduleGenerationResultCategory.COMPLETE_SUCCESS,
         trigger_type=models.ScheduleGenerationTrigger.FIRST_GENERATION,
@@ -393,19 +384,6 @@ async def test_occurrence_cancellation_reverses_ledger_and_preserves_audit_revis
         decided_by_membership_id=context.membership_id,
     )
     await db_session.commit()
-    await occurrence_service.log_occurrence_event_safe(
-        db_session,
-        organization_id=context.organization_id,
-        event_type=occurrence_service.OBS_EVENT_DECIDE,
-        result=occurrence_service.OBS_RESULT_SUCCESS,
-        actor_membership_id=context.membership_id,
-        occurrence_id=context.occurrence_id,
-        active_schedule_block_id=context.active_block_id,
-        decision_status=models.LessonOccurrenceStatus.GAP,
-        detail="decision committed",
-    )
-    await db_session.commit()
-
     await occurrence_service.cancel_occurrence(
         db_session,
         organization_id=context.organization_id,
@@ -421,20 +399,6 @@ async def test_occurrence_cancellation_reverses_ledger_and_preserves_audit_revis
         ("OCCURRENCE_DECISION", 60),
         ("OCCURRENCE_REVERSAL", -60),
     ]
-    events = list(
-        (
-            await db_session.execute(
-                select(models.OccurrenceOperationalEvent).where(
-                    models.OccurrenceOperationalEvent.organization_id == context.organization_id,
-                    models.OccurrenceOperationalEvent.occurrence_id == context.occurrence_id,
-                )
-            )
-        )
-        .scalars()
-        .all()
-    )
-    assert len(events) == 1
-    assert events[0].event_type == occurrence_service.OBS_EVENT_DECIDE
     await db_session.refresh(context.occurrence)
     assert context.occurrence.status == models.LessonOccurrenceStatus.REVOKED
     assert context.occurrence.is_active is False

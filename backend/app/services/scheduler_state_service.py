@@ -10,7 +10,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models
-from app.services.scheduler_serialization import (
+from app.scheduler.domain.serialization import (
     SchedulerSerializationError,
     canonical_json_value,
 )

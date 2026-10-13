@@ -118,25 +118,10 @@ async def test_a_v1_week_with_a_future_lesson_cannot_be_submitted(db_session, mo
 
 async def _legacy_duplicate_block(db_session, seed, timeslot_id: int):
     """A published legacy block for the same teacher and week."""
-    now = datetime(2026, 9, 21, 18, tzinfo=UTC)
-    job = models.ScheduleGenerationJob(
-        organization_id=seed.organization.id,
-        school_year_id=seed.year.id,
-        requested_by_membership_id=seed.membership.id,
-        strategy=models.ScheduleGenerationStrategy.COMPLETE_GENERATION,
-        trigger_type=models.ScheduleGenerationTrigger.FIRST_GENERATION,
-        job_status=models.ScheduleGenerationJobStatus.SUCCEEDED,
-        result_category=models.ScheduleGenerationResultCategory.COMPLETE_SUCCESS,
-        queued_at=now,
-        started_at=now,
-        finished_at=now,
-    )
-    db_session.add(job)
-    await db_session.flush()
+    datetime(2026, 9, 21, 18, tzinfo=UTC)
     draft = models.ScheduleDraft(
         organization_id=seed.organization.id,
         school_year_id=seed.year.id,
-        generation_job_id=job.id,
         strategy=models.ScheduleGenerationStrategy.COMPLETE_GENERATION,
         result_category=models.ScheduleGenerationResultCategory.COMPLETE_SUCCESS,
         trigger_type=models.ScheduleGenerationTrigger.FIRST_GENERATION,

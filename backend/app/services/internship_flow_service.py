@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session, aliased
 
 from app import models, schemas
 from app.core.logging import safe_exception_frames
-from app.services.scheduler_serialization import sha256_json
+from app.scheduler.domain.serialization import payload_digest
 from app.services.scheduler_state_service import (
     SchedulerStateService,
     record_scheduler_change,
@@ -322,7 +322,7 @@ async def compute_impact(
         )
         for block, class_name, subject_name in block_rows
     )
-    fingerprint = sha256_json({"lessons": [lesson.fingerprint_payload() for lesson in lessons]})
+    fingerprint = payload_digest({"lessons": [lesson.fingerprint_payload() for lesson in lessons]})
     return FlowImpact(lessons=lessons, fingerprint=fingerprint)
 
 

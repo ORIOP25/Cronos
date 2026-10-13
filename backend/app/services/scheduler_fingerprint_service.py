@@ -10,12 +10,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app import models
 from app.core.task_keys import resolve_repair_window_days
 from app.scheduler.domain.calendar import first_editable_grid_date
-from app.services import grid_version_service
-from app.services.scheduler_serialization import (
-    canonical_json_bytes,
+from app.scheduler.domain.serialization import (
+    canonical_json,
     canonical_json_value,
-    sha256_json,
+    payload_digest,
 )
+from app.services import grid_version_service
 
 
 class SchedulerFingerprintError(RuntimeError):
@@ -119,7 +119,7 @@ class SchedulerFingerprintService:
             }
         )
         return RepairPolicySnapshot(
-            value=sha256_json(snapshot),
+            value=payload_digest(snapshot),
             snapshot=snapshot,
             editable_start_date=editable_start_date,
         )
@@ -137,7 +137,7 @@ class SchedulerFingerprintService:
             strategy,
             grid_version_id=grid_version_id,
         )
-        return SchedulerFingerprint(value=sha256_json(snapshot), snapshot=snapshot)
+        return SchedulerFingerprint(value=payload_digest(snapshot), snapshot=snapshot)
 
     async def generation_input_snapshot(
         self,
@@ -506,7 +506,7 @@ class SchedulerFingerprintService:
                     constraint_rows,
                     key=lambda row: (
                         row.rule_type.value,
-                        canonical_json_bytes(_constraint_payload(row)),
+                        canonical_json(_constraint_payload(row)),
                     ),
                 )
             ],
@@ -693,7 +693,7 @@ class SchedulerFingerprintService:
         if unresolved <= 0:
             return None
         return DebtBasisFingerprint(
-            value=sha256_json(snapshot),
+            value=payload_digest(snapshot),
             snapshot=snapshot,
             unresolved_debt_minutes=unresolved,
         )

@@ -157,19 +157,9 @@ async def _prepare_context(db_session):
             subject_id=subject.id,
         )
     )
-    job = models.ScheduleGenerationJob(
-        organization_id=org.id,
-        school_year_id=school_year.id,
-        strategy=models.ScheduleGenerationStrategy.COMPLETE_GENERATION,
-        trigger_type=models.ScheduleGenerationTrigger.FIRST_GENERATION,
-        idempotency_key="flow-api-job",
-    )
-    db_session.add(job)
-    await db_session.flush()
     draft = models.ScheduleDraft(
         organization_id=org.id,
         school_year_id=school_year.id,
-        generation_job_id=job.id,
         strategy=models.ScheduleGenerationStrategy.COMPLETE_GENERATION,
         draft_state=models.ScheduleDraftState.PENDING,
         result_category=models.ScheduleGenerationResultCategory.COMPLETE_SUCCESS,

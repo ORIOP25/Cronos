@@ -17,7 +17,6 @@ from app.schemas import (
     ClassUpdateInCourse,
     CourseUpdate,
     GridConfigurationCommand,
-    LessonOccurrenceCreate,
     MemberCreate,
     OrganizationSettingsUpsert,
     RoomCreate,
@@ -89,10 +88,6 @@ class TestTimeslotBulkValidation:
 
 
 class TestSchedulerBaselineContract:
-    def test_occurrence_rejects_removed_auto_confirm_mode(self):
-        with pytest.raises(ValidationError):
-            LessonOccurrenceCreate(active_schedule_block_id=1, mode="auto_confirm")
-
     def test_settings_reject_target_end_date_and_accept_zero_stability_window(self):
         with pytest.raises(ValidationError):
             OrganizationSettingsUpsert(

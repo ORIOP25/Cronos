@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app import models, schemas
 from app.core.task_keys import DEFAULT_REPAIR_WINDOW_DAYS, resolve_repair_window_days
 from app.scheduler.domain.calendar import first_editable_grid_date
+from app.scheduler.domain.serialization import canonical_json_value, payload_digest
 from app.scheduler.domain.timetable import BreakOverride, build_daily_slots
 from app.scheduler.infrastructure.jobs import (
     GenerationUnavailable,
@@ -28,7 +29,6 @@ from app.scheduler.infrastructure.models import (
 from app.scheduler.infrastructure.progress import load_executed_minutes
 from app.scheduler.infrastructure.snapshot import SnapshotConfigurationError
 from app.services import grid_version_service, settings_service
-from app.services.scheduler_serialization import canonical_json_value, sha256_json
 
 ProposedSignature = tuple[int, time, time]
 
@@ -486,7 +486,7 @@ async def analyze_grid_change(
         minutes_protected=minutes_protected,
         minutes_planned_after_boundary=minutes_after,
         minutes_remaining=minutes_to_place,
-        fingerprint=sha256_json(fingerprint_snapshot),
+        fingerprint=payload_digest(fingerprint_snapshot),
         pending_grid_version_id=None if pending_version is None else pending_version.id,
         can_propose=not blockers,
         blockers=tuple(blockers),

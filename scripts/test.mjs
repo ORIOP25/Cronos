@@ -42,7 +42,6 @@ Commands:
   capacity-smoke
   all --scope backend|frontend|all
   benchmark --profile fast|integration|e2e|all [--scope backend|frontend|all]
-  campaign [--manifest <path>] [--out <dir>] [--case <id>]... [--mode witness|generator|repair|trajectory|longitudinal] [--time-limit <s>] [--workers <n>] [--resume]
 `
 
 export function parseArgs(argv) {
@@ -59,19 +58,12 @@ export function parseArgs(argv) {
         : command === 'all' ? 'all'
           : 'fast',
     project: undefined,
-    manifest: undefined,
-    out: undefined,
-    caseIds: [],
-    mode: 'witness',
-    timeLimit: undefined,
-    workers: undefined,
-    resume: false,
     forwarded,
   }
   let scopeWasProvided = false
   let profileWasProvided = false
 
-  if (!['setup', 'doctor', 'fast', 'critical', 'integration', 'e2e', 'capacity', 'capacity-smoke', 'all', 'benchmark', 'campaign'].includes(command)) {
+  if (!['setup', 'doctor', 'fast', 'critical', 'integration', 'e2e', 'capacity', 'capacity-smoke', 'all', 'benchmark'].includes(command)) {
     throw usageError(`Unknown command: ${command}`)
   }
   if (forwarded.length && !['fast', 'integration'].includes(command)) {
@@ -82,10 +74,6 @@ export function parseArgs(argv) {
     const option = options[index]
     if (!option.startsWith('--')) throw usageError(`Unexpected argument: ${option}`)
     const name = option.slice(2)
-    if (name === 'resume') {
-      parsed.resume = true
-      continue
-    }
     const value = options[index + 1]
     if (!value || value.startsWith('--')) throw usageError(`Option --${name} requires a value.`)
     if (name === 'scope') {
@@ -99,43 +87,10 @@ export function parseArgs(argv) {
     } else if (name === 'project') {
       if (parsed.project !== undefined) throw usageError('Only one --project option is allowed.')
       parsed.project = value
-    } else if (name === 'manifest') {
-      parsed.manifest = value
-    } else if (name === 'out') {
-      parsed.out = value
-    } else if (name === 'case') {
-      parsed.caseIds.push(value)
-    } else if (name === 'mode') {
-      if (!['witness', 'generator', 'repair', 'trajectory', 'longitudinal'].includes(value)) throw usageError(`Invalid campaign mode: ${value}`)
-      parsed.mode = value
-    } else if (name === 'time-limit') {
-      if (!Number.isFinite(Number(value)) || Number(value) <= 0) throw usageError(`Invalid time limit: ${value}`)
-      parsed.timeLimit = value
-    } else if (name === 'workers') {
-      if (!Number.isInteger(Number(value)) || Number(value) < 1) throw usageError(`Invalid worker count: ${value}`)
-      parsed.workers = value
     } else {
       throw usageError(`Unknown option: --${name}`)
     }
     index += 1
-  }
-
-  if (command === 'campaign' && (scopeWasProvided || profileWasProvided)) {
-    throw usageError('--scope and --profile are not valid for campaign.')
-  }
-  if (
-    command !== 'campaign'
-    && (
-      parsed.manifest !== undefined
-      || parsed.out !== undefined
-      || parsed.caseIds.length
-      || parsed.mode !== 'witness'
-      || parsed.timeLimit !== undefined
-      || parsed.workers !== undefined
-      || parsed.resume
-    )
-  ) {
-    throw usageError('campaign options are only valid for campaign.')
   }
 
   if (command === 'critical' && !scopeWasProvided) {
@@ -668,29 +623,6 @@ async function runFast(scope, forwarded, context) {
       'frontend-fast',
     )
   }
-}
-
-async function runCampaign(parsed, context) {
-  const manifestPath = resolve(parsed.manifest ?? join(BACKEND, 'tests', 'scheduler_lab', 'manifest.json'))
-  const outDir = resolve(parsed.out ?? join(context.artifactDir, 'scheduler-lab'))
-  const env = baseTestEnvironment({ RATELIMIT_ENABLED: 'false' })
-  const codeIdentity = `${context.revision.slice(0, 12)}+${context.git.tree?.slice(0, 12) ?? 'unknown'}`
-  const args = [
-    '-m', 'app.scheduler.lab.campaign',
-    '--manifest', manifestPath,
-    '--out', outDir,
-    '--commit', context.revision,
-    '--code-identity', codeIdentity,
-    '--policy-version', 'quality-v1',
-    '--mode', parsed.mode,
-  ]
-  for (const caseId of parsed.caseIds) args.push('--case', caseId)
-  if (parsed.timeLimit !== undefined) args.push('--time-limit', parsed.timeLimit)
-  if (parsed.workers !== undefined) args.push('--workers', parsed.workers)
-  if (parsed.resume) args.push('--resume')
-  await runRecorded(backendPythonSpec(args, env, context), {
-    cwd: BACKEND, env, label: 'scheduler lab campaign',
-  }, context, { name: 'scheduler-campaign', kind: 'campaign' })
 }
 
 function composeSpec(args) {
@@ -1442,7 +1374,6 @@ export async function main(argv = process.argv.slice(2)) {
     }
     else if (parsed.command === 'all') await runAll(parsed.scope, context)
     else if (parsed.command === 'benchmark') await runBenchmark(parsed.profile, parsed.scope, context)
-    else if (parsed.command === 'campaign') await runCampaign(parsed, context)
   } catch (error) {
     primaryCode = error.runnerCode || 1
     console.error(`[test] ${error.message}`)

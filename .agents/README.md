@@ -27,7 +27,7 @@ The following imported skill suites are protected and must not be modified:
 - `.agents/skills/design-taste-frontend/`: Imported frontend design skill.
 - `skills-lock.json`: Skill lockfile.
 
-Only `.agents/skills/cronos-*` is tracked in Git; `.gitignore` ignores the other skill directories, so they exist only where installed locally.
+Git tracks `.agents/skills/cronos-*` and `.agents/skills/ponytail/`, because AGENTS.md requires them. `.gitignore` ignores the other skill directories, so they exist only where installed locally.
 
 ## Source of Truth Policy
 
