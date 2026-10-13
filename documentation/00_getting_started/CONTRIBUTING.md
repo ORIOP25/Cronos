@@ -12,9 +12,8 @@ Install Python 3.14, Node 24, and npm 11. The root test runner checks these vers
 
 ## Git Branching Model
 - `main`: Production release branch. Must remain stable at all times.
-- `develop`: Integration branch for the next release.
 - `feature/*`: Optional development feature branches.
-- CI runs on every push and pull request.
+- CI runs on every push to `main`, on every pull request, and on manual dispatch.
 - Commit messages must use concise imperative descriptions (e.g., `fix: update RLS policy for occurrences`).
 
 ## Code Standards and Tooling
@@ -25,7 +24,7 @@ Install Python 3.14, Node 24, and npm 11. The root test runner checks these vers
 - Run formatter check: `ruff format --check .`
 - Run linter check: `ruff check .`
 - Database migrations: Use Alembic for all schema alterations (`alembic revision --autogenerate -m "description"`).
-- Keep one linear migration chain from the baseline `0001_scheduler_v1_baseline` to the head `0017_active_course_abbreviations`. Do not create branches or merge revisions.
+- Keep one linear migration chain from the baseline `0001_scheduler_v1_baseline` to the head `0018_occurrence_decisions`. Do not create branches or merge revisions.
 - Run migrations with the privileged `cronos_migrator` role through the maintenance container.
 - Never execute destructive database operations without migration scripts.
 

@@ -43,12 +43,15 @@ npm run test:e2e
 # Run the complete local frontend verification
 npm run verify
 
+# Run the fast critical subset (legal contract, marketing build, edge worker, assets, critical tests)
+npm run verify:critical:fast
+
 # Check production-only source rules
 npm run audit:production
 ```
 
 `npm run build` runs `vite build` and `node scripts/build-marketing-pages.mjs`.
-`npm run verify` runs lint, both Knip checks, the legal contract check, the marketing build test, the edge worker test, the marketing asset check, coverage, and the build.
+`npm run verify` runs lint, both Knip checks, the legal contract check, the marketing build test, the root script tests, the edge worker test, the marketing asset check, coverage, and the build.
 
 ## Public Marketing Site
 The public marketing site resides in `src/features/marketing/`:
@@ -71,6 +74,7 @@ Marketing CSS classes use the `cronos-*` namespace to isolate styles from authen
 | `/vantagens`, `/como-funciona`, `/ajuda` | `VantagensPage.jsx`, `HowItWorksPage.jsx`, `HelpPage.jsx` | Public |
 | `/sobre`, `/about` | `pages/marketing/AboutPage.jsx` | Public |
 | `/contacto`, `/contact` | `pages/marketing/ContactPage.jsx` | Public |
+| `/privacidade`, `/privacy`, `/termos`, `/dpa`, `/cookies` | `features/legal/LegalDocumentLayout.jsx` | Public |
 | `/login/*` | `SignInPage.jsx` | Public |
 | `/register/*` | `SignUpPage.jsx` | Public |
 | `/recuperar-palavra-passe` | `ForgotPasswordPage.jsx` | Public |

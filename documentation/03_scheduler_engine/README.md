@@ -2,14 +2,11 @@
 
 This section documents the Cronos scheduler v1: complete annual generation, adaptive repair, CP-SAT optimization, the global queue, proposal approval, and the laboratory that validates them.
 
-The scheduler v1 is active and delivered. W00–W14 concluded; W14 closed on 28 September 2026.
+The scheduler v1 is active in production. The original execution plan and work breakdown (packages W00–W14) were removed once delivered; they remain in git history. Their binding product decisions (D01–D31) now live in section 1.1 of the technical specification.
 
 ## Documents
 
-- [SCHEDULER_V1_REVAMP_PLAN_V2.md](SCHEDULER_V1_REVAMP_PLAN_V2.md): Execution plan rev 2 — product decisions, revamp boundary, as-built W00–W14.
-- [SCHEDULER_V1_WBS_V2.md](SCHEDULER_V1_WBS_V2.md): Work packages rev 2 — W00–W14, campaigns and gates.
-- [SCHEDULER_V1_TECH_SPEC_V2.md](SCHEDULER_V1_TECH_SPEC_V2.md): Technical specification rev 2 — implemented contracts, models, API and operations.
-- [Adaptive recovery evidence](review_evidence/2026-10-01-adaptive-recovery/EVIDENCE.md): Regression checks and isolated planning-change experiments.
+- [SCHEDULER_V1_TECH_SPEC_V2.md](SCHEDULER_V1_TECH_SPEC_V2.md): Technical specification (in Portuguese) — product decisions, contracts, models, quality policy, queue, API and operations.
 
 ## Engine
 

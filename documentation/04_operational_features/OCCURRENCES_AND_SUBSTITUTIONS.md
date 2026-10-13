@@ -35,6 +35,8 @@ Planning a substitution must not anticipate curricular execution.
 | Models | `SchedulerLessonLogV1`, `OperationalScheduleBlock`, `LessonOccurrence` |
 | UI | `frontend/src/pages/Occurrences.jsx` |
 
+Routes under `/api/v1/occurrences`: `GET /` (list), `POST /` (create), `GET /debts`, `GET /observability/summary`, `GET /{id}`, `PATCH /{id}` (decision), `POST /{id}/cancel`, `GET /{id}/substitutes/recommendations` and `GET /{id}/substitutes/diagnostics`. There is no general substitute listing route.
+
 ## Data or Request Flow
 
 1. A teacher or administrator registers an occurrence. The system creates no debt and no execution.

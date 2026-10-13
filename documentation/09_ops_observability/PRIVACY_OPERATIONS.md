@@ -97,7 +97,7 @@ The current backend versions are Terms `2026-01`, DPA `2026-01`, and Privacy `20
 
 - Publish the complete professional address and public email.
 - Complete legal review of Privacy, Terms, and DPA.
-- Approve the Sentry removal and equivalent platform alert coverage.
+- Confirm Railway platform logs and alerts cover incident detection (there is no external error tracker).
 - Notify API consumers that occurrence payloads containing `reason` now fail with `422`.
 - Confirm Clerk Legal Compliance links and required cookies.
 - Confirm Turnstile has no preclearance and loads only in the final contact step.

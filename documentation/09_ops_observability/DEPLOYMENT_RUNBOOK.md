@@ -15,7 +15,7 @@ Do not treat this document as proof that an external dashboard is configured.
 
 ## What the System Does
 
-The repository defines one API service, one worker, one supervisor, one Beat service, and one database bootstrap job for Railway.
+The repository defines Railway configuration for one API service, one worker, one supervisor, one Beat service, and a database bootstrap job that runs only on demand. Production also runs managed `Postgres` and `Redis` services in the same Railway project.
 The frontend builds from `frontend/` and produces `frontend/dist`.
 The build emits `index.html`, `app-shell.html`, one marketing HTML file per route, and the `_worker.js` edge handler.
 
@@ -33,8 +33,26 @@ The bootstrap job creates restricted roles before runtime deployment.
 | Worker | `backend/railway/worker.json` | Celery scheduler solver worker, concurrency one |
 | Supervisor | `backend/railway/supervisor.json` | Celery recovery supervisor on the `scheduler-supervisor` queue |
 | Beat | `backend/railway/beat.json` | One replica with reconciliation, maintenance, and supervisor dispatch |
-| Bootstrap | `backend/railway/bootstrap.json` | `python -m app.ops.provision_database` |
-| Frontend | `frontend/Dockerfile` or Pages project | Vite build output `dist` |
+| Bootstrap | `backend/railway/bootstrap.json` | `python -m app.ops.provision_database`; for a temporary job only, there is no standing Railway service |
+| Frontend | Cloudflare Pages project (the `production` target of `frontend/Dockerfile` serves the same build behind `frontend/nginx.conf`) | Vite build output `dist` |
+
+### Production topology
+
+This table records the external setup last observed in the provider dashboards. The repository cannot prove it; re-check the dashboards before relying on it.
+
+| Where | Item | State |
+| :--- | :--- | :--- |
+| Railway (project `hopeful-enthusiasm`, environment `production`) | `api` | Custom domain `api.cronos.pt`; config file `/backend/railway/api.json`. |
+| | `worker` | Config file `/backend/railway/worker.json`. |
+| | `beat` | Config file `/backend/railway/beat.json`. |
+| | `scheduler-supervisor` | Start command set in the dashboard. The service has no config-file path, so `backend/railway/supervisor.json` is not applied; keep the dashboard command identical to that file. |
+| | `Postgres` | Image `ghcr.io/railwayapp-templates/postgres-ssl:18` (PostgreSQL 18). |
+| | `Redis` | Image `redis:8.2.9`. |
+| Cloudflare | DNS for `cronos.pt` | Pages serves the apex; `www` answers `301` to the apex; `api` is a CNAME to Railway. |
+| Hostinger | Mailbox mail for `cronos.pt` | MX `mx1.hostinger.com` and `mx2.hostinger.com`; SPF `include:_spf.mail.hostinger.com`; DKIM `hostingermail-a`, `-b`, `-c`; DMARC `p=none` without reporting. |
+| Resend | Contact form delivery | Sends from the `forms.cronos.pt` subdomain (DKIM `resend._domainkey.forms`; SPF and MX on `send.forms`). `website@forms.cronos.pt` delivers to `contacto@cronos.pt`. |
+
+Version drift: production runs PostgreSQL 18 and Redis 8, while Docker Compose, the test stack and CI run `postgres:16-alpine` and `redis:7-alpine`. Migrations and tests are therefore not exercised on the production major versions. Align them or accept the risk explicitly.
 
 ## Data or Request Flow
 
@@ -52,7 +70,7 @@ The bootstrap job creates restricted roles before runtime deployment.
 
 ### Railway API
 
-Use root directory `/backend` and `backend/railway/api.json`.
+Use root directory `/backend` and config file `/backend/railway/api.json`.
 Set `DATABASE_POOLING_ENABLED=true` and `PORT=8000`.
 Use the `cronos_app` URL for runtime access.
 Use the `cronos_migrator` URL for migrations.
@@ -61,7 +79,7 @@ Do not import `app.scheduler_v1_worker` in the API process.
 
 ### Railway worker and Beat
 
-Use root directory `/backend` and their matching JSON files.
+Use root directory `/backend` and their matching JSON files (`worker.json`, `beat.json`; `supervisor.json` as noted in the topology table).
 Set `DATABASE_POOLING_ENABLED=false`.
 Use private PostgreSQL and Redis URLs.
 Run one worker and one Beat replica.
@@ -70,14 +88,15 @@ The supervisor command includes `--include=app.scheduler_recovery_worker` and co
 
 ### Database bootstrap
 
-Set `BOOTSTRAP_DATABASE_URL`, `CRONOS_MIGRATOR_PASSWORD`, and `CRONOS_APP_PASSWORD` only on the temporary job.
+Create a temporary service from `backend/railway/bootstrap.json` and delete it afterwards.
+Set `BOOTSTRAP_DATABASE_URL`, `CRONOS_MIGRATOR_PASSWORD`, and `CRONOS_APP_PASSWORD` only on that job.
 The job creates `cronos_migrator`, `cronos_app`, and `cronos_auth_definer`.
 Run it twice to verify idempotency.
 
 ### Frontend
 
 Build from `frontend` with `npm ci && npm run build`.
-Publish `dist`.
+Publish `dist` to the Cloudflare Pages project.
 Set `VITE_API_BASE_URL`, `VITE_CLERK_PUBLISHABLE_KEY`, and `VITE_TURNSTILE_SITE_KEY` as public build variables.
 Nginx serves public routes with `try_files $uri $uri.html =404` and application routes with `app-shell.html`.
 The nginx runtime does not execute `_worker.js`; content negotiation applies to the Pages deployment only.
@@ -101,6 +120,7 @@ Test every client route on the hosting provider before domain cutover.
 ### Domain accessibility
 
 Verify the apex host serves the site over HTTPS with a `200` response.
+Verify `api.cronos.pt` resolves to Railway and `/health/ready` answers `ok`.
 Verify `www` permanently redirects to the apex and preserves the path and query.
 Verify plain HTTP redirects to HTTPS.
 Verify the `A` and `AAAA` records resolve on at least two public resolvers.
@@ -110,11 +130,27 @@ Do not weaken TLS, security headers, or bot rules to satisfy a client tool.
 ### Secrets and environment
 
 Set these names in the provider secret store. Never store them in Git.
-Runtime: `DATABASE_URL`, `REDIS_URL`, `CELERY_BROKER_URL`, `CLERK_SECRET_KEY`,
-`CLERK_WEBHOOK_SECRET`, `RESEND_API_KEY`, `TURNSTILE_SECRET_KEY`, and
-`TRUSTED_PROXY_IPS`.
-Migrations: `MIGRATION_DATABASE_URL`.
-Release identity: `RAILWAY_GIT_COMMIT_SHA` or `DEPLOYED_REVISION`.
+
+`Settings` validation in `backend/app/config.py` runs in every process that imports it, so the `api`, `worker`, `beat` and `scheduler-supervisor` services each need the production values, not only the API. With `ENVIRONMENT=production` the process refuses to start without:
+
+- `TRUSTED_PROXY_IPS` (not `0.0.0.0/0` or `::/0`) and `CORS_ORIGINS`.
+- HTTPS, non-localhost values for `FRONTEND_URL`, `CORS_ORIGINS` and `CLERK_AUTHORIZED_PARTIES`, with `FRONTEND_URL` listed in both.
+- `CLERK_SECRET_KEY` and `CLERK_WEBHOOK_SECRET`.
+- `RESEND_API_KEY`.
+- `TURNSTILE_SECRET_KEY`.
+- `CELERY_BROKER_URL`.
+
+Per service:
+
+| Service | Names |
+| :--- | :--- |
+| `api` | `DATABASE_URL` (`cronos_app`), `MIGRATION_DATABASE_URL` (`cronos_migrator`, used by the pre-deploy migration), `REDIS_URL`, `CELERY_BROKER_URL`, `ENVIRONMENT`, `FRONTEND_URL`, `CORS_ORIGINS`, `CLERK_AUTHORIZED_PARTIES`, `TRUSTED_PROXY_IPS`, `CLERK_SECRET_KEY`, `CLERK_WEBHOOK_SECRET`, `RESEND_API_KEY`, `TURNSTILE_SECRET_KEY`, `DATABASE_POOLING_ENABLED=true`, `PORT` |
+| `worker`, `scheduler-supervisor`, `beat` | The same required production values, with `DATABASE_POOLING_ENABLED=false`. |
+| Bootstrap job | `BOOTSTRAP_DATABASE_URL`, `CRONOS_MIGRATOR_PASSWORD`, `CRONOS_APP_PASSWORD` |
+
+Release identity comes from `RAILWAY_GIT_COMMIT_SHA` (set by Railway) or `DEPLOYED_REVISION`.
+`SECRET_KEY`, `SOLVER_*` and `SENTRY_*` variables no longer exist in the code; remove them if they reappear in a dashboard.
+The frontend build variables (`VITE_API_BASE_URL`, `VITE_CLERK_PUBLISHABLE_KEY`, `VITE_TURNSTILE_SITE_KEY`) are public and live in the Pages project, not in Railway.
 
 ### Scheduler v1 baseline reset
 
@@ -139,7 +175,7 @@ Never run this cycle after real school data exists. Confirm that no generation j
 - Expose and verify the intended SHA on API and readiness health responses.
 - Do not run automatic database downgrades during rollback.
 - Confirm code and schema compatibility before reverting the API.
-- Preserve existing mail records during application DNS changes.
+- Preserve existing mail records (Hostinger MX/SPF/DKIM, Resend `forms` records) during application DNS changes.
 - Configure `TRUSTED_PROXY_IPS` only for provider networks that the operator trusts.
 
 ## States and Transitions
@@ -160,7 +196,7 @@ downgrade the additive database migration during rollback.
 ## Verification Procedure
 
 1. Check API `/health/live` and `/health/ready`.
-2. Confirm the migration chain head is `0017_active_course_abbreviations`.
+2. Confirm the migration chain head is `0018_occurrence_decisions` (latest file in `backend/alembic/versions/`).
 3. Confirm worker registration for `scheduler.v1.run_next_job`.
 4. Confirm Beat schedules `members.run_scheduled_reconciliation`, `privacy.run_maintenance`, and `scheduler.v1.supervise`.
 5. Check that API, worker, Beat, frontend, and migration reference the intended SHA.
@@ -183,6 +219,7 @@ downgrade the additive database migration during rollback.
 - `backend/railway/supervisor.json`
 - `backend/railway/beat.json`
 - `backend/railway/bootstrap.json`
+- `backend/app/config.py`
 - `backend/app/ops/provision_database.py`
 - `backend/app/main.py`
 - `backend/app/api/v1/endpoints/health.py`

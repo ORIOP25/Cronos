@@ -67,6 +67,10 @@ React Query manages server state while component state handles form and view sta
 - A stale result emits no feedback and changes no draft.
 - Field validation stays next to the field or group. Validation never uses a toast.
 - The [Feedback Message Matrix](FEEDBACK_MESSAGE_MATRIX.md) records the channel and owner per operation.
+- Toasts carry short Portuguese text. Errors use `role="alert"`; other toasts use `role="status"`. A toast never holds a required action.
+- Field errors use `aria-invalid` and `aria-describedby`, keep existing descriptions, and focus the first invalid field after a failed submit.
+- Classify API errors with `getApiErrorCode` and `getApiErrorPresentation`, never by searching message text.
+- Failures of polling or autosave stay in a readable state near the indicator, not in a toast sequence.
 - Marketing styles use the `cronos-*` namespace.
 - `metadata.js` is the single source for public route metadata.
 - The build emits one HTML file for each route in `metadata.js`, plus `404.html`.
@@ -119,7 +123,8 @@ Published schedule conflicts require attention. Schedule health identifies the a
 - `frontend/src/styles/app-shell.css`
 - `frontend/src/routeGuards.jsx`
 - `frontend/Dockerfile`
-- `frontend/nginx.conf`
+- `frontend/nginx.conf` (production)
+- `frontend/nginx.ci.conf` (CI and the Dockerfile `local` target)
 
 ## Onboarding Frontend Architecture
 
@@ -139,6 +144,7 @@ The tutorial can still be opened explicitly from the dashboard or `/guide`.
 
 ## Related Documents
 
+- [Feedback Message Matrix](FEEDBACK_MESSAGE_MATRIX.md)
 - [Routes and Permissions](ROUTES_AND_PERMISSIONS.md)
 - [Design System](DESIGN_SYSTEM.md)
 - [Accessibility](ACCESSIBILITY.md)

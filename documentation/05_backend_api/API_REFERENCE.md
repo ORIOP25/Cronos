@@ -82,7 +82,6 @@ Stable route families keep frontend features and provider webhooks independent f
 | `DELETE` | `/api/v1/courses/{course_id}/classes/{class_id}` | Admin |
 | `GET` | `/api/v1/classes/` | Admin |
 | `GET` | `/api/v1/classes/{class_id}` | Admin |
-| `GET` | `/api/v1/classes/{class_id}/curriculum` | Admin |
 | `PATCH` | `/api/v1/classes/{class_id}/progress` | Admin |
 | `GET` | `/api/v1/classes/{class_id}/subjects` | Active |
 | `POST` | `/api/v1/classes/{class_id}/subjects` | Admin |
@@ -134,7 +133,6 @@ See [Bulk Import CSV](../07_data_and_seed/BULK_IMPORT_CSV.md) for the exact temp
 | :--- | :--- | :--- |
 | `GET` / `POST` | `/api/v1/school/settings/` | Admin |
 | `POST` | `/api/v1/school/settings/soft-reset` | Admin |
-| `POST` | `/api/v1/school/settings/sync-holidays` | Admin |
 | `GET` / `POST` | `/api/v1/school/grid-settings/` | Admin |
 | `POST` | `/api/v1/school/grid-settings/regenerate` | Admin |
 | `GET` | `/api/v1/school/grid-configuration/` | Admin |
@@ -165,9 +163,6 @@ Valid calendar replacements do not produce a constraint conflict. Invalid date c
 | `POST` | `/api/v1/scheduler/drafts/{proposal_id}/approve` | Admin |
 | `POST` | `/api/v1/scheduler/drafts/{proposal_id}/reject` | Admin |
 | `POST` | `/api/v1/schedule/constraints/` | Admin |
-| `GET` | `/api/v1/schedule/constraints/` | Active |
-| `DELETE` | `/api/v1/schedule/constraints/{constraint_id}` | Admin |
-| `DELETE` | `/api/v1/schedule/reset` | Admin |
 | `GET` | `/api/v1/schedule/week` | Active; teacher scope is restricted; rate limit `60/minute;600/hour` |
 | `GET` | `/api/v1/schedule/me/horizon` | Teacher; rate limit `300/hour` |
 | `PUT` | `/api/v1/schedule/active-blocks/{id}/log` | Active; assigned teacher or admin |
@@ -192,14 +187,12 @@ Other schools receive `404`. Teachers receive `403`.
 | `PATCH` | `/api/v1/occurrences/{occurrence_id}` | Admin |
 | `POST` | `/api/v1/occurrences/{occurrence_id}/cancel` | Admin |
 | `GET` | `/api/v1/occurrences/debts` | Admin |
-| `GET` | `/api/v1/occurrences/substitutes` | Admin |
 | `GET` | `/api/v1/occurrences/{occurrence_id}/substitutes/recommendations` | Admin |
 | `GET` | `/api/v1/occurrences/{occurrence_id}/substitutes/diagnostics` | Admin |
 | `GET` | `/api/v1/occurrences/observability/summary` | Admin |
 | `GET` | `/api/v1/timesheets/` | Admin |
 | `GET` | `/api/v1/timesheets/me/{week_start_date}` | Teacher |
 | `POST` | `/api/v1/timesheets/me/{week_start_date}/submit` | Teacher |
-| `GET` | `/api/v1/timesheets/{timesheet_id}/pending-occurrences` | Admin |
 | `PATCH` | `/api/v1/timesheets/{timesheet_id}/status` | Admin |
 | `POST` | `/api/v1/webhooks/clerk` | Public; Svix signature required; body limit 256 KiB |
 

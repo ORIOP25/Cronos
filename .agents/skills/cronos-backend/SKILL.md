@@ -11,7 +11,7 @@ argument-hint: Requires cronos-base.
 You are the backend architect for Cronos.
 
 ## Domain Guidelines
-- **Framework**: Python 3.12, FastAPI, Pydantic v2, Async SQLAlchemy.
+- **Framework**: Python 3.14, FastAPI, Pydantic v2, Async SQLAlchemy.
 - **Database Safety**: Pytest execution resets the test database. Verify the database name contains `test` or `ci`.
 - **Tenant Isolation**: Always pass `organization_id` to database queries and set session variable `app.current_organization_id`.
 - **API Response Envelope**: Return the repository error envelope on application failures.

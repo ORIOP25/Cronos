@@ -2,13 +2,7 @@
 
 Data: 25 de setembro de 2026.
 
-Estado: W00–W14 concluídos; a v1 está ativa em produção. Todas as secções descrevem o comportamento implementado e testado (o código e os testes são a fonte da verdade). Esta revisão substitui a especificação de 23 de setembro de 2026 a partir de W06; a original permanece como referência histórica.
-
-Base: [plano de execução v2](SCHEDULER_V1_REVAMP_PLAN_V2.md), decisões D01–D31 e fases P0–P12B.
-
-Integração: `main` (revisão entregue na W14).
-
-Decomposição de trabalho: [WBS técnico v2](SCHEDULER_V1_WBS_V2.md).
+Estado: a v1 está ativa em produção. Todas as secções descrevem o comportamento implementado e testado (o código e os testes são a fonte da verdade). As decisões de produto D01–D31 estão na secção 1.1. O plano de execução e o WBS originais (pacotes W00–W14, concluídos) foram removidos e permanecem no histórico do git.
 
 ## 1. Objetivo, autoridade e âmbito
 
@@ -25,14 +19,52 @@ Os parâmetros experimentais têm critérios de seleção explícitos. Não cons
 | O quê? | Domínio curricular, geração, recuperação, persistência, fila, APIs e consumidores coerentes com a nova v1. |
 | Porquê? | Produzir horários completos com boas datas de conclusão, estabilidade controlada e contabilização correta. |
 | Quem? | Implementação por quem executar este plano; validação funcional e aceitação pelo proprietário. |
-| Onde? | Docker local até P11; Railway e Cloudflare apenas em P12A, após o gate local. |
-| Quando? | W00–W14 concluídos, pela ordem das dependências e sem prazos de desempenho inventados. |
+| Onde? | Desenvolvimento e ensaios no Docker local; Railway e Cloudflare só depois do gate local. |
+| Quando? | Entregue; sem prazos de desempenho inventados. |
 
 Notas normativas desta revisão:
 
 1. Os ganhos históricos de aproximadamente 90 para 22 segundos pertencem às medições anteriores (registos de campanha de 24–25 de setembro de 2026, Docker local, um worker). Esta revisão não os apresenta como nova comparação controlada nem como garantia universal.
 2. A antecipação das conclusões resulta da política aprovada (D10–D12). Distribuir procura ao longo do ano exige decisão explícita de produto. Não introduzir limites semanais ou penalizações de antecipação para obter uma aparência mais uniforme.
-3. O agrupamento de salas equivalentes e a calibração 1/2/4/8 workers foram fechados nas campanhas de W11.
+3. O agrupamento de salas equivalentes e a calibração 1/2/4/8 workers foram fechados nas campanhas de calibração do laboratório.
+
+### 1.1 Decisões de produto vinculativas
+
+| ID | Decisão vinculativa |
+| :--- | :--- |
+| D01 | Nova baseline, sem obrigação de compatibilidade com o gerador anterior. |
+| D02 | Os dados de teste atuais podem ser eliminados. Não há escolas utilizadoras a migrar. |
+| D03 | Um único job de horários em execução globalmente. Os outros pedidos aguardam em fila. |
+| D04 | O job pode usar vários workers internos CP-SAT. Testar 1, 2, 4, 8 e configurações superiores justificadas pelo hardware. |
+| D05 | Não existe hoje qualquer meta fixa de p95, nem mesmo os anteriores 15 minutos ou dois minutos. |
+| D06 | Medir desempenho por famílias de tamanho e dificuldade. O p95 é inicialmente um resultado observado. |
+| D07 | A pesquisa termina por prova, proximidade certificada suficiente ou baixo retorno adicional estimado. Não termina por atingir um p95. |
+| D08 | Há um timeout de segurança distinto. Interrupção nunca significa impossibilidade. |
+| D09 | A escola define início, conclusão preferencial e limite absoluto. |
+| D10 | A geração inicial deve terminar até à data preferencial e procurar antecipar as conclusões. |
+| D11 | O adaptativo protege progressivamente a margem. Depois da data preferencial, reduzir o excesso prevalece sobre perturbação do futuro editável. |
+| D12 | Priorizar sucessivamente as conclusões mais tardias. Permitir ceder capacidade de turmas adiantadas para ajudar turmas atrasadas. |
+| D13 | Não atrasar uma turma apenas para igualar datas sem benefício para outras turmas. |
+| D14 | A escola define a janela de estabilidade. Contar dias presentes na grelha semanal, não dias corridos. |
+| D15 | Proteger qualquer alteração física dentro da janela, incluindo inserções de reposições. Preservar também passado e execução. |
+| D16 | O módulo não é uma identidade permanente da aula futura. Resulta da sequência de minutos da disciplina. |
+| D17 | Uma aula pode terminar um módulo e iniciar os seguintes. Os créditos têm minutos exatos e não se sobrepõem. |
+| D18 | Recalcular automaticamente a previsão modular, inclusive dentro da janela. Não reescrever evidência executada. |
+| D19 | A grelha define a capacidade máxima. Não transportar tetos implícitos de carga diária, semanal ou consecutiva. |
+| D20 | Indisponibilidade obrigatória exclui períodos. Uma preferência desfavorável continua a permitir a colocação. |
+| D21 | Entre soluções equivalentes nas prioridades superiores, reduzir primeiro furos dos professores, depois furos das turmas. |
+| D22 | A escola atribui o professor a cada disciplina da turma. O solver não distribui serviço docente. |
+| D23 | O administrador inicia sempre a geração. Nenhum evento inicia automaticamente o solver. |
+| D24 | Só permitir geração inicial, atualização justificada, repetição de tentativa sem resultado ou renovação periódica elegível. |
+| D25 | Após 28 dias corridos sem geração completa concluída, disponibilizar nova otimização manual. |
+| D26 | Uma geração completa validada e persistida reinicia o relógio. Falha, cancelamento ou permanência em fila não reiniciam. |
+| D27 | Se existir impossibilidade demonstrada, explicar os motivos e sugerir ações básicas. O diretor altera os dados ou as condições. |
+| D28 | Acertos manuais de progresso recalculam procura e podem justificar reparação. O solver nunca inventa execução. |
+| D29 | A interface usa linguagem escolar. Não apresenta CP-SAT, scopes, fingerprints, workers ou gaps matemáticos como linguagem do produto. |
+| D30 | Manter proposta e aprovação administrativa. Gerar não publica automaticamente. |
+| D31 | Desenvolver e testar primeiro no Docker local. Só validar Railway/Cloudflare após uma release candidate local sólida. |
+
+Fora do âmbito: vários horários resolvidos simultaneamente; microserviços novos, mudança de linguagem ou troca de solver sem evidência concreta; escolha automática de docentes ou substitutos pelo gerador; limites pedagógicos de carga que a escola não definiu; publicação ou geração automática após ocorrências; compatibilidade com bases de dados da versão antiga; certificação legal das decisões administrativas sobre execução; garantias de optimalidade global sem certificado correspondente.
 
 Manter FastAPI, SQLAlchemy, PostgreSQL, Celery, Redis, React e OR-Tools já presentes.
 Não adicionar microserviços, outro broker, framework de otimização ou modelo de aprendizagem automática.
@@ -63,6 +95,7 @@ backend/app/scheduler/
     quality.py               # Vetores de qualidade, evidência de pesquisa e comparadores
     recovery.py              # Política de reparação e custo de perturbação
     eligibility.py           # Motivos para geração manual
+    lesson_time.py           # Regra temporal: execução só após o fim planeado da aula
     grid_versions.py         # Versionamento da grelha escolar
     oracle.py                # Oráculo enumerativo para instâncias mínimas (50 000 combinações)
     results.py               # Resultados tipados do motor
@@ -70,7 +103,7 @@ backend/app/scheduler/
     stop.py                  # Política de exploração e paragem
     timetable.py             # Estruturas de horário auxiliares
   infrastructure/
-    models.py                # Modelos SQLAlchemy v1 (13 tabelas)
+    models.py                # Modelos SQLAlchemy v1 (14 tabelas)
     progress.py              # Transações de execução/dívida/recuperação sob lock de estado
     annual_model.py          # Master anual CP-SAT (plan_annual_quotas, hint, no-goods, poda)
     constructive.py          # Construção cronológica e prioridade de progresso
@@ -90,7 +123,6 @@ backend/app/scheduler/
     scale.py                 # Fixtures de semana única por seed (10–60 turmas)
     annual.py                # Fixtures anuais com testemunhos construídos
     combined.py, boundaries.py, baseline.py, calibration.py  # Campanhas combinadas e calibração
-    construct.py             # Testemunhos construtivos independentes
     longitudinal.py          # Replays anuais com eventos
     manifest.py              # Manifests, digests SHA-256 e serialização de snapshots
     campaign.py              # CLI de campanhas com retoma por proveniência
@@ -112,7 +144,7 @@ Usar dataclasses imutáveis, enums próprios, inteiros e coleções ordenadas.
 Não transportar modelos ORM, `Any`, objetos CP-SAT ou sessões SQLAlchemy nos contratos de domínio.
 O validador verifica blocos materializados. Não consulta variáveis ou restrições construídas pelo solver.
 O oráculo enumerativo é implementação de teste; nunca é fallback de produção.
-A produção executa o motor v1. O motor legado foi removido na W12; não existe caminho de fallback.
+A produção executa o motor v1. O motor legado foi removido; não existe caminho de fallback.
 
 ## 3. Vocabulário e contratos imutáveis (implementado)
 
@@ -242,9 +274,9 @@ Uma ocorrência pode registar que uma aula protegida não aconteceu; isso não a
 A aprovação recalcula a fronteira com a data atual.
 Uma proposta antes editável pode tornar-se inválida enquanto aguarda aprovação.
 
-## 6. Modelo de dados da nova baseline (implementado; baseline Alembic consolidada em W12)
+## 6. Modelo de dados da baseline (implementado)
 
-A migração provisória `0011_scheduler_v1_curricular` foi consolidada numa baseline Alembic nova na W12.
+O schema v1 parte da baseline Alembic `0001_scheduler_v1_baseline`; as migrações `0011`..`0018` estendem-na.
 
 | Entidade | Campos ou relações essenciais |
 | :--- | :--- |
@@ -373,7 +405,7 @@ Para instâncias pequenas, o oráculo enumerativo mantém-se como referência ex
 
 ### 8.5 Salas: matching global após posições
 
-Agrupar apenas salas com elegibilidade realmente equivalente para o contexto. Lotação, equipamento, reservas e restrições específicas participam na equivalência. O agrupamento adicional de salas equivalentes como otimização de simetria foi fechado nas medições de W11.
+Agrupar apenas salas com elegibilidade realmente equivalente para o contexto. Lotação, equipamento, reservas e restrições específicas participam na equivalência. O agrupamento adicional de salas equivalentes como otimização de simetria foi fechado nas medições do laboratório (calibração de desempenho).
 
 Após escolher posições, resolver o matching aula–sala como modelo global:
 
@@ -490,7 +522,7 @@ QualityAdaptive = (O↓, B[1], ..., B[n], C↓, D,
 
 Minimizar lexicograficamente. `lambda` é positivo; `g` usa coeficientes inteiros e declives estritamente positivos.
 O comparador `adaptive_quality_vector` já existe como política experimental com T15–T18 verdes ao nível do comparador.
-Esta fórmula é uma decisão técnica sujeita à calibração P6–P10, não uma escala universal de qualidade.
+Esta fórmula é uma decisão técnica sujeita à calibração de laboratório, não uma escala universal de qualidade.
 Guardar `quality_policy_version`, coeficientes e exemplos de ordenação junto de cada benchmark.
 Não escolher coeficientes numéricos antes desses ensaios.
 Uma alteração da fórmula ou das prioridades exige atualizar especificação, oráculos e baseline.
@@ -572,7 +604,7 @@ Só uma prova válida para todo o espaço autorizado permite declarar impossibil
 ### 11.1 Resultado tipado (implementado)
 
 | Resultado | Proposta | Significado | Estado |
-| :--- | :--- | :--- | :--- |
+| :--- | :--- | :--- |
 | `COMPLETE` | Sim | Solução completa, validada e atual. | Implementado. |
 | `INFEASIBLE` | Não | Impossibilidade demonstrada no âmbito integral aplicável. | Implementado (pré-verificação e detalhe provado). |
 | `INCONCLUSIVE` | Não | Não existe solução completa nem prova de impossibilidade. | Implementado. |
@@ -779,7 +811,7 @@ Guardar versão do validador e digest do candidato.
 Métricas declaradas pelo solver nunca substituem métricas recalculadas.
 Cada um dos 21 códigos de violação tem teste próprio; candidatos deliberadamente adulterados são rejeitados pelo motivo correto.
 
-### 16.2 Ciclo TDD por fatia (aplicado em W01–W05; mantém-se para W06+)
+### 16.2 Ciclo TDD por fatia
 
 Escrever primeiro um exemplo observável que falha.
 Implementar a menor regra correta e refatorar após verde.
@@ -807,7 +839,7 @@ Propriedades metamórficas verificadas: renomear entidades não altera qualidade
 
 ### 16.3 Loops experimentais obrigatórios
 
-Executar as campanhas C01–C20 do [WBS v2](SCHEDULER_V1_WBS_V2.md) durante a implementação, não apenas antes do lançamento.
+Executar as campanhas do laboratório (manifests em `backend/tests/scheduler_lab/`) durante a implementação, não apenas antes do lançamento.
 Cada campanha encadeia baseline, mutação controlada, aumento de pressão e recuperação.
 Uma falha exige reprodução, redução do caso, teste vermelho, correção e repetição dos cenários afetados.
 Cada caso declara expectativa: viável com testemunho, impossível demonstrado, input inválido ou exploratório sem viabilidade conhecida.
@@ -873,7 +905,7 @@ Depois comparar o vetor de qualidade, a trajetória e recursos consumidos.
 Evitar uma média única que esconda regressões nas escolas mais difíceis.
 Traçar a fronteira qualidade/tempo/CPU/RAM e identificar configurações dominadas.
 
-Executar 1, 2, 4 e 8 workers internos em W11, respeitando os limites do host.
+Executar 1, 2, 4 e 8 workers internos na calibração, respeitando os limites do host.
 Não confundir oito workers com oito cores garantidos.
 Selecionar a configuração com ganhos sustentados e custo aceitável, não apenas menor wall time.
 
@@ -924,35 +956,16 @@ Critérios objetivos para aceitar a candidate local:
 - Qualidade confirmada por oráculos pequenos e evidência comparativa nos grandes.
 - As nove condições de correção das otimizações verdes em geração e reparação.
 - Política de paragem avaliada em casos reservados e parâmetros documentados.
-- Campanhas C01–C20 concluídas nos casos obrigatórios, com análise entre mutações e replays anuais completos ou corretamente diagnosticados.
+- Campanhas do laboratório concluídas nos casos obrigatórios, com análise entre mutações e replays anuais completos ou corretamente diagnosticados.
 - Matriz de cobertura, regressões reduzidas e resultados inconclusivos incluídos no dossier; nenhum caso omitido silenciosamente.
 - Instalação vazia, reset e recuperação de falhas ensaiados localmente.
 - Frontend e consumidores sem dependência dos contratos antigos.
 - Aceitação funcional do proprietário com resultados concretos.
 
-## 19. Sequência de implementação e remoção
+## 19. Remoção do legado e verificações
 
-| Fase do plano | Entrega técnica | Estado | Condição para avançar |
-| :--- | :--- | :--- | :--- |
-| P0 | Inventário, serviços, manifests locais. | Concluída (W00) | Nenhum ensaio aciona cloud automaticamente. |
-| P1 | Contratos, calendário, ledger, procura, projeção e comparador. | Concluída (W01) | Testes de domínio e contraexemplos verdes. |
-| P2 | Schema novo, migração provisória, RLS e constraints. | Concluída (W02) | Instalação vazia e invariantes transacionais demonstradas. |
-| P3 | Validador, oráculos, fixtures e medição. | Concluída (W03) | Distingue soluções inválidas e mede métricas independentemente. |
-| P4 | Master anual, detalhe reabrível e salas. | Concluída (W04) | Soluções completas corretas em todo o corpus obrigatório de geração. |
-| P5 | Conclusões coletivas e objetivos subordinados. | Concluída (W05) | Comparação com ótimos pequenos e baseline mensurada registada. |
-| P6 | Reparação, bairros, dívida e estabilidade. | Concluída (W06) | Sequências anuais e política progressiva validadas; nove propriedades preservadas (W06.6). |
-| P7 | Paragem, bounds e diagnósticos. | Concluída (W07) | Sem confusão entre local/global ou unknown/infeasible. |
-| P8 | Fila, snapshots, cancelamento e publicação. | Concluída (W08) | Falhas e concorrência testadas com PostgreSQL real; ensaios de container completos em W10. |
-| P9 | APIs e todos os consumidores escolares. | Concluída (W09) | Contratos e interface revistos; E2E executável pelo proprietário com a pilha local. |
-| P10 | Corpus amplo, replays anuais, calibração, otimizações e workers. | Concluída (W10–W11) | Relatório reproduzível de qualidade versus recursos; decisão sobre agrupamento de salas e workers. |
-| P11 | Remoção final do legado e release candidate. | Concluída (W12) | Gate local integral aprovado. |
-| P12A | Validação Railway/Cloudflare. | Concluída (W13) | Baseline remota separada, integrações e recursos reais confirmados. |
-| P12B | Merge, CI, limpeza de ensaio e ativação. | Concluída (W14) | Revisão publicada verificada e aceitação final. |
-
-Remover chamadas e implementações antigas por fatia em W12, com consumidores e testes correspondentes.
 Não manter duas implementações selecionáveis em produção.
-Código antigo pode existir temporariamente na branch durante a construção, mas não integra a candidate W12.
-Pesquisar referências em backend, frontend, migrations, testes, scripts e documentação antes de concluir a remoção.
+Ao remover código, pesquisar referências em backend, frontend, migrations, testes, scripts e documentação antes de concluir a remoção.
 
 Verificações a reutilizar, dentro do fluxo Docker local:
 
@@ -970,9 +983,9 @@ Manter Ruff, checks frontend, contratos, segurança, integridade e verificaçõe
 Atualizar testes de contratos antigos; não preservá-los contrariando a nova baseline.
 Recriar a imagem frontend após mudanças para que o teste manual use o código recente.
 
-P0–P11 não executam testes, resets ou deployments Railway/Cloudflare.
+Ensaios locais não executam testes, resets ou deployments Railway/Cloudflare.
 CI GitHub pode verificar código sem deployment. Após cada push, acompanhar CI até passar.
-W13 usa uma candidate identificada por commit e imagens; repetir configurações finalistas no hardware remoto.
+Validar numa candidate identificada por commit e imagens; repetir configurações finalistas no hardware remoto.
 Não transportar automaticamente a configuração vencedora do computador local para Railway.
 
 Antes do corte final, impedir novos pedidos e terminar ou cancelar o job ativo.
@@ -982,18 +995,18 @@ Não definir rollback para o solver antigo como estratégia de recuperação da 
 
 ## 20. Rastreabilidade e entrega completa
 
-| Decisões | Secções desta especificação | Evidência principal | Estado |
-| :--- | :--- | :--- | :--- |
-| D01–D02 | 1, 6, 19 | Instalação vazia, inventário e remoção de consumidores antigos. | Concluído; remoção executada na W12. |
-| D03–D04 | 12, 17 | Exclusão global e comparação 1/2/4/8 workers. | Implementado em W08; calibração em W11. |
-| D05–D08 | 11, 17 | Trajetórias, limites, censura e paragem calibrada. | Implementado (W07). |
-| D09–D13 | 5, 8–10 | Oráculos de conclusão e cedência de capacidade. | Implementado (W06). |
-| D14–D18 | 4–5, 14 | Estabilidade, projeção e preservação de execução. | Implementado. |
-| D19–D22 | 8–9 | Disponibilidade, carga densa, docente fixo e prioridade de furos. | Implementado. |
-| D23–D26 | 7, 12–15 | Pedidos manuais, elegibilidade, 28 dias e snapshots. | Implementado (W08). |
-| D27–D28 | 4, 11, 16 | Diagnósticos sustentados e acertos conservativos. | Implementado (W07). |
-| D29–D30 | 14–15 | Aprovação atómica, E2E e revisão de linguagem. | Implementado (W08–W09). |
-| D31 | 17–19 | Gate local e relatório remoto separado. | Em vigor. |
+| Decisões | Secções desta especificação | Evidência principal |
+| :--- | :--- | :--- |
+| D01–D02 | 1, 6, 19 | Instalação vazia, inventário e remoção de consumidores antigos. |
+| D03–D04 | 12, 17 | Exclusão global e comparação 1/2/4/8 workers. |
+| D05–D08 | 11, 17 | Trajetórias, limites, censura e paragem calibrada. |
+| D09–D13 | 5, 8–10 | Oráculos de conclusão e cedência de capacidade. |
+| D14–D18 | 4–5, 14 | Estabilidade, projeção e preservação de execução. |
+| D19–D22 | 8–9 | Disponibilidade, carga densa, docente fixo e prioridade de furos. |
+| D23–D26 | 7, 12–15 | Pedidos manuais, elegibilidade, 28 dias e snapshots. |
+| D27–D28 | 4, 11, 16 | Diagnósticos sustentados e acertos conservativos. |
+| D29–D30 | 14–15 | Aprovação atómica, E2E e revisão de linguagem. |
+| D31 | 17–19 | Gate local e relatório remoto separado. |
 
 A entrega inclui código, testes, corpus, manifests, relatórios e runbook de operação.
 Inclui ainda parâmetros selecionados, limitações conhecidas e documentação atualizada dos contratos públicos.

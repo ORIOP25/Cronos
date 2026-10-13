@@ -23,6 +23,8 @@ Cronos is a Software-as-a-Service (SaaS) platform for course scheduling and oper
    cp .env.example .env
    cp backend/.env.example backend/.env
    ```
+   Replace every placeholder in `.env` (database passwords, Clerk publishable key, Turnstile and Resend test values).
+   Set `CLERK_SECRET_KEY` and `CLERK_WEBHOOK_SECRET` in `backend/.env`. Compose loads that file for the `backend`, `worker`, and `scheduler-supervisor` services.
 
 2. **Provision database roles on first installation or password rotation**:
    ```bash
@@ -41,11 +43,8 @@ Cronos is a Software-as-a-Service (SaaS) platform for course scheduling and oper
 
 5. **Bootstrap application data**:
    The application bootstraps the first organization and administrator at the first admin login. The backend exposes this through `POST /api/v1/session/bootstrap`.
-   For test or E2E fixtures, prepare Clerk-linked local state from the backend workspace:
-   ```bash
-   cd backend
-   python scripts/prepare_e2e_clerk_state.py
-   ```
+   E2E fixtures are prepared by `node scripts/test.mjs e2e`. It runs `backend/scripts/prepare_e2e_clerk_state.py` inside an isolated test stack and needs reserved Clerk test identities.
+   See [Data and Seed](documentation/07_data_and_seed/DATA_AND_SEED.md).
 
 6. **Access application services**:
    - Frontend Application: `http://localhost:5173`

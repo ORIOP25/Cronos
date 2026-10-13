@@ -24,11 +24,11 @@ MeuProjeto/
 │   ├── README.md                 # Agent suite documentation
 │   └── skills/                   # Cronos skills and protected imported skills
 ├── .github/                      # GitHub Action workflows and agent definitions
-│   ├── agents/                   # Agent_Cronos.md router and Agent_HorarioZen.md
+│   ├── agents/                   # Agent_Cronos.md router
 │   ├── workflows/                # CI workflow specifications
 │   └── dependabot.yml            # Automated dependency update configuration
 ├── backend/                      # Python FastAPI application
-│   ├── alembic/                  # Database migrations (head 0017_active_course_abbreviations)
+│   ├── alembic/                  # Database migrations (head 0018_occurrence_decisions)
 │   ├── app/                      # Backend application source
 │   │   ├── api/                  # API routers (v1 endpoints)
 │   │   ├── contact/              # Contact service, ports, and provider gateways
@@ -42,14 +42,14 @@ MeuProjeto/
 │   │   └── scheduler/            # Scheduler domain and infrastructure adapters
 │   ├── railway/                  # Railway service deployment definitions
 │   │   └── *.json                # api, beat, bootstrap, supervisor, and worker services
-│   ├── scripts/                  # Database audits, support, and E2E preparation
+│   ├── scripts/                  # Database provisioning, audits, privacy, and E2E preparation
 │   ├── tests/                    # Pytest test suite
 │   ├── Dockerfile                # Multi-stage BuildKit backend image file
 │   └── README.md                 # Backend workspace documentation
 ├── frontend/                    # React 19 + Vite frontend application
 │   ├── e2e/                      # Playwright end-to-end tests
 │   ├── public/                   # Static graphics and response headers
-│   ├── scripts/                  # Quality and CSS coverage scripts
+│   ├── scripts/                  # Marketing build, legal contract, and production verification scripts
 │   ├── src/                      # React source code
 │   │   ├── components/           # Reusable UI components
 │   │   ├── features/             # Feature-specific logic and hooks
@@ -63,7 +63,9 @@ MeuProjeto/
 │   │   └── main.jsx              # React entry point
 │   ├── Dockerfile                # Multi-stage Nginx / Node frontend image file
 │   ├── nginx.conf                # Production Nginx SPA server configuration
+│   ├── nginx.ci.conf             # Nginx configuration for the CI and local images
 │   └── README.md                 # Frontend workspace documentation
+├── csv_importacao_48_turmas_16_cursos/ # Sample CSV import templates
 ├── documentation/                # Controlled ASD-STE100 technical documentation
 │   ├── 00_getting_started/       # Onboarding and repository guides
 │   │   ├── ONBOARDING.md         # Canonical Foundation and tutorial contract

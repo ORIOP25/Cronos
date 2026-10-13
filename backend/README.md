@@ -18,9 +18,7 @@ FastAPI backend application for Cronos. Manages REST API endpoints, SQLAlchemy d
 
 ## Database Safety and Safeguards
 
-Backend test fixtures automatically reset the target database schema. To prevent accidental data loss, the test fixture execution enforces strict database name safeguards:
-- Pytest refuses execution unless the database name contains `test` or `ci`.
-- Overriding database safety requires explicit flag setting (`ALLOW_NON_TEST_DATABASE=1`).
+Backend test fixtures automatically reset the target database schema. To prevent accidental data loss, `tests/db.py` refuses any database other than `cronos_test_db`, `cronos_ci_db`, or the per-worker `cronos_test_gw<N>` and `cronos_ci_gw<N>` databases. No override exists.
 
 Execute backend tests against a dedicated test database:
 
@@ -47,7 +45,7 @@ ruff check app scripts
 ```
 
 Run migrations with the privileged `cronos_migrator` role. Run application tests
-with a database name containing `test` or `ci`.
+only against the database names listed above.
 
 ## Coverage Requirements
 

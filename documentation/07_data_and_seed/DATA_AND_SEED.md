@@ -22,7 +22,6 @@ Test and E2E environments prepare their own disposable data.
 | Foundation completion | Admin completes the wizard | Operational school configuration and `COMPLETED` status |
 | Bulk CSV import | Admin uses `/imports` | Rooms, subjects, courses, classes, teachers, and assignments |
 | E2E preparation | `prepare_e2e_clerk_state.py` | A disposable organization with legal acceptance and a default foundation |
-| Test reset | `reset_test_data.py` | Deleted scheduler test targets on a test database |
 
 ## Session Bootstrap
 The frontend calls `POST /api/v1/session/bootstrap` with an active Clerk organization.
@@ -48,21 +47,11 @@ See [Administrative CSV import](BULK_IMPORT_CSV.md) for the templates and endpoi
 `backend/scripts/prepare_e2e_clerk_state.py` prepares the shared E2E organization.
 It creates the Clerk-linked accounts and memberships.
 It also seeds current legal acceptance and a default foundation through `FoundationService`.
-The CI workflow and the local test runner invoke this script before E2E execution.
-
-```bash
-cd backend
-python scripts/prepare_e2e_clerk_state.py
-```
-
-`backend/scripts/reset_test_data.py` deletes named scheduler test targets.
-The command refuses any database that is not an owned test database.
-It deletes children before parents and never contacts an external provider.
-
-```bash
-cd backend
-python -m scripts.reset_test_data --database-url <test-url> --target scheduler-v1
-```
+The CI workflow and `node scripts/test.mjs e2e` run this script inside the `backend` container before E2E execution.
+The script needs `CLERK_SECRET_KEY`, `DATABASE_URL` for the migrator role, and `E2E_CLERK_ADMIN_EMAIL` and `E2E_CLERK_TEACHER_EMAIL`.
+`E2E_CLERK_ORG_ID`, `E2E_CLERK_AUTO_PROVISION`, and `E2E_CLERK_CREATE_ORGANIZATION` are optional.
+Both emails must end with `+clerk_test@example.com`.
+It prints a JSON result that contains `clerk_org_id`.
 
 ## Contracts and Invariants
 - No source file named `seed_data.py` exists.
@@ -70,13 +59,12 @@ python -m scripts.reset_test_data --database-url <test-url> --target scheduler-v
 - Each organization receives its own `organization_id` and forced RLS context.
 - Foundation completion requires the current draft version.
 - The bulk import commit is atomic. A failure prevents partial writes.
-- Test preparation scripts are idempotent and never contact external providers, except the Clerk directory for E2E state.
+- The E2E preparation script is idempotent and contacts only the Clerk directory.
 
 ## Failure Modes
 - Missing Clerk configuration blocks bootstrap.
 - A stale foundation draft version raises a conflict.
 - A database without current migrations raises schema or security-function errors.
-- The reset command raises an error for a non-test database.
 
 ## Verification Procedure
 Run the focused backend tests for bootstrap, foundation, and imports.
@@ -87,7 +75,6 @@ Then run `pytest backend/tests/integration/committed/test_prepare_e2e_clerk_stat
 - Foundation service: `backend/app/services/foundation_service.py`
 - E2E state service: `backend/app/services/e2e_clerk_state.py`
 - E2E preparation script: `backend/scripts/prepare_e2e_clerk_state.py`
-- Test reset script: `backend/scripts/reset_test_data.py`
 - Bulk import policy: `backend/app/services/bulk_import_policy.py`
 - Bulk import service: `backend/app/services/bulk_import_service.py`
 

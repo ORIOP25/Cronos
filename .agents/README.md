@@ -13,7 +13,7 @@ This directory contains specialized AI agent skills and guidance for developing 
 | **`cronos-backend`** | Backend API, SQLAlchemy models, Alembic, Clerk auth | `backend/app/`, `backend/tests/` |
 | **`cronos-domain`** | Professional education rules, modules, course invariants | `documentation/02_domain_model/` |
 | **`cronos-frontend`** | React 19 pages, Vite build, React Query, Clerk UI | `frontend/src/` |
-| **`cronos-frontend-designer`** | Design system tokens, CSS styles, visual branding | `documentation/06_frontend_ux/`, `frontend/src/index.css`, `frontend/src/pages/MarketingSite.css` |
+| **`cronos-frontend-designer`** | Design system tokens, CSS styles, visual branding | `documentation/06_frontend_ux/`, `frontend/src/styles/brand.tokens.css`, `frontend/src/index.css` |
 | **`cronos-operations`** | Lesson logs (*Sumários*), absences (*Faltas*), timesheets | `documentation/04_operational_features/` |
 | **`cronos-scheduler`** | OR-Tools CP-SAT solver, draft promotion, repair jobs | `backend/app/scheduler/`, `backend/app/services/scheduler_*` |
 
@@ -24,7 +24,10 @@ The following imported skill suites are protected and must not be modified:
 - `.agents/skills/clerk*`: Official Clerk authentication skill suite.
 - `.agents/skills/grill-me/`: Interactive design stress-testing skill.
 - `.agents/skills/ponytail/`: Minimalist implementation methodology skill.
+- `.agents/skills/design-taste-frontend/`: Imported frontend design skill.
 - `skills-lock.json`: Skill lockfile.
+
+Only `.agents/skills/cronos-*` is tracked in Git; `.gitignore` ignores the other skill directories, so they exist only where installed locally.
 
 ## Source of Truth Policy
 

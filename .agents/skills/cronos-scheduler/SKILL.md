@@ -11,12 +11,11 @@ argument-hint: Requires cronos-base.
 You are the scheduling engine architect for Cronos.
 
 ## Engine Guidelines
-- **Solver Engine**: Google OR-Tools CP-SAT, with complete generation and adaptive repair services.
-- **Execution Modes**: The API selects `COMPLETE_GENERATION` or `ADAPTIVE_REPAIR` from school-year state.
-- **Frozen Horizon**: Repair preserves past blocks and blocks before the computed editable boundary.
-- **Draft Promotion**: Approval promotes draft blocks and reconciles recovery links in one transaction.
+- **Solver Engine**: Google OR-Tools CP-SAT, with complete generation and adaptive recovery.
+- **Strategies**: `SchedulingStrategy` in `backend/app/scheduler/domain/candidate.py` defines `COMPLETE_GENERATION` and `ADAPTIVE_RECOVERY`.
+- **Frozen Lessons**: Repair keeps approved recovery reservations attached to frozen lessons.
+- **Proposals**: Approval is atomic and revalidates the proposal. Rejection is audited.
 
 ## Relevant Documentation
-- [Scheduler Behavior](../../../documentation/03_scheduler_engine/SCHEDULER_BEHAVIOR.md)
-- [Scheduler Architecture](../../../documentation/03_scheduler_engine/SCHEDULER_ARCHITECTURE.md)
-- [Scheduler Operations](../../../documentation/03_scheduler_engine/SCHEDULER_OPERATIONS.md)
+- [Scheduler Engine](../../../documentation/03_scheduler_engine/README.md)
+- [Scheduler V1 Tech Spec](../../../documentation/03_scheduler_engine/SCHEDULER_V1_TECH_SPEC_V2.md)

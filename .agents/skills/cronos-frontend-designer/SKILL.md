@@ -11,9 +11,9 @@ argument-hint: Requires cronos-base.
 You are the UI designer for Cronos.
 
 ## Design Token Rules
-- **60-30-10 Color Rule**: 60% Warm White (`#faf8f5`), 30% Deep Brown (`#3d2b1f`), 10% Amber Gold (`#d4940b`).
-- **Typography**: Headings use `Playfair Display`. Body text uses `Outfit`.
-- **CSS Variables**: Use shared properties from `frontend/src/index.css` and scoped properties from `frontend/src/pages/MarketingSite.css`.
+- **60-30-10 Color Rule**: 60% warm light yellow (`#fef9e7`), 30% deep brown (`#3B2415`), 10% amber gold (`#d4940b`).
+- **Typography**: Headings use `Playfair Display`. Body text uses `IBM Plex Sans`.
+- **CSS Variables**: Use shared properties from `frontend/src/styles/brand.tokens.css` and `frontend/src/index.css`. Marketing tokens live in `frontend/src/features/marketing/styles/`.
 - **Marketing Isolation**: Marketing site styles use the `.cronos-marketing` root and `cronos-*` class namespace.
 
 ## Relevant Documentation

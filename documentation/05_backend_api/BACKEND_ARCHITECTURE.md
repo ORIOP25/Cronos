@@ -83,7 +83,7 @@ Rate-limit storage failure returns `503 RATE_LIMIT_UNAVAILABLE`.
 
 ## Verification Procedure
 
-1. Run backend tests with a database name containing `test` or `ci`.
+1. Run backend tests against a test database (`cronos_test_db` or `cronos_ci_db`).
 2. Run `ruff format --check .` and `ruff check .`.
 3. Run migration drift and database audits.
 4. Build the hardened backend runtime image.

@@ -19,7 +19,7 @@ Read [Members and Access](../02_domain_model/MEMBERS_AND_ACCESS.md).
 | `/sobre`, `/about` | `pages/marketing/AboutPage.jsx` | Public | Cronos story and founder information |
 | `/ajuda` | `pages/marketing/HelpPage.jsx` | Public | Frequently asked questions |
 | `/contacto`, `/contact` | `pages/marketing/ContactPage.jsx` | Public | Demonstration request questionnaire |
-| `/privacidade`, `/privacy` | `features/legal/LegalDocumentLayout.jsx` | Public | Privacy policy document |
+| `/privacidade`, `/privacy` | `features/legal/LegalDocumentLayout.jsx` | Public (also when signed in) | Privacy policy document |
 | `/termos` | `features/legal/LegalDocumentLayout.jsx` | Public | Terms of service document |
 | `/dpa` | `features/legal/LegalDocumentLayout.jsx` | Public | Data processing agreement |
 | `/cookies` | `features/legal/LegalDocumentLayout.jsx` | Public | Cookies and local storage document |
