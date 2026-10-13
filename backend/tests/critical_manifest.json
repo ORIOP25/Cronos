@@ -23,8 +23,6 @@
         "tests/unit/test_request_body_limit.py",
         "tests/unit/test_client_ip.py",
         "tests/unit/test_rgpd_contracts.py",
-        "tests/unit/test_e2e_cleanup_policy.py",
-        "tests/unit/test_cleanup_e2e_run.py",
         "tests/unit/test_critical_selection_policy.py"
       ],
       "args": [

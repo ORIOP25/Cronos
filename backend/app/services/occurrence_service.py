@@ -291,7 +291,7 @@ def log_occurrence_event_safe_sync(
     actor_membership_id: int | None = None,
     occurrence_id: int | None = None,
     active_schedule_block_id: int | None = None,
-    decision_status: models.LessonOccurrenceStatus | None = None,
+    decision_status: models.LessonOccurrenceStatus | str | None = None,
     detail: str | None = None,
 ) -> None:
     """Persist observability without poisoning the request transaction on failure."""
@@ -305,7 +305,12 @@ def log_occurrence_event_safe_sync(
                     actor_membership_id=actor_membership_id,
                     occurrence_id=occurrence_id,
                     active_schedule_block_id=active_schedule_block_id,
-                    decision_status=decision_status.value if decision_status else None,
+                    # The v1 decision passes the stored status as a plain string.
+                    decision_status=(
+                        models.LessonOccurrenceStatus(decision_status).value
+                        if decision_status
+                        else None
+                    ),
                     detail=_sanitize_event_detail(detail),
                 )
             )
@@ -2331,7 +2336,7 @@ async def log_occurrence_event_safe(
     actor_membership_id: int | None = None,
     occurrence_id: int | None = None,
     active_schedule_block_id: int | None = None,
-    decision_status: models.LessonOccurrenceStatus | None = None,
+    decision_status: models.LessonOccurrenceStatus | str | None = None,
     detail: str | None = None,
 ) -> None:
     await db.run_sync(

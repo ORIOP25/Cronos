@@ -7,9 +7,6 @@
 !scripts/member_reconcile.py
 !scripts/member_support.py
 !scripts/prepare_e2e_clerk_state.py
-!scripts/seed_scheduler_e2e.py
 !scripts/cleanup_e2e_clerk_invitations.py
 !scripts/__init__.py
-!scripts/cleanup_e2e_run.py
-!scripts/e2e_cleanup_policy.py
 !scripts/privacy.py

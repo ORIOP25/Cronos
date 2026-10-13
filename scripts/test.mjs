@@ -6,13 +6,6 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawn } from 'node:child_process'
 import { performance } from 'node:perf_hooks'
-import { acceptanceExitCode, acceptancePlan, acceptanceSecrets, assembleCampaign, evaluatePublicDiagnosis, publicDiagnosisPlan, publicDiagnosisRecord, publicReadonlyCleanup } from './acceptance-run.mjs'
-import { preflight, publicPreflight } from './real-browser-preflight.mjs'
-import { finalizeRun, verifySignedResult } from './finalize-real-browser-run.mjs'
-import { createUiRegistryFile, retainPersistentSchoolFile, verifyRegistry } from './e2e-run-registry.mjs'
-import { evaluatePreparation } from './prepare-history.mjs'
-import { cleanupProductionCampaign } from './cleanup-production-campaign.mjs'
-import { protectEvidence } from './protect-test-evidence.mjs'
 
 export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 export const BACKEND = join(ROOT, 'backend')
@@ -47,9 +40,6 @@ Commands:
   e2e [--project public|auth|app|isolated|readonly|provider|capacity]
   capacity
   capacity-smoke
-  acceptance
-  prepare-history
-  diagnose-public
   all --scope backend|frontend|all
   benchmark --profile fast|integration|e2e|all [--scope backend|frontend|all]
   campaign [--manifest <path>] [--out <dir>] [--case <id>]... [--mode witness|generator|repair|trajectory|longitudinal] [--time-limit <s>] [--workers <n>] [--resume]
@@ -81,7 +71,7 @@ export function parseArgs(argv) {
   let scopeWasProvided = false
   let profileWasProvided = false
 
-  if (!['setup', 'doctor', 'fast', 'critical', 'integration', 'e2e', 'capacity', 'capacity-smoke', 'acceptance', 'prepare-history', 'diagnose-public', 'all', 'benchmark', 'campaign'].includes(command)) {
+  if (!['setup', 'doctor', 'fast', 'critical', 'integration', 'e2e', 'capacity', 'capacity-smoke', 'all', 'benchmark', 'campaign'].includes(command)) {
     throw usageError(`Unknown command: ${command}`)
   }
   if (forwarded.length && !['fast', 'integration'].includes(command)) {
@@ -1102,208 +1092,6 @@ async function runE2e(project, context, extraEnv = {}) {
   context.e2e = project || 'all'
 }
 
-export async function finalizePreparation({
-  run, artifactRoot, key, signingKey, secrets, registryPath, observedReport,
-  persistentRegistryPath, secretRegistryPath,
-  finalizeRunImpl = finalizeRun,
-  retain = retainPersistentSchoolFile,
-  evaluate = evaluatePreparation,
-}) {
-  const registry = await readFile(registryPath, 'utf8').then(value => verifyRegistry(JSON.parse(value), signingKey))
-  const finalize = (input, registries = []) => finalizeRunImpl(input, artifactRoot, { key, signingKey, secrets, registries })
-  const first = await finalize(run)
-  const initial = evaluate(first.run, registry, first.artifacts)
-  const eligible = initial.status === 'prepared'
-  let promotionFailure = null
-  if (eligible) {
-    try {
-      await retain(persistentRegistryPath, signingKey, observedReport, registry)
-    } catch {
-      promotionFailure = 'Persistent school promotion failed'
-    }
-  }
-  const failures = [...new Set([...initial.failures, ...(promotionFailure ? [promotionFailure] : [])])]
-  const result = await finalize({ ...first.run, failures }, [
-    { source: persistentRegistryPath, path: 'preparation/persistent-registry.json' },
-    { source: secretRegistryPath, path: 'preparation/private-secret-registry.json' },
-  ])
-  const assessment = evaluate(result.run, registry, result.artifacts)
-  return { result, assessment, prepared: !promotionFailure && eligible && assessment.status === 'prepared' }
-}
-
-// One production campaign flow. The known mode enum selects the plan, the
-// preflight, the Playwright selection, the cleanup and the final assessment;
-// every other step (journal, launcher, snapshots, finalization, writes) is
-// shared. An unknown mode is rejected before any effect.
-const PRODUCTION_CAMPAIGN_MODES = Object.freeze({
-  acceptance: Object.freeze({ preparation: false, diagnosis: false, cleanup: 'native_ssh', playwright: 'Playwright production acceptance' }),
-  'prepare-history': Object.freeze({ preparation: true, diagnosis: false, cleanup: 'native_ssh', playwright: 'Playwright production acceptance' }),
-  'diagnose-public': Object.freeze({ preparation: false, diagnosis: true, cleanup: 'public_readonly', playwright: 'Playwright public readonly diagnosis' }),
-})
-
-export function productionCampaignMode(mode) {
-  if (typeof mode !== 'string' || !Object.hasOwn(PRODUCTION_CAMPAIGN_MODES, mode)) {
-    throw Object.assign(new Error(`Unknown production mode: ${mode}`), { runnerCode: 3 })
-  }
-  return PRODUCTION_CAMPAIGN_MODES[mode]
-}
-
-// The runner never exits zero on an unverified signed result. The signed result
-// stays untouched; the failure is a separate classified runner stage that keeps
-// the first Playwright failure class when that primary failure already exists.
-export async function verifiedResultGuard({ result, artifactRoot, key, signingKey, primaryError = null, verify = verifySignedResult }) {
-  try {
-    await verify(result, artifactRoot, { key, signingKey })
-  } catch (cause) {
-    throw Object.assign(new Error('Signed artifact integrity verification failed', { cause }), {
-      runnerCode: primaryError ? (primaryError.runnerCode === 3 ? 3 : 1) : 1,
-    })
-  }
-}
-
-async function runProductionCampaign(context, mode) {
-  const spec = productionCampaignMode(mode)
-  const plan = spec.diagnosis
-    ? publicDiagnosisPlan(process.env, context.artifactDir, { testsRevision: context.revision })
-    : acceptancePlan(process.env, context.artifactDir, { preparation: spec.preparation, testsRevision: context.revision })
-  if (plan.status !== 'ready') {
-    await writeFile(join(context.artifactDir, 'acceptance-plan.json'), `${JSON.stringify(plan, null, 2)}\n`)
-    throw Object.assign(new Error(`${spec.diagnosis ? 'Public diagnosis' : 'Acceptance'} dependencies unavailable: ${plan.missing.join(', ')}`), { runnerCode: 3 })
-  }
-  const startedAt = new Date().toISOString()
-  const before = spec.diagnosis
-    ? await publicPreflight(process.env, { phase: 'before' })
-    : await preflight(process.env, { phase: 'before', preparation: spec.preparation })
-  const registryPath = join(context.artifactDir, 'ui-run-registry.json')
-  await createUiRegistryFile(registryPath, Buffer.from(process.env.E2E_REGISTRY_HMAC_KEY, 'base64'), context.runId, startedAt)
-  const args = ['run', 'test:e2e', '--', '--project', plan.project]
-  if (spec.diagnosis) args.push('--grep', plan.tag)
-  let playwrightError = null
-  try {
-    await runFrontendTests(
-      args,
-      spec.playwright,
-      {
-        BASE_URL: plan.config.baseUrl,
-        PLAYWRIGHT_SKIP_WEB_SERVER: '1',
-        PLAYWRIGHT_WORKERS: String(plan.workers),
-        PLAYWRIGHT_OUTPUT_DIR: plan.artifactRoot,
-        PLAYWRIGHT_JUNIT_OUTPUT_FILE: join(context.artifactDir, 'acceptance.xml'),
-        E2E_ACCEPTANCE_REPORT: spec.preparation ? '' : plan.reportPath,
-        E2E_PREPARATION_REPORT: spec.preparation ? plan.reportPath : '',
-        E2E_RUN_ID: context.runId,
-        E2E_RUN_REGISTRY: registryPath,
-        CAMPAIGN_MODE: mode,
-      },
-      context,
-      'acceptance',
-    )
-  } catch (error) {
-    playwrightError = error
-  }
-  let registryEvidenceError = false
-  try {
-    await mkdir(plan.artifactRoot, { recursive: true })
-    await writeFile(join(plan.artifactRoot, 'ui-run-registry.json.enc'), protectEvidence(
-      await readFile(registryPath), Buffer.from(process.env.E2E_ARTIFACT_KEY, 'base64'),
-      { run_id: context.runId, path: 'ui-run-registry.json' },
-    ), { mode: 0o600, flag: 'wx' })
-  } catch { registryEvidenceError = true }
-  const cleanup = spec.cleanup === 'public_readonly'
-    ? await publicReadonlyCleanup({
-      registryPath, runId: context.runId, signingKey: Buffer.from(process.env.E2E_REGISTRY_HMAC_KEY, 'base64'),
-    })
-    : await cleanupProductionCampaign({
-      registryPath,
-      runId: context.runId,
-      expectedRevision: plan.config.expectedRevision,
-      artifactRoot: plan.artifactRoot,
-    }, process.env, { usePriorExports: true })
-  await writeFile(join(context.artifactDir, 'acceptance-cleanup.json'), `${JSON.stringify(cleanup, null, 2)}\n`)
-  let after
-  try {
-    after = spec.diagnosis
-      ? await publicPreflight(process.env, { phase: 'after' })
-      : await preflight(process.env, { phase: 'after', preparation: spec.preparation })
-  } catch (error) {
-    after = { status: 'failed', reason: error.message }
-  }
-  const observedReport = await readFile(plan.reportPath, 'utf8').then(JSON.parse).catch(() => null)
-  const playwrightReport = spec.preparation ? { cases: [], failures: [] } : observedReport
-  const run = assembleCampaign({
-    runId: context.runId,
-    testsRevision: context.revision,
-    expectedRevision: plan.config.expectedRevision,
-    startedAt,
-    finishedAt: new Date().toISOString(),
-    before,
-    after,
-    playwrightReport,
-    cleanup,
-    processFailed: Boolean(playwrightError),
-  })
-  if (spec.preparation) {
-    run.mode = 'preparation'
-    run.data = before.data
-    run.preparation = observedReport
-  } else if (spec.diagnosis) {
-    run.mode = 'diagnostic'
-    run.selection = { tag: plan.tag, cases: plan.cases }
-  }
-  if (registryEvidenceError) run.failures.push('Protected UI ownership registry unavailable')
-  const secrets = acceptanceSecrets(process.env, JSON.parse(await readFile(process.env.E2E_SECRET_REGISTRY, 'utf8')))
-  const signingKey = Buffer.from(process.env.E2E_REGISTRY_HMAC_KEY, 'base64')
-  const key = Buffer.from(process.env.E2E_ARTIFACT_KEY, 'base64')
-  if (spec.preparation) {
-    const { result, assessment, prepared } = await finalizePreparation({
-      run,
-      artifactRoot: plan.artifactRoot,
-      key,
-      signingKey,
-      secrets,
-      registryPath,
-      observedReport,
-      persistentRegistryPath: process.env.E2E_PERSISTENT_REGISTRY,
-      secretRegistryPath: process.env.E2E_SECRET_REGISTRY,
-    })
-    context.preparation = prepared ? 'prepared' : 'failed'
-    await writeFile(join(context.artifactDir, 'preparation-assessment.json'), `${JSON.stringify(assessment, null, 2)}\n`)
-    await writeFile(plan.resultPath, `${JSON.stringify(result, null, 2)}\n`)
-    if (prepared) {
-      await verifiedResultGuard({ result, artifactRoot: plan.artifactRoot, key, signingKey })
-      return
-    }
-    throw Object.assign(new Error(`Preparation failed: ${assessment.failures.slice(0, 5).join('; ')}`), { runnerCode: 1 })
-  }
-  const result = await finalizeRun(run, plan.artifactRoot, { key, signingKey, secrets })
-  await writeFile(plan.resultPath, `${JSON.stringify(result, null, 2)}\n`)
-  if (spec.diagnosis) {
-    const diagnosis = evaluatePublicDiagnosis(result.run)
-    await writeFile(join(context.artifactDir, 'diagnostic-assessment.json'), `${JSON.stringify(publicDiagnosisRecord(result.run, diagnosis), null, 2)}\n`)
-    context.acceptance = result.assessment.status
-    context.diagnosis = diagnosis.status
-    console.log(`[diagnostic] diagnostic, not production certification: ${diagnosis.status}; selection ${plan.tag}; tests ${context.revision} production ${plan.config.expectedRevision}`)
-    if (playwrightError) {
-      throw Object.assign(playwrightError, { runnerCode: playwrightError.runnerCode === 3 ? 3 : 1 })
-    }
-    if (diagnosis.status !== 'passed') {
-      throw Object.assign(new Error(`Public diagnosis failed: ${diagnosis.failures.slice(0, 5).join('; ')}`), { runnerCode: 1 })
-    }
-    await verifiedResultGuard({ result, artifactRoot: plan.artifactRoot, key, signingKey, primaryError: playwrightError })
-    return
-  }
-  context.acceptance = result.assessment.status
-  const code = acceptanceExitCode(result.assessment.status)
-  if (code === 0) {
-    await verifiedResultGuard({ result, artifactRoot: plan.artifactRoot, key, signingKey, primaryError: playwrightError })
-    return
-  }
-  const reasons = [...result.assessment.failures, ...result.assessment.incomplete, ...result.assessment.dependencies].slice(0, 5).join('; ')
-  throw Object.assign(new Error(`Acceptance ${result.assessment.status}: ${reasons}`), {
-    runnerCode: playwrightError ? (playwrightError.runnerCode === 3 ? 3 : code) : code,
-  })
-}
-
 async function runAllBackend(context) {
   await runChecked(backendPythonSpec(['-m', 'ruff', 'format', '--check', BACKEND], baseTestEnvironment(), context), {
     cwd: ROOT, env: baseTestEnvironment(), label: 'Ruff format check',
@@ -1512,9 +1300,6 @@ async function writeRunReport(context, parsed, exitCode, cleanupCode) {
     scope: parsed.scope,
     profile: parsed.profile,
     project: parsed.project ?? null,
-    acceptance: context.acceptance ?? null,
-    preparation: context.preparation ?? null,
-    diagnosis: context.diagnosis ?? null,
     workers: {
       integration: INTEGRATION_WORKERS,
       e2e: context.e2eWorkers ?? null,
@@ -1660,9 +1445,6 @@ export async function main(argv = process.argv.slice(2)) {
     else if (parsed.command === 'critical') await runCriticalBackend(context)
     else if (parsed.command === 'integration') await runIntegration(parsed.forwarded, context)
     else if (parsed.command === 'e2e') await runE2e(parsed.project, context)
-    else if (parsed.command === 'acceptance') await runProductionCampaign(context, 'acceptance')
-    else if (parsed.command === 'prepare-history') await runProductionCampaign(context, 'prepare-history')
-    else if (parsed.command === 'diagnose-public') await runProductionCampaign(context, 'diagnose-public')
     else if (parsed.command === 'capacity') await runE2e('capacity', context)
     else if (parsed.command === 'capacity-smoke') {
       await runE2e('capacity', context, {
