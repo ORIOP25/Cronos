@@ -8,13 +8,14 @@ import { completeAndResumeGuide } from '../utils/ui-guide.js'
 import { restartDisposableSchoolYear } from '../utils/ui-year.js'
 import { exerciseSchoolIsolation } from '../utils/ui-isolation.js'
 import { exercisePendingOccurrenceAndGap } from '../utils/ui-occurrences.js'
-import { awaitAuthStage, deliveredCodeReader, evaluateAcrossNavigation, expectIdentity, login, freshSession, withSignUpTestingToken } from '../utils/ui-auth.js'
+import { awaitAuthStage, awaitClerkLoaded, deliveredCodeReader, evaluateAcrossNavigation, expectIdentity, login, freshSession, withSignUpTestingToken } from '../utils/ui-auth.js'
 import { mintClerkTestingToken } from '../../../scripts/cleanup-production-campaign.mjs'
 import { campaignSchoolLabel, validateCodeSender } from './acceptance-policy.js'
 import { test, expect } from '@playwright/test'
 
 async function rejectOldPassword(page, runtime, testInfo, email, password) {
   await page.goto('/login')
+  await awaitClerkLoaded(page)
   await page.getByLabel('Email', { exact: true }).fill(email)
   await page.getByLabel('Palavra-passe', { exact: true }).fill(password)
   let attempted
@@ -104,6 +105,7 @@ export async function runIdentityCampaign({ page, browser, provenance, delivered
 
   const verification = await withSignUpTestingToken(page, await signUpToken(), async () => {
   await page.goto('/register')
+  await awaitClerkLoaded(page)
   await page.getByLabel('Nome', { exact: true }).fill('Cronos')
   await page.getByLabel('Apelido', { exact: true }).fill('Aceitação')
   await page.getByLabel('Email', { exact: true }).fill(email)
@@ -184,6 +186,7 @@ export async function runIdentityCampaign({ page, browser, provenance, delivered
   await recordCheckpoint(testInfo, ['E2E-02/admin-login-logout', 'E2E-02/new-context-login'], { requires: 'actor' })
   await freshSession(browser, testInfo, 'recovery', async recoveryPage => {
     await recoveryPage.goto('/recuperar-palavra-passe')
+    await awaitClerkLoaded(recoveryPage)
     await recoveryPage.getByLabel('Email', { exact: true }).fill(email)
     const recoveryRequestedAt = Date.now()
     await recoveryPage.getByRole('button', { name: 'Enviar código', exact: true }).click()
@@ -223,6 +226,7 @@ export async function runIdentityCampaign({ page, browser, provenance, delivered
       await withSignUpTestingToken(teacherPage, await signUpToken(), async () => {
       await teacherPage.goto(invitation.link)
       await expect(teacherPage).toHaveURL(/^https:\/\/cronos\.pt\/(login|register)(?:[/?#]|$)/)
+      await awaitClerkLoaded(teacherPage)
       if (new URL(teacherPage.url()).pathname.startsWith('/login')) {
         await teacherPage.getByRole('link', { name: /Registar|Criar conta/ }).click()
       }

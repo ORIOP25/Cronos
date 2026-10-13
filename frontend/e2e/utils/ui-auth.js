@@ -206,6 +206,12 @@ export async function evaluateAcrossNavigation(page, read) {
   }
 }
 
+// The public auth pages are prerendered; their controls only take input once
+// the app and Clerk have loaded (an earlier click or fill can be discarded).
+export async function awaitClerkLoaded(page) {
+  await expect.poll(() => evaluateAcrossNavigation(page, () => window.Clerk?.loaded === true)).toBe(true)
+}
+
 export async function expectIdentity(page, email) {
   await expect.poll(() => evaluateAcrossNavigation(page, () => ({
     email: window.Clerk?.user?.primaryEmailAddress?.emailAddress,
@@ -223,6 +229,7 @@ export function deliveredCodeReader(deliveredMail, mailbox, recipient) {
 
 export async function login(page, email, password, readCode) {
   await page.goto('/login')
+  await awaitClerkLoaded(page)
   await page.getByLabel('Email', { exact: true }).fill(email)
   await page.getByLabel('Palavra-passe', { exact: true }).fill(password)
   const requestedAt = Date.now()
