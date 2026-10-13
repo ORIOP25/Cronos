@@ -339,3 +339,17 @@ test('a request settled before the token route answers is left alone, other rout
   const broken = { ...settled, fulfill: async () => { throw new Error('route.fulfill: unexpected') } }
   await assert.rejects(handler(broken), /unexpected/)
 })
+
+test('the sign-up token route lets a navigation such as an invitation ticket through untouched', async () => {
+  const page = routedPage()
+  await withSignUpTestingToken(page, TOKEN, async () => {})
+  const { handler } = page.handlers[0]
+  const seen = {}
+  await handler({
+    request: () => ({ url: () => 'https://clerk.cronos.pt/v1/tickets/accept?ticket=t', isNavigationRequest: () => true }),
+    fetch: async () => { seen.fetched = true },
+    fulfill: async () => { seen.fulfilled = true },
+    continue: async () => { seen.continued = true },
+  })
+  assert.deepEqual(seen, { continued: true })
+})
