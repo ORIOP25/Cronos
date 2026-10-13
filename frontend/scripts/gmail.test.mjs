@@ -216,3 +216,17 @@ test('a Clerk code is taken from its subject when the HTML also carries six-digi
   delivered.payload.headers[2].value = '111111 is your verification code'
   assert.equal(extractMessage(delivered, clerk), null)
 })
+
+test('a repeated sign-in code resolves to the latest delivery only when asked to', async () => {
+  const first = message('Your verification code is 111111'), second = message('Your verification code is 222222')
+  first.id = 'mail-1'; second.id = 'mail-2'; second.internalDate = String(criteria.after + 2000)
+  const fetchImpl = async url => {
+    const payload = url.includes('/token') ? { access_token: 'token', scope: 'https://www.googleapis.com/auth/gmail.readonly' }
+      : url.endsWith('/profile') ? { emailAddress: 'admincronos100@gmail.com' }
+        : url.includes('/messages/mail-1') ? first : url.includes('/messages/mail-2') ? second : { messages: [{ id: 'mail-1' }, { id: 'mail-2' }] }
+    return { ok: true, status: 200, json: async () => payload }
+  }
+  const reader = await createGmailReader({ clientId: 'client', clientSecret: 'secret', refreshToken: 'refresh', mailbox: 'admincronos100@gmail.com' }, { fetchImpl })
+  await assert.rejects(reader.poll(criteria, { timeoutMs: 1000, intervalMs: 100 }), /Ambiguous/)
+  assert.equal((await reader.poll({ ...criteria, latest: true }, { timeoutMs: 1000, intervalMs: 100 })).code, '222222')
+})
