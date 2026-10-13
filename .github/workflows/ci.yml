@@ -22,7 +22,41 @@ env:
   DATABASE_POOLING_ENABLED: "false"
 
 jobs:
+  # A squash merge of a green pull request whose head has the same tree as the
+  # pushed commit was already tested: skip the suites on main and only verify
+  # the deployment. Any difference (main moved, a merge commit) runs everything.
+  already-verified:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      checks: read
+    outputs:
+      verified: ${{ steps.check.outputs.verified }}
+    steps:
+      - name: Find a green pull request head with the same tree
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          verified=false
+          head=$(gh api "repos/$REPO/commits/$SHA/pulls" --jq '[.[] | select(.merged_at != null)][0].head.sha // empty')
+          if [ -n "$head" ]; then
+            tree() { gh api "repos/$REPO/git/commits/$1" --jq .tree.sha; }
+            if [ "$(tree "$SHA")" = "$(tree "$head")" ]; then
+              green=$(gh api "repos/$REPO/commits/$head/check-runs?filter=latest&per_page=100"                 --jq '[.check_runs[] | select((.name == "backend" or .name == "frontend" or .name == "e2e") and .conclusion == "success") | .name] | unique | length')
+              if [ "$green" = 3 ]; then verified=true; fi
+            fi
+          fi
+          echo "Pull request head: ${head:-none}; already verified: $verified"
+          echo "verified=$verified" >> "$GITHUB_OUTPUT"
+
   backend:
+    needs: already-verified
+    if: ${{ !cancelled() && needs.already-verified.outputs.verified != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     services:
@@ -154,6 +188,8 @@ jobs:
           retention-days: 3
 
   frontend:
+    needs: already-verified
+    if: ${{ !cancelled() && needs.already-verified.outputs.verified != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -192,7 +228,9 @@ jobs:
   # Real browser browser journeys. Needs Clerk test identities, so it is
   # skipped for Dependabot and fork pull requests.
   e2e-browser:
+    needs: already-verified
     if: >-
+      !cancelled() && needs.already-verified.outputs.verified != 'true' &&
       github.actor != 'dependabot[bot]' &&
       (github.event_name != 'pull_request' ||
       github.event.pull_request.head.repo.full_name == github.repository)
@@ -494,6 +532,8 @@ jobs:
   # This carries the real broker/supervisor worker recovery and the full
   # 48-class validation the fast critical job deliberately does not run.
   e2e-runtime:
+    needs: already-verified
+    if: ${{ !cancelled() && needs.already-verified.outputs.verified != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     services:
@@ -638,11 +678,15 @@ jobs:
   # pass unless it was skipped by the Dependabot/fork policy.
   e2e:
     if: always()
-    needs: [e2e-runtime, e2e-browser]
+    needs: [already-verified, e2e-runtime, e2e-browser]
     runs-on: ubuntu-latest
     steps:
       - name: Verify the E2E statuses
         run: |
+          if [ "${{ needs.already-verified.outputs.verified }}" = "true" ]; then
+            echo "the merged pull request head already passed with the same tree"
+            exit 0
+          fi
           runtime="${{ needs.e2e-runtime.result }}"
           browser="${{ needs.e2e-browser.result }}"
           if [ "$runtime" != "success" ]; then
@@ -668,11 +712,14 @@ jobs:
           echo "e2e-browser was unexpectedly skipped"
           exit 1
 
-  # After a green run on main, confirm production serves this commit and its
-  # health checks pass. Read-only: no credentials, accounts or business writes.
+  # After a green run on main (or an already verified merge), confirm production
+  # serves this commit and its health checks pass. Read-only: no credentials, accounts or business writes.
   production:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [backend, frontend, e2e]
+    if: >-
+      !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+      (needs.already-verified.outputs.verified == 'true' ||
+      (needs.backend.result == 'success' && needs.frontend.result == 'success' && needs.e2e.result == 'success'))
+    needs: [already-verified, backend, frontend, e2e]
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:

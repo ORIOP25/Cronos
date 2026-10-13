@@ -245,7 +245,10 @@ test('the frontend fast macro stays narrow and e2e-runtime owns the relocated ma
     install !== -1 && install < lint && lint < audit && install < infrastructure,
     'the relocated commands run after the frontend install',
   )
-  assert.equal(runtime.some((line) => /^    if:/.test(line)), false, 'the e2e-runtime job must stay unconditional')
+  // The only job condition is the skip for a merge whose pull request head already passed.
+  assert.deepEqual(runtime.filter((line) => /^    if:/.test(line)), [
+    "    if: ${{ !cancelled() && needs.already-verified.outputs.verified != 'true' }}",
+  ], 'the e2e-runtime job runs unless the same tree already passed')
   for (const [label, runLine] of [['frontend lint', lint], ['production dependency audit', audit], ['repository script tests', infrastructure]]) {
     const block = stepBlock(runLine)
     assert.ok(block.includes('        working-directory: frontend'), `${label} runs in the frontend directory`)
@@ -253,7 +256,7 @@ test('the frontend fast macro stays narrow and e2e-runtime owns the relocated ma
   }
 
   const aggregate = lines.slice(aggregateStart).join('\n')
-  assert.match(aggregate, /needs: \[e2e-runtime, e2e-browser\]/)
+  assert.match(aggregate, /needs: \[already-verified, e2e-runtime, e2e-browser\]/)
   assert.match(aggregate, /if \[ "\$runtime" != "success" \]; then/)
 })
 
