@@ -278,6 +278,39 @@ teacher_subject_link = Table(
     Index("ix_teacher_subject_link_organization_id", "organization_id"),
 )
 
+# Tabela Relacional: Módulos selecionados numa ligação turma-disciplina.
+# Uma linha representa um módulo marcado na checklist de módulos da turma.
+class_subject_module = Table(
+    "class_subject_module",
+    Base.metadata,
+    Column(
+        "organization_id",
+        ForeignKey(FK_ORG_ID, ondelete="CASCADE"),
+        nullable=False,
+        primary_key=True,
+    ),
+    Column("class_subject_link_id", Integer, nullable=False, primary_key=True),
+    Column("module_id", Integer, nullable=False, primary_key=True),
+    ForeignKeyConstraint(
+        ["organization_id", "class_subject_link_id"],
+        ["class_subject_link.organization_id", "class_subject_link.id"],
+        name="fk_class_subject_module_link_org",
+        ondelete="CASCADE",
+    ),
+    ForeignKeyConstraint(
+        ["organization_id", "module_id"],
+        ["module.organization_id", "module.id"],
+        name="fk_class_subject_module_module_org",
+        ondelete="CASCADE",
+    ),
+    Index("ix_class_subject_module_organization_id", "organization_id"),
+    Index(
+        "ix_class_subject_module_organization_id_module_id",
+        "organization_id",
+        "module_id",
+    ),
+)
+
 
 # Tabela Relacional: Disciplinas de uma Turma (com professor opcional)
 # Esta tabela define que disciplinas uma turma tem num determinado grade_level

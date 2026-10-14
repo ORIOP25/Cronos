@@ -76,6 +76,7 @@ PRIVACY_TABLES = {
     "teacher_subject_link": "delete",
     "teacher_weekly_timesheet": "delete",
     "class_subject_link": "delete",
+    "class_subject_module": "delete",
     "constraint": "delete",
     "lesson_occurrence": "delete",
     "progress_ledger_entry": "delete",
