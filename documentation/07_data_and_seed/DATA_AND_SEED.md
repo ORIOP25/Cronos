@@ -45,7 +45,7 @@ See [Administrative CSV import](BULK_IMPORT_CSV.md) for the templates and endpoi
 The sample set in [`sample_import_48_classes/`](sample_import_48_classes/) holds five CSV files for 48 classes.
 
 ## Test and E2E Data Preparation
-`backend/scripts/prepare_e2e_clerk_state.py` prepares the shared E2E organization.
+`backend/scripts/prepare_e2e_clerk_state.py` prepares a disposable E2E organization.
 It creates the Clerk-linked accounts and memberships.
 It also seeds current legal acceptance and a default foundation through `FoundationService`.
 The CI workflow and `node scripts/test.mjs e2e` run this script inside the `backend` container before E2E execution.
