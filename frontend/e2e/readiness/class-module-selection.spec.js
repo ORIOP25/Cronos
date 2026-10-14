@@ -141,8 +141,11 @@ test.describe('Readiness — per-class module selection', () => {
         response.url().includes(`/api/v1/classes/${selectionClass.id}/subjects/`)
         && response.request().method() === 'PATCH'
       ))
-      await checkB.uncheck()
+      // The checkbox is controlled by the server response, so click and await
+      // the refreshed state instead of uncheck(), which expects a sync change.
+      await checkB.click()
       expect((await save).ok()).toBeTruthy()
+      await expect(checkB).not.toBeChecked()
       await expect(page.getByRole('button', { name: 'Módulos: 1 de 2 · 2 h' })).toBeVisible()
 
       // Manual step: deselect every module and confirm the prevalidation block.
@@ -150,8 +153,9 @@ test.describe('Readiness — per-class module selection', () => {
         response.url().includes(`/api/v1/classes/${selectionClass.id}/subjects/`)
         && response.request().method() === 'PATCH'
       ))
-      await checkA.uncheck()
+      await checkA.click()
       expect((await save).ok()).toBeTruthy()
+      await expect(checkA).not.toBeChecked()
       await expect(page.getByRole('button', { name: 'Módulos: 0 de 2 · 0 h' })).toBeVisible()
       await expect(page.locator('span.text-warning', { hasText: 'Sem módulos' })).toBeVisible()
 
@@ -175,8 +179,9 @@ test.describe('Readiness — per-class module selection', () => {
         response.url().includes(`/api/v1/classes/${selectionClass.id}/subjects/`)
         && response.request().method() === 'PATCH'
       ))
-      await page.getByRole('checkbox', { name: new RegExp(MODULE_NAMES[0]) }).check()
+      await checkA.click()
       expect((await save).ok()).toBeTruthy()
+      await expect(checkA).toBeChecked()
       await expect(page.getByRole('button', { name: 'Módulos: 1 de 2 · 2 h' })).toBeVisible()
 
       await generateAndApproveThroughUi(page)
