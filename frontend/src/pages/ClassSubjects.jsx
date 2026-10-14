@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { toast } from 'react-hot-toast'
 import {
   CCard, CCardBody, CCardHeader, CButton,
-  CBadge, CSpinner, CFormFeedback, CFormSelect,
+  CBadge, CSpinner, CFormCheck, CFormFeedback, CFormSelect,
   CModal, CModalHeader, CModalTitle,
   CModalBody, CModalFooter,
 } from '@coreui/react'
@@ -17,7 +17,7 @@ import {
   useAvailableSubjects,
   useEligibleTeachers,
   useAddClassSubject,
-  useUpdateClassSubjectTeacher,
+  useUpdateClassSubject,
   useRemoveClassSubject,
 } from '../features/catalog/data'
 import Breadcrumbs from '../components/Breadcrumbs'
@@ -32,25 +32,44 @@ import { formatGradeLevel } from '../utils/presentation'
 //  HELPERS
 // ==========================================
 
+/** Mostra horas decimais sem ruído de vírgula flutuante (ex.: 25, 12.5). */
+const formatHours = (hours) => Number((Number(hours) || 0).toFixed(1))
+
 // ==========================================
 //  SUB-COMPONENT: Card de disciplina com dropdown de professor
 // ==========================================
-const SubjectRow = ({ 
-  subject, 
+const SubjectRow = ({
+  subject,
   onRemove,
   onTeacherChange,
+  onModulesChange,
   isUpdating,
   canEditTeacher = true,
   canRemove = true,
+  canEditModules = true,
   teacherError = '',
+  modulesError = '',
 }) => {
   const { data: eligibleTeachers, isLoading: teachersLoading } = useEligibleTeachers(subject.subject_id)
+  const [modulesOpen, setModulesOpen] = useState(false)
   const teacherSelectId = `class-subject-teacher-${subject.subject_id}`
   const teacherErrorId = `class-subject-teacher-error-${subject.subject_id}`
+  const modulesPanelId = `class-subject-modules-${subject.subject_id}`
+  const modulesErrorId = `class-subject-modules-error-${subject.subject_id}`
+  const modules = subject.modules || []
+  const selectedModules = modules.filter(module => module.selected)
+  const selectedHours = selectedModules.reduce((total, module) => total + (Number(module.hours_total) || 0), 0)
   
   const handleTeacherChange = (e) => {
     const teacherId = e.target.value ? Number.parseInt(e.target.value, 10) : null
     onTeacherChange(subject.subject_id, teacherId)
+  }
+
+  const handleModuleToggle = (moduleId, checked) => {
+    const nextIds = modules
+      .filter(module => (module.id === moduleId ? checked : module.selected))
+      .map(module => module.id)
+    onModulesChange(subject.subject_id, nextIds)
   }
 
   return (
@@ -127,6 +146,53 @@ const SubjectRow = ({
             </CButton>
           </div>}
         </div>
+
+        {/* Seleção de módulos */}
+        <div className="mt-2 pt-2 border-top">
+          <div className="d-flex align-items-center gap-2">
+            <CButton
+              type="button"
+              color="link"
+              size="sm"
+              className="p-0 text-decoration-none fw-medium"
+              aria-expanded={modulesOpen}
+              aria-controls={modulesPanelId}
+              onClick={() => setModulesOpen(open => !open)}
+              data-tutorial-target="class-subject-modules"
+            >
+              Módulos: {selectedModules.length} de {modules.length} · {formatHours(selectedHours)} h
+            </CButton>
+            {selectedModules.length === 0 && (
+              <span className="d-inline-flex align-items-center gap-1 text-warning" style={{ fontSize: '0.85rem' }}>
+                <CIcon icon={cilWarning} size="sm" title="Sem módulos" />
+                Sem módulos
+              </span>
+            )}
+          </div>
+          {modulesError && (
+            <CFormFeedback id={modulesErrorId} invalid className="d-block" role="alert">{modulesError}</CFormFeedback>
+          )}
+          {modulesOpen && (
+            <div id={modulesPanelId} className="mt-2">
+              {modules.length === 0 ? (
+                <p className="text-muted mb-0" style={{ fontSize: '0.85rem' }}>
+                  Esta disciplina não tem módulos. Adicione-os em Disciplinas.
+                </p>
+              ) : modules.map(module => (
+                <CFormCheck
+                  key={module.id}
+                  type="checkbox"
+                  id={`class-subject-module-${subject.subject_id}-${module.id}`}
+                  label={`${module.code ? `${module.code} ` : ''}${module.name} · ${formatHours(module.hours_total)} h`}
+                  checked={Boolean(module.selected)}
+                  disabled={isUpdating || !canEditModules}
+                  onChange={(e) => handleModuleToggle(module.id, e.target.checked)}
+                  data-tutorial-target="class-subject-module"
+                />
+              ))}
+            </div>
+          )}
+        </div>
       </CCardBody>
     </CCard>
   )
@@ -146,6 +212,7 @@ const ClassSubjects = ({ courseIdOverride, classIdOverride, navigationDisabled =
   const canEditTeacher = !readOnly && (!isTutorial || allowedActions.includes('UPDATE_CLASS_SUBJECT_TEACHER'))
   const canAdd = !readOnly && !isTutorial
   const canRemove = !readOnly && !isTutorial
+  const canEditModules = !readOnly && !isTutorial
 
   // State para modal de adicionar disciplina
   const [showAddModal, setShowAddModal] = useState(false)
@@ -153,6 +220,7 @@ const ClassSubjects = ({ courseIdOverride, classIdOverride, navigationDisabled =
   const [subjectToRemove, setSubjectToRemove] = useState(null)
   const [blockedMessage, setBlockedMessage] = useState('')
   const [teacherBlock, setTeacherBlock] = useState(null)
+  const [moduleBlock, setModuleBlock] = useState(null)
 
   // Data hooks
   const { data: classSubjects, isLoading, error } = useClassSubjects(numClassId)
@@ -160,18 +228,20 @@ const ClassSubjects = ({ courseIdOverride, classIdOverride, navigationDisabled =
 
   // Mutation hooks
   const addSubject = useAddClassSubject()
-  const updateTeacher = useUpdateClassSubjectTeacher()
+  const updateClassSubject = useUpdateClassSubject()
   const removeSubject = useRemoveClassSubject()
   const attemptScope = useAttemptScope()
 
-  const isUpdating = addSubject.isPending || updateTeacher.isPending || removeSubject.isPending
+  const isUpdating = addSubject.isPending || updateClassSubject.isPending || removeSubject.isPending
 
   // Stats
   const stats = useMemo(() => {
-    if (!classSubjects?.subjects) return { total: 0, assigned: 0, pending: 0 }
+    if (!classSubjects?.subjects) return { total: 0, assigned: 0, pending: 0, withoutModules: 0 }
     const total = classSubjects.subjects.length
     const assigned = classSubjects.subjects.filter(s => s.teacher_id).length
-    return { total, assigned, pending: total - assigned }
+    const withoutModules = classSubjects.subjects
+      .filter(s => !(s.modules || []).some(module => module.selected)).length
+    return { total, assigned, pending: total - assigned, withoutModules }
   }, [classSubjects])
 
   // Handlers
@@ -216,7 +286,7 @@ const ClassSubjects = ({ courseIdOverride, classIdOverride, navigationDisabled =
 
   const handleTeacherChange = (subjectId, teacherId) => {
     if (!canEditTeacher) return
-    updateTeacher.mutate(
+    updateClassSubject.mutate(
       { classId: numClassId, subjectId, teacherId },
       attemptScope.guard({
         onSuccess: () => {
@@ -227,6 +297,24 @@ const ClassSubjects = ({ courseIdOverride, classIdOverride, navigationDisabled =
           const message = getApiErrorMessage(error, 'Não foi possível atribuir o professor. Tente novamente.')
           if (isApiErrorTransient(error)) toast.error(message)
           else setTeacherBlock({ subjectId, message })
+        },
+      })
+    )
+  }
+
+  const handleModulesChange = (subjectId, moduleIds) => {
+    if (!canEditModules) return
+    updateClassSubject.mutate(
+      { classId: numClassId, subjectId, moduleIds },
+      attemptScope.guard({
+        onSuccess: () => {
+          setModuleBlock(null)
+          toast.success('Módulos atualizados.', { id: 'class-subject-modules-updated' })
+        },
+        onError: (error) => {
+          const message = getApiErrorMessage(error, 'Não foi possível atualizar os módulos. Tente novamente.')
+          if (isApiErrorTransient(error)) toast.error(message)
+          else setModuleBlock({ subjectId, message })
         },
       })
     )
@@ -335,6 +423,12 @@ const ClassSubjects = ({ courseIdOverride, classIdOverride, navigationDisabled =
                     <span>{stats.pending} sem professor</span>
                   </div>
                 )}
+                {stats.withoutModules > 0 && (
+                  <div className="d-flex align-items-center gap-1 text-warning">
+                    <CIcon icon={cilWarning} size="sm" />
+                    <span>{stats.withoutModules} sem módulos</span>
+                  </div>
+                )}
               </div>
             </div>
             <CButton 
@@ -373,10 +467,13 @@ const ClassSubjects = ({ courseIdOverride, classIdOverride, navigationDisabled =
                 subject={subject}
                 onRemove={handleRemoveSubject}
                 onTeacherChange={handleTeacherChange}
+                onModulesChange={handleModulesChange}
                 isUpdating={isUpdating}
                 canEditTeacher={canEditTeacher}
                 canRemove={canRemove}
+                canEditModules={canEditModules}
                 teacherError={teacherBlock?.subjectId === subject.subject_id ? teacherBlock.message : ''}
+                modulesError={moduleBlock?.subjectId === subject.subject_id ? moduleBlock.message : ''}
               />
             ))
           )}
