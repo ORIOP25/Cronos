@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import {
+  backendFastArgs,
   childSpec,
   cleanupOwnedResources,
   criticalPytestArgs,
@@ -53,6 +54,12 @@ test('selects the isolated and readonly projects and retires the faults alias', 
   assert.equal(parseArgs(['e2e', '--project', 'isolated']).project, 'isolated')
   assert.equal(parseArgs(['e2e', '--project', 'readonly']).project, 'readonly')
   assert.throws(() => parseArgs(['e2e', '--project', 'faults']), /Invalid E2E project/)
+})
+
+test('the fast backend run skips the slow solver test unless the caller selects a marker', () => {
+  assert.deepEqual(backendFastArgs(), ['-m', 'not slow_solver'])
+  assert.deepEqual(backendFastArgs(['-k', 'timesheet']), ['-m', 'not slow_solver', '-k', 'timesheet'])
+  assert.deepEqual(backendFastArgs(['-m', 'slow_solver']), ['-m', 'slow_solver'])
 })
 
 test('the fast frontend run selects every Vitest project, including dom-network data hooks', () => {

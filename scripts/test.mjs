@@ -476,6 +476,12 @@ async function runBackendTests(paths, forwarded = [], overrides = {}, context, n
 
 // The fast frontend run must cover every Vitest project. `dom-network` owns
 // the critical data hooks, so omitting it silently drops those regressions.
+// The TDD loop skips the 48-class CP-SAT proof (900-second budget). CI runs it
+// by node id in `e2e-runtime`. A caller `-m` selection replaces the default.
+export function backendFastArgs(forwarded = []) {
+  return forwarded.includes('-m') ? forwarded : ['-m', 'not slow_solver', ...forwarded]
+}
+
 export function frontendFastArgs(forwarded = []) {
   return [
     'test', '--',
@@ -601,7 +607,7 @@ async function runFast(scope, forwarded, context) {
       join(BACKEND, 'tests', 'unit'),
       '--disable-socket',
       '--allow-hosts=127.0.0.1,localhost',
-    ], forwarded, { RATELIMIT_ENABLED: 'false' }, context, 'backend-unit')
+    ], backendFastArgs(forwarded), { RATELIMIT_ENABLED: 'false' }, context, 'backend-unit')
   }
   if (scope === 'frontend' || scope === 'all') {
     await runFrontendTests(
