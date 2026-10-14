@@ -29,8 +29,10 @@ Short, controlled sentences reduce ambiguity during development, release, and in
 | Area | Location | Rule |
 | :--- | :--- | :--- |
 | Application guides | `documentation/00_getting_started/` through `documentation/09_ops_observability/` | Describe current behavior. |
-| Cronos agent guidance | `.agents/skills/cronos-*/` | Describe current engineering contracts. |
+| Cronos agent guidance | `AGENTS.md`, `.agents/skills/cronos-*/` | Describe current engineering contracts. |
+| Claude Code adapters | `.claude/skills/*/` | Repeat the source frontmatter and point to `.agents/skills/`. |
 | Imported skills | `.agents/skills/clerk*`, `grill-me`, `ponytail`, and others | Do not modify. |
+| Commands | [Command Reference](COMMAND_REFERENCE.md) | The only place that defines commands. Other documents link to it. |
 
 Git tracks `.agents/skills/cronos-*`, `.agents/skills/ponytail/`, and agent guidance.
 Other imported skill directories are ignored and require local installation.
@@ -55,6 +57,8 @@ Other imported skill directories are ignored and require local installation.
 - Preserve exact Portuguese UI and domain terms.
 - Link only to existing repository files.
 - Mark unverified external state as an operational prerequisite.
+- Do not copy lists, counts, or states that live in executable files. Link to the owning file.
+- Do not copy commands. Link to the [Command Reference](COMMAND_REFERENCE.md).
 - Index files named `README.md` may use a short document list.
 - Technical guides use the full section structure in this standard.
 

@@ -103,15 +103,19 @@ The development override changes only the frontend service.
 ## Verification Procedure
 
 1. Run `docker compose config` with required variables.
-2. Run `docker compose --profile maintenance run --rm provision-db`.
-3. Run `docker compose --profile maintenance run --rm db-maintenance`.
-4. Run `docker compose up -d --build`.
-5. Check `docker compose ps`.
-6. Query `http://127.0.0.1:8000/health/live`, `/health/ready`, and `/api/v1/health`.
-7. Inspect registered tasks with `docker compose exec worker celery -A app.celery_worker.celery_app inspect registered`.
+2. Run `docker compose build backend`. `db-maintenance` reuses the `cronos-backend:local` image and cannot build it.
+3. Run `docker compose --profile maintenance run --rm provision-db`.
+4. Run `docker compose --profile maintenance run --rm db-maintenance`.
+5. Run `docker compose up -d --build`.
+6. Check `docker compose ps`.
+7. Query `http://127.0.0.1:8000/health/live`, `/health/ready`, and `/api/v1/health`.
+8. Inspect registered tasks with `docker compose exec worker celery -A app.celery_worker.celery_app inspect registered`.
 
-The test stack uses `docker-compose.test.yml` under project `cronos-test`.
-`scripts/test.mjs` starts it, provisions roles through its `provision-db` service and serves the frontend on port `5174`.
+The test stack uses `docker-compose.test.yml`.
+`scripts/test.mjs` starts each run under a unique Compose project `cronos-test-<token>`, with generated passwords.
+It provisions roles through its `provision-db` service and removes the project at the end.
+The E2E stack also binds host port `5174`, so only one E2E run can work at a time.
+Integration runs do not bind fixed host ports and can run in parallel.
 `docker-compose.ci.yml` is the equivalent stack used by the `e2e-browser` CI job.
 
 ## Source Map

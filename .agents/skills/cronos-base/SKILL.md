@@ -1,28 +1,30 @@
 ---
 name: cronos-base
-description: Base foundation rules shared by ALL Cronos skills. ALWAYS load this skill together with any specialist Cronos domain skill.
-argument-hint: Shared engineering pillars, delivery protocol, documentation standard, safety rules.
+description: Base rules shared by all Cronos skills. Load it for every task in the Cronos repository, together with ponytail and the specialist Cronos skill for the area.
 ---
 
-# Cronos — Base Foundation Rules
+# Cronos Base
 
-These rules apply to EVERY task performed in the Cronos codebase. Specialized Cronos skills extend these base rules.
+[AGENTS.md](../../../AGENTS.md) is the authority. This skill is the short checklist that every specialist skill extends.
 
-## 4 Engineering Pillars
+## Every task
 
-1. **Quality First**: Never compromise system stability. Write thorough tests and verify code modifications.
-2. **Zero Masking**: Never hide errors, swallow exceptions silently, or return dummy fallbacks. Report exact diagnostic log tracebacks.
-3. **Real-World Data Integrity**: Enforce tenant isolation (`organization_id`) and Row-Level Security (RLS) on all queries.
-4. **Explicit Verification**: Never declare success without executing build, lint, or pytest verification commands.
+1. Apply the four mandatory practices: clean code, Clean Architecture, TDD, and Ponytail (`full`). They apply to every task type, including documentation and reviews.
+2. Load `.agents/skills/ponytail/SKILL.md`.
+3. Find the change path in the [Repository Map](../../../documentation/00_getting_started/REPOSITORY_MAP.md#feature-change-paths) before you search the code.
+4. Use only commands from the [Command Reference](../../../documentation/00_getting_started/COMMAND_REFERENCE.md).
+5. Deliver through the pull request workflow in [AGENTS.md](../../../AGENTS.md#git-ci-and-delivery).
 
-## Delivery Protocol
-- Verify Git branch before starting work.
-- Inspect exact code definitions using file viewing tools before making edits.
-- Ensure all relative links in documentation target valid existing files.
-- Treat implementation and tests as the source of truth when documentation conflicts.
-- Do not modify imported third-party skills under `.agents/skills/clerk*`.
+## Safety rules
 
-## Controlled Documentation Standard
-- Follow ASD-STE100 rules for technical documentation.
-- Maintain short sentences (max 20 words for procedures, max 25 words for descriptions).
-- Use active voice and imperative mood.
+- **Zero masking**: never swallow exceptions, hide errors, or return dummy fallbacks.
+- **Tenant isolation**: every tenant query carries `organization_id`; forced RLS protects the tables. Never bypass it.
+- **Explicit verification**: name the exact command or CI job behind every "passed" claim.
+- **Production**: provider settings, secrets, DNS, and production data need explicit owner approval.
+- Do not modify imported third-party skills (`.agents/skills/clerk*`, `ponytail`, `grill-me`, `design-taste-frontend`).
+
+## Documentation
+
+- Code, tests, migrations, and configuration are the source of truth. Update the guide in the same pull request.
+- Link to the file that owns a list, count, or state. Do not copy it.
+- Follow the [Documentation Standard](../../../documentation/00_getting_started/DOCUMENTATION_STANDARD.md): active voice, short sentences, approved terms.

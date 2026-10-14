@@ -9,5 +9,6 @@ This section provides introductory documentation for developers, contributors, a
 - [REPOSITORY_MAP.md](REPOSITORY_MAP.md): High-level repository layout, component boundaries, and directory ownership.
 - [GLOSSARY.md](GLOSSARY.md): Controlled vocabulary, technical abbreviations, and Portuguese domain definitions.
 - [TECHNICAL_WALKTHROUGH.md](TECHNICAL_WALKTHROUGH.md): Verified end-to-end walkthrough from onboarding to schedule operation.
-- [CONTRIBUTING.md](CONTRIBUTING.md): Git branching conventions, migration rules, and quality gates.
+- [COMMAND_REFERENCE.md](COMMAND_REFERENCE.md): Every setup, test, and inspection command, with effects and what each proves.
+- [CONTRIBUTING.md](CONTRIBUTING.md): Git workflow, code standards, and quality gate policy.
 - [DOCUMENTATION_STANDARD.md](DOCUMENTATION_STANDARD.md): STE writing rules, template structures, and review requirements.

@@ -181,11 +181,14 @@ Preserve a backup and verify it before starting.
 
 A fresh database needs no reset. Local downgrade and upgrade checks use the same revision tree.
 
-### Possible future step: infrastructure as code
+### Required migration: Railway configuration as code
 
-Railway offers infrastructure as code through `.railway/railway.ts`.
-Migrating the service settings to it can replace the JSON files and the dashboard-only supervisor.
-The repository does not contain this file today.
+Railway sets 1 December 2026 as the end of support for existing `railway.json` config-as-code.
+The `api`, `worker`, and `beat` services still depend on `backend/railway/*.json`.
+Migrate their settings before that date, for example to `.railway/railway.ts` or to verified dashboard settings.
+The migration must also cover the dashboard-only supervisor.
+The repository does not contain `.railway/railway.ts` today.
+This work is planned, not done. Confirm the current deadline in the Railway documentation before you start.
 
 ## Contracts and Invariants
 

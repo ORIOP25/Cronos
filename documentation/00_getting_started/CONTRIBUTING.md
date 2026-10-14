@@ -1,115 +1,64 @@
 # Contributing Guidelines
 
 ## Purpose
-This document specifies engineering standards, Git workflow rules, and mandatory quality gates for repository contributions.
+This document specifies engineering standards, the Git workflow, and the quality gates for repository contributions.
 
 ## Intended Reader
-This document targets all software developers submitting code changes to Cronos.
+This document targets every contributor. Most contributors are AI agents.
 
 ## Prerequisites
-Review the [Repository Map](REPOSITORY_MAP.md) and set up the local runtime environment.
-Install Python 3.14, Node 24, and npm 11. The root test runner checks these versions.
+Read [AGENTS.md](../../AGENTS.md), the [Repository Map](REPOSITORY_MAP.md), and the [Command Reference](COMMAND_REFERENCE.md).
+Install Python 3.14, Node 24, npm 11, Docker 29, and Docker Compose 5.
+Run `node scripts/test.mjs doctor --profile fast` to check them.
 
-## Git Branching Model
-- `main`: Production release branch. Must remain stable at all times.
-- `feature/*`: Optional development feature branches.
-- CI runs on every push to `main`, on every pull request, and on manual dispatch.
-- Commit messages must use concise imperative descriptions (e.g., `fix: update RLS policy for occurrences`).
+## Git Workflow
+- `main`: Production release branch. Every merge deploys to Railway and Cloudflare Pages.
+- Work branches: one branch per change, for example `feat/<topic>`, `fix/<topic>`, or `docs/<topic>`.
+- Open a pull request for every branch. A branch without a pull request gets no automatic CI.
+- Squash-merge only when every required check is green: `backend`, `frontend`, `e2e-runtime`, and `e2e-browser`.
+- After the merge, monitor the `Deploy check` workflow on `main` until it passes.
+- Commit messages use Conventional Commits with an imperative description, for example `fix: update RLS policy for occurrences`.
+- Never force-push `main`, skip hooks, or merge a red or pending pull request.
+
+[AGENTS.md](../../AGENTS.md#git-ci-and-delivery) gives agents the standing authorization for this workflow.
 
 ## Code Standards and Tooling
 
 ### Backend (Python)
 - Runtime: Python 3.14.
-- Code formatter and linter: `ruff`
-- Run formatter check: `ruff format --check .`
-- Run linter check: `ruff check .`
-- Database migrations: Use Alembic for all schema alterations (`alembic revision --autogenerate -m "description"`).
+- Formatter and linter: `ruff`. CI runs `ruff format --check .` and `ruff check .` in `backend/`.
+- Database migrations: Use Alembic for all schema changes (`alembic revision --autogenerate -m "description"`).
 - Keep one linear migration chain from `0001_scheduler_v1_baseline` in `backend/alembic/versions/`. Do not create branches or merge revisions.
 - Run migrations with the privileged `cronos_migrator` role through the maintenance container.
 - Never execute destructive database operations without migration scripts.
 
 ### Frontend (React)
 - Runtime: Node 24 and npm 11.
-- Linter: ESLint (`npm run lint` inside `frontend/`)
-- Dead code scanner: Knip (`npm run lint:dead-code` and `npm run lint:dead-code:production` inside `frontend/`)
+- Linter: ESLint (`npm run lint` inside `frontend/`).
+- Dead code scanner: Knip (`npm run lint:dead-code` and `npm run lint:dead-code:production` inside `frontend/`).
 - Component styling: Follow the [Design System](../06_frontend_ux/DESIGN_SYSTEM.md) tokens. Do not introduce ad-hoc CSS frameworks.
 
-## TDD Feedback Cycle
-Run the fast suites while developing:
+## Quality Gates
 
-```powershell
-# Backend unit tests. No database or external network.
-cd backend
-pytest tests/unit -q
+The [Command Reference](COMMAND_REFERENCE.md) owns every command, prerequisite, and side effect.
+It also defines the [verification required for each change type](COMMAND_REFERENCE.md#verification-by-change-type).
+The CI workflow is the release authority. Local commands give fast feedback before the pull request.
 
-# Frontend unit tests.
-cd ..\frontend
-npm test
-```
+Coverage policy:
 
-The root runner provides the same fast profile:
-
-```powershell
-node scripts/test.mjs fast --scope all
-```
-
-## Mandatory Pre-Integration Quality Gates
-Before integrating code, run the complete verification pipeline.
-
-### Backend gates
-
-```bash
-cd backend
-ruff format --check .
-ruff check .
-alembic upgrade head
-alembic check
-alembic downgrade base
-alembic upgrade head
-python -m scripts.audit_triggers
-python -m scripts.audit_database_integrity
-pytest tests/unit
-pytest -n 4 --dist=loadscope tests/integration
-pytest tests/contracts
-```
-
-Run the database steps with the privileged `cronos_migrator` role through the maintenance container.
-
-### Backend coverage gates
-
-- Overall coverage is at least `70%`.
-- `app/scheduler/domain/constraint_policy.py` coverage is `100%`.
-- `app/scheduler/domain/candidate_validation.py` coverage is `90%`.
-- The suite must report zero skipped tests.
-
-### Frontend gates
-
-```bash
-cd frontend
-npm ci --ignore-scripts
-npm run audit:production
-npm run verify
-```
-
-`npm run verify` runs ESLint, Knip in default and production mode, the legal and marketing build checks, Vitest coverage, and the production build.
-
-## Diagnostics
-
-Run the school configuration scheduler settings test only when investigating scheduler settings:
-
-```bash
-cd frontend
-npm test -- src/test/SchoolConfigSchedulerSettings.test.jsx
-```
-
-This command is diagnostic. Do not treat it as a pre-integration gate.
+- Whole-application backend coverage is at least `70%` in the full run.
+- `backend/tests/critical_manifest.json` owns the critical coverage sources and thresholds.
+- `app/scheduler/domain/constraint_policy.py` stays at `100%` and `app/scheduler/domain/candidate_validation.py` at `90%`.
+- The suites must report zero skipped tests.
 
 ## Source Map
-- Backend Quality Rules: `backend/README.md`
-- Frontend Quality Rules: `frontend/README.md`
-- CI Pipeline Config: `.github/workflows/ci.yml`
-- Unified Test Runner: `scripts/test.mjs`
+- Backend workspace: `backend/README.md`
+- Frontend workspace: `frontend/README.md`
+- CI pipeline: `.github/workflows/ci.yml`
+- Deploy check: `.github/workflows/deploy-check.yml`
+- Unified test runner: `scripts/test.mjs`
 
 ## Related Documents
+- [Command Reference](COMMAND_REFERENCE.md)
 - [Testing and CI](../08_security_quality/TESTING_AND_CI.md)
 - [Documentation Standard](DOCUMENTATION_STANDARD.md)

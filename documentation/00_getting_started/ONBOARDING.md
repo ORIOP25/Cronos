@@ -349,19 +349,16 @@ The following matrix maps the visible symptom to the first recovery action.
 
 ## Verification Procedure
 
-Run the focused checks when changing onboarding behavior:
+Use the [Command Reference](COMMAND_REFERENCE.md) for every command below.
+Run these checks when you change onboarding behavior:
 
-```text
-cd backend
-pytest tests/ -v
-alembic check
-cd ../frontend
-npm run audit:production
-npm run verify
-npx playwright test e2e/auth e2e/foundation e2e/tutorial
-```
+1. Run `node scripts/test.mjs fast --scope all` during the TDD cycle.
+2. Run `node scripts/test.mjs integration` for Foundation, session, or readiness services.
+3. Run `node scripts/test.mjs e2e --project isolated` for Foundation journeys and `--project readonly` for tutorial journeys.
+4. Open a pull request and wait for the required CI checks.
 
-The repository CI also runs the full backend, frontend, and E2E suites.
+CI runs the critical selections, the native runtime proof, and the browser E2E journeys.
+It does not run the full backend corpus.
 Playwright keeps a trace on failure, retains screenshots on failure, and publishes `playwright-report` and `test-results` even when the E2E job fails.
 Retries remain disabled (`retries: 0`) so a failed test remains visible.
 

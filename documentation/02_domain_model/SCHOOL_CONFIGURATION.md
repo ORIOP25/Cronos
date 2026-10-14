@@ -31,7 +31,8 @@ State-version events detect changes that can invalidate a published schedule.
 | Grid settings | `organization_grid_settings`, `backend/app/api/v1/endpoints/org_settings.py` |
 | Calendar events | `school_calendar_event`, `org_settings.py` |
 | Internship flows | `school_calendar_event_class`, `backend/app/services/internship_flow_service.py` |
-| Foundation status | `organization_foundation_draft`, `backend/app/services/foundation_service.py` |
+| Foundation status | `organization.foundation_status`, `backend/app/services/foundation_service.py` |
+| Foundation draft | `organization_foundation_draft` (payload, version, current step) |
 | Rooms | `backend/app/api/v1/endpoints/rooms.py` |
 | Timeslots | `backend/app/api/v1/endpoints/timeslots.py` |
 | Configuration UI | `frontend/src/pages/SchoolConfig.jsx` |

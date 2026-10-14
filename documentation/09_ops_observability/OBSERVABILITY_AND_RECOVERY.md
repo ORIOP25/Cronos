@@ -86,9 +86,8 @@ Provider and webhook states remain queryable through their persisted status fiel
 
 1. Query both health endpoints.
 2. Inspect worker tasks with Celery inspect. Confirm one solver worker, one `scheduler-supervisor` worker and one Beat replica.
-3. Run `python -m scripts.audit_triggers` from `backend/`.
-4. Run `python -m scripts.audit_database_integrity` from `backend/`.
-5. Record incident evidence before changing data.
+3. Run the trigger and integrity audits with the migrator role, as the [Command Reference](../00_getting_started/COMMAND_REFERENCE.md#backend-checks-outside-the-runner) shows.
+4. Record incident evidence before changing data.
 
 For an operational view of queued work, use:
 
