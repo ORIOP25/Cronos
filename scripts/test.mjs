@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto'
+import { readFileSync } from 'node:fs'
 import { access, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import net from 'node:net'
@@ -648,7 +649,29 @@ export function validateDatabaseTargets({ runtimeUrl, migrationUrl, host, port, 
   }
 }
 
+// Worktrees do not share the gitignored .env, so the Clerk test inputs live in
+// one per-user file. Values already in the shell win; only Clerk inputs load.
+export const E2E_ENV_FILE = join(os.homedir(), '.cronos', 'e2e.env')
+const E2E_ENV_KEY = /^(CLERK_SECRET_KEY|VITE_CLERK_PUBLISHABLE_KEY|E2E_CLERK_[A-Z_]+)$/
+
+export function loadE2eEnvFile(path = process.env.CRONOS_E2E_ENV_FILE || E2E_ENV_FILE, env = process.env) {
+  let text
+  try {
+    text = readFileSync(path, 'utf8')
+  } catch (error) {
+    if (error.code === 'ENOENT') return false
+    throw error
+  }
+  for (const line of text.split(/\r?\n/)) {
+    const match = /^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/.exec(line)
+    if (!match || !E2E_ENV_KEY.test(match[1]) || env[match[1]]) continue
+    env[match[1]] = match[2].replace(/^(["'])(.*)\1$/, '$2')
+  }
+  return true
+}
+
 function validateE2eEnvironment() {
+  loadE2eEnvFile()
   const publishableKey = process.env.VITE_CLERK_PUBLISHABLE_KEY || ''
   const secretKey = process.env.CLERK_SECRET_KEY || ''
   if (!publishableKey.startsWith('pk_test_')) {
