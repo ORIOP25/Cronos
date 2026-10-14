@@ -232,6 +232,14 @@ class TestClassesCRUD:
         )
         db_session.add(link)
         await db_session.flush()
+        # WBS 2.2.2: the dashboard progress counts only selected modules.
+        await db_session.execute(
+            models.class_subject_module.insert().values(
+                organization_id=org_id,
+                class_subject_link_id=link.id,
+                module_id=module.id,
+            )
+        )
 
         entry = models.ProgressLedgerEntry(
             organization_id=org_id,
