@@ -103,13 +103,21 @@ async def seed_v1_assignment(
             required_minutes=module_minutes,
         )
     )
-    db_session.add(
-        models.ClassSubjectLink(
+    link = models.ClassSubjectLink(
+        organization_id=organization.id,
+        class_id=class_.id,
+        subject_id=subject.id,
+        grade_level=class_.grade_level,
+        teacher_id=teacher.id,
+    )
+    db_session.add(link)
+    await db_session.flush()
+    # The projection reads the selection, so the seed selects its module.
+    await db_session.execute(
+        models.class_subject_module.insert().values(
             organization_id=organization.id,
-            class_id=class_.id,
-            subject_id=subject.id,
-            grade_level=class_.grade_level,
-            teacher_id=teacher.id,
+            class_subject_link_id=link.id,
+            module_id=module.id,
         )
     )
     await db_session.flush()

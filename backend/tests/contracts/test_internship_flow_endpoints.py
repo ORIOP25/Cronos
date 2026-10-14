@@ -138,24 +138,30 @@ async def _prepare_context(db_session):
     )
     db_session.add(teacher)
     await db_session.flush()
-    db_session.add_all(
-        [
-            models.Module(
-                organization_id=org.id,
-                name="Module",
-                code="FLW-1",
-                hours_total=1,
-                order=1,
-                subject_id=subject.id,
-            ),
-            models.ClassSubjectLink(
-                organization_id=org.id,
-                class_id=class_.id,
-                subject_id=subject.id,
-                grade_level=10,
-                teacher_id=teacher.id,
-            ),
-        ]
+    module = models.Module(
+        organization_id=org.id,
+        name="Module",
+        code="FLW-1",
+        hours_total=10,
+        order=1,
+        subject_id=subject.id,
+    )
+    link = models.ClassSubjectLink(
+        organization_id=org.id,
+        class_id=class_.id,
+        subject_id=subject.id,
+        grade_level=10,
+        teacher_id=teacher.id,
+    )
+    db_session.add_all([module, link])
+    await db_session.flush()
+    # WBS 2.2.2: the planning loader reads the per-class module selection.
+    await db_session.execute(
+        models.class_subject_module.insert().values(
+            organization_id=org.id,
+            class_subject_link_id=link.id,
+            module_id=module.id,
+        )
     )
     await db_session.execute(
         models.teacher_subject_link.insert().values(
@@ -211,12 +217,15 @@ async def _publish_block(db_session, ctx, block_date, key):
         module_id = await db_session.scalar(
             select(models.Module.id).where(models.Module.organization_id == ctx.org.id)
         )
+        module_order = await db_session.scalar(
+            select(models.Module.order).where(models.Module.id == module_id)
+        )
         db_session.add(
             CurricularRequirement(
                 organization_id=ctx.org.id,
                 assignment_id=ctx.assignment.id,
                 module_id=module_id,
-                sequence=1,
+                sequence=module_order + 1,
                 required_minutes=600,
             )
         )

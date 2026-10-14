@@ -269,6 +269,31 @@ async def test_second_proposal_is_blocked_while_pending(db_session):
     assert excinfo.value.code == "GRID_CHANGE_BLOCKED"
 
 
+async def test_grid_demand_ignores_retired_module_requirements(db_session):
+    seed = await _published_grid_org(db_session)
+    active_preview = await grid_change_service.preview_grid_change(
+        db_session,
+        seed.organization.id,
+        schemas.GridChangePreviewRequest(timeslots=_bulk()),
+    )
+    assert active_preview.minutes_remaining > 0
+
+    requirement = await db_session.scalar(
+        select(CurricularRequirement).where(
+            CurricularRequirement.organization_id == seed.organization.id
+        )
+    )
+    requirement.planned = False
+    await db_session.flush()
+
+    retired_preview = await grid_change_service.preview_grid_change(
+        db_session,
+        seed.organization.id,
+        schemas.GridChangePreviewRequest(timeslots=_bulk()),
+    )
+    assert retired_preview.minutes_remaining == 0
+
+
 async def test_terminal_job_failure_rejects_the_pending_version(db_session):
     seed = await _published_grid_org(db_session)
     _, response = await _propose(db_session, seed)
@@ -425,15 +450,8 @@ async def _seed_v1_configuration_for_admin_org(db_session) -> models.Organizatio
                 organization_id=organization.id,
                 assignment_id=assignment.id,
                 module_id=module.id,
-                sequence=1,
+                sequence=module.order + 1,
                 required_minutes=100,
-            ),
-            models.ClassSubjectLink(
-                organization_id=organization.id,
-                class_id=class_.id,
-                subject_id=subject.id,
-                grade_level=class_.grade_level,
-                teacher_id=teacher.id,
             ),
             models.Timeslot(
                 organization_id=organization.id,
@@ -450,6 +468,22 @@ async def _seed_v1_configuration_for_admin_org(db_session) -> models.Organizatio
                 created_at=datetime(2026, 9, 22, 10, tzinfo=UTC),
                 approved_at=datetime(2026, 9, 22, 10, tzinfo=UTC),
             ),
+        )
+    )
+    link = models.ClassSubjectLink(
+        organization_id=organization.id,
+        class_id=class_.id,
+        subject_id=subject.id,
+        grade_level=class_.grade_level,
+        teacher_id=teacher.id,
+    )
+    db_session.add(link)
+    await db_session.flush()
+    await db_session.execute(
+        models.class_subject_module.insert().values(
+            organization_id=organization.id,
+            class_subject_link_id=link.id,
+            module_id=module.id,
         )
     )
     await db_session.flush()

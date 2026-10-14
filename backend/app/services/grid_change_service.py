@@ -173,6 +173,7 @@ async def _canonical_minutes(
             .where(
                 CurricularAssignment.organization_id == organization_id,
                 CurricularAssignment.school_year_id == school_year_id,
+                CurricularRequirement.planned.is_(True),
             )
         )
     ).all()

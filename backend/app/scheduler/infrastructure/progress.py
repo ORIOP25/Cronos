@@ -23,6 +23,7 @@ from app.scheduler.domain.demand import (
     ExecutionEntry,
     ModuleCredit,
     append_execution,
+    close_retired_modules,
     completed_by_module,
     remaining_minutes,
 )
@@ -476,6 +477,7 @@ async def record_execution(
     """Append one execution and bump revisions in the caller's transaction."""
     state, assignment = await _locked_assignment(db, organization_id, school_year_id, assignment_id)
 
+    await reconcile_assignment_requirements(db, organization_id, assignment.id)
     modules = await _requirements(db, organization_id, assignment)
 
     stored, credits_by_execution, earlier = await _execution_history(
@@ -714,27 +716,18 @@ async def settle_open_debt(
     total = sum(open_debt.values())
     if total == 0:
         return 0
-    executed = (await load_executed_minutes(db, organization_id, [assignment_id])).get(
-        assignment_id, {}
+    planning, executed_by_assignment = await load_planning_requirements(
+        db, organization_id, [assignment_id]
     )
-    requirement_rows = (
-        await db.execute(
-            select(CurricularRequirement.module_id, CurricularRequirement.required_minutes)
-            .where(
-                CurricularRequirement.organization_id == organization_id,
-                CurricularRequirement.assignment_id == assignment_id,
-            )
-            .order_by(CurricularRequirement.sequence)
-        )
-    ).all()
+    executed = executed_by_assignment.get(assignment_id, {})
     credits: list[ModuleCredit] = []
     remaining = total
-    for module_id, required_minutes in requirement_rows:
-        available = required_minutes - int(executed.get(module_id, 0))
+    for module in planning.get(assignment_id, ()):
+        available = module.required_minutes - int(executed.get(module.module_id, 0))
         if available <= 0:
             continue
         taken = min(remaining, available)
-        credits.append(ModuleCredit(module_id, taken))
+        credits.append(ModuleCredit(module.module_id, taken))
         remaining -= taken
         if remaining == 0:
             break
@@ -812,6 +805,7 @@ async def record_debt(
     """Create one audited debt origin under the school-year state lock."""
     state, assignment = await _locked_assignment(db, organization_id, school_year_id, assignment_id)
 
+    await reconcile_assignment_requirements(db, organization_id, assignment.id)
     modules = await _requirements(db, organization_id, assignment)
     stored, _, entries = await _execution_history(db, organization_id, assignment_id)
     debts, revisions, _, settlements = await _debt_history(
@@ -939,6 +933,7 @@ async def revise_debt(
     )
     if assignment is None:
         raise ValueError("Debt does not belong to this school year.")
+    await reconcile_assignment_requirements(db, organization_id, assignment.id)
     modules = await _requirements(db, organization_id, assignment)
     stored, _, entries = await _execution_history(db, organization_id, assignment.id)
     debts, revisions, _, settlements = await _debt_history(
@@ -985,16 +980,20 @@ async def load_executed_minutes(
     db: AsyncSession,
     organization_id: int,
     assignment_ids: Sequence[int],
+    *,
+    requirements: Mapping[int, Sequence[ModuleRequirement]] | None = None,
 ) -> dict[int, dict[int, int]]:
     """Executed minutes per assignment and module, batched for reading snapshots.
 
     The append-only ledger is replayed exactly like the write path: reversals
-    subtract credit, so a correction never counts the same minute twice.
+    subtract credit, so a correction never counts the same minute twice. Callers
+    that already loaded the requirement rows pass them to avoid a second query.
     """
     identifiers = sorted(set(assignment_ids))
     if not identifiers:
         return {}
-    requirements = await _load_assignment_requirements(db, organization_id, identifiers)
+    if requirements is None:
+        requirements = await _load_assignment_requirements(db, organization_id, identifiers)
     stored = (
         await db.scalars(
             select(CurricularExecution)
@@ -1031,6 +1030,283 @@ async def load_executed_minutes(
         entries = _entries_from_rows(by_assignment.get(assignment_id, []), credits_by_execution)
         executed[assignment_id] = completed_by_module(modules, entries)
     return executed
+
+
+async def _load_retired_modules(
+    db: AsyncSession, organization_id: int, identifiers: Sequence[int]
+) -> dict[int, frozenset[int]]:
+    rows = (
+        await db.execute(
+            select(CurricularRequirement.assignment_id, CurricularRequirement.module_id).where(
+                CurricularRequirement.organization_id == organization_id,
+                CurricularRequirement.assignment_id.in_(identifiers),
+                CurricularRequirement.planned.is_(False),
+            )
+        )
+    ).all()
+    retired: dict[int, set[int]] = defaultdict(set)
+    for assignment_id, module_id in rows:
+        retired[assignment_id].add(module_id)
+    return {key: frozenset(value) for key, value in retired.items()}
+
+
+async def _planning_targets(
+    db: AsyncSession, organization_id: int, identifiers: Sequence[int]
+) -> dict[int, tuple[int, int]]:
+    """Class and subject of each assignment, tenant scoped."""
+    rows = (
+        await db.execute(
+            select(
+                CurricularAssignment.id,
+                CurricularAssignment.class_id,
+                CurricularAssignment.subject_id,
+            ).where(
+                CurricularAssignment.organization_id == organization_id,
+                CurricularAssignment.id.in_(identifiers),
+            )
+        )
+    ).all()
+    return {assignment_id: (class_id, subject_id) for assignment_id, class_id, subject_id in rows}
+
+
+async def _live_module_selection(
+    db: AsyncSession,
+    organization_id: int,
+    targets: Mapping[int, tuple[int, int]],
+) -> dict[tuple[int, int], frozenset[int]]:
+    """Selected module ids per live class/subject link at the current grade.
+
+    A key is present exactly when a live link exists, so an empty selection is
+    distinct from an absent link. The selection is authoritative between
+    generations: the projection flag is stale until the next sync.
+    """
+    class_ids = {class_id for class_id, _ in targets.values()}
+    subject_ids = {subject_id for _, subject_id in targets.values()}
+    if not class_ids or not subject_ids:
+        return {}
+    rows = (
+        await db.execute(
+            select(
+                models.ClassSubjectLink.class_id,
+                models.ClassSubjectLink.subject_id,
+                models.class_subject_module.c.module_id,
+            )
+            .join(
+                models.Class,
+                (models.Class.organization_id == models.ClassSubjectLink.organization_id)
+                & (models.Class.id == models.ClassSubjectLink.class_id),
+            )
+            .outerjoin(
+                models.class_subject_module,
+                (models.class_subject_module.c.organization_id == organization_id)
+                & (
+                    models.class_subject_module.c.class_subject_link_id
+                    == models.ClassSubjectLink.id
+                ),
+            )
+            .where(
+                models.ClassSubjectLink.organization_id == organization_id,
+                models.ClassSubjectLink.class_id.in_(class_ids),
+                models.ClassSubjectLink.subject_id.in_(subject_ids),
+                models.ClassSubjectLink.grade_level == models.Class.grade_level,
+                models.Class.is_archived.is_(False),
+            )
+        )
+    ).all()
+    selection: dict[tuple[int, int], set[int]] = {}
+    for class_id, subject_id, module_id in rows:
+        selected = selection.setdefault((class_id, subject_id), set())
+        if module_id is not None:
+            selected.add(module_id)
+    return {key: frozenset(value) for key, value in selection.items()}
+
+
+async def _catalogue_modules(
+    db: AsyncSession, organization_id: int, subject_ids: Sequence[int]
+) -> dict[int, tuple[models.Module, ...]]:
+    if not subject_ids:
+        return {}
+    modules = (
+        await db.scalars(
+            select(models.Module)
+            .where(
+                models.Module.organization_id == organization_id,
+                models.Module.subject_id.in_(subject_ids),
+            )
+            .order_by(models.Module.subject_id, models.Module.order, models.Module.id)
+        )
+    ).all()
+    catalogue: dict[int, list[models.Module]] = defaultdict(list)
+    for module in modules:
+        catalogue[module.subject_id].append(module)
+    return {key: tuple(value) for key, value in catalogue.items()}
+
+
+def _catalogue_requirements(
+    catalogue: Mapping[int, Sequence[models.Module]], subject_id: int
+) -> tuple[ModuleRequirement, ...]:
+    return tuple(
+        ModuleRequirement(module.id, module.order + 1, module.required_minutes)
+        for module in catalogue.get(subject_id, ())
+    )
+
+
+async def load_planning_requirements(
+    db: AsyncSession, organization_id: int, assignment_ids: Sequence[int]
+) -> tuple[dict[int, tuple[ModuleRequirement, ...]], dict[int, dict[int, int]]]:
+    """Planning view of the requirements plus the executed minutes.
+
+    For a live class/subject link the current selection is authoritative: a
+    catalogue module that is not selected is retired and a reselected module
+    overrides a stale projection flag. An assignment without a live link keeps
+    the projection flag, so removed-assignment and year-reset semantics stay.
+    Every row is replayed with the catalogue minutes, then each retired module
+    is closed at its executed minutes. A retired module without execution leaves
+    the planning view; its history stays in the ledger for the callers that
+    reproduce it.
+    """
+    identifiers = sorted(set(assignment_ids))
+    if not identifiers:
+        return {}, {}
+    requirements = await _load_assignment_requirements(db, organization_id, identifiers)
+    executed = await load_executed_minutes(
+        db, organization_id, identifiers, requirements=requirements
+    )
+    targets = await _planning_targets(db, organization_id, identifiers)
+    selection = await _live_module_selection(db, organization_id, targets)
+    catalogue = await _catalogue_modules(
+        db, organization_id, [subject_id for _, subject_id in targets.values()]
+    )
+    fallback = [
+        assignment_id
+        for assignment_id in identifiers
+        if targets.get(assignment_id) not in selection
+    ]
+    retired = await _load_retired_modules(db, organization_id, fallback) if fallback else {}
+    planning: dict[int, tuple[ModuleRequirement, ...]] = {}
+    for assignment_id in identifiers:
+        completed = executed.get(assignment_id, {})
+        target = targets.get(assignment_id)
+        if target is not None and target in selection:
+            modules = _catalogue_requirements(catalogue, target[1])
+            selected = selection[target]
+            retired_ids = frozenset(
+                module.module_id for module in modules if module.module_id not in selected
+            )
+        else:
+            modules = tuple(requirements.get(assignment_id, ()))
+            retired_ids = retired.get(assignment_id, frozenset())
+        closed, minutes = close_retired_modules(modules, retired_ids, completed)
+        planning[assignment_id] = closed
+        executed[assignment_id] = minutes
+    return planning, executed
+
+
+async def _credited_module_ids(
+    db: AsyncSession, organization_id: int, assignment_id: int
+) -> frozenset[int]:
+    rows = (
+        await db.execute(
+            select(CurricularExecutionCredit.module_id)
+            .join(
+                CurricularExecution,
+                CurricularExecutionCredit.execution_id == CurricularExecution.id,
+            )
+            .where(
+                CurricularExecution.organization_id == organization_id,
+                CurricularExecution.assignment_id == assignment_id,
+                CurricularExecutionCredit.organization_id == organization_id,
+            )
+            .distinct()
+        )
+    ).all()
+    return frozenset(module_id for (module_id,) in rows)
+
+
+async def _requirement_rows_by_module(
+    db: AsyncSession, organization_id: int, assignment_id: int
+) -> dict[int, CurricularRequirement]:
+    rows = (
+        await db.scalars(
+            select(CurricularRequirement).where(
+                CurricularRequirement.organization_id == organization_id,
+                CurricularRequirement.assignment_id == assignment_id,
+            )
+        )
+    ).all()
+    return {row.module_id: row for row in rows}
+
+
+async def reconcile_assignment_requirements(
+    db: AsyncSession, organization_id: int, assignment_id: int
+) -> None:
+    """Persist the current selection as canonical requirement rows for one assignment.
+
+    The write path validates credits against persisted rows, but the live
+    selection can be newer than the last projection: a newly selected catalogue
+    module or a reselected module whose uncredited row a prior sync deleted. This
+    applies the projection rules to that one assignment (selected modules become
+    planned catalogue requirements; unselected modules keep execution credit and
+    are dropped otherwise) without a whole-school sync, so an empty link
+    elsewhere never blocks a summary. Assignments without a live link keep their
+    persisted rows untouched.
+    """
+    # Sessions run with autoflush off, so pending rows must reach the database
+    # before the reads below or they are invisible and inserted twice.
+    await db.flush()
+    targets = await _planning_targets(db, organization_id, [assignment_id])
+    target = targets.get(assignment_id)
+    if target is None:
+        return
+    selection = await _live_module_selection(db, organization_id, {assignment_id: target})
+    if target not in selection:
+        return
+    modules = _catalogue_requirements(
+        await _catalogue_modules(db, organization_id, [target[1]]), target[1]
+    )
+    selected = selection[target]
+    credited = await _credited_module_ids(db, organization_id, assignment_id)
+    rows = await _requirement_rows_by_module(db, organization_id, assignment_id)
+    changed = False
+    for module in modules:
+        row = rows.pop(module.module_id, None)
+        if module.module_id in selected:
+            if row is None:
+                db.add(
+                    CurricularRequirement(
+                        organization_id=organization_id,
+                        assignment_id=assignment_id,
+                        module_id=module.module_id,
+                        sequence=module.sequence,
+                        required_minutes=module.required_minutes,
+                        planned=True,
+                    )
+                )
+                changed = True
+            elif (
+                row.sequence != module.sequence
+                or row.required_minutes != module.required_minutes
+                or not row.planned
+            ):
+                row.sequence = module.sequence
+                row.required_minutes = module.required_minutes
+                row.planned = True
+                changed = True
+        elif row is not None and module.module_id in credited:
+            if (
+                row.sequence != module.sequence
+                or row.required_minutes != module.required_minutes
+                or row.planned
+            ):
+                row.sequence = module.sequence
+                row.required_minutes = module.required_minutes
+                row.planned = False
+                changed = True
+        elif row is not None:
+            await db.delete(row)
+            changed = True
+    if changed:
+        await db.flush()
 
 
 async def load_open_debt(

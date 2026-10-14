@@ -7,7 +7,9 @@ from app.scheduler.domain.demand import (
     ExecutionEntry,
     ModuleCredit,
     append_execution,
+    close_retired_modules,
     completed_by_module,
+    frontier_credit,
     remaining_minutes,
 )
 from app.scheduler.domain.projection import ModuleRequirement
@@ -134,4 +136,57 @@ def test_t29_substitution_credits_taught_subject_and_leaves_original_demand():
     assert remaining_minutes(substitute, taught) == 0
     assert reconcile_debt((DebtClaim(1, date(2026, 9, 22), 50),), residual_minutes=50) == (
         DebtBalance(1, open_minutes=50, reserved_minutes=0),
+    )
+
+
+def test_close_retired_modules_keeps_planned_requirements_and_minutes():
+    completed = {1: 300, 2: 100}
+
+    planning, minutes = close_retired_modules(MODULES, frozenset(), completed)
+
+    assert planning == MODULES
+    assert minutes == completed
+
+
+def test_close_retired_module_with_execution_is_closed_at_those_minutes():
+    modules = (
+        ModuleRequirement(1, 1, 600),
+        ModuleRequirement(2, 2, 600),
+        ModuleRequirement(3, 3, 600),
+    )
+
+    planning, minutes = close_retired_modules(modules, frozenset({2}), {1: 100, 2: 250, 3: 0})
+
+    assert planning == (
+        ModuleRequirement(1, 1, 600),
+        ModuleRequirement(2, 2, 250),
+        ModuleRequirement(3, 3, 600),
+    )
+    assert minutes == {1: 100, 2: 250, 3: 0}
+
+
+def test_close_retired_module_without_execution_leaves_the_planning_view():
+    modules = (
+        ModuleRequirement(1, 1, 600),
+        ModuleRequirement(2, 2, 600),
+        ModuleRequirement(3, 3, 600),
+    )
+
+    planning, minutes = close_retired_modules(modules, frozenset({2}), {1: 100, 2: 0, 3: 40})
+
+    assert planning == (ModuleRequirement(1, 1, 600), ModuleRequirement(3, 3, 600))
+    assert minutes == {1: 100, 3: 40}
+
+
+def test_frontier_credit_never_credits_a_closed_retired_module():
+    modules = (
+        ModuleRequirement(1, 1, 100),
+        ModuleRequirement(2, 2, 100),
+        ModuleRequirement(3, 3, 100),
+    )
+    planning, minutes = close_retired_modules(modules, frozenset({1}), {1: 40, 2: 0, 3: 0})
+
+    assert frontier_credit(planning, minutes, 120) == (
+        ModuleCredit(2, 100),
+        ModuleCredit(3, 20),
     )

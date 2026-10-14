@@ -30,7 +30,6 @@ from app.scheduler.infrastructure.models import (
     CurricularDebtSettlement,
     CurricularExecution,
     CurricularExecutionCredit,
-    CurricularRequirement,
     SchedulerLessonLogV1,
     SchedulerLessonSliceV1,
     SchedulerLessonV1,
@@ -49,6 +48,7 @@ from app.scheduler.infrastructure.operations import (
 )
 from app.scheduler.infrastructure.progress import (
     load_executed_minutes,
+    load_planning_requirements,
     record_debt,
     record_execution,
     revise_debt,
@@ -863,19 +863,8 @@ async def _year_id_for_assignment(
 async def _requirements(
     db: AsyncSession, organization_id: int, assignment_id: int
 ) -> tuple[ModuleRequirement, ...]:
-    rows = (
-        await db.scalars(
-            select(CurricularRequirement)
-            .where(
-                CurricularRequirement.organization_id == organization_id,
-                CurricularRequirement.assignment_id == assignment_id,
-            )
-            .order_by(CurricularRequirement.sequence)
-        )
-    ).all()
-    return tuple(
-        ModuleRequirement(row.module_id, row.sequence, row.required_minutes) for row in rows
-    )
+    planning, _ = await load_planning_requirements(db, organization_id, [assignment_id])
+    return planning.get(assignment_id, ())
 
 
 def _substitution_exclusion(code: str, message: str, setup: str) -> dict:
