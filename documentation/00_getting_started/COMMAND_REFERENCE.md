@@ -124,6 +124,7 @@ For Vite hot reload, run `docker compose -f docker-compose.yml -f docker-compose
 ### Verification by change type
 
 Run the narrowest proof during the TDD cycle. Open a pull request for the full CI proof.
+`fast --scope backend` without a filter includes a CP-SAT test with a 900-second budget. Pass `-k` during the TDD cycle.
 
 | Change | Local proof before the pull request |
 | :--- | :--- |
