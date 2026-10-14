@@ -36,6 +36,8 @@ Load `cronos-base` and `ponytail` first.
 
 - A branch without a pull request gets no automatic CI.
 - `e2e-browser` is skipped for Dependabot and fork pull requests; that skip is not proof.
+- `e2e-browser` uses the real Clerk development instance and shared test identities. If a provider test fails with a Clerk FAPI error (for example an HTML body instead of JSON) on a change that cannot affect it, rerun the failed job once with `gh run rerun <run-id> --failed`. Investigate if it fails again.
+- SonarCloud is not a required check. Follow the Sonar rule in [AGENTS.md](../../../AGENTS.md#git-ci-and-delivery).
 - A frontend-only merge keeps the previous API revision; the Deploy check accepts that.
 - Railway `railway.json` config-as-code ends on 1 December 2026. See [Cloud Operations](../../../documentation/09_ops_observability/CLOUD_OPERATIONS.md#known-open-items).
 - On Windows, the runner runs Python inside `cronos-backend-test:local`. Rebuild it with `node scripts/test.mjs setup --scope backend` after dependency changes.
