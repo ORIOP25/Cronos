@@ -11,13 +11,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
-from app.scheduler.domain.calendar import Period
 from app.scheduler.domain.candidate import PlanningSnapshot
-from app.scheduler.domain.capacity import aggregate_capacity_check
+from app.scheduler.domain.capacity import CapacityCheck
 
 
 class DiagnosisCode(StrEnum):
     INSUFFICIENT_INTERSECTION = "INSUFFICIENT_INTERSECTION"
+    INSUFFICIENT_CLASS_TIME = "INSUFFICIENT_CLASS_TIME"
     INFEASIBLE_PROVEN = "INFEASIBLE_PROVEN"
     SEARCH_INCONCLUSIVE = "SEARCH_INCONCLUSIVE"
     BASELINE_STALE = "BASELINE_STALE"
@@ -47,6 +47,7 @@ class Diagnosis:
     scope: str
     minimum_missing_minutes: int | None = None
     affected_class_ids: tuple[int, ...] = ()
+    affected_subject_id: int | None = None
     suggestions: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
@@ -59,16 +60,18 @@ class Diagnosis:
                 raise ValueError("A minimum deficit must be positive minutes.")
 
 
-def diagnose_capacity(
-    snapshot: PlanningSnapshot, periods: tuple[Period, ...]
-) -> tuple[Diagnosis, ...]:
-    """Proven lower bounds of missing minutes for assignments that cannot fit."""
-    check = aggregate_capacity_check(snapshot, periods)
-    classes = {row.assignment_id: row.class_id for row in snapshot.assignments}
+def diagnose_capacity(snapshot: PlanningSnapshot, check: CapacityCheck) -> tuple[Diagnosis, ...]:
+    """Proven lower bounds of missing minutes for demand that cannot fit.
+
+    The caller passes the capacity check it already computed, so the eligible
+    periods are never calculated twice.
+    """
+    subjects = {row.assignment_id: (row.class_id, row.subject_id) for row in snapshot.assignments}
     diagnoses: list[Diagnosis] = []
     for assignment_id, deficit in sorted(check.deficits.items()):
         if deficit <= 0:
             continue
+        class_id, subject_id = subjects[assignment_id]
         diagnoses.append(
             Diagnosis(
                 code=DiagnosisCode.INSUFFICIENT_INTERSECTION,
@@ -79,7 +82,25 @@ def diagnose_capacity(
                 ),
                 scope=f"ASSIGNMENT:{assignment_id}",
                 minimum_missing_minutes=deficit,
-                affected_class_ids=(classes[assignment_id],),
+                affected_class_ids=(class_id,),
+                affected_subject_id=subject_id,
+                suggestions=(REVIEW_AVAILABILITY, REVIEW_ROOMS, REVIEW_END_DATE),
+            )
+        )
+    for class_id, deficit in sorted(check.class_deficits.items()):
+        if deficit <= 0:
+            continue
+        diagnoses.append(
+            Diagnosis(
+                code=DiagnosisCode.INSUFFICIENT_CLASS_TIME,
+                evidence_kind=EvidenceKind.PROVEN_LOWER_BOUND,
+                message=(
+                    f"At least {deficit} minute(s) of class demand have no eligible "
+                    "period: a class attends one lesson at a time."
+                ),
+                scope=f"CLASS:{class_id}",
+                minimum_missing_minutes=deficit,
+                affected_class_ids=(class_id,),
                 suggestions=(REVIEW_AVAILABILITY, REVIEW_ROOMS, REVIEW_END_DATE),
             )
         )

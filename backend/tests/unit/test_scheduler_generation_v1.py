@@ -1,10 +1,12 @@
 from dataclasses import replace
-from datetime import date, time
+from datetime import date, time, timedelta
 
+from app.scheduler.application.generation import generate_complete
 from app.scheduler.composition import generate_schedule
 from app.scheduler.domain.calendar import normalize_period
 from app.scheduler.domain.candidate import ScheduledLesson, SchedulingStrategy
 from app.scheduler.domain.capacity import aggregate_capacity_check
+from app.scheduler.domain.diagnostics import DiagnosisCode
 from app.scheduler.domain.projection import ModuleSlice
 from app.scheduler.infrastructure.placement_model import solve_placement
 from app.scheduler.lab.fixtures import (
@@ -139,6 +141,35 @@ def test_aggregate_capacity_reports_only_proven_deficits():
     assert aggregate_capacity_check(
         infeasible_fixture.snapshot, infeasible_fixture.periods
     ).proven_infeasible
+
+
+def test_a_class_level_deficit_proves_infeasibility_without_a_search():
+    spec = FixtureSpec(
+        strategy=SchedulingStrategy.COMPLETE_GENERATION,
+        origin=ORIGIN,
+        preferred_end_date=date(2026, 10, 30),
+        hard_end_date=date(2026, 11, 30),
+        timezone_name=TZ,
+        grid_slots=((0, time(9), time(10)), (1, time(9), time(10))),
+        periods=(
+            (ORIGIN, time(9), time(10)),
+            (ORIGIN + timedelta(days=1), time(9), time(10)),
+        ),
+        assignments=(
+            AssignmentSpec(7, 1, (60,), (500,)),
+            AssignmentSpec(7, 2, (120,), (501,)),
+        ),
+    )
+    fixture = build_fixture("class-deficit", spec, expectation=CaseExpectation.INFEASIBLE_PROVEN)
+
+    def forbidden_search(*args, **kwargs):
+        raise AssertionError("The search must not run when capacity proves infeasibility.")
+
+    result = generate_complete(fixture.snapshot, fixture.periods, search=forbidden_search)
+
+    assert result.outcome == "INFEASIBLE"
+    assert result.candidate is None
+    assert any(row.code is DiagnosisCode.INSUFFICIENT_CLASS_TIME for row in result.diagnoses)
 
 
 def test_placement_status_is_typed():

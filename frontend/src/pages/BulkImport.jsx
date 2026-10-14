@@ -124,7 +124,7 @@ const BulkImport = () => {
       <PageHeader
         preTitle="Administração"
         title="Importar dados"
-        description="Adicione várias salas, disciplinas, cursos, turmas e professores de uma só vez."
+        description="Adicione várias salas, disciplinas, cursos, turmas e professores e atualize a disponibilidade das turmas de uma só vez."
       />
 
       <section className="mb-4" aria-labelledby="import-steps-title">

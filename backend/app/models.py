@@ -340,6 +340,41 @@ class Availability(Base):
     )
 
 
+class ClassAvailability(Base):
+    """Weekly preference of a class. A missing row means NEUTRAL.
+
+    The composed primary key and tenant-scoped foreign keys keep every row inside
+    one organization. The service replaces rows with explicit ``insert`` and
+    ``delete``, so no ORM relationship is declared on ``Class``.
+    """
+
+    __tablename__ = "class_availability"
+
+    organization_id: Mapped[int] = mapped_column(
+        ForeignKey(FK_ORG_ID, ondelete="CASCADE"), nullable=False, primary_key=True
+    )
+    class_id: Mapped[int] = mapped_column(Integer, nullable=False, primary_key=True)
+    timeslot_id: Mapped[int] = mapped_column(Integer, nullable=False, primary_key=True)
+    score: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id", "class_id"],
+            ["class.organization_id", "class.id"],
+            name="fk_class_availability_class_tenant_scoped",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "timeslot_id"],
+            ["timeslot.organization_id", "timeslot.id"],
+            name="fk_class_availability_timeslot_tenant_scoped",
+            ondelete="CASCADE",
+        ),
+        CheckConstraint("score IN (-1, 0, 2)", name="ck_class_availability_score"),
+        Index("ix_class_availability_org_timeslot", "organization_id", "timeslot_id"),
+    )
+
+
 # Modelo "Organization" (O Colégio)
 # Esta é a tabela "mãe" de quase todas as outras.
 class Organization(Base):

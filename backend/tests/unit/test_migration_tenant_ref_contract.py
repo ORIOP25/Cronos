@@ -1,8 +1,11 @@
 import importlib.util
 from pathlib import Path
 
+import pytest
+
 VERSIONS = Path(__file__).resolve().parents[2] / "alembic" / "versions"
 BASELINE = VERSIONS / "0001_scheduler_v1_baseline.py"
+BASELINE_REVISION = "0001_scheduler_v1_baseline"
 
 
 def _load_migration(path: Path, module_name: str):
@@ -14,14 +17,96 @@ def _load_migration(path: Path, module_name: str):
     return migration
 
 
+def _load_revisions() -> list[tuple[str, str | None]]:
+    return [
+        (migration.revision, migration.down_revision)
+        for migration in (
+            _load_migration(path, f"migration_{path.stem}")
+            for path in sorted(VERSIONS.glob("*.py"))
+        )
+    ]
+
+
+def _assert_linear_chain(revisions: list[tuple[str, str | None]]) -> None:
+    """The frozen baseline roots one unbranched chain that reaches every revision."""
+    revision_ids = [revision for revision, _ in revisions]
+    assert len(revision_ids) == len(set(revision_ids)), "migration revisions must be unique"
+    assert dict(revisions).get(BASELINE_REVISION, "missing") is None
+
+    successors: dict[str, str] = {}
+    for revision, down_revision in revisions:
+        if down_revision is not None:
+            assert down_revision not in successors, "migration chain must not branch"
+            successors[down_revision] = revision
+
+    visited = [BASELINE_REVISION]
+    for _ in range(len(revisions)):
+        if visited[-1] not in successors:
+            break
+        visited.append(successors[visited[-1]])
+    assert set(visited) == set(revision_ids), "migration chain must be connected from the baseline"
+
+
+def test_migration_chain_rejects_a_branch():
+    with pytest.raises(AssertionError):
+        _assert_linear_chain(
+            [
+                (BASELINE_REVISION, None),
+                ("0002_class_availability", BASELINE_REVISION),
+                ("0003_other", BASELINE_REVISION),
+            ]
+        )
+
+
+def test_migration_chain_rejects_duplicate_revision_ids():
+    with pytest.raises(AssertionError):
+        _assert_linear_chain(
+            [
+                (BASELINE_REVISION, None),
+                ("0002_class_availability", BASELINE_REVISION),
+                ("0002_class_availability", BASELINE_REVISION),
+            ]
+        )
+
+
+def test_migration_chain_rejects_a_disconnected_cycle():
+    with pytest.raises(AssertionError):
+        _assert_linear_chain(
+            [
+                (BASELINE_REVISION, None),
+                ("0002_a", "0003_b"),
+                ("0003_b", "0002_a"),
+            ]
+        )
+
+
+def test_migration_chain_rejects_a_missing_predecessor():
+    with pytest.raises(AssertionError):
+        _assert_linear_chain(
+            [
+                (BASELINE_REVISION, None),
+                ("0002_a", "0009_missing"),
+            ]
+        )
+
+
+def test_migration_chain_accepts_a_linear_revision():
+    _assert_linear_chain(
+        [
+            (BASELINE_REVISION, None),
+            ("0002_class_availability", BASELINE_REVISION),
+        ]
+    )
+
+
 def test_migration_history_has_one_frozen_baseline():
-    assert sorted(VERSIONS.glob("*.py")) == [BASELINE]
     baseline = _load_migration(BASELINE, "baseline_migration")
-    assert baseline.revision == "0001_scheduler_v1_baseline"
+    assert baseline.revision == BASELINE_REVISION
     assert baseline.down_revision is None
     source = BASELINE.read_text(encoding="utf-8")
     for forbidden in ("app.models", "Base.metadata", "create_all", "drop_all"):
         assert forbidden not in source
+    _assert_linear_chain(_load_revisions())
 
 
 def test_baseline_contains_native_tenant_integrity():

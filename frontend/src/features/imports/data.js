@@ -99,6 +99,24 @@ export const IMPORT_RESOURCES = Object.freeze([
       teacher_email: 'Email do professor',
     },
   },
+  {
+    key: 'class_availability',
+    label: 'Disponibilidade das turmas',
+    filename: 'Cronos_DisponibilidadeTurmas_Template.csv',
+    origin: '/courses',
+    instructions: [
+      'O modelo já traz as turmas, as horas da grelha e a disponibilidade atual.',
+      'Cada linha é uma turma num dia. Cada coluna de hora é um bloco.',
+      'Escreva Impossível, Evitar, Neutro ou Preferencial. Uma célula vazia conta como Neutro.',
+      'Cada turma do ficheiro fica com a grelha do ficheiro. As turmas que não aparecem ficam iguais.',
+      'Não apague colunas de hora. Se a grelha mudar, descarregue um modelo novo.',
+    ],
+    fields: {
+      course_abbreviation: 'Sigla do curso',
+      class_name: 'Nome da turma',
+      day: 'Dia',
+    },
+  },
 ])
 
 const IMPORT_COUNT_LABELS = Object.freeze({
@@ -110,6 +128,7 @@ const IMPORT_COUNT_LABELS = Object.freeze({
   teachers: 'Professores',
   competencies: 'Competências',
   assignments: 'Atribuições',
+  class_availability: 'Disponibilidade das turmas',
 })
 
 function getImportResource(resource) {
@@ -121,7 +140,7 @@ function getImportResourceLabel(resource) {
 }
 
 function getImportFieldLabel(resource, field) {
-  return getImportResource(resource)?.fields?.[field] || 'Campo'
+  return getImportResource(resource)?.fields?.[field] || field || 'Campo'
 }
 
 export function getImportCountLabel(resource) {
@@ -137,7 +156,8 @@ export function formatImportIssue(issue) {
 
 const IMPORT_INVALIDATIONS = [
   'members', 'teachers', 'eligible-teachers', 'rooms', 'subjects', 'courses',
-  'classes', 'class-subjects', 'available-subjects', 'dashboard', 'readiness', 'scheduler-status',
+  'classes', 'class-subjects', 'available-subjects', 'class-availability',
+  'dashboard', 'readiness', 'scheduler-status',
 ]
 
 function fileError(code, message) {

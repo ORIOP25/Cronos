@@ -459,3 +459,84 @@ async def test_class_subject_requirements_include_scheduler_inputs_and_ignore_ot
         models.ScheduleGenerationStrategy.COMPLETE_GENERATION,
     )
     assert after_irrelevant_event.value == first.value
+
+
+async def test_fingerprint_tracks_class_availability_and_ignores_archived_classes(db_session):
+    organization = models.Organization(name="Class Availability Fingerprint", plan_status="active")
+    db_session.add(organization)
+    await db_session.flush()
+    school_year = models.SchedulerSchoolYear(
+        organization_id=organization.id,
+        label="2025/2026",
+        start_date=date(2025, 9, 1),
+        hard_end_date=date(2026, 7, 15),
+        timezone="Europe/Lisbon",
+    )
+    db_session.add(school_year)
+    await db_session.flush()
+    db_session.add(
+        models.SchedulerSchoolYearState(
+            organization_id=organization.id,
+            school_year_id=school_year.id,
+        )
+    )
+    course = models.Course(
+        organization_id=organization.id, name="Fingerprint Course", abbreviation="FPC"
+    )
+    slot = models.Timeslot(
+        organization_id=organization.id,
+        day_of_week=1,
+        start_time=time(9, 0),
+        end_time=time(10, 0),
+    )
+    db_session.add_all([course, slot])
+    await db_session.flush()
+    class_ = models.Class(
+        organization_id=organization.id,
+        name="Fingerprint Class",
+        size=20,
+        start_year=2025,
+        end_year=2026,
+        grade_level=10,
+        course_id=course.id,
+    )
+    db_session.add(class_)
+    await db_session.flush()
+    row = models.ClassAvailability(
+        organization_id=organization.id,
+        class_id=class_.id,
+        timeslot_id=slot.id,
+        score=models.PreferenceLevel.IMPOSSIBLE.value,
+    )
+    db_session.add(row)
+    await db_session.flush()
+
+    service = SchedulerFingerprintService(db_session)
+
+    async def fingerprint():
+        return await service.generation_input_fingerprint(
+            organization.id,
+            school_year.id,
+            models.ScheduleGenerationStrategy.COMPLETE_GENERATION,
+        )
+
+    first = await fingerprint()
+    assert first.snapshot["class_availability"] == [
+        {
+            "class_id": class_.id,
+            "timeslot_id": slot.id,
+            "score": models.PreferenceLevel.IMPOSSIBLE.value,
+        }
+    ]
+
+    row.score = models.PreferenceLevel.AVOID.value
+    await db_session.flush()
+    changed = await fingerprint()
+    assert changed.value != first.value
+    assert changed.snapshot["class_availability"][0]["score"] == models.PreferenceLevel.AVOID.value
+
+    class_.is_archived = True
+    await db_session.flush()
+    archived = await fingerprint()
+    assert archived.snapshot["class_availability"] == []
+    assert archived.value != changed.value

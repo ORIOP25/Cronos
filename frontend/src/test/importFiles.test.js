@@ -56,18 +56,28 @@ describe('bulk import file utilities', () => {
       'Cronos_CursosETurmas_Template.csv',
       'Cronos_ProfessoresECompetencias_Template.csv',
       'Cronos_Atribuicoes_Template.csv',
+      'Cronos_DisponibilidadeTurmas_Template.csv',
     ])
     expect(IMPORT_RESOURCES.every((item) => item.instructions.length > 0)).toBe(true)
     expect(IMPORT_RESOURCES[0].instructions.join(' ')).toContain('Normal')
     expect(IMPORT_RESOURCES[1].instructions.join(' ')).toContain('Laboratório')
     expect(getImportCountLabel('rooms')).toBe('Salas')
     expect(getImportCountLabel('assignments')).toBe('Atribuições')
+    expect(getImportCountLabel('class_availability')).toBe('Disponibilidade das turmas')
   })
 
   it('formats issues with Portuguese section and field names', () => {
     expect(formatImportIssue({
       resource: 'rooms', line: 4, field: 'type', message: 'Escreva Normal, Laboratório, Ginásio ou Artes.',
     })).toBe('Salas, linha 4, Tipo de sala: Escreva Normal, Laboratório, Ginásio ou Artes.')
+  })
+
+  it('shows the raw column title when the field is a dynamic hour column', () => {
+    expect(formatImportIssue({
+      resource: 'class_availability', line: 3, field: '08:30', message: 'Este dia não tem bloco às 08:30. Deixe a célula vazia.',
+    })).toBe(
+      'Disponibilidade das turmas, linha 3, 08:30: Este dia não tem bloco às 08:30. Deixe a célula vazia.',
+    )
   })
 
   it('revokes object URLs after downloading a report', async () => {

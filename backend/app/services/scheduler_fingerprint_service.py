@@ -367,6 +367,22 @@ class SchedulerFingerprintService:
             if eligible_teacher_ids
             else []
         )
+        class_availability_rows = (
+            (
+                await self._db.execute(
+                    select(
+                        models.ClassAvailability.class_id,
+                        models.ClassAvailability.timeslot_id,
+                        models.ClassAvailability.score,
+                    ).where(
+                        models.ClassAvailability.organization_id == organization_id,
+                        models.ClassAvailability.class_id.in_(class_ids),
+                    )
+                )
+            ).all()
+            if class_ids
+            else []
+        )
         room_rows = (
             await self._db.execute(
                 select(
@@ -562,6 +578,17 @@ class SchedulerFingerprintService:
                 for row in sorted(
                     availability_rows,
                     key=lambda row: (row.teacher_id, row.timeslot_id),
+                )
+            ],
+            "class_availability": [
+                {
+                    "class_id": row.class_id,
+                    "timeslot_id": row.timeslot_id,
+                    "score": row.score,
+                }
+                for row in sorted(
+                    class_availability_rows,
+                    key=lambda row: (row.class_id, row.timeslot_id),
                 )
             ],
             "rooms": [

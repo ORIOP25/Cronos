@@ -47,6 +47,36 @@ def test_runtime_role_and_every_tenant_table_are_hardened(migrated_test_database
         assert unhardened == []
 
 
+def test_class_availability_is_tenant_hardened_and_least_privileged(migrated_test_database):
+    with runtime_sync_test_engine.connect() as connection:
+        hardened = connection.scalar(
+            text(
+                "SELECT relrowsecurity AND relforcerowsecurity FROM pg_class "
+                "WHERE relnamespace = 'public'::regnamespace AND relname = 'class_availability'"
+            )
+        )
+        assert hardened is True
+        policies = connection.execute(
+            text(
+                "SELECT policyname, roles::text FROM pg_policies "
+                "WHERE schemaname = 'public' AND tablename = 'class_availability'"
+            )
+        ).all()
+        assert policies == [("tenant_isolation", "{cronos_app}")]
+        grants = set(
+            connection.execute(
+                text(
+                    "SELECT privilege_type FROM information_schema.role_table_grants "
+                    "WHERE table_schema = 'public' AND table_name = 'class_availability' "
+                    "AND grantee = 'cronos_app'"
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert grants == {"SELECT", "INSERT", "DELETE"}
+
+
 def test_principal_resolution_and_cross_tenant_write_denial(clean_database):
     marker = uuid.uuid4().hex
     with runtime_sync_test_engine.connect() as connection:

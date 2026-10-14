@@ -28,6 +28,7 @@ In accordance with ASD-STE100, technical concepts have single approved terms. Po
 | **Fundação (Foundation)** | Foundation | Required ten-step organization setup that validates the calendar and generates the initial timeslot grid. |
 | **Professor competente** | Competent teacher | Active teacher assigned to a subject with the required competency. |
 | **Disponibilidade** | Availability | Teacher availability score used to determine whether a generated assignment is possible. |
+| **Disponibilidade da turma** | Class availability | Weekly level per class block (Preferencial, Neutro, Evitar, Impossível) that excludes or penalizes periods in generation; a missing row means Neutro. |
 
 ## Technical Terms and Abbreviations
 

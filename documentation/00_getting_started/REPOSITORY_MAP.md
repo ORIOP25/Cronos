@@ -30,7 +30,7 @@ MeuProjeto/
 │   ├── workflows/                # ci.yml and deploy-check.yml
 │   └── dependabot.yml            # Automated dependency update configuration
 ├── backend/                      # Python FastAPI application
-│   ├── alembic/                  # Single baseline: 0001_scheduler_v1_baseline
+│   ├── alembic/                  # Baseline 0001_scheduler_v1_baseline plus stacked migrations (0002_class_availability)
 │   ├── app/                      # Backend application source
 │   │   ├── api/                  # API routers (v1 endpoints)
 │   │   ├── contact/              # Contact service, ports, and provider gateways
@@ -151,6 +151,20 @@ Invariants: Foundation writes use optimistic `expected_version` and row locks; n
 | Guide | [API Reference](../05_backend_api/API_REFERENCE.md) |
 
 Invariants: `PUT` replaces the whole set for the resolved grid; `/me/...` routes stay above `/{teacher_id}/...`; a write for a scheduled teacher bumps scheduler revisions.
+
+### Class availability
+
+| Layer | Location |
+| :--- | :--- |
+| Pages | `pages/ClassDetails.jsx` (`/courses/{course_id}/classes/{class_id}`); modal `components/ClassAvailabilityModal.jsx` |
+| Hooks | `useClassAvailability`, `useSaveClassAvailability`, `useCopyClassAvailability` in `features/catalog/data.js`; shared editor `components/AvailabilityEditorModal.jsx` |
+| Endpoints | `api/v1/endpoints/classes.py` (`/classes/{class_id}/availability`, `/availability/copy`) |
+| Services | `services/class_availability_service.py`; reads in `scheduler/infrastructure/snapshot.py` |
+| Persistence | `class_availability` (score per class and timeslot; a missing row means neutral) |
+| Tests | `integration/committed/test_class_availability.py`, `unit/test_scheduler_class_capacity_v1.py`, `unit/test_scheduler_snapshot_preferences_v1.py`; `frontend/src/test/ClassAvailabilityModal.test.jsx`; `frontend/e2e/readiness/class-availability.spec.js` |
+| Guides | [Class Availability Tech Spec](../02_domain_model/CLASS_AVAILABILITY_TECH_SPEC.md), [School Configuration](../02_domain_model/SCHOOL_CONFIGURATION.md) |
+
+Invariants: `PUT` replaces the whole set for the resolved grid; a missing row means Neutro; writing, copying or importing a class grid bumps scheduler revisions; only an administrator reads or writes it.
 
 ### Schedule generation and approval
 

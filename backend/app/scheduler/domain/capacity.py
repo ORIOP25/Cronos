@@ -10,7 +10,7 @@ duplicates are collapsed before any model uses them.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 
 from app.scheduler.domain.calendar import Period
@@ -25,11 +25,14 @@ from app.scheduler.domain.candidate import (
 @dataclass(frozen=True)
 class CapacityCheck:
     deficits: Mapping[int, int]
+    class_deficits: Mapping[int, int] = field(default_factory=dict)
     evidence_kind: str = "PROVEN_LOWER_BOUND"
 
     @property
     def proven_infeasible(self) -> bool:
-        return any(minutes > 0 for minutes in self.deficits.values())
+        return any(minutes > 0 for minutes in self.deficits.values()) or any(
+            minutes > 0 for minutes in self.class_deficits.values()
+        )
 
 
 def protected_credit_minutes(snapshot: PlanningSnapshot, assignment_id: int) -> int:
@@ -178,14 +181,33 @@ def eligible_periods(
 def aggregate_capacity_check(
     snapshot: PlanningSnapshot, periods: tuple[Period, ...]
 ) -> CapacityCheck:
+    """Per-assignment and per-class proven deficits in one eligibility pass.
+
+    A class only attends one lesson at a time, so the periods where its
+    residual demand fits are the union of its assignments' eligible periods,
+    counted once. The class deficit is a lower bound: it never uses the lunch
+    rule, so it can only name a class when the shortage is demonstrated.
+    """
     deficits: dict[int, int] = {}
+    class_remaining: dict[int, int] = {}
+    class_periods: dict[int, dict[tuple, int]] = {}
     for assignment in snapshot.assignments:
         remaining = residual_minutes(snapshot, assignment.assignment_id)
         if remaining <= 0:
             continue
-        available = sum(
-            period.duration_minutes for period in eligible_periods(snapshot, assignment, periods)
-        )
+        eligible = eligible_periods(snapshot, assignment, periods)
+        available = sum(period.duration_minutes for period in eligible)
         if available < remaining:
             deficits[assignment.assignment_id] = remaining - available
-    return CapacityCheck(deficits)
+        class_remaining[assignment.class_id] = (
+            class_remaining.get(assignment.class_id, 0) + remaining
+        )
+        union = class_periods.setdefault(assignment.class_id, {})
+        for period in eligible:
+            union[(period.start_utc, period.end_utc)] = period.duration_minutes
+    class_deficits: dict[int, int] = {}
+    for class_id, remaining in class_remaining.items():
+        shared = sum(class_periods[class_id].values())
+        if shared < remaining:
+            class_deficits[class_id] = remaining - shared
+    return CapacityCheck(deficits, class_deficits)

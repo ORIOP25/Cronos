@@ -641,6 +641,7 @@ class SchedulerJobV1(Base):
     queued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    diagnostics_json: Mapped[list[dict] | None] = mapped_column(JSONB, nullable=True)
 
     __table_args__ = (
         ForeignKeyConstraint(

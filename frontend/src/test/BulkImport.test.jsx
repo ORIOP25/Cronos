@@ -50,8 +50,55 @@ describe('BulkImport', () => {
 
     expect(screen.getByRole('heading', { name: 'Importar dados' })).toBeInTheDocument()
     expect(screen.getByText('Descarregue o modelo da secção pretendida.')).toBeInTheDocument()
-    expect(screen.getAllByRole('button', { name: 'Descarregar modelo' })).toHaveLength(5)
+    expect(screen.getAllByRole('button', { name: 'Descarregar modelo' })).toHaveLength(6)
     expect(screen.queryByText(/UTF-8|BOM|backend|atómica|Recurso|JSON/i)).not.toBeInTheDocument()
+  })
+
+  it('lists the class availability section with its instructions', () => {
+    renderPage()
+
+    expect(screen.getByText('Disponibilidade das turmas')).toBeInTheDocument()
+    expect(
+      screen.getByText('Cada linha é uma turma num dia. Cada coluna de hora é um bloco.'),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText('Não apague colunas de hora. Se a grelha mudar, descarregue um modelo novo.'),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByLabelText('Selecionar ficheiro CSV de disponibilidade das turmas'),
+    ).toBeInTheDocument()
+  })
+
+  it('shows a cell error with the actual column title', async () => {
+    const user = userEvent.setup()
+    mocks.validate.mockResolvedValueOnce({
+      can_commit: false,
+      preview: { counts: {}, items: [] },
+      issues: [
+        {
+          code: 'hour_without_block',
+          severity: 'error',
+          resource: 'class_availability',
+          line: 2,
+          field: '08:30',
+          message: 'Este dia não tem bloco às 08:30. Deixe a célula vazia.',
+        },
+      ],
+    })
+    renderPage()
+    const file = new File(['x'], 'Cronos_DisponibilidadeTurmas_Template.csv', { type: 'text/csv' })
+
+    await user.upload(
+      screen.getByLabelText('Selecionar ficheiro CSV de disponibilidade das turmas'),
+      file,
+    )
+    await user.click(screen.getByRole('button', { name: 'Verificar ficheiros' }))
+
+    expect(
+      await screen.findByText(
+        'Disponibilidade das turmas, linha 2, 08:30: Este dia não tem bloco às 08:30. Deixe a célula vazia.',
+      ),
+    ).toBeInTheDocument()
   })
 
   it('supports selecting, checking and confirming the files', async () => {
@@ -79,6 +126,25 @@ describe('BulkImport', () => {
     renderPage()
     await user.click(screen.getAllByRole('button', { name: 'Descarregar modelo' }).at(-1))
     expect(await within(document.querySelector('[data-rht-toaster]')).findByText('Não foi possível preparar o modelo.')).toBeInTheDocument()
+  })
+
+  it('shows the exact message when the class availability model has no grid blocks', async () => {
+    const user = userEvent.setup()
+    mocks.download.mockRejectedValueOnce({
+      response: {
+        status: 400,
+        data: { detail: { code: 'bad_request', context: { reason: 'no_grid_blocks' } } },
+      },
+    })
+    renderPage()
+
+    await user.click(screen.getAllByRole('button', { name: 'Descarregar modelo' }).at(-1))
+
+    expect(
+      await within(document.querySelector('[data-rht-toaster]')).findByText(
+        'A escola ainda não configurou blocos.',
+      ),
+    ).toBeInTheDocument()
   })
 
   it('confirms only that the browser was asked to download and blocks duplicate requests', async () => {

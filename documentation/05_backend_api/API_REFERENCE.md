@@ -89,6 +89,9 @@ Stable route families keep frontend features and provider webhooks independent f
 | `DELETE` | `/api/v1/classes/{class_id}/subjects/{subject_id}` | Admin |
 | `GET` | `/api/v1/classes/{class_id}/available-subjects` | Active |
 | `GET` | `/api/v1/classes/subjects/{subject_id}/eligible-teachers` | Active |
+| `GET` | `/api/v1/classes/{class_id}/availability` | Admin |
+| `PUT` | `/api/v1/classes/{class_id}/availability` | Admin |
+| `POST` | `/api/v1/classes/{class_id}/availability/copy` | Admin |
 | `GET` / `POST` | `/api/v1/subjects/` | Active / Admin |
 | `PATCH` / `DELETE` | `/api/v1/subjects/{subject_id}` | Admin |
 | `GET` / `POST` | `/api/v1/rooms/` | Active / Admin |
@@ -125,6 +128,7 @@ Stable route families keep frontend features and provider webhooks independent f
 | `POST` | `/api/v1/imports/commit` | Admin; body limit 8 MiB; returns `201` |
 
 See [Bulk Import CSV](../07_data_and_seed/BULK_IMPORT_CSV.md) for the exact templates, limits, issues and atomicity rules.
+The `class_availability` resource accepts `files.class_availability`.
 
 ### School configuration
 
@@ -147,6 +151,7 @@ See [Bulk Import CSV](../07_data_and_seed/BULK_IMPORT_CSV.md) for the exact temp
 School settings validate the combined stored and submitted dates.
 When the calendar and `preferred_end_date` change together, the scheduler year persists all three dates before recording the calendar change.
 Valid calendar replacements do not produce a constraint conflict. Invalid date combinations return `422`.
+Each `affected_availabilities` entry of `POST /school/grid-changes/preview` includes a `classes` list.
 
 ### Scheduler and schedule operations
 
@@ -167,6 +172,7 @@ Valid calendar replacements do not produce a constraint conflict. Invalid date c
 | `PUT` | `/api/v1/schedule/lessons/{lesson_id}/log` | Active; assigned teacher or admin |
 
 Scheduler status exposes `active_proposal_id` for the approved proposal linked to the active version, or `null` when absent.
+`GET /scheduler/jobs/{job_id}` returns a `diagnostics` list with one proven entry per affected class.
 Weekly schedule reads return published lesson intervals, resource identifiers, module projections, and operational log state.
 There is no separate proposal-lesson listing route.
 The API has no observability summary routes, no `POST /api/v1/occurrences/` create route, and no `GET /api/v1/scheduler/drafts/{id}/lessons` route.
@@ -211,6 +217,9 @@ order: `ACTIVE_CLASSES`, `MODULES`, `TEACHERS`, `TEACHER_ASSIGNMENT`,
 `COMPATIBLE_ROOM`, and `TEACHER_AVAILABILITY`. `CLASS_SUBJECTS` and `TIMESLOTS`
 are not public readiness steps. Foundation owns the weekly grid and final
 prevalidation continues to report `MISSING_TIMESLOTS` when it is absent.
+
+`GET /readiness/prevalidation` adds the `CLASS_WITHOUT_AVAILABILITY` blocker
+when every visible block of an eligible class is marked Impossível.
 
 `PUT /foundation/draft` accepts `expected_version`, `current_step` from 1 to 10, and a strict Foundation data object.
 The response returns the new version.

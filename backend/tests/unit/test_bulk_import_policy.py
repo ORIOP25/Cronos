@@ -1,14 +1,20 @@
 import base64
+from datetime import time
 
 from app.services.bulk_import_policy import (
+    CLASS_AVAILABILITY,
+    CLASS_AVAILABILITY_FILENAME,
     IMPORT_RESOURCES,
+    TEMPLATE_DEFINITIONS,
     ExistingClass,
     ExistingCourse,
     ExistingRoom,
     ExistingSubject,
     ExistingTeacher,
+    ExistingTimeslot,
     ImportSnapshot,
     parse_resource_file,
+    render_class_availability_template,
     render_template,
     validate_import,
 )
@@ -20,7 +26,7 @@ def encoded(text: str, *, bom: bool = True) -> str:
 
 
 def test_templates_use_the_official_names_and_are_deterministic():
-    rendered = {resource: render_template(resource) for resource in IMPORT_RESOURCES}
+    rendered = {resource: render_template(resource) for resource in TEMPLATE_DEFINITIONS}
     text = {resource: value.decode("utf-8-sig") for resource, value in rendered.items()}
 
     assert all(value == render_template(resource) for resource, value in rendered.items())
@@ -268,3 +274,212 @@ def test_policy_rejects_teacher_competencies_without_a_subject_reference():
 
     assert result.can_commit is False
     assert "competency_subject_reference_missing" in {issue.code for issue in result.issues}
+
+
+def _class_availability_snapshot(**kwargs) -> ImportSnapshot:
+    return ImportSnapshot(
+        classes=[ExistingClass(id=1, course_id=1, course_abbreviation="TGEI", name="TGEI 25/28")],
+        timeslots=[
+            ExistingTimeslot(id=10, day_of_week=0, start_time=time(8, 30)),
+            ExistingTimeslot(id=11, day_of_week=0, start_time=time(9, 20)),
+            ExistingTimeslot(id=12, day_of_week=4, start_time=time(8, 30)),
+        ],
+        **kwargs,
+    )
+
+
+def test_import_resources_include_the_class_availability_section():
+    assert CLASS_AVAILABILITY in IMPORT_RESOURCES
+    assert CLASS_AVAILABILITY_FILENAME == "Cronos_DisponibilidadeTurmas_Template.csv"
+
+
+def test_class_availability_template_lists_sorted_hours_and_saved_levels():
+    timeslots = (
+        ExistingTimeslot(id=10, day_of_week=0, start_time=time(8, 30)),
+        ExistingTimeslot(id=11, day_of_week=0, start_time=time(9, 20)),
+        ExistingTimeslot(id=12, day_of_week=4, start_time=time(8, 30)),
+    )
+    classes = (ExistingClass(id=1, course_id=1, course_abbreviation="TGEI", name="TGEI 25/28"),)
+    rendered = render_class_availability_template(timeslots, classes, {1: {10: -1, 12: 0}})
+
+    assert rendered.startswith(b"\xef\xbb\xbf")
+    lines = rendered.decode("utf-8-sig").splitlines()
+    assert lines[0] == "Sigla do curso;Nome da turma;Dia;08:30;09:20"
+    assert lines[1] == "TGEI;TGEI 25/28;Segunda;Impossível;Neutro"
+    assert lines[2] == "TGEI;TGEI 25/28;Sexta;Evitar;"
+
+
+def test_class_availability_template_without_classes_is_header_only():
+    timeslots = (
+        ExistingTimeslot(id=10, day_of_week=0, start_time=time(8, 30)),
+        ExistingTimeslot(id=11, day_of_week=4, start_time=time(9, 20)),
+    )
+
+    rendered = render_class_availability_template(timeslots, (), {})
+
+    assert rendered.decode("utf-8-sig") == "Sigla do curso;Nome da turma;Dia;08:30;09:20\r\n"
+
+
+def test_class_availability_parser_reads_dynamic_hour_headers():
+    parsed = parse_resource_file(
+        CLASS_AVAILABILITY,
+        "disponibilidade.csv",
+        encoded(
+            "Sigla do curso;Nome da turma;Dia;8:30;09:20:00\r\n"
+            "TGEI;TGEI 25/28;segunda-feira;Impossivel;Evitar\r\n"
+        ),
+    )
+
+    assert parsed.issues == ()
+    assert parsed.hours == ("08:30", "09:20")
+    assert parsed.hour_titles == ("8:30", "09:20:00")
+    assert parsed.rows[0]["course_abbreviation"] == "TGEI"
+    assert parsed.rows[0]["8:30"] == "Impossivel"
+
+
+def test_class_availability_parser_rejects_invalid_or_duplicate_hour_columns():
+    invalid = parse_resource_file(
+        CLASS_AVAILABILITY,
+        "disponibilidade.csv",
+        encoded("Sigla do curso;Nome da turma;Dia;8h30\r\nTGEI;TGEI 25/28;Segunda;Neutro\r\n"),
+    )
+    duplicate = parse_resource_file(
+        CLASS_AVAILABILITY,
+        "disponibilidade.csv",
+        encoded(
+            "Sigla do curso;Nome da turma;Dia;08:30;8:30\r\n"
+            "TGEI;TGEI 25/28;Segunda;Neutro;Evitar\r\n"
+        ),
+    )
+
+    assert "header_invalid" in {issue.code for issue in invalid.issues}
+    assert "header_invalid" in {issue.code for issue in duplicate.issues}
+
+
+def test_class_availability_validation_merges_every_day_into_one_row_per_class():
+    parsed = parse_resource_file(
+        CLASS_AVAILABILITY,
+        "disponibilidade.csv",
+        encoded(
+            "Sigla do curso;Nome da turma;Dia;08:30;09:20\r\n"
+            "TGEI;TGEI 25/28;SEGUNDA;impossível;Evitar\r\n"
+            "TGEI;TGEI 25/28;sexta-feira;Preferencial;\r\n"
+        ),
+    )
+
+    result = validate_import({"class_availability": parsed}, _class_availability_snapshot())
+
+    assert result.can_commit is True
+    assert len(result.class_availability) == 1
+    assert result.class_availability[0].scores == {10: -1, 11: 0, 12: 2}
+    assert result.counts["class_availability"] == 1
+    assert [
+        item["non_neutral_blocks"]
+        for item in result.preview
+        if item["resource"] == CLASS_AVAILABILITY
+    ] == [3]
+
+
+def test_class_availability_validation_reports_each_row_problem_without_block_noise():
+    parsed = parse_resource_file(
+        CLASS_AVAILABILITY,
+        "disponibilidade.csv",
+        encoded(
+            "Sigla do curso;Nome da turma;Dia;08:30;09:20\r\n"
+            "TGEI;TGEI 25/28;Segunda;Neutro;Neutro\r\n"
+            "TGEI;TGEI 25/28;Segunda;;\r\n"
+            "TGEI;TGEI 25/28;Feriado;Neutro;Neutro\r\n"
+            "TGEI;TGEI 25/28;Terça;Neutro;Neutro\r\n"
+            "TGEI;Inexistente;Segunda;;\r\n"
+            "TGEI;TGEI 25/28;Sexta;Neutro;Neutro\r\n"
+            "TGEI;TGEI 25/28;Segunda;Talvez;\r\n"
+        ),
+    )
+
+    result = validate_import({"class_availability": parsed}, _class_availability_snapshot())
+
+    issues = {(issue.code, issue.field): issue.message for issue in result.issues}
+    codes = [issue.code for issue in result.issues]
+    assert result.can_commit is False
+    assert issues[("duplicate_class_day", None)] == "Esta turma já tem uma linha para este dia."
+    assert issues[("day_invalid", "day")] == (
+        "Escreva um dia com blocos na grelha, por exemplo Segunda."
+    )
+    assert codes.count("day_invalid") == 2
+    assert ("class_reference_missing", "class_name") in issues
+    assert issues[("hour_without_block", "09:20")] == (
+        "Este dia não tem bloco às 09:20. Deixe a célula vazia."
+    )
+    assert codes.count("hour_without_block") == 1
+    assert issues[("level_invalid", "08:30")] == (
+        "Escreva Impossível, Evitar, Neutro ou Preferencial."
+    )
+
+
+def test_class_availability_validation_requires_the_current_grid_header():
+    missing = parse_resource_file(
+        CLASS_AVAILABILITY,
+        "disponibilidade.csv",
+        encoded("Sigla do curso;Nome da turma;Dia;08:30\r\nTGEI;TGEI 25/28;Segunda;Neutro\r\n"),
+    )
+    unknown = parse_resource_file(
+        CLASS_AVAILABILITY,
+        "disponibilidade.csv",
+        encoded(
+            "Sigla do curso;Nome da turma;Dia;08:30;09:20;10:10\r\n"
+            "TGEI;TGEI 25/28;Segunda;Neutro;Neutro;Neutro\r\n"
+        ),
+    )
+
+    missing_result = validate_import(
+        {"class_availability": missing}, _class_availability_snapshot()
+    )
+    unknown_result = validate_import(
+        {"class_availability": unknown}, _class_availability_snapshot()
+    )
+
+    assert ("missing_hour", None) in {(issue.code, issue.field) for issue in missing_result.issues}
+    assert any(
+        issue.code == "missing_hour"
+        and issue.message == "Falta a coluna 09:20. Descarregue um modelo novo."
+        for issue in missing_result.issues
+    )
+    assert any(
+        issue.code == "unknown_hour"
+        and issue.field == "10:10"
+        and issue.message
+        == "A grelha não tem blocos que comecem às 10:10. Descarregue um modelo novo."
+        for issue in unknown_result.issues
+    )
+
+
+def test_class_availability_accepts_a_class_created_in_the_same_batch():
+    courses = parse_resource_file(
+        "courses",
+        "cursos.csv",
+        encoded(
+            "Sigla do curso;Nome do curso;Nome da turma;Ano escolar;Ano de início;Ano de fim;Número de alunos\r\n"
+            "TGEI;Curso;TGEI 25/28;10;2025;2028;25\r\n"
+        ),
+    )
+    availability = parse_resource_file(
+        CLASS_AVAILABILITY,
+        "disponibilidade.csv",
+        encoded(
+            "Sigla do curso;Nome da turma;Dia;08:30;09:20\r\n"
+            "TGEI;TGEI 25/28;Segunda;Impossível;\r\n"
+        ),
+    )
+
+    result = validate_import(
+        {"courses": courses, "class_availability": availability},
+        ImportSnapshot(
+            timeslots=[
+                ExistingTimeslot(id=10, day_of_week=0, start_time=time(8, 30)),
+                ExistingTimeslot(id=11, day_of_week=0, start_time=time(9, 20)),
+            ]
+        ),
+    )
+
+    assert result.can_commit is True
+    assert result.class_availability[0].scores == {10: -1}

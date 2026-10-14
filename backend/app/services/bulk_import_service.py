@@ -12,13 +12,16 @@ from app import models, schemas
 from app.core.auth import Actor
 from app.core.exceptions import AppError
 from app.services import (
+    class_availability_service,
     class_service,
     course_service,
+    grid_version_service,
     member_service,
     room_service,
     subject_service,
 )
 from app.services.bulk_import_policy import (
+    CLASS_AVAILABILITY,
     IMPORT_RESOURCES,
     MAX_TOTAL_BYTES,
     BulkImportIssue,
@@ -28,16 +31,73 @@ from app.services.bulk_import_policy import (
     ExistingRoom,
     ExistingSubject,
     ExistingTeacher,
+    ExistingTimeslot,
     ImportSnapshot,
     ParsedResourceFile,
     ValidationResult,
     parse_resource_file,
+    render_class_availability_template,
     render_template,
     validate_import,
 )
 
+NO_GRID_BLOCKS_MESSAGE = "A escola ainda não configurou blocos."
 
-def template_bytes(resource: str) -> bytes:
+
+async def _visible_timeslots(db: AsyncSession, organization_id: int) -> list[models.Timeslot]:
+    today = await grid_version_service.school_today(db, organization_id)
+    resolved = await grid_version_service.resolve_grid(db, organization_id, today)
+    return sorted(
+        resolved.blocks, key=lambda block: (block.day_of_week, block.start_time, block.id)
+    )
+
+
+async def _class_availability_template(db: AsyncSession, organization_id: int) -> bytes:
+    timeslots = await _visible_timeslots(db, organization_id)
+    if not timeslots:
+        raise AppError(
+            kind="bad_request",
+            code="bad_request",
+            detail=NO_GRID_BLOCKS_MESSAGE,
+            # Whitelisted reason: the client maps it to a fixed local message and
+            # never echoes raw server text.
+            public_context={"reason": "no_grid_blocks"},
+        )
+    class_rows = (
+        await db.execute(
+            select(models.Class, models.Course.abbreviation)
+            .join(models.Course, models.Course.id == models.Class.course_id)
+            .where(
+                models.Class.organization_id == organization_id,
+                models.Class.is_archived.is_(False),
+            )
+        )
+    ).all()
+    score_rows = (
+        await db.execute(
+            select(
+                models.ClassAvailability.class_id,
+                models.ClassAvailability.timeslot_id,
+                models.ClassAvailability.score,
+            ).where(models.ClassAvailability.organization_id == organization_id)
+        )
+    ).all()
+    scores: dict[int, dict[int, int]] = {}
+    for class_id, timeslot_id, score in score_rows:
+        scores.setdefault(int(class_id), {})[int(timeslot_id)] = int(score)
+    return render_class_availability_template(
+        [ExistingTimeslot(block.id, block.day_of_week, block.start_time) for block in timeslots],
+        [
+            ExistingClass(item.id, item.course_id, abbreviation, item.name)
+            for item, abbreviation in class_rows
+        ],
+        scores,
+    )
+
+
+async def template_bytes(db: AsyncSession, organization_id: int, resource: str) -> bytes:
+    if resource == CLASS_AVAILABILITY:
+        return await _class_availability_template(db, organization_id)
     try:
         return render_template(resource)
     except KeyError as exc:
@@ -139,6 +199,7 @@ async def load_snapshot(db: AsyncSession, organization_id: int) -> ImportSnapsho
             .where(models.ClassSubjectLink.organization_id == organization_id)
         )
     ).all()
+    timeslots = await _visible_timeslots(db, organization_id)
     return ImportSnapshot(
         rooms=[ExistingRoom(item.id, item.name) for item in rooms],
         subjects=[ExistingSubject(item.id, item.name) for item in subjects],
@@ -154,6 +215,9 @@ async def load_snapshot(db: AsyncSession, organization_id: int) -> ImportSnapsho
         assignments=[
             ExistingAssignment(course, class_name, subject)
             for course, class_name, subject in assignment_rows
+        ],
+        timeslots=[
+            ExistingTimeslot(block.id, block.day_of_week, block.start_time) for block in timeslots
         ],
     )
 
@@ -321,6 +385,26 @@ async def commit_import(
                 changed_by_membership_id=current_admin.membership_id,
             )
         created_counts["assignments"] += 1
+
+    for item in result.class_availability:
+        class_id = class_ids[(item.course_abbreviation.upper(), item.class_name.casefold())]
+        payload = [
+            schemas.AvailabilitySelfCreate(
+                timeslot_id=timeslot.id,
+                score=models.PreferenceLevel(
+                    item.scores.get(timeslot.id, models.PreferenceLevel.NEUTRAL.value)
+                ),
+            )
+            for timeslot in snapshot.timeslots
+        ]
+        await class_availability_service.replace_class_availability(
+            db,
+            class_id,
+            payload,
+            organization_id,
+            changed_by_membership_id=current_admin.membership_id,
+        )
+        created_counts[CLASS_AVAILABILITY] += 1
 
     await db.flush()
     return schemas.BulkImportCommitResponse(

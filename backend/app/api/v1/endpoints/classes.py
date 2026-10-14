@@ -1,11 +1,12 @@
-from typing import Any
+from datetime import date
+from typing import Annotated, Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 
 from app import schemas
 from app.api import deps
 from app.core.exceptions import AppError
-from app.services import class_service
+from app.services import class_availability_service, class_service
 
 CLASS_NOT_FOUND_MSG = "Turma não encontrada"
 
@@ -248,4 +249,81 @@ async def get_eligible_teachers(
     """
     return await class_service.get_eligible_teachers_for_subject(
         db, subject_id, current_user.organization_id
+    )
+
+
+# ==========================================
+#  DISPONIBILIDADE DA TURMA
+# ==========================================
+
+
+@router.get(
+    "/{class_id}/availability",
+    response_model=list[schemas.AvailabilitySelfRead],
+    responses={403: {"description": "Sem permissões"}, 404: {"description": CLASS_NOT_FOUND_MSG}},
+)
+async def read_class_availability(
+    class_id: int,
+    db: deps.DbSession,
+    current_user: deps.AdminActor,
+    on_date: Annotated[date | None, Query(description="Data da grelha de disponibilidade")] = None,
+):
+    """Lê a disponibilidade da turma; um bloco sem linha é Neutro."""
+    return await class_availability_service.get_class_availability(
+        db,
+        class_id=class_id,
+        organization_id=current_user.organization_id,
+        on_date=on_date,
+    )
+
+
+@router.put(
+    "/{class_id}/availability",
+    responses={
+        403: {"description": "Sem permissões"},
+        404: {"description": CLASS_NOT_FOUND_MSG},
+        400: {"description": "Timeslot inválido"},
+    },
+)
+async def update_class_availability(
+    class_id: int,
+    availability_data: schemas.WeeklyAvailabilityPayload,
+    db: deps.DbSession,
+    current_user: deps.AdminActor,
+    on_date: Annotated[date | None, Query(description="Data da grelha de disponibilidade")] = None,
+):
+    """Substitui a disponibilidade da turma nos blocos da versão visível."""
+    return await class_availability_service.replace_class_availability(
+        db,
+        class_id=class_id,
+        availabilities=availability_data,
+        organization_id=current_user.organization_id,
+        changed_by_membership_id=current_user.membership_id,
+        on_date=on_date,
+    )
+
+
+@router.post(
+    "/{class_id}/availability/copy",
+    responses={
+        403: {"description": "Sem permissões"},
+        404: {"description": CLASS_NOT_FOUND_MSG},
+        400: {"description": "Pedido inválido"},
+    },
+)
+async def copy_class_availability(
+    class_id: int,
+    payload: schemas.ClassAvailabilityCopyRequest,
+    db: deps.DbSession,
+    current_user: deps.AdminActor,
+    on_date: Annotated[date | None, Query(description="Data da grelha de disponibilidade")] = None,
+):
+    """Aplica a grelha da turma de origem a todas as turmas de destino."""
+    return await class_availability_service.copy_class_availability(
+        db,
+        class_id=class_id,
+        target_class_ids=payload.target_class_ids,
+        organization_id=current_user.organization_id,
+        changed_by_membership_id=current_user.membership_id,
+        on_date=on_date,
     )

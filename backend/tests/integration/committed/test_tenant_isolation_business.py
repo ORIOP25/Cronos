@@ -6,6 +6,7 @@ Parte de test_business_logic.py (split).
 from factories import API
 from httpx import AsyncClient
 
+from app import models
 from tests._support.db_fixtures import create_org_and_user, create_teacher_profile
 
 
@@ -117,3 +118,52 @@ class TestTenantIsolation:
         course_id = course_resp.json()["id"]
         resp = await async_client.delete(f"{API}/courses/{course_id}", headers=org_a["headers"])
         assert resp.status_code == 404
+
+    async def test_org_a_cannot_access_org_b_class_availability(
+        self,
+        async_client: AsyncClient,
+        db_session,
+    ):
+        org_a = await self._create_org_admin(
+            db_session, "admin_avail_a@escola.pt", "Escola A Avail", "tenant_iso_avail_a"
+        )
+        org_b = await self._create_org_admin(
+            db_session, "admin_avail_b@escola.pt", "Escola B Avail", "tenant_iso_avail_b"
+        )
+
+        course = models.Course(
+            name="Curso B Avail",
+            abbreviation="CBA",
+            organization_id=org_b["organization_id"],
+        )
+        db_session.add(course)
+        await db_session.flush()
+        class_b = models.Class(
+            name="Turma B Avail",
+            size=20,
+            start_year=2025,
+            end_year=2028,
+            grade_level=10,
+            course_id=course.id,
+            organization_id=org_b["organization_id"],
+        )
+        db_session.add(class_b)
+        await db_session.commit()
+
+        headers = org_a["headers"]
+        get_resp = await async_client.get(
+            f"{API}/classes/{class_b.id}/availability", headers=headers
+        )
+        assert get_resp.status_code == 404
+
+        put_resp = await async_client.put(
+            f"{API}/classes/{class_b.id}/availability", json=[], headers=headers
+        )
+        assert put_resp.status_code == 404
+
+        copy_resp = await async_client.post(
+            f"{API}/classes/{class_b.id}/availability/copy",
+            json={"target_class_ids": [class_b.id + 1]},
+            headers=headers,
+        )
+        assert copy_resp.status_code == 404

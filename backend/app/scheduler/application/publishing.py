@@ -273,7 +273,8 @@ def evidence_to_dict(evidence: SearchEvidence | None) -> dict[str, Any] | None:
     }
 
 
-def _diagnostics_summary(diagnoses: tuple[Diagnosis, ...]) -> list[dict[str, Any]]:
+def diagnostics_summary(diagnoses: tuple[Diagnosis, ...]) -> list[dict[str, Any]]:
+    """The stable JSON shape stored for a failed job and shown in a proposal."""
     return [
         {
             "code": diagnosis.code.value,
@@ -281,6 +282,7 @@ def _diagnostics_summary(diagnoses: tuple[Diagnosis, ...]) -> list[dict[str, Any
             "suggestions": list(diagnosis.suggestions),
             "minimum_missing_minutes": diagnosis.minimum_missing_minutes,
             "affected_class_ids": list(diagnosis.affected_class_ids),
+            "affected_subject_id": diagnosis.affected_subject_id,
         }
         for diagnosis in diagnoses
     ]
@@ -360,7 +362,7 @@ def initial_proposal_payload(
         "status": recovery_status,
         "message": recovery_message,
     }
-    metrics["diagnostics"] = _diagnostics_summary(diagnoses)
+    metrics["diagnostics"] = diagnostics_summary(diagnoses)
     metrics["warnings"] = _warnings(metrics)
     return ProposalPayload(metrics=metrics, diff=build_diff(snapshot, candidate))
 
@@ -382,6 +384,6 @@ def recovery_proposal_payload(
         changed_lessons=len(quality.disruption.changes),
     )
     _apply_quality(metrics, quality.initial)
-    metrics["diagnostics"] = _diagnostics_summary(diagnoses)
+    metrics["diagnostics"] = diagnostics_summary(diagnoses)
     metrics["warnings"] = _warnings(metrics)
     return ProposalPayload(metrics=metrics, diff=build_diff(snapshot, candidate))
