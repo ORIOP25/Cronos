@@ -19,6 +19,7 @@ import {
   useSubjects,
   useTimeslots,
   useUpdateClassSubjectTeacher,
+  useUpdateCourseClass,
   useWeekGridVersions,
 } from '../features/catalog/data'
 import {
@@ -219,6 +220,22 @@ describe('vertical feature data hooks', () => {
     expect(invalidate.mock.calls.map(([options]) => options.queryKey)).toEqual(expect.arrayContaining([
       ['subjects', 'org-a'],
       ['courses', 'org-a'],
+    ]))
+  })
+
+  it('updates a class through its course and refreshes tenant catalog queries', async () => {
+    const { queryClient, wrapper } = createHarness()
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
+    const mutation = renderHook(() => useUpdateCourseClass(), { wrapper })
+    const data = { name: '10.º B', size: 25 }
+
+    await act(() => mutation.result.current.mutateAsync({ courseId: 7, classId: 11, data }))
+
+    expect(apiClient.patch).toHaveBeenCalledWith('/courses/7/classes/11', data)
+    expect(invalidate.mock.calls.map(([options]) => options.queryKey)).toEqual(expect.arrayContaining([
+      ['courses', 'org-a'],
+      ['classes', 'org-a'],
+      ['readiness-bases', 'org-a'],
     ]))
   })
 

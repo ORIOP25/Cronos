@@ -58,6 +58,7 @@ Routes under `/api/v1/timesheets`: `GET /` (admin list), `GET /me/{week_start_da
 - Future blocks do not satisfy week closure.
 - Approval sets approver identity and freezes later edits.
 - Reopening returns the week to `OPEN`.
+- [The timesheet service](../../backend/app/services/timesheet_service.py) rejects invalid transitions with a Portuguese message showing the source and target states.
 - Ledger entries require non-zero deltas and unique idempotency keys.
 
 ## States and Transitions

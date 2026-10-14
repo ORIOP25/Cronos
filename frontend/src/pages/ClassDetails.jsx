@@ -14,7 +14,7 @@ import {
 
 import {
   useClassDetails,
-  useUpdateClass,
+  useUpdateCourseClass,
   useUpdateClassProgress,
   useClassSubjects,
 } from '../features/catalog/data'
@@ -180,7 +180,7 @@ const ClassDetails = () => {
   // --- DATA ---
   const { data: classData, isLoading, error } = useClassDetails(numClassId)
   const { data: classSubjects } = useClassSubjects(numClassId)
-  const updateClass = useUpdateClass()
+  const updateClass = useUpdateCourseClass()
   const updateProgress = useUpdateClassProgress()
   const attemptScope = useAttemptScope()
 
@@ -230,7 +230,7 @@ const ClassDetails = () => {
     if (!trimName || Number.isNaN(size) || size <= 0) return
 
     updateClass.mutate(
-      { id: numClassId, name: trimName, size },
+      { courseId: numCourseId, classId: numClassId, data: { name: trimName, size } },
       attemptScope.guard({
         onSuccess: () => {
           setEditingHeader(false)

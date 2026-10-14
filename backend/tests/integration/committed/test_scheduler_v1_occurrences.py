@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from itertools import pairwise
 
 import pytest
@@ -1248,3 +1248,58 @@ async def test_a_planned_substitution_reserves_resources_and_demand(db_session, 
     )
     # The completed block arrives through the ledger exactly once.
     assert sum(after.snapshot.executed_minutes[assignment.id].values()) == lesson.credit_minutes
+
+
+@pytest.mark.parametrize(
+    "timezone,moment,school_date,overdue",
+    [
+        ("Europe/Lisbon", datetime(2026, 9, 22, 23, 30, tzinfo=UTC), date(2026, 9, 23), 1),
+        ("Atlantic/Azores", datetime(2026, 9, 23, 0, 30, tzinfo=UTC), date(2026, 9, 23), 1),
+        ("America/New_York", datetime(2026, 9, 23, 0, 30, tzinfo=UTC), date(2026, 9, 22), 0),
+    ],
+)
+async def test_debts_use_school_date_at_midnight(
+    db_session, monkeypatch, timezone, moment, school_date, overdue
+):
+    seed = await _school(db_session, suffix="_debt_timezone")
+    seed.year.timezone = timezone
+    await add_version(db_session, seed)
+    await record_debt(
+        db_session,
+        seed.organization.id,
+        seed.year.id,
+        seed.assignment.id,
+        DebtOrigin(
+            origin="lesson-occurrence:midnight",
+            revision=1,
+            origin_date=date(2026, 9, 23),
+            minutes=50,
+            author_id=seed.membership.id,
+            reason="Dívida de teste",
+            recorded_at=moment,
+        ),
+    )
+    await db_session.commit()
+
+    class FrozenDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return moment.astimezone(tz) if tz is not None else moment.replace(tzinfo=None)
+
+    class ServerDate(date):
+        @classmethod
+        def today(cls):
+            return moment.date()
+
+    monkeypatch.setattr(occurrences_v1, "datetime", FrozenDatetime)
+    monkeypatch.setattr(occurrences_v1, "date", ServerDate)
+
+    debts = await occurrences_v1.get_debts(db_session, seed.organization.id)
+
+    assert debts["as_of_date"] == school_date
+    assert debts["total_gaps"] == 1
+    assert debts["total_hours_owed"] == 50 / 60
+    assert debts["total_gaps_overdue"] == overdue
+    assert debts["total_hours_owed_overdue"] == overdue * 50 / 60
+    assert debts["items"][0]["gap_occurrences_overdue"] == overdue
+    assert debts["items"][0]["hours_owed_overdue"] == overdue * 50 / 60

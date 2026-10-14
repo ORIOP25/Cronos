@@ -1,4 +1,4 @@
-import { screen, within } from '@testing-library/react'
+import { fireEvent, screen, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { Route, Routes } from 'react-router-dom'
 import ClassDetails from '../pages/ClassDetails'
@@ -14,7 +14,7 @@ const hooks = vi.hoisted(() => ({
 vi.mock('../features/catalog/data', () => ({
   useClassDetails: (classId) => hooks.classDetails(classId),
   useClassSubjects: (classId) => hooks.classSubjects(classId),
-  useUpdateClass: () => hooks.updateClass(),
+  useUpdateCourseClass: () => hooks.updateClass(),
   useUpdateClassProgress: () => hooks.updateProgress(),
 }))
 
@@ -118,6 +118,23 @@ describe('ClassDetails composition', () => {
     expect(progressCard).toHaveTextContent('25/50h')
     expect(progressCard).toHaveTextContent('Módulo 1')
     expect(screen.getByText('Sem professor')).toBeInTheDocument()
+  })
+
+  it('saves the header with the course and class from the route', () => {
+    const mutation = createMutationState()
+    hooks.updateClass.mockReturnValue(mutation)
+    renderClassDetails()
+
+    fireEvent.click(screen.getByTitle('Editar nome e capacidade'))
+    fireEvent.change(screen.getByLabelText('Nome da Turma'), { target: { value: ' 10.º B ' } })
+    fireEvent.change(screen.getByLabelText('Capacidade (alunos)'), { target: { value: '25' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar' }))
+
+    expect(mutation.mutate).toHaveBeenCalledWith({
+      courseId: 7,
+      classId: 11,
+      data: { name: '10.º B', size: 25 },
+    }, expect.any(Object))
   })
 
   it('does not mutate the React Query subject order while rendering', () => {

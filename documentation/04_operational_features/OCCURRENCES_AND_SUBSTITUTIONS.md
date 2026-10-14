@@ -54,6 +54,8 @@ Create a v1 occurrence through the scheduled lesson workflow. There is no standa
 - The API state is `OPEN_PENDING`, `DECIDED_GIVEN`, `DECIDED_GAP`, `DECIDED_SUBSTITUTED`, or `REVOKED`.
 - The v1 lesson log stores the decision, instant, author, and reversal reason.
 - A pending occurrence has no open debt and no execution.
+- Debt totals use the active school year timezone for `as_of_date` and overdue classification.
+- An open claim is overdue when its origin date is on or before that school date.
 - A decision repeated with the previous version returns the current state without new writes.
 - A stale version returns `409 OCCURRENCE_STALE_VERSION` without partial effects.
 - `GIVEN` before the lesson end returns `422 lesson_not_finished`.

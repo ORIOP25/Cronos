@@ -328,3 +328,29 @@ async def test_a_v1_timesheet_follows_the_planned_substitution(db_session, monke
         )
     )
     assert timesheet.status == models.TimesheetStatus.SUBMITTED
+
+
+async def test_invalid_timesheet_transition_preserves_status_and_readable_message(db_session):
+    seed, _ = await _seed_v1_week(db_session, suffix="invalid_transition")
+    timesheet = await db_session.run_sync(
+        lambda sync_db: timesheet_service.get_or_create_timesheet_sync(
+            sync_db, seed.organization.id, seed.assignment.teacher_id, WEEK_START
+        )
+    )
+    await db_session.commit()
+
+    with pytest.raises(AppError) as invalid:
+        await db_session.run_sync(
+            lambda sync_db: timesheet_service.update_timesheet_status_sync(
+                sync_db,
+                seed.organization.id,
+                timesheet.id,
+                models.TimesheetStatus.APPROVED,
+                seed.membership.id,
+            )
+        )
+
+    assert invalid.value.detail == "Transição de estado inválida: OPEN → APPROVED."
+    assert timesheet.status == models.TimesheetStatus.OPEN
+    assert timesheet.approved_at is None
+    assert timesheet.approved_by_membership_id is None

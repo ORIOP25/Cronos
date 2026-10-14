@@ -172,7 +172,6 @@ export const useCreateSubject = () => useCreateEntity('subjects', ['courses'])
 export const useUpdateSubject = () => useUpdateEntity('subjects', ['courses'])
 export const useDeleteSubject = () => useDeleteEntity('subjects', ['courses'])
 export const useCreateCourse = () => useCreateEntity('courses')
-export const useUpdateClass = () => useUpdateEntity('classes')
 
 // ==========================================
 //  FASE 4: GESTÃO DE CURSOS

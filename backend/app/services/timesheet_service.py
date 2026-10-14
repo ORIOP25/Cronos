@@ -481,7 +481,7 @@ def update_timesheet_status_sync(
         raise AppError(
             kind="bad_request",
             code="bad_request",
-            detail=f"Transição de estado inválida: {current.value} â†’ {status.value}.",
+            detail=f"Transição de estado inválida: {current.value} → {status.value}.",
         )
 
     timesheet.status = status
