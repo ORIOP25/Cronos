@@ -97,6 +97,7 @@ node scripts/test.mjs capacity-smoke
 
 The 48-class correctness regression lives in `backend/tests/unit/test_scheduler_typology_v1.py`.
 It uses the configured 900-second safety budget and validates the first complete candidate.
+The `fast` profile skips it; the `e2e-runtime` CI job runs it.
 
 ## Current limitations
 

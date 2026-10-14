@@ -61,7 +61,8 @@ The optional full run uses `-n 4 --dist=loadscope` and keeps the rate-limited co
 The 48-class correctness test `tests/unit/test_scheduler_typology_v1.py::test_forty_eight_classes_generate_a_complete_valid_schedule` runs the real CP-SAT solver.
 It uses the production 900-second safety budget and stops at the first complete candidate.
 It validates curricular coverage and completion dates. Short optimization deadlines must not make correctness depend on host load.
-Because it lives in `tests/unit/`, `node scripts/test.mjs fast --scope backend` runs it. `fast` means "no external services", not "short".
+It carries the `slow_solver` marker. `fast` skips it, and the `e2e-runtime` CI job runs it by node id.
+Run it locally with `node scripts/test.mjs fast --scope backend -- -m slow_solver`.
 During a TDD cycle, select the files you changed with `node scripts/test.mjs fast --scope backend -- -k <expression>`.
 
 ## Frontend suites

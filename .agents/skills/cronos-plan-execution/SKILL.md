@@ -40,7 +40,7 @@ The [Command Reference](../../../documentation/00_getting_started/COMMAND_REFERE
 | Before a pull request | The proof that the WBS names for the pull request, once. Add the full `integration` run only for a migration or RLS change. |
 | Full corpus | CI on the pull request. Do not repeat it locally. |
 
-- Never run `fast --scope backend` without `-k`. It includes a CP-SAT test with a 900-second budget.
+- Pass `-k` to `fast --scope backend` inside a slice. Run the `slow_solver` tests only when a slice changes the solver.
 - Never run tests while any agent edits the same worktree. The results are not valid.
 - Run long commands in the background. While they run, read code or plan. Do not edit files that the run imports.
 - When a broad run fails, rerun only the failing tests until they pass, then rerun the broad command once.
