@@ -389,31 +389,11 @@ Ao atualizar uma disciplina existente com um módulo novo (sem `id`), mostre um 
 
 Entregue em dois pull requests a partir de `main`. Cada passo começa com um teste que falha.
 
-### PR 1 — Servidor e motor
+- **PR 1 — Servidor e motor.** Não muda o que o utilizador vê, porque todos os módulos ficam marcados.
+- **PR 2 — Ecrãs.** Começa depois de o PR 1 estar integrado em `main`.
 
-Este PR não muda o que o utilizador vê, porque todos os módulos ficam marcados.
-
-1. **Contrato da migração.** Atualize `test_migration_history_has_one_frozen_baseline`. Escreva a migração, o modelo e a coluna `planned`.
-2. **Isolamento e privacidade.** Confirme `test_rls_database_policies.py` e os testes de isolamento. Atualize `privacy.py`.
-3. **Fixtures.** `seed_v1_assignment` insere a seleção. Atualize os testes que criam `ClassSubjectLink` diretamente e chegam ao sync, à pré-validação, à prontidão ou ao progresso.
-4. **API.** Leitura de `modules`, gravação de `module_ids`, `add_class_subject` com todos os módulos e o registo de alterações.
-5. **Domínio.** `close_retired_modules`, com testes unitários.
-6. **Projeção.** `sync_curricular_projection` com seleção, `planned`, `sequence` e o novo erro.
-7. **Leitores.** O carregador de planeamento e cada leitor da tabela de leitores.
-8. **Pré-validação, prontidão e fingerprint.**
-9. **Progresso.** Turma, professor e painel.
-10. **Documentação** do comportamento do servidor e do motor.
-
-### PR 2 — Ecrãs
-
-1. Hook `useUpdateClassSubject` e invalidações.
-2. Checklist em `ClassSubjects.jsx`.
-3. Coluna e progresso em `ClassDetails.jsx`.
-4. Aviso em `Subjects.jsx`.
-5. Adaptador do tutorial.
-6. Percurso e2e.
-7. Documentação dos ecrãs e mensagens.
-8. Reconstrução do contentor local do frontend.
+O [WBS — Módulos por Turma](CLASS_MODULE_SELECTION_WBS.md) é dono da decomposição do trabalho.
+Define os pacotes, as dependências, o caminho crítico e os critérios de conclusão.
 
 ## Testes
 
