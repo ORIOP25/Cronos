@@ -524,21 +524,24 @@ export const useAddClassSubject = () => {
 }
 
 /**
- * Atualiza o professor de uma disciplina da turma.
+ * Atualiza o professor e/ou a seleção de módulos de uma disciplina da turma.
+ * Envia apenas os campos definidos; `teacherId: null` limpa a atribuição.
  */
-export const useUpdateClassSubjectTeacher = () => {
+export const useUpdateClassSubject = () => {
   const apiClient = useApiClient()
   const queryClient = useQueryClient()
   const orgId = useOrganization().organization?.id
 
   return useMutation({
-    mutationFn: async ({ classId, subjectId, teacherId }) => {
+    mutationFn: async ({ classId, subjectId, teacherId, moduleIds }) => {
       const payload = {}
       if (teacherId !== undefined) payload.teacher_id = teacherId
+      if (moduleIds !== undefined) payload.module_ids = moduleIds
       return apiClient.patch(`/classes/${classId}/subjects/${subjectId}`, payload)
     },
     onSuccess: (data, variables) => {
       queryClient.setQueryData(orgQueryKey('class-subjects', orgId, variables.classId), data)
+      void invalidateOrgQueries(queryClient, orgId, ['classes', 'teacher-progress'])
       void invalidatePreparationQueries(queryClient, orgId)
     }
   })

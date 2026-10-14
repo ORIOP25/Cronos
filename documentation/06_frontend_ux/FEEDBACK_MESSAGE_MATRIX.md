@@ -43,6 +43,10 @@ Other client responses stay in context.
 | Create or edit a catalog record | Transient failure | Network, 429, 5xx | Toast, 6 s | Page | Form stays open |
 | Assign a teacher | Missing competency | `teacher_competency_missing` | Field feedback | `ClassSubjects` | Choose an eligible teacher |
 | Assign a teacher | Transient failure | Network, 429, 5xx | Toast, 6 s | `ClassSubjects` | Retry |
+| Update the class-subject modules | Success | — | Toast, 4 s | `ClassSubjects` | — |
+| Update the class-subject modules | Transient failure | Network, 429, 5xx | Toast, 6 s | `ClassSubjects` | Retry |
+| Update the class-subject modules | Server block | 400 | Inline field feedback beside the checklist | `ClassSubjects` | Fix the module selection |
+| Edit a subject that gains a new module | Success with a warning | — | Toast, 4 s | `Subjects` | Mark the module in the classes that need it |
 | Save an internship flow | Success | — | Toast, 4 s | `CalendarSection` | — |
 | Save an internship flow | Stale preview | `CALENDAR_EVENT_STALE` | Persistent banner | `CalendarSection` | Repeat the preview |
 | Save an internship flow | Transient failure | Network, 429, 5xx | Toast, 6 s | `CalendarSection` | Retry |

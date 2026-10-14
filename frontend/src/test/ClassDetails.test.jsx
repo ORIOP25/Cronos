@@ -87,8 +87,8 @@ describe('ClassDetails composition', () => {
     hooks.classSubjects.mockReset().mockReturnValue({
       data: {
         subjects: [
-          { id: 1, subject_name: 'Algoritmos', teacher_id: null, teacher_name: null },
-          { id: 2, subject_name: 'Zeta', teacher_id: 5, teacher_name: 'Ana Silva' },
+          { id: 1, subject_name: 'Algoritmos', teacher_id: null, teacher_name: null, modules: [{ id: 11, selected: true }, { id: 12, selected: false }] },
+          { id: 2, subject_name: 'Zeta', teacher_id: 5, teacher_name: 'Ana Silva', modules: [{ id: 21, selected: true }] },
         ],
       },
     })
@@ -194,6 +194,39 @@ describe('ClassDetails composition', () => {
     expect(screen.getByText('Nenhuma disciplina associada ao curso desta turma.')).toBeInTheDocument()
     expect(progressCard).not.toHaveTextContent('Progresso Global')
     expect(within(progressCard).queryByRole('progressbar', { name: 'Progresso global da turma' })).not.toBeInTheDocument()
+  })
+
+  it('shows the selected module count per discipline in the subjects table', () => {
+    renderClassDetails()
+
+    const table = screen.getByText('Disciplinas & Professores').closest('.card')
+    expect(within(table).getByRole('columnheader', { name: 'Módulos' })).toBeInTheDocument()
+    const rows = within(table).getAllByRole('row')
+    expect(within(rows[1]).getByText('1/2')).toBeInTheDocument()
+    expect(within(rows[2]).getByText('1/1')).toBeInTheDocument()
+  })
+
+  it('shows the empty message when a discipline has no selected modules', () => {
+    hooks.classDetails.mockReturnValue({
+      data: createClassData({
+        subjects: [{
+          id: 9,
+          name: 'Sem módulos',
+          required_room_type: 'normal',
+          total_hours: 0,
+          completed_hours: 0,
+          overall_percentage: 0,
+          modules: [],
+        }],
+      }),
+      isLoading: false,
+      error: null,
+    })
+
+    renderClassDetails()
+
+    const progressCard = screen.getByText('Progresso por Disciplina').closest('.card')
+    expect(within(progressCard).getByText('Nenhum módulo selecionado para esta turma.')).toBeInTheDocument()
   })
 
   it('places the availability card after the header and summarizes neutral blocks', () => {

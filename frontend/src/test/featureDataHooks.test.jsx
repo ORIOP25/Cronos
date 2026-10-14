@@ -21,7 +21,7 @@ import {
   useSaveClassAvailability,
   useSubjects,
   useTimeslots,
-  useUpdateClassSubjectTeacher,
+  useUpdateClassSubject,
   useUpdateCourseClass,
   useWeekGridVersions,
 } from '../features/catalog/data'
@@ -285,18 +285,33 @@ describe('vertical feature data hooks', () => {
     ]))
   })
 
-  it('refreshes readiness after assigning a teacher to a class subject', async () => {
+  it('sends only the provided class-subject fields and preserves teacher_id null', async () => {
     const { queryClient, wrapper } = createHarness()
     const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
-    const mutation = renderHook(() => useUpdateClassSubjectTeacher(), { wrapper })
+    const mutation = renderHook(() => useUpdateClassSubject(), { wrapper })
 
-    await act(() => mutation.result.current.mutateAsync({ classId: 4, subjectId: 7, teacherId: 12 }))
+    await act(() => mutation.result.current.mutateAsync({ classId: 4, subjectId: 7, teacherId: null }))
+    await act(() => mutation.result.current.mutateAsync({ classId: 4, subjectId: 7, moduleIds: [3, 1] }))
 
-    expect(apiClient.patch).toHaveBeenCalledWith('/classes/4/subjects/7', { teacher_id: 12 })
+    expect(apiClient.patch).toHaveBeenCalledWith('/classes/4/subjects/7', { teacher_id: null })
+    expect(apiClient.patch).toHaveBeenCalledWith('/classes/4/subjects/7', { module_ids: [3, 1] })
     expect(invalidate.mock.calls.map(([options]) => options.queryKey)).toEqual(expect.arrayContaining([
+      ['classes', 'org-a'],
+      ['teacher-progress', 'org-a'],
       ['dashboard', 'org-a'],
       ['readiness-bases', 'org-a'],
     ]))
+  })
+
+  it('caches the updated class-subjects response after a module change', async () => {
+    const { queryClient, wrapper } = createHarness()
+    const payload = { class_id: 4, class_name: 'TEE', subjects: [] }
+    apiClient.patch.mockResolvedValue(payload)
+    const mutation = renderHook(() => useUpdateClassSubject(), { wrapper })
+
+    await act(() => mutation.result.current.mutateAsync({ classId: 4, subjectId: 7, moduleIds: [] }))
+
+    expect(queryClient.getQueryData(['class-subjects', 'org-a', 4])).toEqual(payload)
   })
 
   it('passes occurrence, debt, and timesheet filters as Axios params', async () => {
