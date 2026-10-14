@@ -1,10 +1,14 @@
-"""WBS 2.3.2/2.3.4: the engine reads the class grid as engine preferences."""
+"""WBS 2.3.2/2.3.4/2.4.1: the engine reads the class grid and its demand."""
 
-from sqlalchemy import select
+from datetime import date
+
+from sqlalchemy import delete, select
 
 from app import models
 from app.scheduler.composition import generate_schedule
 from app.scheduler.domain.candidate import SchedulingStrategy, UnavailableResource
+from app.scheduler.domain.capacity import aggregate_capacity_check
+from app.scheduler.infrastructure.curriculum import sync_curricular_projection
 from app.scheduler.infrastructure.snapshot import load_snapshot
 from tests._support.scheduler_v1 import MOMENT, seed_generatable_school
 
@@ -110,3 +114,64 @@ async def test_generation_never_places_a_class_lesson_in_its_impossible_block(db
     assert result.report is not None and result.report.valid
     assert result.candidate is not None
     assert all(lesson.period.school_date.weekday() != 0 for lesson in result.candidate.lessons)
+
+
+async def test_class_deficit_honours_the_selected_modules(db_session):
+    """WBS 2.4.1 compatibility: residual demand follows the selected modules."""
+    seed = await seed_generatable_school(
+        db_session,
+        clerk_org_id="class_avail_selection",
+        module_minutes=50,
+        preferred_end_date=date(2026, 9, 7),
+    )
+    module_b = models.Module(
+        organization_id=seed.organization.id,
+        subject_id=seed.subject.id,
+        name="Módulo B",
+        required_minutes=100,
+        order=2,
+    )
+    db_session.add(module_b)
+    await db_session.flush()
+    link = await db_session.scalar(
+        select(models.ClassSubjectLink).where(
+            models.ClassSubjectLink.organization_id == seed.organization.id,
+            models.ClassSubjectLink.class_id == seed.class_.id,
+            models.ClassSubjectLink.subject_id == seed.subject.id,
+        )
+    )
+    await db_session.execute(
+        delete(models.class_subject_module).where(
+            models.class_subject_module.c.organization_id == seed.organization.id,
+            models.class_subject_module.c.class_subject_link_id == link.id,
+        )
+    )
+    for module_id in (seed.module.id, module_b.id):
+        await db_session.execute(
+            models.class_subject_module.insert().values(
+                organization_id=seed.organization.id,
+                class_subject_link_id=link.id,
+                module_id=module_id,
+            )
+        )
+    await sync_curricular_projection(db_session, seed.organization.id, seed.year)
+    await db_session.commit()
+
+    bundle = await _class_snapshot(db_session, seed)
+    check = aggregate_capacity_check(bundle.snapshot, bundle.periods)
+    # 50 (module A) + 100 (module B) requested against the 50-minute period
+    # that starts after MOMENT: residual demand follows the selection.
+    assert check.class_deficits == {seed.class_.id: 100}, (check.deficits, check.class_deficits)
+
+    await db_session.execute(
+        delete(models.class_subject_module).where(
+            models.class_subject_module.c.organization_id == seed.organization.id,
+            models.class_subject_module.c.class_subject_link_id == link.id,
+            models.class_subject_module.c.module_id == module_b.id,
+        )
+    )
+    await sync_curricular_projection(db_session, seed.organization.id, seed.year)
+    await db_session.commit()
+
+    bundle = await _class_snapshot(db_session, seed)
+    assert aggregate_capacity_check(bundle.snapshot, bundle.periods).class_deficits == {}

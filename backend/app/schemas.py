@@ -1477,15 +1477,29 @@ class ClassSubjectCreate(BaseModel):
 
 
 class ClassSubjectUpdate(BaseModel):
-    """Atribuir ou alterar professor de uma disciplina da turma"""
+    """Atribuir professor e/ou selecionar módulos de uma disciplina da turma"""
 
     teacher_id: int | None = Field(
         None, description="ID do professor (null para remover atribuição)"
     )
+    module_ids: list[int] | None = Field(
+        None, description="IDs dos módulos selecionados (lista vazia para limpar)"
+    )
+
+
+class ClassSubjectModuleRead(BaseModel):
+    """Módulo de uma disciplina da turma, com a marcação de seleção"""
+
+    id: int
+    name: str
+    code: str | None = None
+    hours_total: float
+    order: int
+    selected: bool
 
 
 class ClassSubjectRead(BaseModel):
-    """Disciplina da turma com professor atribuído"""
+    """Disciplina da turma com professor atribuído e módulos"""
 
     id: int
     subject_id: int
@@ -1494,6 +1508,7 @@ class ClassSubjectRead(BaseModel):
     grade_level: int
     teacher_id: int | None = None
     teacher_name: str | None = None
+    modules: list[ClassSubjectModuleRead] = []
 
 
 class ClassSubjectsListRead(BaseModel):

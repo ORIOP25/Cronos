@@ -217,6 +217,7 @@ order: `ACTIVE_CLASSES`, `MODULES`, `TEACHERS`, `TEACHER_ASSIGNMENT`,
 `COMPATIBLE_ROOM`, and `TEACHER_AVAILABILITY`. `CLASS_SUBJECTS` and `TIMESLOTS`
 are not public readiness steps. Foundation owns the weekly grid and final
 prevalidation continues to report `MISSING_TIMESLOTS` when it is absent.
+Prevalidation reports `CLASS_SUBJECT_WITHOUT_MODULES` when an active class subject has no selected module.
 
 `GET /readiness/prevalidation` adds the `CLASS_WITHOUT_AVAILABILITY` blocker
 when every visible block of an eligible class is marked Impossível.
@@ -300,6 +301,25 @@ The `schedule_health` widget exposes `annual_class_average`,
 schedule version. The weekly indicators use a closed Monday-to-Sunday window.
 `classes_archived` counts archived classes still present in that approved version.
 Archiving a catalog class does not remove its approved lessons or change the annual denominator.
+
+### Class module selection
+
+A class-subject link selects the modules the class takes for its grade level.
+
+`GET /api/v1/classes/{class_id}/subjects` returns `modules`, sorted by `order`, each with a `selected` flag.
+`POST /api/v1/classes/{class_id}/subjects` selects every module of the subject.
+`PATCH /api/v1/classes/{class_id}/subjects/{subject_id}` accepts an optional `module_ids` list.
+An empty list clears the selection.
+An omitted or `null` `module_ids` leaves the selection unchanged.
+
+The `PATCH` route validates the whole list before it writes.
+Duplicate IDs and modules from another subject return `400`.
+A module from another organization returns `404`.
+An archived class returns the current archived-class error.
+
+`GET /api/v1/classes/{class_id}` and the progress reads count only the selected modules.
+`PATCH /api/v1/classes/{class_id}/progress` rejects an unselected module with the existing `400` curriculum error, on both the v1 and the legacy path.
+Prevalidation and a generation or grid-change request return `CLASS_SUBJECT_WITHOUT_MODULES` when an active link has no selected module.
 
 ### Rate limits
 

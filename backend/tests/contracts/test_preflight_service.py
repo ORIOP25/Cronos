@@ -660,6 +660,24 @@ async def test_preflight_blocks_invalid_teacher_assignment_archived_or_unqualifi
     )
     db_session.add_all([link, missing_teacher_link, avail])
     await db_session.flush()
+    # Both links start with their module selected so only the teacher rules
+    # are under test (the selection is separate evidence).
+    await db_session.execute(
+        models.class_subject_module.insert(),
+        [
+            {
+                "organization_id": org.id,
+                "class_subject_link_id": link.id,
+                "module_id": module.id,
+            },
+            {
+                "organization_id": org.id,
+                "class_subject_link_id": missing_teacher_link.id,
+                "module_id": module_without_teacher.id,
+            },
+        ],
+    )
+    await db_session.flush()
 
     # Step 1: A missing teacher blocks even when another assignment is valid.
     from sqlalchemy import delete, insert
@@ -948,6 +966,12 @@ async def _seed_class_availability_preflight(db_session, *, suffix: str):
         name=f"Disciplina {suffix}",
         required_room_type=models.RoomType.normal,
     )
+    room = models.Room(
+        organization_id=org.id,
+        name=f"Sala {suffix}",
+        capacity=30,
+        type=models.RoomType.normal,
+    )
     slots = [
         models.Timeslot(
             organization_id=org.id, day_of_week=0, start_time=time(9, 0), end_time=time(9, 50)
@@ -956,7 +980,16 @@ async def _seed_class_availability_preflight(db_session, *, suffix: str):
             organization_id=org.id, day_of_week=1, start_time=time(9, 0), end_time=time(9, 50)
         ),
     ]
-    db_session.add_all([course, subject, *slots])
+    db_session.add_all([course, subject, room, *slots])
+    await db_session.flush()
+    module = models.Module(
+        organization_id=org.id,
+        subject_id=subject.id,
+        name=f"Módulo {suffix}",
+        required_minutes=60,
+        order=0,
+    )
+    db_session.add(module)
     await db_session.flush()
     school_class = models.Class(
         organization_id=org.id,
@@ -981,7 +1014,147 @@ async def _seed_class_availability_preflight(db_session, *, suffix: str):
     )
     db_session.add(link)
     await db_session.flush()
+    await db_session.execute(
+        models.class_subject_module.insert().values(
+            organization_id=org.id,
+            class_subject_link_id=link.id,
+            module_id=module.id,
+        )
+    )
+    await db_session.flush()
     return org, school_class, course, link, slots
+
+
+async def test_preflight_blocks_class_subject_without_selected_modules(db_session):
+    org, _user, _mem = await _create_org_and_admin(
+        db_session, "Module Preflight School", "org_module_preflight"
+    )
+    school_year = models.SchedulerSchoolYear(
+        organization_id=org.id,
+        label="2025/2026",
+        start_date=date(2025, 9, 1),
+        hard_end_date=date(2026, 6, 30),
+        is_active=True,
+    )
+    db_session.add(school_year)
+    await db_session.flush()
+    db_session.add(
+        models.SchedulerSchoolYearState(
+            organization_id=org.id,
+            school_year_id=school_year.id,
+            school_year_publication_state=models.SchoolYearPublicationState.UNPUBLISHED,
+            scheduler_state_version=1,
+        )
+    )
+    course = models.Course(organization_id=org.id, name="Curso Módulos", abbreviation="CM")
+    subject = models.Subject(organization_id=org.id, name="UFCD Programação")
+    other_subject = models.Subject(organization_id=org.id, name="UFCD Redes")
+    room = models.Room(
+        organization_id=org.id,
+        name="Sala",
+        capacity=30,
+        type=models.RoomType.normal,
+    )
+    db_session.add_all([course, subject, other_subject, room])
+    await db_session.flush()
+    class_without_teacher = models.Class(
+        organization_id=org.id,
+        course_id=course.id,
+        name="10º CM A",
+        size=20,
+        grade_level=10,
+        start_year=2025,
+        end_year=2028,
+    )
+    class_with_teacher = models.Class(
+        organization_id=org.id,
+        course_id=course.id,
+        name="10º CM B",
+        size=20,
+        grade_level=10,
+        start_year=2025,
+        end_year=2028,
+    )
+    module = models.Module(
+        organization_id=org.id,
+        subject_id=subject.id,
+        name="M1",
+        required_minutes=60,
+        order=0,
+    )
+    other_module = models.Module(
+        organization_id=org.id,
+        subject_id=other_subject.id,
+        name="R1",
+        required_minutes=60,
+        order=0,
+    )
+    db_session.add_all([class_without_teacher, class_with_teacher, module, other_module])
+    await db_session.flush()
+    teacher = await create_teacher_profile(
+        db_session, organization_id=org.id, subject_ids=[other_subject.id]
+    )
+    link_without_teacher = models.ClassSubjectLink(
+        organization_id=org.id,
+        class_id=class_without_teacher.id,
+        subject_id=subject.id,
+        grade_level=10,
+        teacher_id=None,
+    )
+    link_with_teacher = models.ClassSubjectLink(
+        organization_id=org.id,
+        class_id=class_with_teacher.id,
+        subject_id=other_subject.id,
+        grade_level=10,
+        teacher_id=teacher.id,
+    )
+    db_session.add_all([link_without_teacher, link_with_teacher])
+    await db_session.flush()
+
+    service = PreflightService(db_session)
+    report = await service.evaluate(
+        organization_id=org.id,
+        school_year_id=school_year.id,
+        resolve_fingerprint=False,
+    )
+
+    # The blocker follows invalid_assignment_rows (unarchived class, current
+    # grade) and applies regardless of teacher assignment.
+    blockers = [issue for issue in report.issues if issue.code == "CLASS_SUBJECT_WITHOUT_MODULES"]
+    assert len(blockers) == 2
+    assert all(issue.severity == "BLOCKER" for issue in blockers)
+    without_teacher = next(
+        issue for issue in blockers if f"classes/{class_without_teacher.id}/" in issue.route
+    )
+    assert without_teacher.route == (
+        f"/courses/{course.id}/classes/{class_without_teacher.id}/subjects"
+    )
+    assert without_teacher.message == (
+        "A turma 10º CM A tem a disciplina UFCD Programação sem módulos selecionados. "
+        "Remova a disciplina ou selecione pelo menos um módulo."
+    )
+    with_teacher = next(
+        issue for issue in blockers if f"classes/{class_with_teacher.id}/" in issue.route
+    )
+    assert with_teacher.route == (f"/courses/{course.id}/classes/{class_with_teacher.id}/subjects")
+
+    # Selecting a module clears the blocker for that link only.
+    await db_session.execute(
+        models.class_subject_module.insert().values(
+            organization_id=org.id,
+            class_subject_link_id=link_without_teacher.id,
+            module_id=module.id,
+        )
+    )
+    await db_session.flush()
+    report = await service.evaluate(
+        organization_id=org.id,
+        school_year_id=school_year.id,
+        resolve_fingerprint=False,
+    )
+    remaining = [issue for issue in report.issues if issue.code == "CLASS_SUBJECT_WITHOUT_MODULES"]
+    assert len(remaining) == 1
+    assert f"classes/{class_with_teacher.id}/" in remaining[0].route
 
 
 def _class_blocker_routes(report) -> list[str]:

@@ -31,7 +31,7 @@ Separate scheduler v1 records preserve curricular demand, execution evidence, de
 | Identity | `organization`, `user`, `organization_membership`, `teacher` |
 | Access audit | `member_access_operation`, `clerk_webhook_event` |
 | Legal evidence | `organization_legal_acceptance` |
-| Curriculum | `course`, `class`, `subject`, `module`, `course_subject_link`, `teacher_subject_link`, `class_subject_link` |
+| Curriculum | `course`, `class`, `subject`, `module`, `course_subject_link`, `teacher_subject_link`, `class_subject_link`, `class_subject_module` |
 | Resources | `room`, `timeslot`, `grid_version`, `availability`, `class_availability`, `constraint` |
 | School calendar | `organization_settings`, `organization_grid_settings`, `school_calendar_event`, `school_calendar_event_class` |
 | Scheduler lifecycle | `scheduler_school_year`, `scheduler_school_year_state`, `scheduler_state_version_events` |
@@ -50,6 +50,7 @@ erDiagram
     ORGANIZATION ||--o{ COURSE : offers
     COURSE ||--o{ CLASS : groups
     CLASS ||--o{ CLASS_SUBJECT_LINK : assigns
+    CLASS_SUBJECT_LINK ||--o{ CLASS_SUBJECT_MODULE : selects
     SUBJECT ||--o{ MODULE : orders
     SCHEDULER_LESSON_LOG_V1 ||--o{ OPERATIONAL_SCHEDULE_BLOCK : creates
     OPERATIONAL_SCHEDULE_BLOCK ||--o| LESSON_LOG : logs
@@ -74,6 +75,8 @@ erDiagram
 - Module `required_minutes` is positive.
 - `class_availability` stores only a level different from Neutral; a missing row means Neutral.
 - `scheduler_job_v1.diagnostics_json` stores the proven diagnostics of a job that found no schedule.
+- `class_subject_module` holds one row per selected module of a class-subject link.
+- `curricular_requirement.planned` is true for a planned module and false for a retired module with history.
 - Ledger entries use an idempotency key and cannot contain zero deltas.
 - Occurrence revisions preserve active history and support explicit revoke operations.
 - Application queries run under the `cronos_app` role with `NOBYPASSRLS`.
@@ -122,7 +125,7 @@ erDiagram
 - ORM models: `backend/app/models.py`
 - Scheduler v1 models: `backend/app/scheduler/infrastructure/models.py`
 - Schemas: `backend/app/schemas.py`
-- Migrations: `backend/alembic/versions/` holds the `0001_scheduler_v1_baseline` PostgreSQL 18 SQL schema dump and the migrations that stack on it, such as `0002_class_availability`.
+- Migrations: `backend/alembic/versions/` holds the baseline `0001_scheduler_v1_baseline`, a PostgreSQL 18 SQL schema dump, and the linear chain that stacks on it, including `0002_class_subject_modules` and `0003_class_availability`.
 - RLS tests: `backend/tests/contracts/test_rls_database_policies.py`
 - Integrity tests: `backend/tests/integration/committed/test_tenant_isolation_complete.py`
 

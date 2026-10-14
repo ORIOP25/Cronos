@@ -26,6 +26,7 @@ from app.scheduler.domain.calendar import (
     blocked_dates_by_class,
     event_dates,
     grid_dates,
+    is_physically_protected,
     normalize_period,
     protected_grid_dates,
 )
@@ -60,14 +61,13 @@ from app.scheduler.domain.recovery import RecoveryPolicy
 from app.scheduler.domain.serialization import payload_digest, period_to_dict, snapshot_to_dict
 from app.scheduler.infrastructure.models import (
     CurricularAssignment,
-    CurricularRequirement,
     SchedulerLessonLogV1,
     SchedulerLessonSliceV1,
     SchedulerLessonV1,
     SchedulerRecoveryReservationV1,
     SchedulerVersionV1,
 )
-from app.scheduler.infrastructure.progress import load_executed_minutes, load_open_debt
+from app.scheduler.infrastructure.progress import load_open_debt, load_planning_requirements
 
 
 class SnapshotConfigurationError(ValueError):
@@ -199,7 +199,10 @@ async def load_snapshot(
         school_today=now_utc.astimezone(zone).date(),
         grid_version_id=grid_version_id,
     )
-    assignments, requirements = await _load_assignments(db, organization_id, year.id)
+    assignments = await _load_assignments(db, organization_id, year.id)
+    requirements, executed = await load_planning_requirements(
+        db, organization_id, [row.id for row in assignments]
+    )
     constraints = await _load_constraint_policy(db, organization_id)
     domain_assignments = await _build_assignments(
         db,
@@ -213,9 +216,6 @@ async def load_snapshot(
         organization_id,
         constraints=constraints,
         calendar=calendar,
-    )
-    executed = await load_executed_minutes(
-        db, organization_id, [row.assignment_id for row in domain_assignments]
     )
     operational_unavailable, operational_demand = await _load_operational_reservations(
         db, organization_id, year.id, year.timezone
@@ -716,7 +716,7 @@ async def _load_assignments(
     db: AsyncSession,
     organization_id: int,
     school_year_id: int,
-) -> tuple[list[CurricularAssignment], dict[int, tuple[ModuleRequirement, ...]]]:
+) -> list[CurricularAssignment]:
     assignments = (
         await db.scalars(
             select(CurricularAssignment)
@@ -732,28 +732,7 @@ async def _load_assignments(
             "NO_CURRICULAR_ASSIGNMENTS",
             "Não existem atribuições curriculares configuradas para o ano letivo.",
         )
-    requirement_rows = (
-        await db.execute(
-            select(CurricularRequirement).where(
-                CurricularRequirement.organization_id == organization_id,
-                CurricularRequirement.assignment_id.in_([row.id for row in assignments]),
-            )
-        )
-    ).scalars()
-    requirements: dict[int, list[ModuleRequirement]] = defaultdict(list)
-    for row in requirement_rows:
-        requirements[row.assignment_id].append(
-            ModuleRequirement(row.module_id, row.sequence, row.required_minutes)
-        )
-    for assignment in assignments:
-        modules = requirements.get(assignment.id)
-        if not modules:
-            raise SnapshotConfigurationError(
-                "ASSIGNMENT_WITHOUT_REQUIREMENTS",
-                "Existem disciplinas atribuídas sem módulos com minutos definidos.",
-            )
-        modules.sort(key=lambda module: module.sequence)
-    return list(assignments), {key: tuple(value) for key, value in requirements.items()}
+    return list(assignments)
 
 
 async def _build_assignments(
@@ -806,6 +785,11 @@ async def _build_assignments(
     result: list[Assignment] = []
     room_issues: list[dict[str, object]] = []
     for row in assignments:
+        if not requirements.get(row.id):
+            raise SnapshotConfigurationError(
+                "ASSIGNMENT_WITHOUT_REQUIREMENTS",
+                "Existem disciplinas atribuídas sem módulos com minutos definidos.",
+            )
         subject = subject_types.get(row.subject_id)
         if subject is None:
             raise SnapshotConfigurationError(
@@ -1062,7 +1046,13 @@ async def _load_baseline(
                 history_unavailable.append(
                     Unavailability(resource_type, resource_id, lesson.period)
                 )
-        baseline = _reproject_baseline(baseline, assignments, executed)
+        baseline = _reproject_baseline(
+            baseline,
+            assignments,
+            executed,
+            now_utc=now_utc,
+            protected_dates=protected_dates,
+        )
     protected = [
         lesson
         for lesson in baseline
@@ -1147,21 +1137,68 @@ def _reproject_baseline(
     lessons: Sequence[ScheduledLesson],
     assignments: Mapping[int, Assignment],
     executed: Mapping[int, Mapping[int, int]],
+    *,
+    now_utc: datetime,
+    protected_dates: frozenset[date],
 ) -> tuple[ScheduledLesson, ...]:
-    """Keep physical positions while a missed lesson shifts future module credit."""
+    """Reproject movable lessons onto the current planning modules.
+
+    A retired or shortened module shrinks the residual demand. Past lessons are
+    never removed. Future lessons inside the stability window are removed only
+    when this assignment's curriculum changed (a slice references a module that
+    left the selection, or its required minutes no longer hold); an unchanged
+    assignment keeps its full stability. Genuinely movable excess outside the
+    window is always released. When the fixed credit alone cannot fit, the
+    snapshot fails explicitly instead of deleting a protected position.
+    """
     by_assignment: dict[int, list[ScheduledLesson]] = defaultdict(list)
     for lesson in lessons:
         by_assignment[lesson.assignment_id].append(lesson)
-    revised = {}
+    revised: dict[int, ScheduledLesson] = {}
+    dropped: set[int] = set()
     for identity, rows in by_assignment.items():
         assignment = assignments[identity]
         completed = executed.get(identity, {})
         residual = sum(module.required_minutes for module in assignment.modules) - sum(
             completed.values()
         )
-        if sum(row.credit_minutes for row in rows) > residual:
-            # Excess movable credit is diagnosed and removed by recovery.
+        ordered = sorted(
+            rows, key=lambda row: (row.period.school_date, row.period.start_utc, row.lesson_id)
+        )
+        planning = {module.module_id: module for module in assignment.modules}
+        changed = any(
+            slice_.module_id not in planning
+            or slice_.offset_minutes + slice_.credit_minutes
+            > planning[slice_.module_id].required_minutes
+            for row in ordered
+            for slice_ in row.slices
+        )
+        releasable = [
+            row
+            for row in ordered
+            if row.period.start_utc > now_utc
+            and (changed or not is_physically_protected(row.period, now_utc, protected_dates))
+        ]
+        releasable_ids = {row.lesson_id for row in releasable}
+        fixed_credit = sum(
+            row.credit_minutes for row in ordered if row.lesson_id not in releasable_ids
+        )
+        if fixed_credit > residual:
+            raise SnapshotConfigurationError(
+                "PROTECTED_LESSON_EXCEEDS_CURRICULUM",
+                "Existem aulas passadas que não cabem no currículo selecionado.",
+            )
+        fitted = [row for row in ordered if row.lesson_id not in releasable_ids]
+        credit = fixed_credit
+        for row in releasable:
+            if credit + row.credit_minutes > residual:
+                dropped.add(row.lesson_id)
+                continue
+            fitted.append(row)
+            credit += row.credit_minutes
+        if not fitted:
             continue
+        fitted.sort(key=lambda row: (row.period.school_date, row.period.start_utc, row.lesson_id))
         slices = project_module_slices(
             assignment.modules,
             completed_minutes=completed,
@@ -1173,16 +1210,16 @@ def _reproject_baseline(
                     row.period.duration_minutes,
                     row.credit_minutes,
                 )
-                for row in rows
+                for row in fitted
             ),
             require_complete=False,
         )
         by_lesson: dict[int, list[ModuleSlice]] = defaultdict(list)
         for slice_ in slices:
             by_lesson[slice_.lesson_id].append(slice_)
-        for row in rows:
+        for row in fitted:
             revised[row.lesson_id] = replace(row, slices=tuple(by_lesson[row.lesson_id]))
-    return tuple(revised.get(row.lesson_id, row) for row in lessons)
+    return tuple(revised.get(row.lesson_id, row) for row in lessons if row.lesson_id not in dropped)
 
 
 async def load_version_lessons(

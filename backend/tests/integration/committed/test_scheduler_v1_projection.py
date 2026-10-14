@@ -91,7 +91,7 @@ async def test_generation_projects_the_class_subject_link(db_session, monkeypatc
         )
     ).all()
     assert [(row.module_id, row.sequence, row.required_minutes) for row in requirements] == [
-        (seed.module.id, 1, seed.module.required_minutes)
+        (seed.module.id, seed.module.order + 1, seed.module.required_minutes)
     ]
 
 

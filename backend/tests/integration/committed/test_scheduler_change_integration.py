@@ -4,6 +4,7 @@ from sqlalchemy import select
 
 from app import models, schemas
 from app.services import (
+    class_service,
     room_service,
     settings_service,
     subject_service,
@@ -215,3 +216,86 @@ async def test_scheduler_shaping_writes_increment_but_policy_and_text_do_not(db_
         event.entity_type == "ROOM" and event.change_scope == models.SchedulerStateChangeScope.NO_OP
         for event in events
     )
+
+
+async def test_module_selection_records_a_class_subject_assignment_update(db_session):
+    organization = models.Organization(name="Selection Change School", plan_status="active")
+    db_session.add(organization)
+    await db_session.commit()
+
+    await settings_service.upsert_settings(
+        db_session,
+        organization.id,
+        schemas.OrganizationSettingsUpsert(
+            school_start_date=date(2025, 9, 1),
+            school_hard_end_date=date(2026, 7, 15),
+            repair_stability_window_days=14,
+        ),
+    )
+    service = SchedulerStateService(db_session)
+    school_year = await service.get_active_school_year(organization.id)
+    state = await service.get_state(organization.id, school_year.id)
+    version_before = state.scheduler_state_version
+
+    course = models.Course(name="Curso", abbreviation="CUR", organization_id=organization.id)
+    subject = models.Subject(name="Disciplina", organization_id=organization.id)
+    db_session.add_all([course, subject])
+    await db_session.flush()
+    class_ = models.Class(
+        name="10A",
+        size=20,
+        start_year=2025,
+        end_year=2026,
+        grade_level=10,
+        course_id=course.id,
+        organization_id=organization.id,
+    )
+    first_module = models.Module(
+        organization_id=organization.id,
+        subject_id=subject.id,
+        name="M1",
+        required_minutes=60,
+        order=0,
+    )
+    second_module = models.Module(
+        organization_id=organization.id,
+        subject_id=subject.id,
+        name="M2",
+        required_minutes=60,
+        order=1,
+    )
+    db_session.add_all([class_, first_module, second_module])
+    await db_session.flush()
+    await class_service.add_class_subject(db_session, class_.id, subject.id, organization.id)
+    await db_session.commit()
+
+    await class_service.update_class_subject(
+        db_session,
+        class_.id,
+        subject.id,
+        schemas.ClassSubjectUpdate(module_ids=[first_module.id]),
+        organization.id,
+    )
+    await class_service.update_class_subject(
+        db_session,
+        class_.id,
+        subject.id,
+        schemas.ClassSubjectUpdate(module_ids=[second_module.id, first_module.id]),
+        organization.id,
+    )
+    await db_session.commit()
+
+    event = (
+        await db_session.scalars(
+            select(models.SchedulerStateVersionEvent)
+            .where(models.SchedulerStateVersionEvent.organization_id == organization.id)
+            .order_by(models.SchedulerStateVersionEvent.id.desc())
+        )
+    ).first()
+    assert event is not None
+    assert event.entity_type == "CLASS_SUBJECT_ASSIGNMENT"
+    assert event.operation == models.SchedulerStateChangeOperation.UPDATE
+    assert event.after_metadata_json["module_ids"] == [first_module.id, second_module.id]
+
+    await db_session.refresh(state)
+    assert state.scheduler_state_version == version_before + 3

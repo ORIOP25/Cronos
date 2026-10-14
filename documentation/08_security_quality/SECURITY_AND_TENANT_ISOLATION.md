@@ -30,7 +30,7 @@ Database policies provide a second boundary when application code or a query is 
 | Clerk verification | `backend/app/core/clerk.py`, `backend/app/api/deps.py` |
 | Actor and capability checks | `backend/app/api/deps.py` |
 | Tenant context | `backend/app/db/tenant.py` |
-| RLS policies and functions | `backend/alembic/versions/0001_scheduler_v1_baseline.py` |
+| RLS policies and functions | `backend/alembic/versions/` (from the baseline onward) |
 | Request body protection | `backend/app/middleware/request_body_limit.py` |
 | Rate limiting | `backend/app/core/ratelimit.py` |
 | Proxy IP policy | `backend/app/core/client_ip.py` |
@@ -102,7 +102,7 @@ Webhook events move through received, processing, processed, ignored, retryable,
 
 - `backend/app/api/deps.py`
 - `backend/app/db/tenant.py`
-- `backend/alembic/versions/0001_scheduler_v1_baseline.py`
+- `backend/alembic/versions/`
 - `backend/tests/contracts/test_rls_database_policies.py`
 - `backend/tests/integration/committed/test_tenant_isolation_complete.py`
 - `frontend/public/_headers`

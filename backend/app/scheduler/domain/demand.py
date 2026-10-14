@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping, Sequence, Set
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
@@ -110,6 +110,26 @@ def remaining_minutes(
 ) -> int:
     completed = completed_by_module(modules, entries)
     return sum(module.required_minutes - completed[module.module_id] for module in modules)
+
+
+def close_retired_modules(
+    modules: Sequence[ModuleRequirement],
+    retired: Set[int],
+    completed: Mapping[int, int],
+) -> tuple[tuple[ModuleRequirement, ...], dict[int, int]]:
+    """Planning view: a retired module is closed at its executed minutes."""
+    planning: list[ModuleRequirement] = []
+    executed: dict[int, int] = {}
+    for module in modules:
+        minutes = completed.get(module.module_id, 0)
+        if module.module_id in retired:
+            if minutes <= 0:
+                continue
+            planning.append(ModuleRequirement(module.module_id, module.sequence, minutes))
+        else:
+            planning.append(module)
+        executed[module.module_id] = minutes
+    return tuple(planning), executed
 
 
 def frontier_credit(

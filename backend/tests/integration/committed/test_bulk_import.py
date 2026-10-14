@@ -57,7 +57,7 @@ def valid_files() -> dict[str, dict[str, str]]:
 
 
 async def test_bulk_import_validate_and_commit_is_atomic_and_tenant_scoped(
-    async_client: AsyncClient, clerk_admin_headers: dict
+    async_client: AsyncClient, db_session: AsyncSession, clerk_admin_headers: dict
 ):
     files = valid_files()
 
@@ -89,6 +89,14 @@ async def test_bulk_import_validate_and_commit_is_atomic_and_tenant_scoped(
     members = await async_client.get(f"{API}/members", headers=clerk_admin_headers)
     imported = [item for item in members.json()["items"] if item["email"].startswith("teacher.")]
     assert imported and imported[0]["teacher_access_mode"] == "scheduler_only"
+
+    # WBS 2.3.4: the CSV assignment marks every module of the subject.
+    imported_modules = set((await db_session.execute(select(models.Module.id))).scalars().all())
+    selected_modules = set(
+        (await db_session.execute(select(models.class_subject_module.c.module_id))).scalars().all()
+    )
+    assert imported_modules
+    assert selected_modules == imported_modules
 
 
 @pytest.mark.parametrize("resource", ["subjects", "courses"])

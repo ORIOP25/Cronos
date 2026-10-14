@@ -34,6 +34,8 @@ from app.scheduler.infrastructure.progress import (
     load_executed_minutes,
     load_execution_entries,
     load_open_debt,
+    load_planning_requirements,
+    reconcile_assignment_requirements,
     record_execution,
 )
 
@@ -622,6 +624,43 @@ async def assert_week_open(
         )
 
 
+async def _planning_slice_credits(
+    db: AsyncSession,
+    organization_id: int,
+    assignment_id: int,
+    slices: Sequence[SchedulerLessonSliceV1],
+) -> tuple[ModuleCredit, ...]:
+    """Credit a completed lesson, redirecting retired or removed modules.
+
+    The lesson keeps its stored slices while every referenced module is still
+    planned with capacity. When a slice points to a retired module, closed at
+    its executed minutes, or to a module that left the selection, its minutes
+    move to the planning frontier so the next selected module earns them.
+    """
+    planning, executed = await load_planning_requirements(db, organization_id, [assignment_id])
+    modules = planning.get(assignment_id, ())
+    completed = executed.get(assignment_id, {})
+    by_module = {module.module_id: module for module in modules}
+    stored_fit = True
+    for row in slices:
+        module = by_module.get(row.module_id)
+        if (
+            module is None
+            or completed.get(row.module_id, 0) + row.minutes > module.required_minutes
+        ):
+            stored_fit = False
+            break
+    if stored_fit:
+        return tuple(ModuleCredit(row.module_id, row.minutes) for row in slices)
+    try:
+        return frontier_credit(modules, completed, sum(row.minutes for row in slices))
+    except ValueError as exc:
+        raise OperationsError(
+            "lesson_without_slices",
+            "A aula não tem minutos curriculares disponíveis para creditar.",
+        ) from exc
+
+
 async def record_lesson_log(
     db: AsyncSession,
     organization_id: int,
@@ -711,8 +750,8 @@ async def record_lesson_log(
             db, organization_id, context, membership_id=membership_id, now_utc=now_utc
         )
     if status == "COMPLETED" and previous_status != "COMPLETED":
-        execution_credits = tuple(
-            ModuleCredit(row.module_id, row.minutes) for row in context.slices
+        execution_credits = await _planning_slice_credits(
+            db, organization_id, context.assignment.id, context.slices
         )
         if not execution_credits:
             raise OperationsError(
@@ -1033,19 +1072,19 @@ async def record_operational_lesson_log(
             occurrence_id=block.source_v1_lesson_log_id, teacher_id=block.teacher_id
         )
         if current == models.LessonLogStatus.COMPLETED:
-            requirements = (
-                await _requirements_for_assignments(db, organization_id, [assignment_id])
-            ).get(assignment_id, [])
+            planning, executed = await load_planning_requirements(
+                db, organization_id, [assignment_id]
+            )
+            requirements = planning.get(assignment_id, ())
             if not requirements:
                 raise OperationsError(
                     "substitute_without_requirements",
                     "A disciplina substituta não tem módulos configurados.",
                 )
-            executed = (await load_executed_minutes(db, organization_id, [assignment_id])).get(
-                assignment_id, {}
-            )
             try:
-                execution_credits = frontier_credit(requirements, executed, lesson.credit_minutes)
+                execution_credits = frontier_credit(
+                    requirements, executed.get(assignment_id, {}), lesson.credit_minutes
+                )
             except ValueError as exc:
                 raise OperationsError(
                     "substitute_without_capacity",
@@ -1116,6 +1155,8 @@ async def adjust_class_progress(
     )
     if year is None:
         return False
+    for assignment in assignments:
+        await reconcile_assignment_requirements(db, organization_id, assignment.id)
     requirements = await _requirements_for_assignments(
         db, organization_id, [row.id for row in assignments]
     )

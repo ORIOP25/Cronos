@@ -126,31 +126,45 @@ async def _flow_context(db_session):
     )
     db_session.add_all([state, settings, class_a, class_b])
     await db_session.flush()
-    db_session.add_all(
+    module = models.Module(
+        organization_id=organization.id,
+        name="Module",
+        code="FLW-1",
+        hours_total=10,
+        order=1,
+        subject_id=subject.id,
+    )
+    link_a = models.ClassSubjectLink(
+        organization_id=organization.id,
+        class_id=class_a.id,
+        subject_id=subject.id,
+        grade_level=10,
+        teacher_id=teacher.id,
+    )
+    link_b = models.ClassSubjectLink(
+        organization_id=organization.id,
+        class_id=class_b.id,
+        subject_id=subject.id,
+        grade_level=10,
+        teacher_id=teacher.id,
+    )
+    db_session.add_all([module, link_a, link_b])
+    await db_session.flush()
+    # WBS 2.2.2: the planning loader reads the per-class module selection.
+    await db_session.execute(
+        models.class_subject_module.insert(),
         [
-            models.Module(
-                organization_id=organization.id,
-                name="Module",
-                code="FLW-1",
-                hours_total=1,
-                order=1,
-                subject_id=subject.id,
-            ),
-            models.ClassSubjectLink(
-                organization_id=organization.id,
-                class_id=class_a.id,
-                subject_id=subject.id,
-                grade_level=10,
-                teacher_id=teacher.id,
-            ),
-            models.ClassSubjectLink(
-                organization_id=organization.id,
-                class_id=class_b.id,
-                subject_id=subject.id,
-                grade_level=10,
-                teacher_id=teacher.id,
-            ),
-        ]
+            {
+                "organization_id": organization.id,
+                "class_subject_link_id": link_a.id,
+                "module_id": module.id,
+            },
+            {
+                "organization_id": organization.id,
+                "class_subject_link_id": link_b.id,
+                "module_id": module.id,
+            },
+        ],
     )
     await db_session.execute(
         models.teacher_subject_link.insert().values(
@@ -206,7 +220,7 @@ async def _publish_block(db_session, ctx, class_, block_date, key, timeslot=None
                 organization_id=ctx["organization"].id,
                 assignment_id=assignment.id,
                 module_id=module.id,
-                sequence=1,
+                sequence=module.order + 1,
                 required_minutes=600,
             )
         )

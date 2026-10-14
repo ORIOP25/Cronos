@@ -137,7 +137,9 @@ An Impossível block is hard; an Evitar block is soft.
 A class with one Preferencial block treats its other blocks as Evitar, like a teacher.
 
 Saving, copying, and CSV import replace the whole grid of a class in the visible grid version.
-A pending proposal becomes stale after a save.
+A changed save bumps the planning revision, so a pending proposal becomes stale.
+That happens only for a class with at least one class-subject link (`active_resource`).
+A class without links does not invalidate the proposal.
 
 Grid regeneration and grid changes treat class rows like teacher rows.
 A block with the same signature keeps the class level.

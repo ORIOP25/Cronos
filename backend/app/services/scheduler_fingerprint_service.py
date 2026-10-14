@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models
@@ -262,6 +262,35 @@ class SchedulerFingerprintService:
             else []
         )
         module_ids = {row.id for row in module_rows}
+        link_ids = {row.id for row in assignment_rows}
+        selection_rows = (
+            (
+                await self._db.execute(
+                    select(
+                        models.ClassSubjectLink.class_id,
+                        models.ClassSubjectLink.subject_id,
+                        models.ClassSubjectLink.grade_level,
+                        models.class_subject_module.c.module_id,
+                    )
+                    .select_from(models.class_subject_module)
+                    .join(
+                        models.ClassSubjectLink,
+                        and_(
+                            models.ClassSubjectLink.organization_id
+                            == models.class_subject_module.c.organization_id,
+                            models.ClassSubjectLink.id
+                            == models.class_subject_module.c.class_subject_link_id,
+                        ),
+                    )
+                    .where(
+                        models.class_subject_module.c.organization_id == organization_id,
+                        models.class_subject_module.c.class_subject_link_id.in_(link_ids),
+                    )
+                )
+            ).all()
+            if link_ids
+            else []
+        )
         progress_rows = (
             (
                 await self._db.execute(
@@ -566,6 +595,23 @@ class SchedulerFingerprintService:
                         row.subject_id,
                         row.grade_level,
                         -1 if row.teacher_id is None else row.teacher_id,
+                    ),
+                )
+            ],
+            "class_subject_modules": [
+                {
+                    "class_id": row.class_id,
+                    "subject_id": row.subject_id,
+                    "grade_level": row.grade_level,
+                    "module_id": row.module_id,
+                }
+                for row in sorted(
+                    selection_rows,
+                    key=lambda row: (
+                        row.class_id,
+                        row.subject_id,
+                        row.grade_level,
+                        row.module_id,
                     ),
                 )
             ],

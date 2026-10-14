@@ -2,12 +2,15 @@
 
 Adds ``class_availability`` with a composed tenant primary key, forced RLS and
 least-privilege grants, and adds ``scheduler_job_v1.diagnostics_json``.
+
+Revision ID: 0003_class_availability
+Revises: 0002_class_subject_modules
 """
 
 from alembic import op
 
-revision = "0002_class_availability"
-down_revision = "0001_scheduler_v1_baseline"
+revision = "0003_class_availability"
+down_revision = "0002_class_subject_modules"
 branch_labels = None
 depends_on = None
 

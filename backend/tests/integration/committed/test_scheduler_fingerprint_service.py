@@ -540,3 +540,119 @@ async def test_fingerprint_tracks_class_availability_and_ignores_archived_classe
     archived = await fingerprint()
     assert archived.snapshot["class_availability"] == []
     assert archived.value != changed.value
+
+
+async def test_generation_input_snapshot_tracks_the_class_subject_module_selection(db_session):
+    organization = models.Organization(name="Selection Fingerprint", plan_status="active")
+    db_session.add(organization)
+    await db_session.flush()
+    school_year = models.SchedulerSchoolYear(
+        organization_id=organization.id,
+        label="2025/2026",
+        start_date=date(2025, 9, 1),
+        hard_end_date=date(2026, 7, 15),
+        timezone="Europe/Lisbon",
+    )
+    course = models.Course(
+        organization_id=organization.id,
+        name="Selection Course",
+        abbreviation="SEL",
+    )
+    subject = models.Subject(
+        organization_id=organization.id,
+        name="Selection Subject",
+        required_room_type=models.RoomType.normal,
+    )
+    db_session.add_all([school_year, course, subject])
+    await db_session.flush()
+    state = models.SchedulerSchoolYearState(
+        organization_id=organization.id,
+        school_year_id=school_year.id,
+    )
+    class_ = models.Class(
+        organization_id=organization.id,
+        name="Selection Class",
+        size=20,
+        start_year=2025,
+        end_year=2026,
+        grade_level=10,
+        course_id=course.id,
+    )
+    module_one = models.Module(
+        organization_id=organization.id,
+        subject_id=subject.id,
+        name="Selection Module One",
+        required_minutes=60,
+        order=1,
+    )
+    module_two = models.Module(
+        organization_id=organization.id,
+        subject_id=subject.id,
+        name="Selection Module Two",
+        required_minutes=60,
+        order=2,
+    )
+    db_session.add_all([state, class_, module_one, module_two])
+    await db_session.flush()
+    link = models.ClassSubjectLink(
+        organization_id=organization.id,
+        class_id=class_.id,
+        subject_id=subject.id,
+        grade_level=class_.grade_level,
+        teacher_id=None,
+    )
+    db_session.add(link)
+    await db_session.flush()
+    await db_session.execute(
+        models.class_subject_module.insert().values(
+            organization_id=organization.id,
+            class_subject_link_id=link.id,
+            module_id=module_one.id,
+        )
+    )
+    await db_session.commit()
+
+    service = SchedulerFingerprintService(db_session)
+    first = await service.generation_input_fingerprint(
+        organization.id,
+        school_year.id,
+        models.ScheduleGenerationStrategy.COMPLETE_GENERATION,
+    )
+    assert first.snapshot["class_subject_modules"] == [
+        {
+            "class_id": class_.id,
+            "subject_id": subject.id,
+            "grade_level": class_.grade_level,
+            "module_id": module_one.id,
+        }
+    ]
+
+    await db_session.execute(
+        models.class_subject_module.insert().values(
+            organization_id=organization.id,
+            class_subject_link_id=link.id,
+            module_id=module_two.id,
+        )
+    )
+    await db_session.commit()
+    second = await service.generation_input_fingerprint(
+        organization.id,
+        school_year.id,
+        models.ScheduleGenerationStrategy.COMPLETE_GENERATION,
+    )
+
+    assert second.value != first.value
+    assert second.snapshot["class_subject_modules"] == [
+        {
+            "class_id": class_.id,
+            "subject_id": subject.id,
+            "grade_level": class_.grade_level,
+            "module_id": module_one.id,
+        },
+        {
+            "class_id": class_.id,
+            "subject_id": subject.id,
+            "grade_level": class_.grade_level,
+            "module_id": module_two.id,
+        },
+    ]

@@ -17,22 +17,25 @@ O responsável de produto pediu um único ramo e worktree novos.
 As três fases lógicas (PR 1 a PR 3) foram consolidadas localmente em `feat/class-availability-engine`.
 A sequência original de três pull requests não foi executada.
 
-Evidência local em `.test-artifacts/*/run.json`, na revisão `4773d76`, com árvores de teste não limpas (a linha de base foi medida numa árvore limpa):
+Evidência local em `.test-artifacts/*/run.json`, no commit do ramo `c7618ce`, com árvores de teste não limpas (a linha de base foi medida numa árvore limpa):
 
 | Medição | Linha de base | Ramo da funcionalidade |
 | :--- | :--- | :--- |
-| Backend `fast --scope backend` | 739 | 771 |
-| Frontend `fast --scope frontend` | 592 | 612 |
-| `integration` | 426 + 61 contratos | 152 + 64 contratos (`-k scheduler`) |
-| `integration -- -k bulk_import` | — | 14 + 64 contratos |
+| Backend `fast --scope backend` | 739 | 778 |
+| Frontend `fast --scope frontend` | 592 | 622 (85 ficheiros) |
+| `integration` | 426 + 61 contratos | 518 + 66 contratos (artifact `1792014351559-27680`) |
+| `ruff check` e `ruff format --check` | — | verde (315 ficheiros) |
+| `npm run verify:checks` | — | verde |
 
 Grupos implementados e testados localmente: 2.1 a 2.6 (servidor e motor), 3.1 a 3.7 (ecrãs) e 4.1 a 4.6 (importação CSV).
 
 Os pacotes de documentação 2.7, 3.9 e 4.7 são atualizados no mesmo ramo, nos guias da secção [Documentação a atualizar](CLASS_AVAILABILITY_TECH_SPEC.md#documentação-a-atualizar).
 
+As provas de migração correram numa stack de teste descartável e isolada e passaram: `alembic upgrade head` (`0001 → 0002 → 0003`), `alembic check` sem drift, `alembic downgrade 0002_class_subject_modules`, nova subida para head, `python -m scripts.audit_triggers` e `python -m scripts.audit_database_integrity`. Evidência sanitizada em `.test-artifacts/cronos-avail-verify-migration-evidence.md`.
+
 Pendentes: 2.8, 3.10 e 4.8 (entrega de pull request), 5.1 (verificação manual) e 5.2 (estado final dos documentos).
-Pendente também o percurso 3.8, bloqueado porque `doctor --profile e2e` recusa os valores de teste seguros em falta.
-Não existe pull request, CI nem deploy nesta data.
+Pendente também o percurso 3.8: o e2e local está bloqueado pela política de execução, não por credenciais em falta.
+A entrega é acompanhada no pull request do ramo `feat/class-availability-engine`. A CI obrigatória final não é reclamada.
 
 ## Intended Reader
 
@@ -156,7 +159,7 @@ Este PR acrescenta o bloqueio da pré-validação e os diagnósticos na API. Os 
 - **Depende de:** 2.1.1
 - **Spec:** [Modelo de dados](CLASS_AVAILABILITY_TECH_SPEC.md#modelo-de-dados) e [Migração](CLASS_AVAILABILITY_TECH_SPEC.md#migração).
 - **Risco:** as FKs compostas exigem `uq_class_org_id` e `uq_timeslot_org_id`. As duas existem na baseline.
-- **Nota de implementação:** a migração real é `0002_class_availability`, sobre a base `main` no commit `4773d76`. A renumeração pode ser necessária se outro item integrar uma migração em `main`.
+- **Nota de implementação:** a migração real é `0003_class_availability`, com `down_revision = "0002_class_subject_modules"`. A migração de seleção de módulos por turma integrou em `main`, por isso a cadeia passou a `0001 → 0002 → 0003`.
 
 ##### 2.1.3 Modelos SQLAlchemy — P
 

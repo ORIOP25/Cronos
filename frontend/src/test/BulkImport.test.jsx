@@ -69,6 +69,59 @@ describe('BulkImport', () => {
     ).toBeInTheDocument()
   })
 
+  it('lists the class availability preview rows with course, class and non-neutral blocks', async () => {
+    const user = userEvent.setup()
+    mocks.validate.mockResolvedValueOnce({
+      can_commit: true,
+      preview: {
+        counts: { class_availability: 2 },
+        items: [
+          { resource: 'rooms', name: 'Sala 1', line: 2 },
+          {
+            resource: 'class_availability',
+            course_abbreviation: 'TGEI',
+            class_name: 'TGEI 25/28',
+            non_neutral_blocks: 3,
+            line: 2,
+          },
+          {
+            resource: 'class_availability',
+            course_abbreviation: 'TM',
+            class_name: 'TM 24/27',
+            non_neutral_blocks: 0,
+            line: 4,
+          },
+        ],
+      },
+      issues: [],
+    })
+    renderPage()
+    const file = new File(['x'], 'Cronos_DisponibilidadeTurmas_Template.csv', { type: 'text/csv' })
+
+    await user.upload(
+      screen.getByLabelText('Selecionar ficheiro CSV de disponibilidade das turmas'),
+      file,
+    )
+    await user.click(screen.getByRole('button', { name: 'Verificar ficheiros' }))
+
+    const table = await screen.findByRole('table', {
+      name: 'Disponibilidade das turmas por turma',
+    })
+    expect(within(table).getByRole('columnheader', { name: 'Sigla do curso' })).toBeInTheDocument()
+    expect(within(table).getByRole('columnheader', { name: 'Nome da turma' })).toBeInTheDocument()
+    expect(
+      within(table).getByRole('columnheader', { name: 'Blocos diferentes de Neutro' }),
+    ).toBeInTheDocument()
+    expect(within(table).getAllByRole('row')).toHaveLength(3)
+    expect(within(table).getByText('TGEI')).toBeInTheDocument()
+    expect(within(table).getByText('TGEI 25/28')).toBeInTheDocument()
+    expect(within(table).getByText('3')).toBeInTheDocument()
+    expect(within(table).getByText('TM 24/27')).toBeInTheDocument()
+    expect(within(table).getByText('0')).toBeInTheDocument()
+    expect(within(table).queryByText('Sala 1')).not.toBeInTheDocument()
+    expect(screen.getByText('Disponibilidade das turmas: 2')).toBeInTheDocument()
+  })
+
   it('shows a cell error with the actual column title', async () => {
     const user = userEvent.setup()
     mocks.validate.mockResolvedValueOnce({

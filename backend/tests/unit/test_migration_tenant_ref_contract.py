@@ -27,76 +27,89 @@ def _load_revisions() -> list[tuple[str, str | None]]:
     ]
 
 
-def _assert_linear_chain(revisions: list[tuple[str, str | None]]) -> None:
-    """The frozen baseline roots one unbranched chain that reaches every revision."""
+def _assert_linear_chain(
+    revisions: list[tuple[str, str | None]],
+    baseline_revision: str = BASELINE_REVISION,
+) -> None:
+    """One chain from the frozen baseline root to a single head.
+
+    Rejects duplicate revisions, merges (tuple parent), branches (two children),
+    unknown parents, cycles, disconnected revisions and a baseline that is not
+    the chain root.
+    """
     revision_ids = [revision for revision, _ in revisions]
     assert len(revision_ids) == len(set(revision_ids)), "migration revisions must be unique"
-    assert dict(revisions).get(BASELINE_REVISION, "missing") is None
+    chain = dict(revisions)
+    assert chain.get(baseline_revision, "missing") is None, (
+        "the frozen baseline must be the chain root"
+    )
+    children: dict[str, list[str]] = {}
+    for revision, down_revision in chain.items():
+        if revision == baseline_revision:
+            continue
+        assert isinstance(down_revision, str), f"{revision} merges multiple parents"
+        assert down_revision in chain, f"{revision} references unknown parent {down_revision!r}"
+        children.setdefault(down_revision, []).append(revision)
+    for parent, branches in children.items():
+        assert len(branches) == 1, f"{parent} branches into {sorted(branches)}"
+    heads = [revision for revision in chain if revision not in children]
+    assert len(heads) == 1, f"expected one head, found {sorted(heads)}"
+    visited: set[str] = set()
+    node: object = heads[0]
+    while node is not None:
+        assert node not in visited, f"cycle detected at {node}"
+        visited.add(node)
+        node = chain[node]
+    assert visited == set(chain), "the revision graph is disconnected"
 
-    successors: dict[str, str] = {}
-    for revision, down_revision in revisions:
-        if down_revision is not None:
-            assert down_revision not in successors, "migration chain must not branch"
-            successors[down_revision] = revision
 
-    visited = [BASELINE_REVISION]
-    for _ in range(len(revisions)):
-        if visited[-1] not in successors:
-            break
-        visited.append(successors[visited[-1]])
-    assert set(visited) == set(revision_ids), "migration chain must be connected from the baseline"
+def test_migration_history_is_one_linear_chain_from_the_frozen_baseline():
+    _assert_linear_chain(_load_revisions())
 
 
-def test_migration_chain_rejects_a_branch():
-    with pytest.raises(AssertionError):
+def test_linear_chain_validation_accepts_a_single_chain():
+    _assert_linear_chain(
+        [(BASELINE_REVISION, None), ("0002_class_subject_modules", BASELINE_REVISION)]
+    )
+
+
+def test_linear_chain_validation_rejects_a_branch():
+    with pytest.raises(AssertionError, match="branches"):
         _assert_linear_chain(
-            [
-                (BASELINE_REVISION, None),
-                ("0002_class_availability", BASELINE_REVISION),
-                ("0003_other", BASELINE_REVISION),
-            ]
+            [(BASELINE_REVISION, None), ("a", BASELINE_REVISION), ("b", BASELINE_REVISION)]
         )
+
+
+def test_linear_chain_validation_rejects_a_merge():
+    with pytest.raises(AssertionError, match="merges"):
+        _assert_linear_chain(
+            [(BASELINE_REVISION, None), ("a", BASELINE_REVISION), ("b", (BASELINE_REVISION, "a"))]
+        )
+
+
+def test_linear_chain_validation_rejects_a_cycle():
+    with pytest.raises(AssertionError):
+        _assert_linear_chain([(BASELINE_REVISION, None), ("a", "b"), ("b", "a")])
+
+
+def test_linear_chain_validation_rejects_a_missing_parent():
+    with pytest.raises(AssertionError, match="unknown parent"):
+        _assert_linear_chain([(BASELINE_REVISION, None), ("a", "ghost")])
 
 
 def test_migration_chain_rejects_duplicate_revision_ids():
-    with pytest.raises(AssertionError):
+    with pytest.raises(AssertionError, match="unique"):
         _assert_linear_chain(
             [
                 (BASELINE_REVISION, None),
-                ("0002_class_availability", BASELINE_REVISION),
-                ("0002_class_availability", BASELINE_REVISION),
+                ("0002_class_subject_modules", BASELINE_REVISION),
+                ("0002_class_subject_modules", BASELINE_REVISION),
             ]
         )
 
 
-def test_migration_chain_rejects_a_disconnected_cycle():
-    with pytest.raises(AssertionError):
-        _assert_linear_chain(
-            [
-                (BASELINE_REVISION, None),
-                ("0002_a", "0003_b"),
-                ("0003_b", "0002_a"),
-            ]
-        )
-
-
-def test_migration_chain_rejects_a_missing_predecessor():
-    with pytest.raises(AssertionError):
-        _assert_linear_chain(
-            [
-                (BASELINE_REVISION, None),
-                ("0002_a", "0009_missing"),
-            ]
-        )
-
-
-def test_migration_chain_accepts_a_linear_revision():
-    _assert_linear_chain(
-        [
-            (BASELINE_REVISION, None),
-            ("0002_class_availability", BASELINE_REVISION),
-        ]
-    )
+def test_frozen_baseline_is_present_and_unchanged():
+    assert BASELINE.exists()
 
 
 def test_migration_history_has_one_frozen_baseline():

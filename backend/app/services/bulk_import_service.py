@@ -376,7 +376,7 @@ async def commit_import(
             changed_by_membership_id=current_admin.membership_id,
         )
         if assignment.teacher_email:
-            await class_service.update_class_subject_teacher(
+            await class_service.update_class_subject(
                 db,
                 class_id,
                 subject_id,

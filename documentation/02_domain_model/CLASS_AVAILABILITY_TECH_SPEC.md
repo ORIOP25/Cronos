@@ -9,7 +9,7 @@ Define decisões de produto, modelo de dados, contratos, regras do motor, plano 
 A verificação final e a entrega estão pendentes.
 O código, os testes, as migrações e a configuração são a fonte de verdade; este documento fica como registo das decisões.
 **Data:** 14 de outubro de 2026.
-**Base observada:** branch `main` no commit `4773d76`.
+**Base observada:** branch `main` no commit `4773d76`; `origin/main` avançou para `ade64f3` com a seleção de módulos por turma (PR #131), integrada neste ramo.
 **Origem:** item 3 dos pedidos da escola piloto, reunião de 13 de outubro de 2026.
 
 Depois da implementação, os guias da secção [Documentação a atualizar](#documentação-a-atualizar) descrevem o comportamento.
@@ -23,22 +23,27 @@ Os grupos de servidor e motor (2), ecrãs (3) e importação CSV (4) foram imple
 A documentação dos grupos 2.7, 3.9 e 4.7 é atualizada no mesmo ramo, nos guias da secção [Documentação a atualizar](#documentação-a-atualizar).
 As entregas 2.8, 3.10, 4.8, 5.1 e 5.2 do [WBS](CLASS_AVAILABILITY_WBS.md) continuam abertas.
 
-Migração: a migração real é `backend/alembic/versions/0002_class_availability.py`, com `down_revision = "0001_scheduler_v1_baseline"`, sobre a base `main` no commit `4773d76`.
-A renumeração pode ser necessária se outro item integrar uma migração em `main` antes desta entrega.
+A migração real é `backend/alembic/versions/0003_class_availability.py`, com `down_revision = "0002_class_subject_modules"`, renumerada depois de `main` integrar a cadeia de seleção de módulos por turma.
 
-Evidência local em `.test-artifacts/*/run.json`, na revisão `4773d76`, com árvores de teste não limpas (a linha de base foi medida numa árvore limpa):
+Evidência local em `.test-artifacts/*/run.json`, no commit do ramo `c7618ce`, com árvores de teste não limpas (a linha de base foi medida numa árvore limpa):
 
 | Medição | Linha de base | Ramo da funcionalidade |
 | :--- | :--- | :--- |
-| Backend `fast --scope backend` | 739 | 771 |
-| Frontend `fast --scope frontend` | 592 | 612 |
-| `integration` | 426 + 61 contratos | 152 + 64 contratos (`-k scheduler`) |
-| `integration -- -k bulk_import` | — | 14 + 64 contratos |
+| Backend `fast --scope backend` | 739 | 778 |
+| Frontend `fast --scope frontend` | 592 | 622 (85 ficheiros) |
+| `integration` | 426 + 61 contratos | 518 + 66 contratos (artifact `1792014351559-27680`) |
+| `ruff check` e `ruff format --check` | — | verde (315 ficheiros) |
+| `npm run verify:checks` | — | verde |
 
-Estes valores não são a verificação final. A corrida completa do orquestrador está em execução.
-O percurso e2e está bloqueado porque `doctor --profile e2e` recusa os valores de teste seguros em falta.
-A reconstrução do contentor do frontend foi adiada por configuração segura.
-Não existe pull request, CI nem deploy nesta data.
+O código e a verificação local estão presentes. A CI obrigatória final (`backend`, `frontend`, `e2e-runtime`, `e2e-browser`), a verificação manual e a produção continuam incompletas e não são reclamadas.
+
+As provas de migração correram numa stack de teste descartável e isolada e passaram: `alembic upgrade head` (`0001 → 0002 → 0003`), `alembic check` sem drift, `alembic downgrade 0002_class_subject_modules`, nova subida para head, `python -m scripts.audit_triggers` e `python -m scripts.audit_database_integrity`. Evidência sanitizada em `.test-artifacts/cronos-avail-verify-migration-evidence.md`.
+
+A entrega é acompanhada no pull request do ramo `feat/class-availability-engine`.
+
+O percurso e2e local está bloqueado pela política de execução, não por credenciais em falta. As credenciais de teste do Clerk estão fornecidas fora do repositório, mas a regra de permissões nega a leitura de ficheiros `*.env` (mesmo `node --env-file`). O ficheiro de credenciais não é lido, copiado nem codificado.
+
+A reconstrução do contentor do frontend foi tentada com `docker compose up -d --build frontend`. Falhou antes de alterar serviços porque faltam `CRONOS_APP_PASSWORD`, `POSTGRES_PASSWORD` e `VITE_CLERK_PUBLISHABLE_KEY` neste worktree novo. A configuração segura fica pendente; não se copiam valores reais de ambiente.
 
 ## Intended Reader
 
@@ -201,8 +206,7 @@ A coluna guarda os diagnósticos de uma geração que terminou sem horário.
 Crie uma migração com `down_revision` igual à cabeça de `main` no momento da implementação.
 Os itens 1 e 2 reservam `0002` e `0003`. Use o número seguinte livre, por exemplo `0004_class_availability`.
 
-> Implementação local: a migração real é `0002_class_availability`, com `down_revision = "0001_scheduler_v1_baseline"`, sobre a base `main` no commit `4773d76`.
-> A renumeração pode ser necessária se outro item integrar uma migração em `main` antes desta entrega.
+> Implementação local: a migração real é `0003_class_availability`, com `down_revision = "0002_class_subject_modules"`, após a integração da migração de seleção de módulos por turma em `main`. A cadeia mantém-se linear sobre a baseline `0001_scheduler_v1_baseline`.
 
 1. Crie a tabela, as FKs, a chave primária, o índice e o `CHECK`.
 2. Ative `ENABLE ROW LEVEL SECURITY` e `FORCE ROW LEVEL SECURITY`.
