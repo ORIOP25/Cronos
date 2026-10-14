@@ -128,13 +128,13 @@ test('an all-impossible class blocks generation until a neutral grid is copied o
 
     await test.step('marks every block of the class as impossible', async () => {
       await goTo(page, `/courses/${courseId}/classes/${firstClass.id}`)
-      await expect(page.getByText('Disponibilidade')).toBeVisible({ timeout: 30_000 })
+      await expect(page.getByText('Disponibilidade', { exact: true })).toBeVisible({ timeout: 30_000 })
       await page.getByRole('button', { name: /editar disponibilidade/i }).click()
-      await expect(page.getByText(`Disponibilidade — ${firstClass.name}`)).toBeVisible()
+      await expect(page.getByText(`Disponibilidade — ${firstClass.name}`, { exact: true })).toBeVisible()
       await markEveryBlockImpossible(page)
-      await expect(page.getByText(/Não é possível colocar|Sem restrições/)).toHaveCount(0)
+      await expect(page.getByText(/\d+ impossíveis/)).toBeVisible()
       await page.getByRole('button', { name: 'Fechar', exact: true }).click()
-      await expect(page.getByText('Disponibilidade')).toBeVisible()
+      await expect(page.getByText('Disponibilidade', { exact: true })).toBeVisible()
     })
 
     await test.step('blocks the generation in the prevalidation', async () => {
@@ -151,7 +151,7 @@ test('an all-impossible class blocks generation until a neutral grid is copied o
 
       await goTo(page, `/courses/${courseId}/classes/${secondClass.id}`)
       await page.getByRole('button', { name: /editar disponibilidade/i }).click()
-      await expect(page.getByText(`Disponibilidade — ${secondClass.name}`)).toBeVisible()
+      await expect(page.getByText(`Disponibilidade — ${secondClass.name}`, { exact: true })).toBeVisible()
       await page.getByRole('button', { name: /aplicar a outras turmas/i }).click()
       await page.getByRole('checkbox', { name: firstClass.name, exact: true }).check()
       await page.getByRole('button', { name: 'Aplicar a 1 turmas', exact: true }).click()
