@@ -932,6 +932,16 @@ const PendingProposalBanner = ({ proposal }) => {
   )
 }
 
+/** "{p} professor(es) e {t} turma(s)" com a parte zerada omitida. */
+const availabilityCountLabel = (target) => {
+  const teachers = Array.isArray(target.teachers) ? target.teachers.length : 0
+  const classes = Array.isArray(target.classes) ? target.classes.length : 0
+  const parts = []
+  if (teachers) parts.push(`${teachers} professor(es)`)
+  if (classes) parts.push(`${classes} turma(s)`)
+  return parts.length ? `${parts.join(' e ')} com disponibilidade neste bloco.` : 'Sem disponibilidade neste bloco.'
+}
+
 const GridChangeImpactPanel = ({ preview, decisions, onDecision, onPropose, isProposing }) => {
   const decisionTargets = []
   const seen = new Set()
@@ -1000,7 +1010,7 @@ const GridChangeImpactPanel = ({ preview, decisions, onDecision, onPropose, isPr
               Escolha se cada bloco afetado é copiado para a nova grelha ou descartado.
             </p>
             {decisionTargets.map((target) => {
-              const isAvailability = Array.isArray(target.teachers)
+              const isAvailability = Array.isArray(target.teachers) || Array.isArray(target.classes)
               return (
                 <fieldset key={target.current_timeslot_id} className="border rounded p-3 mb-3">
                   <legend className="fs-6 fw-semibold">
@@ -1010,7 +1020,7 @@ const GridChangeImpactPanel = ({ preview, decisions, onDecision, onPropose, isPr
                   </legend>
                   <div className="text-muted small mb-2">
                     {isAvailability
-                      ? `${target.teachers.length} professor(es) com disponibilidade neste bloco.`
+                      ? availabilityCountLabel(target)
                       : 'Regra aplicada a este bloco horário.'}
                     {' '}
                     {target.proposed

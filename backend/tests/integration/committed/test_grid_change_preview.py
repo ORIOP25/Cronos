@@ -232,3 +232,52 @@ async def test_analysis_reports_moved_availability_and_pending_lessons(db_sessio
         db_session, organization.id, proposal
     )
     assert after_score_change.fingerprint != analysis.fingerprint
+
+
+async def test_analysis_reports_class_only_availability_and_fingerprints_it(db_session):
+    seed = await seed_generatable_school(
+        db_session,
+        clerk_user_id="preview-class",
+        clerk_org_id="preview-class-org",
+    )
+    organization = seed.organization
+    version = await grid_version_service.ensure_active_grid_version(
+        db_session, organization.id, effective_date=date(2026, 1, 1)
+    )
+    slot = models.Timeslot(
+        organization_id=organization.id,
+        grid_version_id=version.id,
+        day_of_week=0,
+        start_time=time(9, 0),
+        end_time=time(9, 50),
+    )
+    db_session.add(slot)
+    await db_session.flush()
+    row = models.ClassAvailability(
+        organization_id=organization.id,
+        class_id=seed.class_.id,
+        timeslot_id=slot.id,
+        score=models.PreferenceLevel.AVOID.value,
+    )
+    db_session.add(row)
+    await db_session.flush()
+
+    proposal = schemas.TimeslotBulkCreate(
+        **_proposal(slot_duration_minutes=55, break_duration_minutes=5)
+    )
+    analysis = await grid_change_service.analyze_grid_change(db_session, organization.id, proposal)
+
+    entry = next(
+        item for item in analysis.affected_availabilities if item["current_timeslot_id"] == slot.id
+    )
+    assert entry["match"] == "MOVED"
+    assert entry["teachers"] == []
+    assert entry["classes"] == [
+        {"class_id": seed.class_.id, "score": models.PreferenceLevel.AVOID.value}
+    ]
+    assert entry["requires_decision"] is True
+
+    row.score = models.PreferenceLevel.IMPOSSIBLE.value
+    await db_session.flush()
+    changed = await grid_change_service.analyze_grid_change(db_session, organization.id, proposal)
+    assert changed.fingerprint != analysis.fingerprint

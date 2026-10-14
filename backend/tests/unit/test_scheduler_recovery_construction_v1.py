@@ -84,6 +84,19 @@ def test_a_withdrawn_room_changes_the_room_before_moving_the_lesson():
     assert positions(result.candidate) == {(1, periods[0], 2)}
 
 
+def test_the_class_preference_breaks_a_tie_between_shared_teacher_options():
+    periods = (period(0), period(1))
+    _, result = recover(
+        periods,
+        [assignment(1, 1, 1, {1}, 60), assignment(2, 2, 1, {2}, 60)],
+        [],
+        soft_unavailable=(Unavailability(UnavailableResource.CLASS, 1, periods[0]),),
+    )
+
+    # Class 1 avoids Monday, so the shared teacher places class 2 first there.
+    assert positions(result.candidate) == {(1, periods[1], 1), (2, periods[0], 2)}
+
+
 def test_new_teacher_unavailability_keeps_the_unaffected_class_position():
     periods = (period(0), period(1))
     unchanged = lesson(11, 2, periods[0], 2)

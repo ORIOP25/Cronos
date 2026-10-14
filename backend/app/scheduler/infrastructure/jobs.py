@@ -9,6 +9,7 @@ global visibility is limited to the operational metadata returned by
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
@@ -546,13 +547,17 @@ async def finish_job(
     status: str,
     result_code: str,
     stop_reason: str | None = None,
+    diagnostics: Sequence[dict] | None = None,
     now_utc: datetime,
 ) -> str:
     """Terminal write under the state and job locks.
 
     Cancellation and stale data win over the calculated result, so an old
-    ``INFEASIBLE`` never describes freshness it no longer has. Returns the
-    status actually written; ``LOST`` means this attempt no longer owns the job.
+    ``INFEASIBLE`` never describes freshness it no longer has. Per-class
+    diagnostics are stored only when the effective terminal state is a genuine
+    ``INFEASIBLE``; a cancelled or stale attempt keeps the column empty.
+    Returns the status actually written; ``LOST`` means this attempt no longer
+    owns the job.
     """
     if status not in JOB_TERMINAL_STATUSES:
         raise ValueError("A terminal status is required to finish a scheduler job.")
@@ -601,6 +606,8 @@ async def finish_job(
     job.status = status
     job.result_code = result_code
     job.stop_reason = stop_reason
+    if status == "INFEASIBLE" and diagnostics is not None:
+        job.diagnostics_json = list(diagnostics)
     job.finished_at = now_utc
     if status != "SUCCEEDED":
         await reject_grid_version_for_job(db, job.organization_id, job.grid_version_id)

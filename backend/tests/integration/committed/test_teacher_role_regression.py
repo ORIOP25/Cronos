@@ -405,3 +405,47 @@ class TestTeacherRoleRegressionContracts:
         assert len(persisted_rows) == len(slot_rows)
         assert persisted_rows[0]["timeslot_id"] == slot_rows[0]["id"]
         assert persisted_rows[0]["score"] == 2
+
+    async def test_teacher_cannot_read_write_or_copy_class_availability(
+        self, async_client: AsyncClient, clerk_admin_headers: dict, db_session
+    ):
+        course = models.Course(name="Curso Class Avail", abbreviation="CCA", organization_id=1)
+        db_session.add(course)
+        await db_session.flush()
+        class_row = models.Class(
+            name="Turma Class Avail",
+            size=20,
+            start_year=2025,
+            end_year=2028,
+            grade_level=10,
+            course_id=course.id,
+            organization_id=1,
+        )
+        db_session.add(class_row)
+        await db_session.flush()
+        teacher = await create_teacher_profile(
+            db_session, organization_id=1, name="Prof. Class Avail"
+        )
+        await db_session.commit()
+        teacher_headers, _ = await _create_teacher_auth_headers(
+            db_session, organization_id=1, teacher_id=teacher.id
+        )
+
+        read_resp = await async_client.get(
+            f"{API}/classes/{class_row.id}/availability", headers=teacher_headers
+        )
+        assert read_resp.status_code == 403
+
+        write_resp = await async_client.put(
+            f"{API}/classes/{class_row.id}/availability",
+            json=[{"timeslot_id": 1, "score": 1}],
+            headers=teacher_headers,
+        )
+        assert write_resp.status_code == 403
+
+        copy_resp = await async_client.post(
+            f"{API}/classes/{class_row.id}/availability/copy",
+            json={"target_class_ids": [class_row.id + 1]},
+            headers=teacher_headers,
+        )
+        assert copy_resp.status_code == 403

@@ -14,6 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models
+from app.scheduler.domain.diagnostics import DiagnosisCode
 from app.scheduler.domain.eligibility import (
     EligibilityFacts,
     generation_eligibility,
@@ -257,7 +258,79 @@ async def get_job(db: AsyncSession, organization_id: int, job_id: int) -> dict |
     )
     summary["proposal_id"] = proposal.id if proposal is not None else None
     summary["summary"] = dict(proposal.metrics_json) if proposal is not None else None
+    summary["diagnostics"] = await _job_diagnostics(db, organization_id, job.diagnostics_json)
     return summary
+
+
+def _diagnosis_rank(row: dict) -> int:
+    """Prefer the class-scoped proof when a class has both deficits.
+
+    A class-level lower bound already explains the shortage for the whole
+    class, so the assignment intersection that shares the same class does not
+    add a second row.
+    """
+    return 1 if row.get("code") == DiagnosisCode.INSUFFICIENT_CLASS_TIME.value else 0
+
+
+async def _job_diagnostics(
+    db: AsyncSession, organization_id: int, diagnoses: list[dict] | None
+) -> list[dict]:
+    """One proven diagnostic per affected class, with the current names.
+
+    The lookups are tenant-scoped. A class deleted after the failure keeps its
+    stored id and is returned with ``class_name = None``.
+    """
+    if not diagnoses:
+        return []
+    chosen: dict[int, dict] = {}
+    for row in diagnoses:
+        for class_id in row.get("affected_class_ids") or ():
+            current = chosen.get(class_id)
+            if current is None or _diagnosis_rank(row) > _diagnosis_rank(current):
+                chosen[class_id] = row
+    if not chosen:
+        return []
+    class_rows = (
+        await db.execute(
+            select(models.Class.id, models.Class.name, models.Class.course_id).where(
+                models.Class.organization_id == organization_id,
+                models.Class.id.in_(set(chosen)),
+            )
+        )
+    ).all()
+    class_info = {row[0]: (row[1], row[2]) for row in class_rows}
+    subject_ids = {
+        row.get("affected_subject_id")
+        for row in chosen.values()
+        if row.get("affected_subject_id") is not None
+    }
+    subject_names: dict[int, str] = {}
+    if subject_ids:
+        subject_names = {
+            row[0]: row[1]
+            for row in (
+                await db.execute(
+                    select(models.Subject.id, models.Subject.name).where(
+                        models.Subject.organization_id == organization_id,
+                        models.Subject.id.in_(subject_ids),
+                    )
+                )
+            ).all()
+        }
+    result: list[dict] = []
+    for class_id, row in sorted(chosen.items()):
+        class_name, course_id = class_info.get(class_id, (None, None))
+        result.append(
+            {
+                "code": row.get("code"),
+                "minimum_missing_minutes": row.get("minimum_missing_minutes"),
+                "class_id": class_id,
+                "class_name": class_name,
+                "course_id": course_id,
+                "subject_name": subject_names.get(row.get("affected_subject_id")),
+            }
+        )
+    return result
 
 
 async def current_proposal(db: AsyncSession, organization_id: int) -> dict | None:

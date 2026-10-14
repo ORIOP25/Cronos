@@ -57,6 +57,12 @@ export function getApiErrorCode(error) {
   return detail && typeof detail === 'object' && !Array.isArray(detail) ? detail.code || null : null
 }
 
+// Whitelisted public-context reasons. The server sends a stable reason key and the
+// client owns the copy, so no arbitrary server text ever reaches the user.
+const CONTEXT_REASON_MESSAGES = {
+  no_grid_blocks: 'A escola ainda não configurou blocos.',
+}
+
 const CONTEXTUAL_BLOCK_CODES = new Set(['resource_in_use', 'course_has_classes'])
 
 export function isApiErrorBlock(error) {
@@ -125,12 +131,17 @@ export function getApiErrorPresentation(error, context = 'generic') {
   const knownCode = candidates.find((candidate) => PRESENTATIONS[candidate]) || 'unexpected_error'
   const copy = PRESENTATIONS[knownCode]
   const roomMessage = knownCode === 'NO_ELIGIBLE_ROOM' ? formatRoomIssues(detailObject.context) : null
+  const contextReason = detailObject.context?.reason
+  // Only own keys count: inherited names such as __proto__ or toString must fall back.
+  const reasonMessage = knownCode === 'bad_request' && Object.hasOwn(CONTEXT_REASON_MESSAGES, contextReason)
+    ? CONTEXT_REASON_MESSAGES[contextReason]
+    : null
   return {
     code: code || knownCode,
     title: isNetworkError(error) ? 'Ligação indisponível' : copy.title,
     message: isNetworkError(error)
       ? 'Não foi possível ligar. Verifique a ligação e tente novamente.'
-      : humanizeOperationalDetail(roomMessage || copy.message),
+      : humanizeOperationalDetail(roomMessage || reasonMessage || copy.message),
     reference: typeof detailObject.reference === 'string' ? detailObject.reference : responseRequestId(error),
     retryable: detailObject.retryable ?? copy.retryable ?? false,
     supportRequired: detailObject.support_required ?? copy.supportRequired ?? false,

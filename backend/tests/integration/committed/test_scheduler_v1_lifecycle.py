@@ -6,7 +6,7 @@ import time
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from app import models
 from app.scheduler.infrastructure.jobs import (
@@ -23,6 +23,8 @@ from app.scheduler.infrastructure.jobs import (
     try_acquire_executor_lock,
 )
 from app.scheduler.infrastructure.models import (
+    CurricularAssignment,
+    CurricularRequirement,
     SchedulerJobV1,
     SchedulerLessonV1,
     SchedulerProposalV1,
@@ -33,7 +35,7 @@ from app.scheduler.infrastructure.proposals import (
     approve_proposal,
     reject_proposal,
 )
-from app.scheduler.infrastructure.queries import current_proposal, scheduler_status
+from app.scheduler.infrastructure.queries import current_proposal, get_job, scheduler_status
 from app.services.dashboard_service import get_dashboard_summary
 from app.services.scheduler_state_service import SchedulerStateService
 from tests._support.db_fixtures import TestingSessionLocal, test_engine
@@ -232,6 +234,255 @@ async def test_finish_prefers_cancellation_and_staleness_over_the_result(db_sess
     stale_job = await db_session.get(SchedulerJobV1, retry.job.id)
     await db_session.refresh(stale_job)
     assert stale_job.result_code == "STALE"
+
+
+async def test_finish_stores_the_class_diagnostics_of_an_infeasible_job(db_session):
+    seed = await _minimal_school(db_session)
+    await db_session.commit()
+    queued = await _enqueue(db_session, seed)
+    await db_session.commit()
+    claim = await claim_next_job(db_session, now_utc=MOMENT)
+    assert claim is not None
+    diagnostics = [
+        {
+            "code": "INSUFFICIENT_CLASS_TIME",
+            "minimum_missing_minutes": 50,
+            "affected_class_ids": [seed.class_.id],
+        }
+    ]
+
+    written = await finish_job(
+        db_session,
+        organization_id=seed.organization.id,
+        job_id=queued.job.id,
+        attempt_token=claim.attempt_token,
+        status="INFEASIBLE",
+        result_code="INFEASIBLE",
+        stop_reason="INFEASIBLE",
+        diagnostics=diagnostics,
+        now_utc=MOMENT,
+    )
+    await db_session.commit()
+
+    assert written == "INFEASIBLE"
+    job = await db_session.get(SchedulerJobV1, queued.job.id)
+    await db_session.refresh(job)
+    assert job.diagnostics_json == diagnostics
+
+
+async def test_finish_never_stores_diagnostics_for_a_cancelled_or_stale_job(db_session):
+    seed = await _minimal_school(db_session)
+    await db_session.commit()
+    diagnostics = [
+        {
+            "code": "INSUFFICIENT_CLASS_TIME",
+            "minimum_missing_minutes": 50,
+            "affected_class_ids": [seed.class_.id],
+        }
+    ]
+    cancelled = await _enqueue(db_session, seed, key="cancel-diagnostics")
+    await db_session.commit()
+    claim = await claim_next_job(db_session, now_utc=MOMENT)
+    assert claim is not None
+    await request_cancellation(db_session, seed.organization.id, cancelled.job.id, now_utc=MOMENT)
+
+    written = await finish_job(
+        db_session,
+        organization_id=seed.organization.id,
+        job_id=cancelled.job.id,
+        attempt_token=claim.attempt_token,
+        status="INFEASIBLE",
+        result_code="INFEASIBLE",
+        diagnostics=diagnostics,
+        now_utc=MOMENT,
+    )
+    await db_session.commit()
+
+    assert written == "CANCELLED"
+    cancelled_job = await db_session.get(SchedulerJobV1, cancelled.job.id)
+    await db_session.refresh(cancelled_job)
+    assert cancelled_job.diagnostics_json is None
+
+    stale = await _enqueue(db_session, seed, key="stale-diagnostics")
+    await db_session.commit()
+    stale_claim = await claim_next_job(db_session, now_utc=MOMENT)
+    assert stale_claim is not None
+    state = await SchedulerStateService(db_session).get_state(seed.organization.id, seed.year.id)
+    await db_session.refresh(state)
+    state.input_revision += 1
+    await db_session.commit()
+
+    written = await finish_job(
+        db_session,
+        organization_id=seed.organization.id,
+        job_id=stale.job.id,
+        attempt_token=stale_claim.attempt_token,
+        status="INFEASIBLE",
+        result_code="INFEASIBLE",
+        diagnostics=diagnostics,
+        now_utc=MOMENT,
+    )
+    await db_session.commit()
+
+    assert written == "STALE"
+    stale_job = await db_session.get(SchedulerJobV1, stale.job.id)
+    await db_session.refresh(stale_job)
+    assert stale_job.diagnostics_json is None
+
+
+async def test_an_infeasible_worker_job_reads_the_class_diagnostic_with_its_names(
+    db_session, monkeypatch
+):
+    seed = await _minimal_school(db_session)
+    await db_session.commit()
+    timeslots = (
+        await db_session.scalars(
+            select(models.Timeslot).where(models.Timeslot.organization_id == seed.organization.id)
+        )
+    ).all()
+    for slot in timeslots:
+        db_session.add(
+            models.ClassAvailability(
+                organization_id=seed.organization.id,
+                class_id=seed.class_.id,
+                timeslot_id=slot.id,
+                score=models.PreferenceLevel.IMPOSSIBLE.value,
+            )
+        )
+    await db_session.commit()
+    await _enqueue(db_session, seed)
+    await db_session.commit()
+
+    result = await _run_worker(monkeypatch, db_session)
+
+    assert result["processed"][0]["status"] == "INFEASIBLE"
+    job = await db_session.scalar(
+        select(SchedulerJobV1).where(SchedulerJobV1.organization_id == seed.organization.id)
+    )
+    await db_session.refresh(job)
+    assert job.diagnostics_json
+
+    payload = await get_job(db_session, seed.organization.id, job.id)
+
+    assert payload["diagnostics"] == [
+        {
+            "code": "INSUFFICIENT_CLASS_TIME",
+            "minimum_missing_minutes": 100,
+            "class_id": seed.class_.id,
+            "class_name": seed.class_.name,
+            "course_id": seed.course.id,
+            "subject_name": None,
+        }
+    ]
+
+
+async def test_job_diagnostics_resolve_only_the_current_organization(db_session):
+    seed = await _minimal_school(db_session)
+    other = await _minimal_school(
+        db_session, clerk_user_id="w08_other", clerk_org_id="w08_other_org", module_minutes=50
+    )
+    await db_session.commit()
+    queued = await _enqueue(db_session, seed)
+    await db_session.commit()
+    claim = await claim_next_job(db_session, now_utc=MOMENT)
+    assert claim is not None
+    await finish_job(
+        db_session,
+        organization_id=seed.organization.id,
+        job_id=queued.job.id,
+        attempt_token=claim.attempt_token,
+        status="INFEASIBLE",
+        result_code="INFEASIBLE",
+        diagnostics=[
+            {
+                "code": "INSUFFICIENT_CLASS_TIME",
+                "minimum_missing_minutes": 50,
+                "affected_class_ids": [other.class_.id],
+            }
+        ],
+        now_utc=MOMENT,
+    )
+    await db_session.commit()
+
+    payload = await get_job(db_session, seed.organization.id, queued.job.id)
+
+    assert payload["diagnostics"] == [
+        {
+            "code": "INSUFFICIENT_CLASS_TIME",
+            "minimum_missing_minutes": 50,
+            "class_id": other.class_.id,
+            "class_name": None,
+            "course_id": None,
+            "subject_name": None,
+        }
+    ]
+
+
+async def test_a_deleted_class_keeps_its_diagnostic_id_without_a_name(db_session, monkeypatch):
+    seed = await _minimal_school(db_session)
+    await db_session.commit()
+    class_id = seed.class_.id
+    class_name = seed.class_.name
+    assignment_id = seed.assignment.id
+    timeslots = (
+        await db_session.scalars(
+            select(models.Timeslot).where(models.Timeslot.organization_id == seed.organization.id)
+        )
+    ).all()
+    for slot in timeslots:
+        db_session.add(
+            models.ClassAvailability(
+                organization_id=seed.organization.id,
+                class_id=class_id,
+                timeslot_id=slot.id,
+                score=models.PreferenceLevel.IMPOSSIBLE.value,
+            )
+        )
+    await db_session.commit()
+    await _enqueue(db_session, seed)
+    await db_session.commit()
+    await _run_worker(monkeypatch, db_session)
+    job = await db_session.scalar(
+        select(SchedulerJobV1).where(SchedulerJobV1.organization_id == seed.organization.id)
+    )
+    await db_session.refresh(job)
+    assert job.diagnostics_json
+
+    # A real class removal cascades the links and availability; the assignment
+    # has no cascade and is removed first.
+    await db_session.execute(
+        delete(CurricularRequirement).where(
+            CurricularRequirement.organization_id == seed.organization.id,
+            CurricularRequirement.assignment_id == assignment_id,
+        )
+    )
+    await db_session.execute(
+        delete(CurricularAssignment).where(
+            CurricularAssignment.organization_id == seed.organization.id,
+            CurricularAssignment.id == assignment_id,
+        )
+    )
+    await db_session.execute(
+        delete(models.Class).where(
+            models.Class.organization_id == seed.organization.id,
+            models.Class.id == class_id,
+        )
+    )
+    await db_session.commit()
+
+    payload = await get_job(db_session, seed.organization.id, job.id)
+
+    assert payload["diagnostics"] == [
+        {
+            "code": "INSUFFICIENT_CLASS_TIME",
+            "minimum_missing_minutes": 100,
+            "class_id": class_id,
+            "class_name": None,
+            "course_id": None,
+            "subject_name": None,
+        }
+    ]
+    assert class_name  # the diagnostic kept the stored id, not the name
 
 
 async def test_abandoned_attempt_is_failed_and_retried(db_session):
@@ -625,6 +876,7 @@ async def test_a_lost_lock_fails_the_attempt_and_stops_the_solve(db_session, mon
 
     class _Outcome:
         outcome = "INFEASIBLE"
+        diagnoses = ()
 
     def slow_search(_claim, _bundle, _cancel_event):
         time.sleep(1.2)

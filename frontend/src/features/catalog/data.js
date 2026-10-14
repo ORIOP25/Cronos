@@ -388,6 +388,64 @@ export const useUpdateClassProgress = () => {
 //  Gestão curso-cêntrica de professores
 // ==========================================
 
+// ==========================================
+//  DISPONIBILIDADE DAS TURMAS
+//  Uma linha por bloco na versão visível. Bloco sem linha é Neutro.
+// ==========================================
+
+const availabilityParams = (onDate) => (onDate ? { params: { on_date: onDate } } : {})
+
+/** Disponibilidade semanal de uma turma na versão da grelha visível em `onDate`. */
+export const useClassAvailability = ({ classId, onDate } = {}) => {
+  const apiClient = useApiClient()
+  const orgId = useOrganization().organization?.id
+  return useQuery({
+    queryKey: orgQueryKey('class-availability', orgId, classId, onDate ?? null),
+    queryFn: async () => apiClient.get(`/classes/${classId}/availability`, availabilityParams(onDate)),
+    enabled: Boolean(orgId) && Boolean(classId),
+    staleTime: 1000 * 60 * 5,
+    refetchOnWindowFocus: false,
+  })
+}
+
+/**
+ * Guarda a grelha da turma. Escreve o pedido na cache e invalida a preparação,
+ * como o hook dos professores.
+ */
+export const useSaveClassAvailability = () => {
+  const apiClient = useApiClient()
+  const queryClient = useQueryClient()
+  const orgId = useOrganization().organization?.id
+
+  return useMutation({
+    mutationFn: async ({ classId, payload, onDate }) => (
+      apiClient.put(`/classes/${classId}/availability`, payload, availabilityParams(onDate))
+    ),
+    onSuccess: (_, { classId, payload, onDate }) => {
+      queryClient.setQueryData(orgQueryKey('class-availability', orgId, classId, onDate ?? null), payload)
+      void invalidateOrgQueries(queryClient, orgId, ['class-availability'])
+      void invalidatePreparationQueries(queryClient, orgId)
+    },
+  })
+}
+
+/** Aplica a grelha da turma de origem a todas as turmas de destino. */
+export const useCopyClassAvailability = () => {
+  const apiClient = useApiClient()
+  const queryClient = useQueryClient()
+  const orgId = useOrganization().organization?.id
+
+  return useMutation({
+    mutationFn: async ({ classId, targetClassIds, onDate }) => (
+      apiClient.post(`/classes/${classId}/availability/copy`, { target_class_ids: targetClassIds }, availabilityParams(onDate))
+    ),
+    onSuccess: () => {
+      void invalidateOrgQueries(queryClient, orgId, ['class-availability'])
+      void invalidatePreparationQueries(queryClient, orgId)
+    },
+  })
+}
+
 /**
  * Lista disciplinas associadas à turma (para o grade_level atual).
  * Inclui professor atribuído a cada disciplina.

@@ -113,4 +113,76 @@ describe('GenerationStatusPanel', () => {
 
     expect(screen.getByRole('link', { name: /abrir salas/i })).toHaveAttribute('href', '/rooms')
   })
+
+  it('links the classes and subjects of proven infeasible diagnostics with hours and minutes', () => {
+    useScheduleTaskStatus.mockReturnValue({
+      data: {
+        status: 'INFEASIBLE',
+        diagnostics: [
+          { code: 'INSUFFICIENT_CLASS_TIME', minimum_missing_minutes: 200, class_id: 5, class_name: 'TGEI 25/28', course_id: 7, subject_name: null },
+          { code: 'INSUFFICIENT_INTERSECTION', minimum_missing_minutes: 90, class_id: 6, class_name: 'TM 24/27', course_id: 8, subject_name: 'Matemática' },
+        ],
+      },
+      isLoading: false,
+    })
+
+    render(
+      <MemoryRouter>
+        <GenerationStatusPanel jobId={30} />
+      </MemoryRouter>,
+    )
+
+    expect(screen.getByText(/Turmas sem tempo suficiente/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'TGEI 25/28' })).toHaveAttribute('href', '/courses/7/classes/5')
+    expect(screen.getByText(/faltam pelo menos 3 h 20 min\./)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'TM 24/27' })).toHaveAttribute('href', '/courses/8/classes/6')
+    expect(screen.getByText(/Matemática/)).toBeInTheDocument()
+    expect(screen.getByText(/faltam pelo menos 1 h 30 min em que a turma e o professor estejam livres\./)).toBeInTheDocument()
+    expect(screen.getByText(/Reveja a disponibilidade destas turmas\./)).toBeInTheDocument()
+  })
+
+  it('keeps the generic message when a class diagnostic has no proven name', () => {
+    useScheduleTaskStatus.mockReturnValue({
+      data: {
+        status: 'INFEASIBLE',
+        diagnostics: [
+          { code: 'INSUFFICIENT_CLASS_TIME', minimum_missing_minutes: 60, class_id: 5, class_name: null, course_id: null, subject_name: null },
+        ],
+      },
+      isLoading: false,
+    })
+
+    render(
+      <MemoryRouter>
+        <GenerationStatusPanel jobId={31} />
+      </MemoryRouter>,
+    )
+
+    expect(screen.getByText(/Reveja disponibilidades, salas, professor atribuído ou datas/)).toBeInTheDocument()
+    expect(screen.queryByText(/Turmas sem tempo suficiente/)).toBeNull()
+  })
+
+  it('does not claim a known class or a zero deficit when the missing minutes are absent', () => {
+    useScheduleTaskStatus.mockReturnValue({
+      data: {
+        status: 'INFEASIBLE',
+        diagnostics: [
+          { code: 'INSUFFICIENT_CLASS_TIME', minimum_missing_minutes: null, class_id: 5, class_name: 'TGEI 25/28', course_id: 7, subject_name: null },
+          { code: 'INSUFFICIENT_INTERSECTION', minimum_missing_minutes: null, class_id: 6, class_name: 'TM 24/27', course_id: 8, subject_name: 'Matemática' },
+        ],
+      },
+      isLoading: false,
+    })
+
+    render(
+      <MemoryRouter>
+        <GenerationStatusPanel jobId={32} />
+      </MemoryRouter>,
+    )
+
+    expect(screen.getByText(/Reveja disponibilidades, salas, professor atribuído ou datas/)).toBeInTheDocument()
+    expect(screen.queryByText(/Turmas sem tempo suficiente/)).toBeNull()
+    expect(screen.queryByText(/TGEI 25\/28/)).toBeNull()
+    expect(screen.queryByText(/0 min/)).toBeNull()
+  })
 })

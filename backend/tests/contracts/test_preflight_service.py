@@ -2,7 +2,7 @@ from datetime import UTC, date, datetime, time, timedelta
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from app import models, schemas
 from app.api import deps
@@ -956,6 +956,75 @@ async def test_teacher_archive_restore_and_qualifications_invalidate_scheduler(d
     assert school_year_state.scheduler_state_version > v3
 
 
+async def _seed_class_availability_preflight(db_session, *, suffix: str):
+    org, _user, _mem = await _create_org_and_admin(
+        db_session, f"Class Availability {suffix}", f"org_class_availability_{suffix}"
+    )
+    course = models.Course(organization_id=org.id, name=f"Curso {suffix}", abbreviation="CAV")
+    subject = models.Subject(
+        organization_id=org.id,
+        name=f"Disciplina {suffix}",
+        required_room_type=models.RoomType.normal,
+    )
+    room = models.Room(
+        organization_id=org.id,
+        name=f"Sala {suffix}",
+        capacity=30,
+        type=models.RoomType.normal,
+    )
+    slots = [
+        models.Timeslot(
+            organization_id=org.id, day_of_week=0, start_time=time(9, 0), end_time=time(9, 50)
+        ),
+        models.Timeslot(
+            organization_id=org.id, day_of_week=1, start_time=time(9, 0), end_time=time(9, 50)
+        ),
+    ]
+    db_session.add_all([course, subject, room, *slots])
+    await db_session.flush()
+    module = models.Module(
+        organization_id=org.id,
+        subject_id=subject.id,
+        name=f"Módulo {suffix}",
+        required_minutes=60,
+        order=0,
+    )
+    db_session.add(module)
+    await db_session.flush()
+    school_class = models.Class(
+        organization_id=org.id,
+        course_id=course.id,
+        name=f"Turma {suffix}",
+        size=20,
+        grade_level=10,
+        start_year=2025,
+        end_year=2028,
+    )
+    db_session.add(school_class)
+    await db_session.flush()
+    teacher = await create_teacher_profile(
+        db_session, organization_id=org.id, subject_ids=[subject.id]
+    )
+    link = models.ClassSubjectLink(
+        organization_id=org.id,
+        class_id=school_class.id,
+        subject_id=subject.id,
+        grade_level=10,
+        teacher_id=teacher.id,
+    )
+    db_session.add(link)
+    await db_session.flush()
+    await db_session.execute(
+        models.class_subject_module.insert().values(
+            organization_id=org.id,
+            class_subject_link_id=link.id,
+            module_id=module.id,
+        )
+    )
+    await db_session.flush()
+    return org, school_class, course, link, slots
+
+
 async def test_preflight_blocks_class_subject_without_selected_modules(db_session):
     org, _user, _mem = await _create_org_and_admin(
         db_session, "Module Preflight School", "org_module_preflight"
@@ -1086,3 +1155,95 @@ async def test_preflight_blocks_class_subject_without_selected_modules(db_sessio
     remaining = [issue for issue in report.issues if issue.code == "CLASS_SUBJECT_WITHOUT_MODULES"]
     assert len(remaining) == 1
     assert f"classes/{class_with_teacher.id}/" in remaining[0].route
+
+
+def _class_blocker_routes(report) -> list[str]:
+    return [issue.route for issue in report.issues if issue.code == "CLASS_WITHOUT_AVAILABILITY"]
+
+
+async def test_preflight_blocks_a_class_whose_blocks_are_all_impossible(db_session):
+    org, school_class, course, _link, slots = await _seed_class_availability_preflight(
+        db_session, suffix="allimpossible"
+    )
+    for slot in slots:
+        db_session.add(
+            models.ClassAvailability(
+                organization_id=org.id,
+                class_id=school_class.id,
+                timeslot_id=slot.id,
+                score=models.PreferenceLevel.IMPOSSIBLE.value,
+            )
+        )
+    await db_session.flush()
+
+    report = await PreflightService(db_session).evaluate(
+        organization_id=org.id, resolve_fingerprint=False
+    )
+
+    blockers = [issue for issue in report.issues if issue.code == "CLASS_WITHOUT_AVAILABILITY"]
+    assert len(blockers) == 1
+    assert blockers[0].severity == "BLOCKER"
+    assert blockers[0].message == (
+        f"A turma {school_class.name} tem todos os blocos marcados como Impossível. "
+        "Marque pelo menos um bloco como Neutro, Evitar ou Preferencial."
+    )
+    assert blockers[0].route == f"/courses/{course.id}/classes/{school_class.id}"
+
+
+async def test_preflight_class_availability_requires_every_block_and_an_assigned_teacher(
+    db_session,
+):
+    org, school_class, _course, link, slots = await _seed_class_availability_preflight(
+        db_session, suffix="partial"
+    )
+    for slot in slots:
+        db_session.add(
+            models.ClassAvailability(
+                organization_id=org.id,
+                class_id=school_class.id,
+                timeslot_id=slot.id,
+                score=models.PreferenceLevel.IMPOSSIBLE.value,
+            )
+        )
+    await db_session.flush()
+
+    async def blocker_routes() -> list[str]:
+        report = await PreflightService(db_session).evaluate(
+            organization_id=org.id, resolve_fingerprint=False
+        )
+        return _class_blocker_routes(report)
+
+    assert await blocker_routes() == [
+        f"/courses/{school_class.course_id}/classes/{school_class.id}"
+    ]
+
+    # An archived class keeps its rows but is not a generation input.
+    school_class.is_archived = True
+    await db_session.flush()
+    assert await blocker_routes() == []
+
+    school_class.is_archived = False
+    await db_session.flush()
+
+    # A class-subject link without a teacher is not an eligible generation input.
+    original_teacher_id = link.teacher_id
+    link.teacher_id = None
+    await db_session.flush()
+    assert await blocker_routes() == []
+
+    link.teacher_id = original_teacher_id
+    await db_session.flush()
+    assert await blocker_routes() == [
+        f"/courses/{school_class.course_id}/classes/{school_class.id}"
+    ]
+
+    # A missing row means the block is possible, so the class is no longer blocked.
+    await db_session.execute(
+        delete(models.ClassAvailability).where(
+            models.ClassAvailability.organization_id == org.id,
+            models.ClassAvailability.class_id == school_class.id,
+            models.ClassAvailability.timeslot_id == slots[0].id,
+        )
+    )
+    await db_session.flush()
+    assert await blocker_routes() == []

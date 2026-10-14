@@ -119,6 +119,49 @@ describe('api error contract', () => {
     expect(presentation.supportRequired).toBe(false)
   })
 
+  it('uses a whitelisted public context reason for a known bad request', () => {
+    const presentation = getApiErrorPresentation({
+      response: {
+        status: 400,
+        data: { detail: { code: 'bad_request', context: { reason: 'no_grid_blocks' } } },
+      },
+    })
+
+    expect(presentation.code).toBe('bad_request')
+    expect(presentation.message).toBe('A escola ainda não configurou blocos.')
+  })
+
+  it('ignores inherited object keys used as public context reasons', () => {
+    for (const reason of ['__proto__', 'toString', 'constructor', 'hasOwnProperty']) {
+      const presentation = getApiErrorPresentation({
+        response: { status: 400, data: { detail: { code: 'bad_request', context: { reason } } } },
+      })
+
+      expect(presentation.message).toBe('Não foi possível concluir o pedido. Tente novamente.')
+    }
+  })
+
+  it('never echoes an arbitrary context message from the server', () => {
+    const arbitrary = getApiErrorPresentation({
+      response: {
+        status: 400,
+        data: {
+          detail: { code: 'bad_request', context: { message: 'stack trace and secret' } },
+        },
+      },
+    })
+    expect(arbitrary.message).toBe('Não foi possível concluir o pedido. Tente novamente.')
+    expect(arbitrary.message).not.toContain('secret')
+
+    const unknownReason = getApiErrorPresentation({
+      response: {
+        status: 400,
+        data: { detail: { code: 'bad_request', context: { reason: 'internal_reason' } } },
+      },
+    })
+    expect(unknownReason.message).toBe('Não foi possível concluir o pedido. Tente novamente.')
+  })
+
   it('falls back to a safe room message when the context is incomplete', () => {
     const presentation = getApiErrorPresentation({
       response: { status: 422, data: { detail: { code: 'NO_ELIGIBLE_ROOM', context: {} } } },

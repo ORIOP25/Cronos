@@ -50,7 +50,7 @@ async def read_my_availability(
 @limiter.limit("30/minute")
 async def update_my_availability(
     request: Request,
-    availability_data: schemas.TeacherAvailabilityPayload,
+    availability_data: schemas.WeeklyAvailabilityPayload,
     db: deps.DbSession,
     current_user: deps.ActiveActor,
 ):
@@ -74,7 +74,7 @@ async def update_my_availability(
 )
 async def update_teacher_availability(
     teacher_id: int,
-    availability_data: schemas.TeacherAvailabilityPayload,
+    availability_data: schemas.WeeklyAvailabilityPayload,
     db: deps.DbSession,
     current_user: deps.AdminActor,
     on_date: Annotated[date | None, Query(description="Data da grelha de disponibilidade")] = None,

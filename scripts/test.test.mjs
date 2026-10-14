@@ -188,6 +188,30 @@ test('root CI keeps push on main while pull requests and manual dispatch run ful
   )
 })
 
+test('the e2e-browser job prepares a disposable own Clerk organization and passes its id to the browser', () => {
+  const lines = readFileSync(join(ROOT, '.github/workflows/ci.yml'), 'utf8').split(/\r?\n/)
+  const start = lines.indexOf('  e2e-browser:')
+  assert.notEqual(start, -1, 'the e2e-browser job must exist')
+  const end = lines.findIndex((line, index) => index > start && /^  [a-z0-9-]+:$/.test(line))
+  const job = lines.slice(start, end === -1 ? lines.length : end).join('\n')
+
+  // Each run must own a disposable organization instead of adopting a shared
+  // one that another run can delete mid-flight: create a fresh org even though
+  // the reserved admin already belongs to organizations.
+  assert.match(job, /^\s+E2E_CLERK_AUTO_PROVISION: "true"$/m)
+  assert.match(job, /^\s+E2E_CLERK_CREATE_ORGANIZATION: "true"$/m)
+  assert.doesNotMatch(job, /E2E_CLERK_CREATE_ORGANIZATION: "false"/)
+
+  // The prepared organization id flows into the browser run.
+  assert.match(
+    job,
+    /E2E_CLERK_ORG_ID: \$\{\{ steps\.prepare-e2e-clerk-state\.outputs\.clerk_org_id \}\}/,
+  )
+
+  // Cleanup removes only the organization this run prepared.
+  assert.match(job, /E2E_CLERK_DELETE_ORG=true/)
+})
+
 test('the frontend fast macro stays narrow and e2e-runtime owns the relocated mandatory checks', () => {
   const scripts = JSON.parse(readFileSync(join(ROOT, 'frontend/package.json'), 'utf8')).scripts
   const fast = scripts['verify:critical:fast']

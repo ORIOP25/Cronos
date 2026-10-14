@@ -112,6 +112,68 @@ def _restore_availabilities_for_new_grid(
             )
 
 
+async def _get_class_availability_by_time(
+    db: AsyncSession,
+    organization_id: int,
+    timeslot_ids: set[int],
+) -> dict[tuple[int, int, time, time], int]:
+    """Snapshot class availability by (class, day, start, end) before reset.
+
+    Only non-NEUTRAL rows exist, so a missing key means NEUTRAL in the new grid.
+    """
+    if not timeslot_ids:
+        return {}
+    result = await db.execute(
+        select(
+            models.ClassAvailability.class_id,
+            models.Timeslot.day_of_week,
+            models.Timeslot.start_time,
+            models.Timeslot.end_time,
+            models.ClassAvailability.score,
+        )
+        .join(models.Timeslot, models.Timeslot.id == models.ClassAvailability.timeslot_id)
+        .where(
+            models.ClassAvailability.organization_id == organization_id,
+            models.Timeslot.organization_id == organization_id,
+            models.Timeslot.id.in_(timeslot_ids),
+        )
+    )
+    return {
+        (class_id, day_of_week, start_time, end_time): score
+        for class_id, day_of_week, start_time, end_time, score in result.all()
+    }
+
+
+def _restore_class_availability_for_new_grid(
+    db: AsyncSession,
+    organization_id: int,
+    timeslots: list[models.Timeslot],
+    previous_preferences: dict[tuple[int, int, time, time], int],
+) -> None:
+    """Recreate class rows on the blocks that keep the same signature.
+
+    A block without a matching signature stays NEUTRAL because no row is stored.
+    """
+    signature_to_slot = {
+        (slot.day_of_week, slot.start_time, slot.end_time): slot for slot in timeslots
+    }
+    restored: dict[tuple[int, int], int] = {}
+    for (class_id, day_of_week, start_time, end_time), score in previous_preferences.items():
+        slot = signature_to_slot.get((day_of_week, start_time, end_time))
+        if slot is None:
+            continue
+        restored[(class_id, slot.id)] = score
+    for (class_id, timeslot_id), score in restored.items():
+        db.add(
+            models.ClassAvailability(
+                organization_id=organization_id,
+                class_id=class_id,
+                timeslot_id=timeslot_id,
+                score=score,
+            )
+        )
+
+
 async def get_timeslots_by_org(
     db: AsyncSession,
     organization_id: int,
@@ -350,6 +412,9 @@ async def apply_grid_regeneration(
     previous_preferences = await _get_availability_preferences_by_time(
         db, plan.organization_id, set(plan.replaceable_slot_ids)
     )
+    previous_class_preferences = await _get_class_availability_by_time(
+        db, plan.organization_id, set(plan.replaceable_slot_ids)
+    )
     if plan.replaceable_slot_ids:
         await db.execute(
             delete(models.Availability).where(
@@ -383,6 +448,12 @@ async def apply_grid_regeneration(
         teacher_ids,
         new_timeslots,
         previous_preferences,
+    )
+    _restore_class_availability_for_new_grid(
+        db,
+        plan.organization_id,
+        new_timeslots,
+        previous_class_preferences,
     )
     await record_scheduler_change(
         db,

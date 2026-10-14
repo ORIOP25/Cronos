@@ -1,5 +1,7 @@
 from datetime import date, time
 
+from sqlalchemy import select
+
 from app import models, schemas
 from app.services import grid_version_service, settings_service, timeslot_service
 
@@ -288,3 +290,79 @@ async def test_active_grid_configuration_rebuilds_legacy_blocks(db_session):
     assert payload["source"] == "BLOCKS"
     assert payload["configuration"]["closing_time"] == "10:50"
     assert payload["configuration"]["break_duration_minutes"] == 10
+
+
+async def test_regeneration_restores_class_availability_by_block_signature(db_session):
+    organization = await _create_org(db_session)
+    await _regenerate(db_session, organization, _bulk())
+    version = await grid_version_service.get_active_grid_version(db_session, organization.id)
+    blocks = await grid_version_service.get_version_blocks(db_session, organization.id, version.id)
+    kept = next(
+        block
+        for block in blocks
+        if (block.day_of_week, block.start_time, block.end_time) == (0, time(9, 0), time(9, 50))
+    )
+
+    course = models.Course(organization_id=organization.id, name="Class Grid", abbreviation="CGR")
+    db_session.add(course)
+    await db_session.flush()
+    school_class = models.Class(
+        organization_id=organization.id,
+        course_id=course.id,
+        name="Turma Grelha",
+        size=20,
+        grade_level=10,
+        start_year=2025,
+        end_year=2028,
+    )
+    db_session.add(school_class)
+    await db_session.flush()
+    db_session.add(
+        models.ClassAvailability(
+            organization_id=organization.id,
+            class_id=school_class.id,
+            timeslot_id=kept.id,
+            score=models.PreferenceLevel.IMPOSSIBLE.value,
+        )
+    )
+    await db_session.flush()
+
+    # A new grid that keeps the same block signature restores the class level.
+    await _regenerate(db_session, organization, _bulk(end_time="10:50", break_overrides=[]))
+    version_after = await grid_version_service.get_active_grid_version(db_session, organization.id)
+    blocks_after = await grid_version_service.get_version_blocks(
+        db_session, organization.id, version_after.id
+    )
+    matching = [
+        block
+        for block in blocks_after
+        if (block.day_of_week, block.start_time, block.end_time) == (0, time(9, 0), time(9, 50))
+    ]
+    assert len(matching) == 1
+    saved = (
+        await db_session.execute(
+            select(models.ClassAvailability.timeslot_id, models.ClassAvailability.score).where(
+                models.ClassAvailability.organization_id == organization.id,
+                models.ClassAvailability.class_id == school_class.id,
+            )
+        )
+    ).all()
+    assert [(timeslot_id, score) for timeslot_id, score in saved] == [
+        (matching[0].id, models.PreferenceLevel.IMPOSSIBLE.value)
+    ]
+
+    # A new grid without that signature leaves the class neutral (no row).
+    await _regenerate(
+        db_session,
+        organization,
+        _bulk(start_time="10:00", end_time="10:50", break_overrides=[]),
+    )
+    remaining = (
+        await db_session.execute(
+            select(models.ClassAvailability.timeslot_id).where(
+                models.ClassAvailability.organization_id == organization.id,
+                models.ClassAvailability.class_id == school_class.id,
+            )
+        )
+    ).all()
+    assert remaining == []

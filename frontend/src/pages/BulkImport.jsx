@@ -118,13 +118,16 @@ const BulkImport = () => {
   const issues = validation?.issues || serverErrorContext.issues || []
   const errors = issues.filter((issue) => issue.severity === 'error')
   const warnings = issues.filter((issue) => issue.severity === 'warning')
+  const classAvailabilityPreview = (validation?.preview?.items || []).filter(
+    (item) => item.resource === 'class_availability',
+  )
 
   return (
     <div className="p-4">
       <PageHeader
         preTitle="Administração"
         title="Importar dados"
-        description="Adicione várias salas, disciplinas, cursos, turmas e professores de uma só vez."
+        description="Adicione várias salas, disciplinas, cursos, turmas e professores e atualize a disponibilidade das turmas de uma só vez."
       />
 
       <section className="mb-4" aria-labelledby="import-steps-title">
@@ -236,6 +239,29 @@ const BulkImport = () => {
               <strong>Pode importar, mas tenha atenção a estes avisos</strong>
               <IssueList issues={warnings} />
             </CAlert>
+          )}
+          {classAvailabilityPreview.length > 0 && (
+            <div className="table-responsive mt-3">
+              <table className="table table-sm mb-0">
+                <caption className="small text-muted">Disponibilidade das turmas por turma</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Sigla do curso</th>
+                    <th scope="col">Nome da turma</th>
+                    <th scope="col">Blocos diferentes de Neutro</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {classAvailabilityPreview.map((item) => (
+                    <tr key={`${item.course_abbreviation}-${item.class_name}`}>
+                      <td>{item.course_abbreviation}</td>
+                      <td>{item.class_name}</td>
+                      <td>{item.non_neutral_blocks}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </section>
       )}

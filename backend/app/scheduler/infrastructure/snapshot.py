@@ -10,7 +10,7 @@ injects ``school_today`` and ``now_utc``.
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import date, datetime, time
 from types import MappingProxyType
@@ -877,8 +877,6 @@ async def _load_unavailability(
     constraints: SchoolConstraintPolicy,
     calendar: _CalendarData,
 ) -> tuple[tuple[Unavailability, ...], tuple[Unavailability, ...]]:
-    hard: list[Unavailability] = []
-    soft: list[Unavailability] = []
     availability_rows = (
         await db.scalars(
             select(models.Availability).where(
@@ -886,26 +884,37 @@ async def _load_unavailability(
             )
         )
     ).all()
-    preferred_slots: dict[int, set[int]] = defaultdict(set)
-    for row in availability_rows:
-        if row.score == models.PreferenceLevel.PREFERRED.value:
-            preferred_slots[row.teacher_id].add(row.timeslot_id)
-    for teacher_id, timeslot_id in constraints.teacher_preferred_timeslots:
-        preferred_slots[teacher_id].add(timeslot_id)
-    for row in availability_rows:
-        signature = calendar.signature_by_timeslot.get(row.timeslot_id)
-        if signature is None:
-            continue
-        if row.score == models.PreferenceLevel.IMPOSSIBLE.value:
-            hard.extend(
-                Unavailability(UnavailableResource.TEACHER, row.teacher_id, period)
-                for period in calendar.periods_by_signature.get(signature, ())
+    class_rows = (
+        await db.execute(
+            select(
+                models.ClassAvailability.class_id,
+                models.ClassAvailability.timeslot_id,
+                models.ClassAvailability.score,
             )
-        elif row.score == models.PreferenceLevel.AVOID.value:
-            soft.extend(
-                Unavailability(UnavailableResource.TEACHER, row.teacher_id, period)
-                for period in calendar.periods_by_signature.get(signature, ())
+            .join(
+                models.Class,
+                (models.Class.organization_id == models.ClassAvailability.organization_id)
+                & (models.Class.id == models.ClassAvailability.class_id),
             )
+            .where(
+                models.ClassAvailability.organization_id == organization_id,
+                models.Class.is_archived.is_(False),
+            )
+        )
+    ).all()
+    teacher_hard, teacher_soft = _preference_unavailability(
+        UnavailableResource.TEACHER,
+        ((row.teacher_id, row.timeslot_id, row.score) for row in availability_rows),
+        calendar,
+        extra_preferred=constraints.teacher_preferred_timeslots,
+    )
+    class_hard, class_soft = _preference_unavailability(
+        UnavailableResource.CLASS,
+        ((row.class_id, row.timeslot_id, row.score) for row in class_rows),
+        calendar,
+    )
+    hard: list[Unavailability] = [*teacher_hard, *class_hard]
+    soft: list[Unavailability] = [*teacher_soft, *class_soft]
     for row in constraints.teacher_unavailable_timeslots:
         teacher_id, timeslot_id = row
         signature = calendar.signature_by_timeslot.get(timeslot_id)
@@ -933,17 +942,53 @@ async def _load_unavailability(
                 for period in calendar.periods_by_signature.get(signature, ())
                 if period.school_date == blocked_date
             )
-    for teacher_id, timeslot_ids in sorted(preferred_slots.items()):
-        for period in calendar.periods:
-            signature = (
-                period.school_date.weekday(),
-                period.start_local,
-                period.end_local,
+    return tuple(hard), tuple(soft)
+
+
+def _preference_unavailability(
+    resource_type: UnavailableResource,
+    scores: Iterable[tuple[int, int, int]],
+    calendar: _CalendarData,
+    extra_preferred: Iterable[tuple[int, int]] = (),
+) -> tuple[list[Unavailability], list[Unavailability]]:
+    """Weekly preference rows become hard and soft unavailability.
+
+    One impossible block is hard for every period with its signature; an avoid
+    block is soft. A resource with at least one preferred block gets soft
+    unavailability on every period its preferred blocks do not cover.
+    ``extra_preferred`` adds constraint-derived ``(resource_id, timeslot_id)``
+    preferred blocks, keeping the teacher behaviour unchanged.
+    """
+    rows = tuple(scores)
+    preferred: dict[int, set[int]] = defaultdict(set)
+    for resource_id, timeslot_id, score in rows:
+        if score == models.PreferenceLevel.PREFERRED.value:
+            preferred[resource_id].add(timeslot_id)
+    for resource_id, timeslot_id in extra_preferred:
+        preferred[resource_id].add(timeslot_id)
+    hard: list[Unavailability] = []
+    soft: list[Unavailability] = []
+    for resource_id, timeslot_id, score in rows:
+        signature = calendar.signature_by_timeslot.get(timeslot_id)
+        if signature is None:
+            continue
+        if score == models.PreferenceLevel.IMPOSSIBLE.value:
+            hard.extend(
+                Unavailability(resource_type, resource_id, period)
+                for period in calendar.periods_by_signature.get(signature, ())
             )
+        elif score == models.PreferenceLevel.AVOID.value:
+            soft.extend(
+                Unavailability(resource_type, resource_id, period)
+                for period in calendar.periods_by_signature.get(signature, ())
+            )
+    for resource_id, timeslot_ids in sorted(preferred.items()):
+        for period in calendar.periods:
+            signature = (period.school_date.weekday(), period.start_local, period.end_local)
             matching = calendar.timeslots_by_signature.get(signature)
             if matching and matching.isdisjoint(timeslot_ids):
-                soft.append(Unavailability(UnavailableResource.TEACHER, teacher_id, period))
-    return tuple(hard), tuple(soft)
+                soft.append(Unavailability(resource_type, resource_id, period))
+    return hard, soft
 
 
 async def _load_baseline(
