@@ -1,5 +1,5 @@
 # Usar Python 3.14 (versão leve)
-FROM python:3.14.7-slim@sha256:caaf356f40667c496d405780745b9ac25771c189a51dfcc42430d531ea09f8a2 AS base
+FROM python:3.15.0rc3-slim@sha256:a3af3d230522dd52f7f2191b39e1892912dbcb0c8dee22afdec3dc83baf0f549 AS base
 
 # Configurações para Python em Docker (logs imediatos, sem .pyc)
 ENV PYTHONDONTWRITEBYTECODE=1
