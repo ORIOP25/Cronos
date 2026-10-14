@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import structlog
-from sqlalchemy import exists, select
+from sqlalchemy import and_, exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -59,9 +59,19 @@ class SchoolReadinessService:
             & subject_alias.is_archived.is_(False)
             & (link_alias.grade_level == class_alias.grade_level)
             & exists(
-                select(1).where(
-                    models.Module.organization_id == organization_id,
-                    models.Module.subject_id == link_alias.subject_id,
+                select(1)
+                .select_from(models.class_subject_module)
+                .join(
+                    models.Module,
+                    and_(
+                        models.Module.organization_id
+                        == models.class_subject_module.c.organization_id,
+                        models.Module.id == models.class_subject_module.c.module_id,
+                    ),
+                )
+                .where(
+                    models.class_subject_module.c.organization_id == organization_id,
+                    models.class_subject_module.c.class_subject_link_id == link_alias.id,
                     models.Module.required_minutes > 0,
                 )
             )
