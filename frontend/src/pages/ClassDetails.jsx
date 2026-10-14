@@ -160,7 +160,7 @@ const SubjectCard = ({ subject, isEditing, editMap, onChangeHours }) => {
           ))}
         {subject.modules.length === 0 && (
           <p className="text-muted text-center py-2 mb-0" style={{ fontSize: '0.85rem' }}>
-            Nenhum módulo definido para esta disciplina.
+            Nenhum módulo selecionado para esta turma.
           </p>
         )}
       </CCardBody>
@@ -436,29 +436,35 @@ const ClassDetails = () => {
                   <tr className="text-muted">
                     <th style={{ fontWeight: 600 }}>Disciplina</th>
                     <th style={{ fontWeight: 600 }}>Professor</th>
+                    <th style={{ fontWeight: 600 }}>Módulos</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {classSubjects.subjects.map(s => (
-                    <tr key={s.id}>
-                      <td>
-                        <div className="d-flex align-items-center gap-2">
-                          <CIcon icon={cilBook} className="text-info" size="sm" />
-                          <span className="fw-medium">{s.subject_name}</span>
-                        </div>
-                      </td>
-                      <td>
-                        {s.teacher_name ? (
-                          <span className="text-success">
-                            <CIcon icon={cilCheckCircle} size="sm" className="me-1" />
-                            {s.teacher_name}
-                          </span>
-                        ) : (
-                          <span className="text-warning fst-italic">Sem professor</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
+                  {classSubjects.subjects.map(s => {
+                    const modules = s.modules || []
+                    const selectedCount = modules.filter(module => module.selected).length
+                    return (
+                      <tr key={s.id}>
+                        <td>
+                          <div className="d-flex align-items-center gap-2">
+                            <CIcon icon={cilBook} className="text-info" size="sm" />
+                            <span className="fw-medium">{s.subject_name}</span>
+                          </div>
+                        </td>
+                        <td>
+                          {s.teacher_name ? (
+                            <span className="text-success">
+                              <CIcon icon={cilCheckCircle} size="sm" className="me-1" />
+                              {s.teacher_name}
+                            </span>
+                          ) : (
+                            <span className="text-warning fst-italic">Sem professor</span>
+                          )}
+                        </td>
+                        <td>{selectedCount}/{modules.length}</td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
