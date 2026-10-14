@@ -5,7 +5,7 @@
 Este documento especifica a seleção de módulos por turma.
 Define decisões de produto, modelo de dados, contratos, regras do motor, plano TDD e critérios de aceitação.
 
-**Estado:** em implementação; PR1 verificação/entrega pendentes; PR2 por iniciar.
+**Estado:** implementado. O backend foi entregue no PR #131; os ecrãs e estes guias no PR #135.
 **Data:** 14 de outubro de 2026.
 **Base observada:** branch `main` no commit `4773d76`.
 **Origem:** item 1 dos pedidos da escola piloto, reunião de 13 de outubro de 2026.
@@ -296,11 +296,12 @@ O motor reprojeta as aulas publicadas não registadas com os requisitos atuais (
 As aulas registadas entram como ocupação e são copiadas para a proposta depois da pesquisa.
 Por isso, as aulas futuras de um módulo retirado passam para o módulo marcado seguinte.
 
-D12: numa alteração de seleção, o motor ajusta ou remove aulas FUTURAS excedentárias,
-mesmo dentro da janela de estabilidade.
-Todas as aulas passadas e todo o histórico registado (sumários, faltas e créditos) são preservados.
-A estabilidade das atribuições inalteradas mantém-se; a exceção aplica-se só à atribuição alterada.
-Uma aula passada não registada que não caiba no currículo selecionado falha explicitamente.
+D12: numa alteração de seleção, o motor remove aulas FUTURAS excedentárias, mesmo dentro da janela.
+A remoção dentro da janela aplica-se só à atribuição cuja seleção mudou.
+A mudança existe quando uma slice referencia um módulo que saiu ou deixa de caber no módulo.
+Uma atribuição inalterada mantém a janela completa; o excedente fora da janela é sempre libertado.
+As aulas passadas e o histórico registado (sumários, faltas e créditos) são preservados.
+Uma aula passada que não caiba no currículo selecionado falha com `PROTECTED_LESSON_EXCEEDS_CURRICULUM`.
 
 Confirme que nenhuma validação compara os slices das aulas registadas com os requisitos fechados.
 Uma falta registada num módulo retirado pode ter slices além dos minutos executados.
@@ -437,7 +438,7 @@ Em `backend/tests/unit/test_scheduler_progress_domain.py` ou num ficheiro novo d
 | A fingerprint muda quando a seleção muda. | `test_scheduler_fingerprint_service.py` |
 | O progresso da turma e do professor mostra só os módulos marcados. | `test_module_progress.py` |
 | Alterar a seleção com aulas futuras dentro da janela de estabilidade: as futuras excedentárias saem, as passadas e o histórico ficam (D12). | `test_scheduler_v1_class_module_selection.py` |
-| Uma aula passada não registada que não caiba no currículo selecionado falha com `PROTECTED_LESSON_EXCEEDS_CURRICULUM`. | `test_scheduler_v1_class_module_selection.py` |
+| Uma aula passada que não caiba no currículo selecionado falha com `PROTECTED_LESSON_EXCEEDS_CURRICULUM`. | `test_scheduler_v1_class_module_selection.py` |
 | As atribuições inalteradas mantêm a janela de estabilidade. | `test_scheduler_lunch_stability_snapshot.py` |
 
 ### Frontend
