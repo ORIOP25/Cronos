@@ -765,7 +765,12 @@ Cada passo começa com um teste que falha. Cada PR mantém o comportamento das e
 | 4 — Operação | Sumário com presenças, ocorrências, substitutos, folha semanal, estágio, vista semanal e totais do professor. | Nada no ecrã. |
 | 5 — Ecrãs | Disciplinas e Professores, página da turma, horários, sumário e Faltas e Ocorrências. | A funcionalidade completa. |
 
+Os PR 2 e 3 podem ser desenvolvidos em paralelo. O PR 3 só é integrado depois do PR 2.
+Sem o motor novo, uma junção criada pela API seria planeada como turmas separadas, sem aviso.
 Depois de cada merge, siga o `Deploy check` em `main`, como manda o `AGENTS.md`.
+
+O [WBS — Aulas Conjuntas](JOINT_LESSONS_WBS.md) é dono da decomposição do trabalho.
+Define os pacotes, as dependências, o caminho crítico e os critérios de conclusão.
 
 ## Testes
 
