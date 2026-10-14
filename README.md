@@ -26,52 +26,48 @@ Cronos is a Software-as-a-Service (SaaS) platform for course scheduling and oper
    Replace every placeholder in `.env` (database passwords, Clerk publishable key, Turnstile and Resend test values).
    Set `CLERK_SECRET_KEY` and `CLERK_WEBHOOK_SECRET` in `backend/.env`. Compose loads that file for the `backend`, `worker`, and `scheduler-supervisor` services.
 
-2. **Provision database roles on first installation or password rotation**:
+2. **Build the backend image** (`db-maintenance` reuses `cronos-backend:local` and cannot build it):
+   ```bash
+   docker compose build backend
+   ```
+
+3. **Provision database roles on first installation or password rotation**:
    ```bash
    docker compose --profile maintenance run --rm provision-db
    ```
 
-3. **Apply database migrations on first installation and each release**:
+4. **Apply database migrations on first installation and each release**:
    ```bash
    docker compose --profile maintenance run --rm db-maintenance
    ```
 
-4. **Start or reconcile the production-like local stack**:
+5. **Start or reconcile the production-like local stack**:
    ```bash
    docker compose up -d --build
    ```
 
-5. **Bootstrap application data**:
+6. **Bootstrap application data**:
    The application bootstraps the first organization and administrator at the first admin login. The backend exposes this through `POST /api/v1/session/bootstrap`.
    E2E fixtures are prepared by `node scripts/test.mjs e2e`. It runs `backend/scripts/prepare_e2e_clerk_state.py` inside an isolated test stack and needs reserved Clerk test identities.
    See [Data and Seed](documentation/07_data_and_seed/DATA_AND_SEED.md).
 
-6. **Access application services**:
+7. **Access application services**:
    - Frontend Application: `http://localhost:5173`
    - Backend API documentation: `http://localhost:8000/docs` in `local` mode
    - Liveness endpoint: `http://localhost:8000/health/live`
    - Readiness endpoint: `http://localhost:8000/health/ready`
    - API health endpoint: `http://localhost:8000/api/v1/health`
 
-## First Verification Commands
+## Verification Commands
 
-Use the fast suites during the TDD cycle:
+Run tests through the root runner `scripts/test.mjs`.
+It selects the correct Python, npm, and Docker paths on every platform.
+The [Command Reference](documentation/00_getting_started/COMMAND_REFERENCE.md) lists every command, its prerequisites, its effects, and what it proves.
 
-```powershell
-# Backend TDD cycle. Requires no PostgreSQL or Redis.
-cd backend
-pytest tests/unit -q
-
-# Frontend TDD cycle.
-cd ..\frontend
-npm test
+```bash
+node scripts/test.mjs doctor --profile fast
+node scripts/test.mjs fast --scope all
 ```
-
-Run the complete validation before integration:
-
-- Backend with PostgreSQL and Redis configured: `pytest tests/ -v`.
-- Frontend with `npm run verify`.
-- E2E only with reserved Clerk test identities.
 
 For Vite hot reload, use `docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build`.
 The development frontend is available at `http://localhost:5173`.
@@ -86,6 +82,8 @@ Use test provider credentials for local work.
 
 Complete technical documentation resides in the [`documentation/`](documentation/) directory:
 
+- [Agent Instructions](AGENTS.md)
+- [Command Reference](documentation/00_getting_started/COMMAND_REFERENCE.md)
 - [Director Onboarding](documentation/00_getting_started/ONBOARDING.md)
 - [Project Overview](documentation/00_getting_started/PROJECT_OVERVIEW.md)
 - [Repository Map](documentation/00_getting_started/REPOSITORY_MAP.md)

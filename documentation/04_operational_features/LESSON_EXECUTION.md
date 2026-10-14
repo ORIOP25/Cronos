@@ -41,11 +41,12 @@ Separating them preserves schedule history and supports occurrence decisions.
 6. The service stores the log and related ledger changes.
 
 The write endpoints are `/api/v1/schedule/operational-blocks/{id}/log` and `/api/v1/schedule/lessons/{lesson_id}/log`.
-Both use `PUT` and return a lesson log. The operational-block route requires a `V1` origin and uses the v1 ledger.
+Both use `PUT`. The operational-block route returns a lesson log; the lesson route returns `SchedulerV1LessonLogResponse`. The operational-block route requires a `V1` origin and uses the v1 ledger.
 
 ## Contracts and Invariants
 
-- Lesson log status is `PENDING`, `COMPLETED`, or `OCCURRENCE`.
+- A v1 lesson log (`scheduler_lesson_log_v1`) is `COMPLETED`, `OCCURRENCE`, or `REVOKED`. A lesson without a log row reads as `PENDING`.
+- An operational-block log (`lesson_log`) can store `PENDING`, `COMPLETED`, or `OCCURRENCE`.
 - Summary text has a maximum length of 2,000 characters.
 - Notes have a maximum length of 1,000 characters.
 - Teachers can edit only blocks assigned to their linked profile.

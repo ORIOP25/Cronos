@@ -111,10 +111,9 @@ erDiagram
 
 ## Verification Procedure
 
-1. Run `alembic upgrade head` with the migrator role.
-2. Run `alembic check`.
-3. Run `python -m scripts.audit_triggers` from `backend/`.
-4. Run `python -m scripts.audit_database_integrity` from `backend/`.
+1. Run `docker compose --profile maintenance run --rm db-maintenance` to apply migrations with the migrator role.
+2. Run the migration drift, trigger audit, and integrity audit checks from the [Command Reference](../00_getting_started/COMMAND_REFERENCE.md#backend-checks-outside-the-runner).
+3. Run `node scripts/test.mjs integration` for the tenant isolation tests.
 
 ## Source Map
 

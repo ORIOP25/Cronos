@@ -61,23 +61,24 @@ Schedules must account for resource conflicts, availability, calendar events, ex
 ## States and Transitions
 
 - School year: `UNPUBLISHED` -> `PUBLISHED`.
-- Job: `QUEUED` -> `RUNNING` -> `SUCCEEDED`, `FAILED`, `NO_VALID_OUTPUT`, or `CANCELED`.
-- Draft: `PENDING` -> `APPROVED`, `REJECTED`, `REPLACED`, `STALE`, or `INVALIDATED`.
+- Job: `QUEUED` -> `RUNNING` -> `VALIDATING` -> `SUCCEEDED`; it can also end `CANCELLED`, `STALE`, `FAILED`, `INFEASIBLE`, or `INCONCLUSIVE`.
+- Proposal: `PENDING` -> `APPROVED`, `REJECTED`, `STALE`, or `SUPERSEDED`.
+- Schedule version: `CANDIDATE` -> `ACTIVE` -> `SUPERSEDED`.
 - Timesheet: `OPEN` -> `SUBMITTED` -> `APPROVED`; approval can return to `OPEN`.
+
+The `CHECK` constraints in `backend/alembic/versions/0001_scheduler_v1_baseline.py` own these state lists.
+The [Scheduler V1 Tech Spec](../03_scheduler_engine/SCHEDULER_V1_TECH_SPEC_V2.md#states-and-transitions) explains them.
 
 ## Failure Modes
 
 - Invalid Clerk credentials return an authentication error.
 - Missing tenant context prevents access to tenant rows.
 - A missing Redis or PostgreSQL dependency makes readiness fail.
-- A blocked solve records `NO_VALID_OUTPUT` or `FAILED` with diagnostic fields.
+- A blocked solve ends the job `INFEASIBLE` or `INCONCLUSIVE` and records diagnostic fields.
 
 ## Verification Procedure
 
-1. Copy the root environment example.
-2. Provision database roles with the maintenance profile.
-3. Apply migrations with the maintenance profile.
-4. Start the stack and verify `/health/live` and `/health/ready`.
+Follow the local stack procedure in the [Command Reference](COMMAND_REFERENCE.md#local-stack).
 
 ## Source Map
 

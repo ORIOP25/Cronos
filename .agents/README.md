@@ -1,41 +1,51 @@
 # Cronos AI Agent Suite
 
-This directory contains specialized AI agent skills and guidance for developing Cronos.
+This directory holds the agent skills for Cronos. [AGENTS.md](../AGENTS.md) defines when to load them.
 
-## Core Foundation Skill
+## Layout
 
-- [`cronos-base/SKILL.md`](skills/cronos-base/SKILL.md): Base foundation rules required by all Cronos skills.
+- `.agents/skills/<name>/SKILL.md` is the source of every skill. Codex and other agents read it here.
+- `.claude/skills/<name>/SKILL.md` is a thin adapter so Claude Code discovers the same skill. It repeats the source frontmatter and points to the source.
+  When you change a skill `name` or `description`, update its adapter in the same commit.
 
-## Specialist Cronos Skills
+## Cronos Skills
 
-| Skill Name | Trigger Scenario | Primary Scope |
+| Skill | Trigger | Primary scope |
 | :--- | :--- | :--- |
-| **`cronos-backend`** | Backend API, SQLAlchemy models, Alembic, Clerk auth | `backend/app/`, `backend/tests/` |
-| **`cronos-domain`** | Professional education rules, modules, course invariants | `documentation/02_domain_model/` |
-| **`cronos-frontend`** | React 19 pages, Vite build, React Query, Clerk UI | `frontend/src/` |
-| **`cronos-frontend-designer`** | Design system tokens, CSS styles, visual branding | `documentation/06_frontend_ux/`, `frontend/src/styles/brand.tokens.css`, `frontend/src/index.css` |
-| **`cronos-operations`** | Lesson logs (*Sumários*), absences (*Faltas*), timesheets | `documentation/04_operational_features/` |
-| **`cronos-scheduler`** | OR-Tools CP-SAT solver, draft promotion, repair jobs | `backend/app/scheduler/`, `backend/app/services/scheduler_*` |
+| [`cronos-base`](skills/cronos-base/SKILL.md) | Every task | Shared checklist and safety rules |
+| [`cronos-backend`](skills/cronos-backend/SKILL.md) | API, services, models, migrations, backend Clerk | `backend/app/`, `backend/tests/` |
+| [`cronos-domain`](skills/cronos-domain/SKILL.md) | Ensino Profissional rules, catalog, members, school configuration | `documentation/02_domain_model/` |
+| [`cronos-frontend`](skills/cronos-frontend/SKILL.md) | React pages, hooks, routes, Clerk UI | `frontend/src/` |
+| [`cronos-frontend-designer`](skills/cronos-frontend-designer/SKILL.md) | CSS, tokens, visual design | `frontend/src/styles/`, `frontend/src/index.css` |
+| [`cronos-operations`](skills/cronos-operations/SKILL.md) | Sumários, Faltas, substitutions, timesheets, debt | `documentation/04_operational_features/` |
+| [`cronos-scheduler`](skills/cronos-scheduler/SKILL.md) | CP-SAT solver, jobs, proposals | `backend/app/scheduler/` |
+| [`cronos-infra`](skills/cronos-infra/SKILL.md) | Docker, CI, delivery, Railway, Cloudflare, Clerk dashboard, mail | `.github/`, `scripts/`, `docker-compose*.yml`, `backend/railway/` |
 
-## Protected Imported Skills
+`ponytail` is required for every task. Git tracks it with the Cronos skills.
 
-The following imported skill suites are protected and must not be modified:
+## Imported Skills
 
-- `.agents/skills/clerk*`: Official Clerk authentication skill suite.
-- `.agents/skills/grill-me/`: Interactive design stress-testing skill.
-- `.agents/skills/ponytail/`: Minimalist implementation methodology skill.
-- `.agents/skills/design-taste-frontend/`: Imported frontend design skill.
-- `skills-lock.json`: Skill lockfile.
+Imported skills are protected. Do not modify them.
+Git ignores every imported skill except `ponytail`, so a clean clone does not contain them.
 
-Git tracks `.agents/skills/cronos-*` and `.agents/skills/ponytail/`, because AGENTS.md requires them. `.gitignore` ignores the other skill directories, so they exist only where installed locally.
+`skills-lock.json` lists the Clerk skills from the GitHub source `clerk/skills`, with the path and hash of each.
+Cronos uses React with React Router, a Python backend, organizations, webhooks, and Clerk test users.
+Install this subset for Cronos work:
 
-## Source of Truth Policy
+| Skill | Why |
+| :--- | :--- |
+| `clerk` | Core Clerk concepts |
+| `clerk-setup` | Keys, instances, environment variables |
+| `clerk-react-patterns` | `@clerk/react` hooks and components |
+| `clerk-react-router-patterns` | Routing with React Router |
+| `clerk-custom-ui` | Customized sign-in and sign-up screens |
+| `clerk-orgs` | Organizations, roles, invitations |
+| `clerk-webhooks` | Svix-signed membership webhooks |
+| `clerk-backend-api` | Backend API calls from `backend/app/services/clerk_access_service.py` |
+| `clerk-testing` | Clerk test users for E2E |
 
-The actual codebase implementation and unit test suite are the sole source of truth.
-Deployment contracts also live in `docker-compose*.yml`, `backend/railway/*.json`,
-`.github/workflows/ci.yml`, and the environment example files.
+The other lockfile entries (mobile, Next.js, Nuxt, Vue, Astro, TanStack, Chrome extension, billing) do not apply to Cronos.
 
-Local, test, and CI stacks use PostgreSQL 18 and Redis 8.2.
-Fresh databases use the frozen `0001_scheduler_v1_baseline` migration. A database on the old chain needs `alembic downgrade base` with the previous code first.
-Railway `api`, `worker`, and `beat` use their JSON files. `scheduler-supervisor` is configured in the dashboard; `backend/railway/supervisor.json` is its reference.
-Verify dashboard settings before deployment.
+To install a skill, copy the directory named by its `skillPath` in `clerk/skills` to `.agents/skills/<name>/`.
+Compare its `SKILL.md` with the `computedHash` in `skills-lock.json` before you rely on it.
+The optional local skills `grill-me` and `design-taste-frontend` are not in the lockfile.

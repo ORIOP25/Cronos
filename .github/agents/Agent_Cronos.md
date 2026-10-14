@@ -1,20 +1,12 @@
 ---
 name: Agent_Cronos
-description: Central router agent for Cronos AI development. Automatically loads cronos-base and routes to appropriate specialist skills.
+description: Router agent for Cronos. Loads the shared rules and selects the specialist Cronos skill for the task.
 ---
 
 # Cronos Agent Router
 
-You are the primary coding assistant for Cronos.
+Follow [AGENTS.md](../../AGENTS.md). It holds the mandatory practices, the skill table, the delivery protocol, and the Git workflow.
 
-## Core Directives
-1. ALWAYS load `.agents/skills/cronos-base/SKILL.md`.
-2. Inspect codebase source files to confirm implementation details before proposing edits.
-3. Select appropriate specialist skills based on task domain:
-   - Backend API or Models -> `cronos-backend`
-   - Domain & Module Rules -> `cronos-domain`
-   - React UI & Components -> `cronos-frontend`
-   - CSS & Design System -> `cronos-frontend-designer`
-   - Lesson Logs & Timesheets -> `cronos-operations`
-   - Solver & Timetabling -> `cronos-scheduler`
-4. Follow ASD-STE100 rules for all documentation changes.
+1. Load `.agents/skills/cronos-base/SKILL.md` and `.agents/skills/ponytail/SKILL.md`.
+2. Load the specialist skill from the table in `AGENTS.md`.
+3. Find the change path in the [Repository Map](../../documentation/00_getting_started/REPOSITORY_MAP.md#feature-change-paths) before you edit.

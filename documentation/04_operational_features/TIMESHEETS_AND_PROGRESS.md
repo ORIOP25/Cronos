@@ -34,7 +34,7 @@ Ledger entries preserve idempotent evidence for progress and recovery.
 | Timesheet API | `backend/app/api/v1/endpoints/timesheets.py` |
 | Timesheet service | `backend/app/services/timesheet_service.py` |
 | Progress services | `backend/app/services/teacher_service.py`, `class_service.py`, `backend/app/scheduler/infrastructure/progress.py` |
-| Ledger model | `backend/app/models.py` (`ProgressLedgerEntry`) |
+| Ledger models | v1 (authoritative when curricular assignments exist): `backend/app/scheduler/infrastructure/models.py` (`CurricularExecution`, `CurricularDebt` and revisions). Legacy fallback: `backend/app/models.py` (`ProgressLedgerEntry`) |
 | UI | `frontend/src/pages/Timesheets.jsx`, `MyProgress.jsx` |
 
 Routes under `/api/v1/timesheets`: `GET /` (admin list), `GET /me/{week_start_date}`, `POST /me/{week_start_date}/submit` and `PATCH /{timesheet_id}/status` (approve or reopen). The submit route validates lesson coverage itself; there is no separate pending-occurrences route.

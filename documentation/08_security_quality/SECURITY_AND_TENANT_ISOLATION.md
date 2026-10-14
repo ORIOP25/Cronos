@@ -94,10 +94,9 @@ Webhook events move through received, processing, processed, ignored, retryable,
 
 ## Verification Procedure
 
-1. Run `pytest backend/tests/contracts/test_rls_database_policies.py -v`.
-2. Run `pytest backend/tests/integration/committed/test_tenant_isolation_complete.py -v`.
-3. Run `python -m scripts.audit_triggers` from `backend/`.
-4. Inspect security headers in frontend and API tests.
+1. Run `node scripts/test.mjs integration -- -k "rls or tenant_isolation"`. It runs `test_rls_database_policies.py` and `test_tenant_isolation_complete.py` on an isolated stack.
+2. Run the trigger audit from the [Command Reference](../00_getting_started/COMMAND_REFERENCE.md#backend-checks-outside-the-runner).
+3. Inspect security headers in frontend and API tests.
 
 ## Source Map
 

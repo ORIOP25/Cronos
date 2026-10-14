@@ -130,9 +130,7 @@ class Settings(BaseSettings):
             if value.strip()
         ]
 
-    # --- Solver (roadmap V2) ---
-    # Fallback seguro: manter V1 por omissão até ativação explícita.
-
+    # --- Celery ---
     # Permitimos que seja None para não obrigar a ter no .env
     CELERY_BROKER_URL: RedisDsn | None = None
 

@@ -15,9 +15,12 @@ React 19 single-page application (SPA) for Cronos, built with Vite 8.
 
 ## Development Commands
 
+The [Command Reference](../documentation/00_getting_started/COMMAND_REFERENCE.md) defines which command proves which change.
+Prefer the root runner `node scripts/test.mjs` for tests.
+
 ```bash
-# Install dependencies
-npm install
+# Install locked dependencies
+npm ci --ignore-scripts
 
 # Start local dev server
 npm run dev

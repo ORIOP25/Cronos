@@ -51,10 +51,11 @@ WHERE organization_id = :organization_id
   AND (origin LIKE 'lesson-occurrence:%' OR origin LIKE 'occurrence-debt:%')
 ORDER BY id;
 
-SELECT id, assignment_id, origin, revision, delta_minutes, author_membership_id, reason
-FROM curricular_debt_revision
-WHERE organization_id = :organization_id
-ORDER BY id;
+SELECT r.id, r.debt_id, d.assignment_id, r.origin, r.revision, r.delta_minutes, r.author_membership_id, r.reason
+FROM curricular_debt_revision r
+JOIN curricular_debt d ON d.id = r.debt_id AND d.organization_id = r.organization_id
+WHERE r.organization_id = :organization_id
+ORDER BY r.id;
 
 SELECT id, debt_id, execution_id, minutes, reversal_of_id
 FROM curricular_debt_settlement
