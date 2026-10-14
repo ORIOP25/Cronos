@@ -5,7 +5,7 @@
 Este documento decompõe a implementação do [Tech Spec — Módulos por Turma](CLASS_MODULE_SELECTION_TECH_SPEC.md) em pacotes de trabalho.
 Define entregáveis, testes iniciais, dependências, critérios de conclusão e a ordem de execução.
 
-**Estado:** proposto. Nenhum pacote começou.
+**Estado:** em implementação; PR1 verificação/entrega pendentes; PR2 por iniciar.
 **Data:** 14 de outubro de 2026.
 
 O tech spec é dono das decisões, dos contratos e dos cenários de teste.
@@ -235,8 +235,10 @@ Ramo: `feat/class-module-selection`. Este PR não muda o que o utilizador vê.
 
 - **Entregável:** `snapshot.py` usa o carregador antes de `_build_assignments`.
 - **Teste primeiro:** desmarcar um módulo com sumários e gerar. O horário não tem aulas desse módulo.
+- **Teste D12:** alterar a seleção com aulas futuras dentro da janela de estabilidade. As futuras excedentárias saem; as passadas e o histórico registado ficam.
 - **Concluído quando:** o cenário passa e o histórico fica intacto.
 - **Depende de:** 2.6.1
+- **Risco D12:** o override da janela aplica-se só à atribuição alterada; as atribuições inalteradas mantêm a janela. Uma aula passada não registada que não caiba no currículo falha com `PROTECTED_LESSON_EXCEEDS_CURRICULUM`.
 
 ##### 2.6.3 Crédito dos sumários — M
 
@@ -273,6 +275,7 @@ Ramo: `feat/class-module-selection`. Este PR não muda o que o utilizador vê.
 - **Concluído quando:** este cenário passa. O cenário de voltar a marcar um módulo anterior também passa.
 - **Depende de:** 2.6.2
 - **Risco:** é o pacote com mais incerteza. Se um validador falhar, corrija a causa no carregador, não no validador.
+- **D12:** a cópia da proposta preserva as aulas passadas e o histórico registado; só o excedente futuro sai.
 
 #### 2.7 Pré-validação, prontidão e fingerprint
 
@@ -487,6 +490,7 @@ O pacote 2.6.7 tem o maior risco. Comece-o assim que 2.6.2 terminar.
 | D09 Gravação ao clicar | 3.2.2 |
 | D10 Progresso só dos módulos marcados | 2.6.6, 2.8.1, 3.3 |
 | D11 Voltar a marcar retoma o histórico | 2.5.1, 2.6.7 |
+| D12 Ajustar/remover aulas futuras na alteração de seleção | 2.6.2, 2.6.7 |
 
 ## Definição de concluído
 
