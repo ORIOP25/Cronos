@@ -543,13 +543,10 @@ Entregue em três pull requests a partir de `main`. Cada passo começa com um te
 | 2 — Ecrãs | Cartão, `AvailabilityEditorModal`, `ClassAvailabilityModal`, aplicar a outras turmas, mensagem de falha e painel da alteração de grelha. | A funcionalidade completa sem CSV. |
 | 3 — Importação CSV | Modelo dinâmico, validação, aplicação e secção na página Importar dados. | A importação. |
 
-Ordem TDD do PR 1:
+Os PRs 2 e 3 começam depois de o PR 1 estar integrado em `main`. Podem correr em paralelo.
 
-1. Teste unitário de `class_deficits` em `aggregate_capacity_check` e do diagnóstico `INSUFFICIENT_CLASS_TIME`.
-2. Teste unitário de `generate_complete` com défice por turma: `OUTCOME_INFEASIBLE` com diagnósticos.
-3. Teste de integração da migração, das rotas e da RLS.
-4. Teste de integração da leitura pelo motor, incluindo a regra do Preferencial.
-5. Testes da fingerprint, da pré-validação, da alteração de grelha e dos diagnósticos do job.
+O [WBS — Disponibilidade das Turmas](CLASS_AVAILABILITY_WBS.md) é dono da decomposição do trabalho.
+Define os pacotes, as dependências, o caminho crítico e os critérios de conclusão.
 
 ### Ordem com os itens 1 e 2
 
