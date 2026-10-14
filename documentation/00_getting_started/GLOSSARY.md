@@ -20,6 +20,8 @@ In accordance with ASD-STE100, technical concepts have single approved terms. Po
 | **Equipa** | Team | The organization membership view where administrators manage staff members and invites. |
 | **Turma** | Class / Student Group | A cohort of students enrolled in a specific year and course. |
 | **Módulo** | Module | A self-contained instructional unit with a defined instructional time requirement. |
+| **Módulo selecionado** | Selected module | A module a class-subject link marks for the class in its grade level. |
+| **Módulo retirado** | Retired module | A module removed from a class selection that keeps its executed history. |
 | **Sumário** | Lesson Log | Formal record of lesson execution, topics taught, and student attendance entered by a teacher. |
 | **Falta** | Absence | Record of teacher absence for a scheduled lesson block. |
 | **Substituição** | Cover / Substitution | Arrangement assigning a replacement teacher or subject to an absence block. |

@@ -13,7 +13,6 @@ from app.scheduler.infrastructure.models import (
     CurricularAssignment,
     CurricularExecution,
     CurricularExecutionCredit,
-    CurricularRequirement,
     SchedulerLessonLogV1,
     SchedulerLessonV1,
     SchedulerProposalV1,
@@ -421,25 +420,42 @@ def _get_class_progress(
             models.Course.id,
             models.Course.name,
             func.coalesce(func.sum(ledger.c.minutes), 0),
-            func.coalesce(func.sum(CurricularRequirement.required_minutes), 0),
+            func.coalesce(func.sum(models.Module.required_minutes), 0),
         )
         .select_from(models.Class)
         .join(models.Course, models.Class.course_id == models.Course.id)
+        # The live selection is authoritative: the projection is rebuilt only
+        # on generation, so a module deselected or reselected since then must
+        # already leave or rejoin the catalogue total without waiting for a new
+        # sync. The executed minutes come from the v1 ledger, not the stale
+        # requirement rows.
         .outerjoin(
-            CurricularAssignment,
-            (CurricularAssignment.class_id == models.Class.id)
-            & (CurricularAssignment.organization_id == organization_id)
-            & (CurricularAssignment.school_year_id == active_year),
+            models.ClassSubjectLink,
+            (models.ClassSubjectLink.organization_id == organization_id)
+            & (models.ClassSubjectLink.class_id == models.Class.id)
+            & (models.ClassSubjectLink.grade_level == models.Class.grade_level),
         )
         .outerjoin(
-            CurricularRequirement,
-            (CurricularRequirement.assignment_id == CurricularAssignment.id)
-            & (CurricularRequirement.organization_id == organization_id),
+            models.class_subject_module,
+            (models.class_subject_module.c.organization_id == organization_id)
+            & (models.class_subject_module.c.class_subject_link_id == models.ClassSubjectLink.id),
+        )
+        .outerjoin(
+            models.Module,
+            (models.Module.organization_id == organization_id)
+            & (models.Module.id == models.class_subject_module.c.module_id),
+        )
+        .outerjoin(
+            CurricularAssignment,
+            (CurricularAssignment.organization_id == organization_id)
+            & (CurricularAssignment.class_id == models.Class.id)
+            & (CurricularAssignment.subject_id == models.ClassSubjectLink.subject_id)
+            & (CurricularAssignment.school_year_id == active_year),
         )
         .outerjoin(
             ledger,
             (ledger.c.assignment_id == CurricularAssignment.id)
-            & (ledger.c.module_id == CurricularRequirement.module_id),
+            & (ledger.c.module_id == models.Module.id),
         )
         .where(models.Class.organization_id == organization_id, models.Class.is_archived.is_(False))
         .group_by(

@@ -74,6 +74,7 @@ Uma falha impede qualquer gravação parcial.
 - Salas, disciplinas, cursos e professores novos não podem repetir dados existentes.
 - Nomes de disciplinas e siglas de cursos arquivados podem ser reutilizados; o histórico mantém os registos originais.
 - Cursos, turmas e disciplinas podem ser usados nas atribuições.
+- Uma linha de Atribuições marca todos os módulos da disciplina na turma.
 - Um professor existente não pode ser usado numa atribuição.
 - Um professor indicado numa atribuição deve estar no mesmo pedido.
 - O professor importado recebe acesso `scheduler_only`.

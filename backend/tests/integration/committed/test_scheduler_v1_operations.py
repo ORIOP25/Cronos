@@ -78,8 +78,23 @@ async def _two_module_school(db_session, *, suffix: str = ""):
             organization_id=seed.organization.id,
             assignment_id=seed.assignment.id,
             module_id=second.id,
-            sequence=2,
+            sequence=second.order + 1,
             required_minutes=75,
+        )
+    )
+    # The projection reads the selection, so the second module must be marked.
+    link = await db_session.scalar(
+        select(models.ClassSubjectLink).where(
+            models.ClassSubjectLink.organization_id == seed.organization.id,
+            models.ClassSubjectLink.class_id == seed.class_.id,
+            models.ClassSubjectLink.subject_id == seed.subject.id,
+        )
+    )
+    await db_session.execute(
+        models.class_subject_module.insert().values(
+            organization_id=seed.organization.id,
+            class_subject_link_id=link.id,
+            module_id=second.id,
         )
     )
     await db_session.commit()

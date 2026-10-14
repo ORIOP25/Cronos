@@ -3,7 +3,7 @@ Testes de Tenant Isolation — Lógica de Negócio
 Parte de test_business_logic.py (split).
 """
 
-from factories import API
+from factories import API, _setup_course_class_subject
 from httpx import AsyncClient
 
 from tests._support.db_fixtures import create_org_and_user, create_teacher_profile
@@ -116,4 +116,26 @@ class TestTenantIsolation:
         )
         course_id = course_resp.json()["id"]
         resp = await async_client.delete(f"{API}/courses/{course_id}", headers=org_a["headers"])
+        assert resp.status_code == 404
+
+    async def test_org_a_cannot_select_org_b_module(
+        self,
+        async_client: AsyncClient,
+        db_session,
+    ):
+        org_a = await self._create_org_admin(
+            db_session, "admin_mod_a@escola.pt", "Escola A", "tenant_iso_mod_a"
+        )
+        org_b = await self._create_org_admin(
+            db_session, "admin_mod_b@escola.pt", "Escola B", "tenant_iso_mod_b"
+        )
+        ctx_a = await _setup_course_class_subject(async_client, org_a["headers"])
+        ctx_b = await _setup_course_class_subject(async_client, org_b["headers"])
+
+        resp = await async_client.patch(
+            f"{API}/classes/{ctx_a['class_id']}/subjects/{ctx_a['subject_id']}",
+            json={"module_ids": ctx_b["module_ids"]},
+            headers=org_a["headers"],
+        )
+
         assert resp.status_code == 404
