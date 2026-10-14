@@ -80,13 +80,16 @@ function getClassSubjects(snapshot, scenario, classId) {
       .map((assignment) => {
         const subject = scenario.subjects.find((item) => item.id === assignment.subjectId)
         const teacher = scenario.teachers.find((item) => item.id === assignment.teacherId)
+        const snapshotSubject = snapshot.subjects.find((item) => item.name === subject.name)
         return {
-          id: snapshot.assignments.find((item) => item.subject_id === snapshot.subjects.find((item) => item.name === subject.name)?.id)?.id,
-          subject_id: snapshot.subjects.find((item) => item.name === subject.name)?.id,
+          id: snapshot.assignments.find((item) => item.subject_id === snapshotSubject?.id)?.id,
+          subject_id: snapshotSubject?.id,
           subject_name: subject.name,
           required_room_type: subject.roomType.toLowerCase(),
           teacher_id: snapshot.teachers.find((item) => item.name === teacher?.name)?.id ?? null,
           teacher_name: teacher?.name ?? null,
+          // O guia mostra a seleção de módulos apenas para leitura, com tudo marcado.
+          modules: (snapshotSubject?.modules || []).map((module) => ({ ...module, selected: true })),
         }
       }),
   }
