@@ -12,6 +12,7 @@ import {
   frontendFastArgs,
   frontendJunitEnv,
   isOwnedResource,
+  loadE2eEnvFile,
   parseArgs,
   parseCriticalManifest,
   preservePrimaryFailure,
@@ -434,4 +435,28 @@ test('includes untracked source paths in the measured file set', () => {
     frontendTests: 0,
     e2eTests: 0,
   })
+})
+
+test('the shared E2E env file fills only missing Clerk inputs', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cronos-e2e-env-'))
+  try {
+    const file = join(dir, 'e2e.env')
+    writeFileSync(file, [
+      '# comment',
+      'CLERK_SECRET_KEY=sk_test_file',
+      'E2E_CLERK_ADMIN_EMAIL="admin+clerk_test@example.com"',
+      'E2E_CLERK_TEACHER_EMAIL=teacher+clerk_test@example.com',
+      'DATABASE_URL=postgresql://unrelated',
+      '',
+    ].join('\n'))
+    const env = { E2E_CLERK_TEACHER_EMAIL: 'shell+clerk_test@example.com' }
+    assert.equal(loadE2eEnvFile(file, env), true)
+    assert.equal(env.CLERK_SECRET_KEY, 'sk_test_file')
+    assert.equal(env.E2E_CLERK_ADMIN_EMAIL, 'admin+clerk_test@example.com')
+    assert.equal(env.E2E_CLERK_TEACHER_EMAIL, 'shell+clerk_test@example.com')
+    assert.equal(env.DATABASE_URL, undefined)
+    assert.equal(loadE2eEnvFile(join(dir, 'missing.env'), {}), false)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
 })
