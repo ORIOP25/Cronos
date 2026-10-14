@@ -53,6 +53,7 @@ React Query manages server state while component state handles form and view sta
 ## Contracts and Invariants
 
 - `VITE_API_BASE_URL` defaults to `/api/v1`.
+- Class header edits use the course-scoped mutation in [catalog data hooks](../../frontend/src/features/catalog/data.js).
 - Mutations do not retry.
 - Queries retry at most twice for network, `408`, `429`, and `5xx` errors.
 - Teacher routes require a teacher capability and linked profile.

@@ -663,7 +663,8 @@ async def get_occurrence(
 
 
 async def get_debts(db: AsyncSession, organization_id: int, *, class_id: int | None = None) -> dict:
-    today = date.today()
+    moment = datetime.now(UTC)
+    today = moment.date()
     context = await _active_context(db, organization_id)
     if context is None:
         return {
@@ -674,7 +675,8 @@ async def get_debts(db: AsyncSession, organization_id: int, *, class_id: int | N
             "as_of_date": today,
             "items": [],
         }
-    year, _, _ = context
+    year, _, tz = context
+    today = moment.astimezone(tz).date()
     claims = (
         await db.scalars(
             select(CurricularDebt).where(
