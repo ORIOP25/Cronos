@@ -35,14 +35,6 @@ from app.scheduler.domain.candidate_validation import (
     validate_candidate,
 )
 from app.scheduler.domain.capacity import residual_minutes
-from app.scheduler.domain.debt import (
-    DebtBalance,
-    DebtClaim,
-    DebtRevision,
-    DebtSettlement,
-    RecoveryAllocation,
-    reconcile_debt,
-)
 from app.scheduler.domain.quality import (
     AdaptiveQualityPolicy,
     AdaptiveQualityVector,
@@ -507,40 +499,6 @@ def measure_recovery_quality(
         disruption=measure_disruption(
             snapshot, baseline, candidate, policy, prior_changes=prior_changes
         ),
-    )
-
-
-def reconcile_after_repair(
-    snapshot: PlanningSnapshot,
-    candidate: CandidateSchedule,
-    claims: Sequence[DebtClaim],
-    *,
-    revisions: Sequence[DebtRevision] = (),
-    settlements: Sequence[DebtSettlement] = (),
-    allocations: Sequence[RecoveryAllocation] = (),
-    executed_credit_by_event: Mapping[tuple[str, int], int] | None = None,
-) -> tuple[DebtBalance, ...]:
-    """Reconcile debt and future credits after a repair without settling a proposal.
-
-    Reservations of another version are ignored by reconciliation: minutes are
-    settled by recorded execution only, never because a proposal exists.
-    """
-    if type(snapshot) is not PlanningSnapshot or type(candidate) is not CandidateSchedule:
-        raise ValueError("Reconciliation needs a snapshot and a repaired candidate.")
-    residual = sum(
-        max(0, residual_minutes(snapshot, assignment.assignment_id))
-        for assignment in snapshot.assignments
-    )
-    credits = {lesson.lesson_id: lesson.credit_minutes for lesson in candidate.lessons}
-    return reconcile_debt(
-        claims,
-        residual_minutes=residual,
-        revisions=revisions,
-        settlements=settlements,
-        allocations=allocations,
-        active_version_id=snapshot.active_version_id,
-        future_lesson_credits=credits,
-        executed_credit_by_event=executed_credit_by_event,
     )
 
 

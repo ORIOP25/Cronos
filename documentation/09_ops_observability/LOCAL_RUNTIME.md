@@ -15,8 +15,12 @@ Copy `.env.example` to `.env` and `backend/.env.example` to `backend/.env`.
 
 ## What the System Does
 
-The root Compose file runs PostgreSQL, Redis, API, worker, scheduler supervisor, Beat, and the production-like Nginx SPA.
-The development override replaces the frontend runtime with Vite hot reload.
+The root `docker-compose.yml` runs PostgreSQL 18, Redis 8.2, API, worker, scheduler supervisor, Beat, and the Nginx SPA.
+The `local` target of `frontend/Dockerfile` inherits `ci` and uses `nginx.ci.conf` for Clerk development origins.
+The production image uses `nginx.conf`.
+`docker-compose.dev.yml` overrides only the `frontend` service, replacing it with Vite hot reload; the other services are unchanged.
+Local, test, and CI stacks use PostgreSQL 18 and Redis 8.2, pinned by digest.
+Verify managed provider versions separately; see the [Deployment Runbook](DEPLOYMENT_RUNBOOK.md#production-topology).
 The API dispatches `scheduler.v1.run_next_job` through Redis; the worker imports and executes that task.
 
 ## Why the Behavior Exists
@@ -28,7 +32,7 @@ This prevents concurrent services from changing production-like schemas during s
 
 | Service | Host access | Purpose |
 | :--- | :--- | :--- |
-| `db` | `127.0.0.1:5432` | PostgreSQL 16 |
+| `db` | `127.0.0.1:5432` | PostgreSQL 18 |
 | `redis` | Internal only | Celery broker and rate-limit storage |
 | `provision-db` | Maintenance profile | Create and rotate database roles |
 | `db-maintenance` | Maintenance profile | Run Alembic migrations |
@@ -36,7 +40,7 @@ This prevents concurrent services from changing production-like schemas during s
 | `worker` | Internal only | Scheduler v1 generation tasks |
 | `scheduler-supervisor` | Internal only | Recovery-only worker on the `scheduler-supervisor` queue |
 | `beat` | Internal only | Hourly reconciliation, daily maintenance, and 60-second supervision |
-| `frontend` | `127.0.0.1:5173` | Nginx SPA and `/api/` proxy |
+| `frontend` | `127.0.0.1:5173` | Nginx SPA (`local` target) and `/api/` proxy; Vite with the dev override |
 
 ## Data or Request Flow
 
@@ -53,7 +57,7 @@ flowchart TD
     Worker --> DB
 ```
 
-1. Provision roles on a new database or password rotation.
+1. Provision roles on a new database or password rotation with `provision-db`, which runs `backend/scripts/provision_database.sh`.
 2. Apply migrations with `db-maintenance`.
 3. Start normal services.
 4. Use the Nginx frontend on port `5173`.
@@ -76,7 +80,7 @@ flowchart TD
 
 `provision-db` -> `db-maintenance` -> `backend`, `worker`, `scheduler-supervisor`, `beat`, `frontend`.
 
-The development override changes only the frontend runtime and frontend origin.
+The development override changes only the frontend service.
 
 ## Failure Modes
 
@@ -84,6 +88,9 @@ The development override changes only the frontend runtime and frontend origin.
 - Unprovisioned roles prevent migrations or application connections.
 - Missing migrations cause application schema errors.
 - Redis failure affects rate limits, readiness, and background dispatch.
+- A PostgreSQL 16 data volume cannot start with the PostgreSQL 18 image.
+  The named volume is `cronos_postgres_data_v18`, so an old volume is not reused. Back up required data before you switch majors.
+- The PostgreSQL 18 image mounts its volume at `/var/lib/postgresql`, not `/var/lib/postgresql/data`.
 
 ## Safe Stop and Cleanup
 
@@ -104,7 +111,8 @@ The development override changes only the frontend runtime and frontend origin.
 7. Inspect registered tasks with `docker compose exec worker celery -A app.celery_worker.celery_app inspect registered`.
 
 The test stack uses `docker-compose.test.yml` under project `cronos-test`.
-`scripts/test.mjs` starts it and serves the frontend on port `5174`.
+`scripts/test.mjs` starts it, provisions roles through its `provision-db` service and serves the frontend on port `5174`.
+`docker-compose.ci.yml` is the equivalent stack used by the `e2e-browser` CI job.
 
 ## Source Map
 

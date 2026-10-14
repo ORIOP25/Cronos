@@ -25,4 +25,6 @@ export const PREFERENCE_LEVELS = {
 };
 
 // O valor inicial de qualquer célula
-export const DEFAULT_PREFERENCE = 1;
+export const DEFAULT_PREFERENCE = 1
+
+export const DAY_LABELS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo']

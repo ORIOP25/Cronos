@@ -5,8 +5,6 @@ from sqlalchemy import select
 
 from app import models
 from app.services.scheduler_state_service import (
-    InvalidSchedulerStateTransitionError,
-    PendingDraftConflictError,
     SchedulerStateIntegrityError,
     SchedulerStateService,
 )
@@ -35,34 +33,6 @@ async def _create_org_and_user(db_session):
     return organization, membership
 
 
-async def _create_pending_draft(db_session, organization, school_year, membership, state):
-    job = models.ScheduleGenerationJob(
-        organization_id=organization.id,
-        school_year_id=school_year.id,
-        requested_by_membership_id=membership.id,
-        strategy=models.ScheduleGenerationStrategy.COMPLETE_GENERATION,
-    )
-    db_session.add(job)
-    await db_session.flush()
-    draft = models.ScheduleDraft(
-        organization_id=organization.id,
-        school_year_id=school_year.id,
-        generation_job_id=job.id,
-        strategy=models.ScheduleGenerationStrategy.COMPLETE_GENERATION,
-        result_category=models.ScheduleGenerationResultCategory.COMPLETE_SUCCESS,
-        trigger_type=models.ScheduleGenerationTrigger.FIRST_GENERATION,
-        generation_input_fingerprint="a" * 64,
-        scheduler_state_version_used=state.scheduler_state_version,
-        projected_completion_date=date(2026, 6, 30),
-        hard_end_date=school_year.hard_end_date,
-        summary_json={},
-        created_by_membership_id=membership.id,
-    )
-    db_session.add(draft)
-    await db_session.flush()
-    return draft
-
-
 async def test_get_or_create_active_state_is_idempotent(db_session):
     organization, _ = await _create_org_and_user(db_session)
     service = SchedulerStateService(db_session)
@@ -83,97 +53,6 @@ async def test_get_or_create_active_state_is_idempotent(db_session):
     assert first_state.school_year_publication_state == (
         models.SchoolYearPublicationState.UNPUBLISHED
     )
-
-
-async def test_pending_lookup_requires_pointer_consistency(db_session):
-    organization, membership = await _create_org_and_user(db_session)
-    service = SchedulerStateService(db_session)
-    school_year, state = await service.get_or_create_active_state(
-        organization.id,
-        start_date=date(2025, 9, 1),
-        hard_end_date=date(2026, 7, 15),
-    )
-    draft = await _create_pending_draft(db_session, organization, school_year, membership, state)
-
-    with pytest.raises(SchedulerStateIntegrityError):
-        await service.get_pending_draft(organization.id, school_year.id)
-
-    await service.set_pending_draft(organization.id, school_year.id, draft.id)
-    pending = await service.get_pending_draft(organization.id, school_year.id)
-    assert pending is not None
-    assert pending.id == draft.id
-
-
-async def test_publish_and_reset_transitions_are_centralized(db_session):
-    organization, membership = await _create_org_and_user(db_session)
-    service = SchedulerStateService(db_session)
-    school_year, state = await service.get_or_create_active_state(
-        organization.id,
-        start_date=date(2025, 9, 1),
-        hard_end_date=date(2026, 7, 15),
-    )
-    draft = await _create_pending_draft(db_session, organization, school_year, membership, state)
-    await service.set_pending_draft(organization.id, school_year.id, draft.id)
-
-    published = await service.mark_published(
-        organization.id,
-        school_year.id,
-        active_schedule_version_id="version-1",
-        approved_scheduler_state_version=state.scheduler_state_version,
-        approved_draft_id=draft.id,
-    )
-    assert published.school_year_publication_state == (models.SchoolYearPublicationState.PUBLISHED)
-    assert published.pending_draft_id is None
-
-    reset = await service.reset_year(
-        organization.id,
-        school_year.id,
-        reset_by_membership_id=membership.id,
-    )
-    assert reset.school_year_publication_state == (models.SchoolYearPublicationState.UNPUBLISHED)
-    assert reset.active_schedule_version_id is None
-    assert reset.approved_scheduler_state_version is None
-    assert reset.reset_at is not None
-
-
-async def test_clear_pending_draft_uses_expected_identity(db_session):
-    organization, membership = await _create_org_and_user(db_session)
-    service = SchedulerStateService(db_session)
-    school_year, state = await service.get_or_create_active_state(
-        organization.id,
-        start_date=date(2025, 9, 1),
-        hard_end_date=date(2026, 7, 15),
-    )
-    draft = await _create_pending_draft(db_session, organization, school_year, membership, state)
-    await service.set_pending_draft(organization.id, school_year.id, draft.id)
-
-    with pytest.raises(PendingDraftConflictError):
-        await service.clear_pending_draft(
-            organization.id,
-            school_year.id,
-            expected_draft_id=draft.id + 1,
-        )
-
-
-async def test_publish_rejects_a_stale_scheduler_state_version(db_session):
-    organization, membership = await _create_org_and_user(db_session)
-    service = SchedulerStateService(db_session)
-    school_year, state = await service.get_or_create_active_state(
-        organization.id,
-        start_date=date(2025, 9, 1),
-        hard_end_date=date(2026, 7, 15),
-    )
-    draft = await _create_pending_draft(db_session, organization, school_year, membership, state)
-    await service.set_pending_draft(organization.id, school_year.id, draft.id)
-
-    with pytest.raises(InvalidSchedulerStateTransitionError):
-        await service.mark_published(
-            organization.id,
-            school_year.id,
-            active_schedule_version_id="version-1",
-            approved_scheduler_state_version=state.scheduler_state_version + 1,
-            approved_draft_id=draft.id,
-        )
 
 
 async def test_active_school_year_rejects_invalid_timezone(db_session):

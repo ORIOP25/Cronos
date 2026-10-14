@@ -43,12 +43,15 @@ npm run test:e2e
 # Run the complete local frontend verification
 npm run verify
 
+# Run the fast critical subset (legal contract, marketing build, edge worker, assets, critical tests)
+npm run verify:critical:fast
+
 # Check production-only source rules
 npm run audit:production
 ```
 
 `npm run build` runs `vite build` and `node scripts/build-marketing-pages.mjs`.
-`npm run verify` runs lint, both Knip checks, the legal contract check, the marketing build test, the edge worker test, the marketing asset check, coverage, and the build.
+`npm run verify` runs lint, both Knip checks, the legal contract check, the marketing build test, the root script tests, the edge worker test, the marketing asset check, coverage, and the build.
 
 ## Public Marketing Site
 The public marketing site resides in `src/features/marketing/`:
@@ -71,6 +74,7 @@ Marketing CSS classes use the `cronos-*` namespace to isolate styles from authen
 | `/vantagens`, `/como-funciona`, `/ajuda` | `VantagensPage.jsx`, `HowItWorksPage.jsx`, `HelpPage.jsx` | Public |
 | `/sobre`, `/about` | `pages/marketing/AboutPage.jsx` | Public |
 | `/contacto`, `/contact` | `pages/marketing/ContactPage.jsx` | Public |
+| `/privacidade`, `/privacy`, `/termos`, `/dpa`, `/cookies` | `features/legal/LegalDocumentLayout.jsx` | Public |
 | `/login/*` | `SignInPage.jsx` | Public |
 | `/register/*` | `SignUpPage.jsx` | Public |
 | `/recuperar-palavra-passe` | `ForgotPasswordPage.jsx` | Public |
@@ -85,13 +89,6 @@ Marketing CSS classes use the `cronos-*` namespace to isolate styles from authen
 | `/courses/:courseId/classes/:classId/subjects` | `ClassSubjects.jsx` | Admin |
 | `/my-availability`, `/my-schedules`, `/my-progress` | `MyAvailability.jsx`, `MySchedules.jsx`, `MyProgress.jsx` | Teacher |
 | `/sign-in/*`, `/sign-up/*` | Redirects | Public |
-
-## Visual Baseline Generation
-Visual snapshot reference graphics reside in `documentation/06_frontend_ux/visual-baselines/`. CSS coverage is an explicit opt-in measurement and writes its report to `documentation/08_security_quality/loc-phase-2-evidence/`:
-
-```bash
-CSS_COVERAGE_ENABLED=1 node scripts/capture-css-coverage.mjs http://127.0.0.1:4173
-```
 
 The runtime image serves the compiled SPA with Nginx.
 Nginx proxies `/api/` to the backend.

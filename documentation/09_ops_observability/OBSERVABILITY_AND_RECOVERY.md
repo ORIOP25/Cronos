@@ -18,17 +18,14 @@ The API exposes liveness, readiness, and a public API health route.
 The backend emits structured logs. It does not send request data to an external error tracker.
 It writes colored console logs locally and JSON logs in every other environment.
 A request-id context variable binds each log line to the `X-Request-ID` response header.
-Scheduler, occurrence, and teacher services store operational telemetry.
+Scheduler jobs store status, diagnostics, and search evidence.
 
-The `rgpd-cookies` rollout removes Sentry request telemetry. Production
-rollout requires an operator approval that platform logs and alerts cover the
-same incident-detection needs. A rollback restores application code only; data
-already excluded from Sentry cannot be recovered.
+There is no Sentry or other error-tracker integration. Incident detection relies on Railway platform logs and alerts.
 
 ## Why the Behavior Exists
 
 Health endpoints separate process availability from dependency readiness.
-Persisted event summaries support tenant-scoped operational review without logging request PII.
+Persisted job evidence supports tenant-scoped operational review without logging request PII.
 
 ## Components and Ownership
 
@@ -40,8 +37,6 @@ Persisted event summaries support tenant-scoped operational review without loggi
 | Structured logging | `backend/app/core/logging.py` |
 | Request identity | `backend/app/main.py` (`X-Request-ID` context variable) |
 | Scheduler diagnostics | `backend/app/scheduler/infrastructure/diagnostics.py`, `backend/app/scheduler_v1_worker.py` |
-| Occurrence telemetry | `backend/app/models.py`, `backend/app/services/occurrence_service.py` |
-| Teacher telemetry | `backend/app/services/teacher_observability_service.py` |
 | Rate limiting | `backend/app/core/ratelimit.py` |
 | Integrity audits | `backend/scripts/audit_triggers.py`, `backend/scripts/audit_database_integrity.py` |
 
@@ -49,8 +44,8 @@ Persisted event summaries support tenant-scoped operational review without loggi
 
 1. A monitor calls `/health/live`.
 2. A readiness check runs PostgreSQL `SELECT 1` and a Redis ping.
-3. Scheduler phases and services record structured operational events.
-4. Operators inspect logs, job fields, and event summaries.
+3. Scheduler phases record structured log events and job evidence.
+4. Operators inspect logs and job fields.
 5. Operators use the recovery procedure for the affected component.
 
 ## Contracts and Invariants
@@ -65,19 +60,15 @@ Persisted event summaries support tenant-scoped operational review without loggi
   include container memory and OOM metrics from `/sys/fs/cgroup`.
 - When Redis cannot enforce a limit, the API returns `503` with code
   `RATE_LIMIT_UNAVAILABLE`.
-- Scheduler jobs expose terminal status, failure code, duration, and an opaque
-  failure reference. Stored failure messages remain technical and internal.
+- Scheduler jobs (`scheduler_job_v1`) expose `status`, `result_code`, `stop_reason`, `attempt_token`, `heartbeat_at` and `cancellation_requested_at`. Job evidence stays technical and internal.
 - Logs must not contain contact form PII or provider secrets.
 - Database audits run with the migrator role.
 
 ## States and Transitions
 
-Jobs move from queued or running states to success, cancellation,
-no-valid-output, or failure. `QUEUED` age alone is an operational signal,
+Jobs move from `QUEUED` through `RUNNING` and `VALIDATING` to `SUCCEEDED`, `CANCELLED`, `STALE`, `INFEASIBLE`, `INCONCLUSIVE` or `FAILED`. `QUEUED` age alone is an operational signal,
 not proof that a job was lost: recovery never fails a queued job without
-broker or worker evidence. A running job past its deadline by 30 seconds
-becomes `FAILED / WORKER_STALLED`. A cancel request older than two minutes
-becomes `CANCELED`.
+broker or worker evidence. The `scheduler.v1.supervise` task (every 60 seconds) fails a `RUNNING` or `VALIDATING` job whose heartbeat is older than `SCHEDULER_V1_ABANDONED_SECONDS` (default 120) as `FAILED` with result code `WORKER_STALLED`, and wakes the executor when work is queued and nothing runs.
 Provider and webhook states remain queryable through their persisted status fields.
 
 ## Failure Modes and Recovery
@@ -86,7 +77,7 @@ Provider and webhook states remain queryable through their persisted status fiel
 | :--- | :--- |
 | Liveness fails | Inspect API process and restart the API service. |
 | Readiness returns `503` | Check PostgreSQL and Redis connectivity. |
-| Job remains active | Beat recovery finalizes stale jobs. Inspect `failure_reference`, the scheduler event, and worker logs. |
+| Job remains active | The supervisor finalizes jobs with a stale heartbeat. Inspect `result_code`, `stop_reason`, the scheduler events, and worker and supervisor logs. |
 | Old queued jobs | Query the queued backlog and verify dispatcher, broker, worker, and deployment revision before taking action. Do not mark the job failed based on age alone. |
 | Worker task is missing | Inspect Celery registration and worker command. |
 | Migration or trigger audit fails | Stop release, inspect migration state, and restore from verified backup if required. |
@@ -94,7 +85,7 @@ Provider and webhook states remain queryable through their persisted status fiel
 ## Verification Procedure
 
 1. Query both health endpoints.
-2. Inspect worker tasks with Celery inspect. Confirm one solver worker and one Beat replica.
+2. Inspect worker tasks with Celery inspect. Confirm one solver worker, one `scheduler-supervisor` worker and one Beat replica.
 3. Run `python -m scripts.audit_triggers` from `backend/`.
 4. Run `python -m scripts.audit_database_integrity` from `backend/`.
 5. Record incident evidence before changing data.
@@ -102,9 +93,9 @@ Provider and webhook states remain queryable through their persisted status fiel
 For an operational view of queued work, use:
 
 ```sql
-SELECT id, organization_id, queued_at, job_status, failure_reference
-FROM schedule_generation_job
-WHERE job_status = 'QUEUED'
+SELECT id, organization_id, queued_at, status, result_code
+FROM scheduler_job_v1
+WHERE status = 'QUEUED'
 ORDER BY queued_at ASC;
 ```
 
@@ -115,7 +106,7 @@ corresponding dispatch message.
 ## Support workflow
 
 Ask only for the visible reference and approximate time. Search structured logs
-for `request_id`, `failure_reference`, or the provider operation reference.
+for `request_id` or the provider operation reference.
 Identify the failing boundary. Apply the documented retry or recovery action.
 Do not request passwords or screenshots with personal data. Escalate or roll
 back when the reference indicates a systemic failure.
@@ -128,8 +119,6 @@ back when the reference indicates a systemic failure.
 - `backend/app/core/ratelimit.py`
 - `backend/app/scheduler/infrastructure/diagnostics.py`
 - `backend/app/scheduler_v1_worker.py`
-- `backend/app/services/teacher_observability_service.py`
-- `backend/app/services/occurrence_service.py`
 - `backend/scripts/audit_triggers.py`
 - `backend/scripts/audit_database_integrity.py`
 

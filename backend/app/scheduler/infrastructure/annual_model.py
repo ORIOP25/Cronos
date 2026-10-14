@@ -113,7 +113,6 @@ class AnnualPlan:
 
 def _availability_minutes(
     demands,
-    origin: date,
 ) -> tuple[
     dict[tuple[str, int, int], int],
     dict[tuple[int, int], int],
@@ -147,69 +146,94 @@ def _counts(q: Mapping[QuotaKey, Any], solver: cp_model.CpSolver) -> dict[QuotaK
     }
 
 
+@dataclass
+class _HintCapacity:
+    available: Mapping[tuple[str, int, int], int]
+    room_minutes: Mapping[tuple[int, int], int]
+    used: dict[tuple[str, int, int], int]
+    used_room: dict[tuple[int, int], int]
+
+    def headroom(self, assignment, week: int, duration: int) -> bool:
+        if self.used[("class", assignment.class_id, week)] + duration > self.available.get(
+            ("class", assignment.class_id, week), 0
+        ):
+            return False
+        if self.used[("teacher", assignment.teacher_id, week)] + duration > self.available.get(
+            ("teacher", assignment.teacher_id, week), 0
+        ):
+            return False
+        if len(assignment.eligible_room_ids) == 1:
+            room_id = next(iter(assignment.eligible_room_ids))
+            if self.used_room[(room_id, week)] + duration > self.room_minutes.get(
+                (room_id, week), 0
+            ):
+                return False
+        return True
+
+    def reserve(self, assignment, week: int, duration: int, times: int) -> None:
+        minutes = duration * times
+        self.used[("class", assignment.class_id, week)] += minutes
+        self.used[("teacher", assignment.teacher_id, week)] += minutes
+        if len(assignment.eligible_room_ids) == 1:
+            room_id = next(iter(assignment.eligible_room_ids))
+            self.used_room[(room_id, week)] += minutes
+
+
+def _partial_assignment_hint(assignment, need, groups, chosen, final_group, capacity, waste):
+    if need > 0:
+        for (week, duration), rows in sorted(groups.items()):
+            if final_group is not None and week < final_group[0]:
+                continue
+            if chosen.get((week, duration), 0) >= len(rows):
+                continue
+            if not capacity.headroom(assignment, week, duration):
+                continue
+            chosen[(week, duration)] = chosen.get((week, duration), 0) + 1
+            capacity.reserve(assignment, week, duration, 1)
+            waste[(assignment.assignment_id, week, duration)] = duration - need
+            need = 0
+            final_group = (week, duration)
+            break
+    return need, final_group
+
+
+def _assignment_hint(assignment, remaining, groups, capacity):
+    waste: dict[QuotaKey, int] = {}
+    need = remaining
+    chosen: dict[tuple[int, int], int] = {}
+    final_group: tuple[int, int] | None = None
+    for (week, duration), rows in sorted(groups.items()):
+        slot_count = len(rows)
+        while chosen.get((week, duration), 0) < slot_count and need >= duration:
+            if not capacity.headroom(assignment, week, duration):
+                break
+            chosen[(week, duration)] = chosen.get((week, duration), 0) + 1
+            capacity.reserve(assignment, week, duration, 1)
+            need -= duration
+            final_group = (week, duration)
+    need, final_group = _partial_assignment_hint(
+        assignment, need, groups, chosen, final_group, capacity, waste
+    )
+    return need, chosen, final_group, waste
+
+
 def _greedy_hint(
     demands: list,
     available: Mapping[tuple[str, int, int], int],
     room_minutes: Mapping[tuple[int, int], int],
 ) -> tuple[dict[QuotaKey, int], dict[QuotaKey, int], dict[QuotaKey, int], dict[int, int]] | None:
     """Earliest-week feasible starting point so the relaxation does not stall."""
-    used: dict[tuple[str, int, int], int] = defaultdict(int)
-    used_room: dict[tuple[int, int], int] = defaultdict(int)
-
-    def headroom(assignment, week: int, duration: int) -> bool:
-        if used[("class", assignment.class_id, week)] + duration > available.get(
-            ("class", assignment.class_id, week), 0
-        ):
-            return False
-        if used[("teacher", assignment.teacher_id, week)] + duration > available.get(
-            ("teacher", assignment.teacher_id, week), 0
-        ):
-            return False
-        if len(assignment.eligible_room_ids) == 1:
-            room_id = next(iter(assignment.eligible_room_ids))
-            if used_room[(room_id, week)] + duration > room_minutes.get((room_id, week), 0):
-                return False
-        return True
-
-    def reserve(assignment, week: int, duration: int, times: int) -> None:
-        minutes = duration * times
-        used[("class", assignment.class_id, week)] += minutes
-        used[("teacher", assignment.teacher_id, week)] += minutes
-        if len(assignment.eligible_room_ids) == 1:
-            room_id = next(iter(assignment.eligible_room_ids))
-            used_room[(room_id, week)] += minutes
+    capacity = _HintCapacity(available, room_minutes, defaultdict(int), defaultdict(int))
 
     q: dict[QuotaKey, int] = {}
     final: dict[QuotaKey, int] = {}
     waste: dict[QuotaKey, int] = {}
     last_weeks: dict[int, int] = {}
     for assignment, remaining, groups in demands:
-        need = remaining
-        chosen: dict[tuple[int, int], int] = {}
-        final_group: tuple[int, int] | None = None
-        for (week, duration), rows in sorted(groups.items()):
-            capacity = len(rows)
-            while chosen.get((week, duration), 0) < capacity and need >= duration:
-                if not headroom(assignment, week, duration):
-                    break
-                chosen[(week, duration)] = chosen.get((week, duration), 0) + 1
-                reserve(assignment, week, duration, 1)
-                need -= duration
-                final_group = (week, duration)
-        if need > 0:
-            for (week, duration), rows in sorted(groups.items()):
-                if final_group is not None and week < final_group[0]:
-                    continue
-                if chosen.get((week, duration), 0) >= len(rows):
-                    continue
-                if not headroom(assignment, week, duration):
-                    continue
-                chosen[(week, duration)] = chosen.get((week, duration), 0) + 1
-                reserve(assignment, week, duration, 1)
-                waste[(assignment.assignment_id, week, duration)] = duration - need
-                need = 0
-                final_group = (week, duration)
-                break
+        need, chosen, final_group, assignment_waste = _assignment_hint(
+            assignment, remaining, groups, capacity
+        )
+        waste.update(assignment_waste)
         if need > 0 or final_group is None:
             return None
         for (week, duration), count in chosen.items():
@@ -256,27 +280,7 @@ def _impose_room_set_capacity(
     return imposed
 
 
-def plan_annual_quotas(
-    snapshot: PlanningSnapshot,
-    periods: tuple[Period, ...],
-    *,
-    excluded: Iterable[QuotaDistribution] = (),
-    latest_week_limit: int | None = None,
-    time_limit_seconds: float = 10.0,
-    num_workers: int = 1,
-    random_seed: int = 1,
-    stop_at_first_complete: bool = False,
-) -> AnnualPlan:
-    """Plan a weekly quota distribution, excluding proven-infeasible ones."""
-    if type(snapshot) is not PlanningSnapshot:
-        raise ValueError("Annual planning needs a planning snapshot.")
-    if time_limit_seconds <= 0:
-        raise ValueError("The time limit must be positive.")
-    if num_workers < 1:
-        raise ValueError("At least one worker is required.")
-    start = monotonic()
-    deadline = start + time_limit_seconds
-
+def _quota_demands(snapshot, periods, deadline, start):
     demands = []
     for assignment in snapshot.assignments:
         if monotonic() >= deadline:
@@ -310,9 +314,10 @@ def plan_annual_quotas(
             groups[(week_index(snapshot.origin, period), period.duration_minutes)].append(period)
         demands.append((assignment, remaining, dict(groups)))
 
-    build_start = monotonic()
-    diagnostics.phase_started("ANNUAL")
-    model = cp_model.CpModel()
+    return demands
+
+
+def _add_quota_variables(model, demands, deadline, start):
     q: dict[QuotaKey, Any] = {}
     final: dict[QuotaKey, Any] = {}
     waste: dict[QuotaKey, Any] = {}
@@ -359,13 +364,21 @@ def plan_annual_quotas(
             key = (assignment.assignment_id, week, duration)
             model.Add(q[key] + capacity * after <= capacity)
 
-    available, room_minutes = _availability_minutes(demands, snapshot.origin)
-    for key, minutes in sorted(available.items()):
-        terms = load_terms.get(key)
-        if terms:
-            model.Add(sum(terms) <= minutes)
-    room_set_constraints = _impose_room_set_capacity(model, room_set_terms, room_minutes)
+    return (
+        q,
+        final,
+        waste,
+        last_week_vars,
+        last_week_by_assignment,
+        load_terms,
+        room_set_terms,
+        max_week,
+    )
 
+
+def _add_quota_hints(
+    model, demands, available, room_minutes, q, final, waste, *, last_week_by_assignment
+):
     hint = _greedy_hint(demands, available, room_minutes)
     if hint is not None:
         hint_q, hint_final, hint_waste, hint_weeks = hint
@@ -378,6 +391,8 @@ def plan_annual_quotas(
         for assignment_id, variable in last_week_by_assignment.items():
             model.AddHint(variable, hint_weeks[assignment_id])
 
+
+def _exclude_quota_distributions(model, q, final, excluded):
     for distribution in excluded:
         matches = []
         # Zero counts also condition the subproblem: extra short periods may
@@ -404,6 +419,65 @@ def plan_annual_quotas(
         if matches:
             model.Add(sum(matches) <= len(matches) - 1)
 
+
+def plan_annual_quotas(
+    snapshot: PlanningSnapshot,
+    periods: tuple[Period, ...],
+    *,
+    excluded: Iterable[QuotaDistribution] = (),
+    latest_week_limit: int | None = None,
+    time_limit_seconds: float = 10.0,
+    num_workers: int = 1,
+    random_seed: int = 1,
+    stop_at_first_complete: bool = False,
+) -> AnnualPlan:
+    """Plan a weekly quota distribution, excluding proven-infeasible ones."""
+    if type(snapshot) is not PlanningSnapshot:
+        raise ValueError("Annual planning needs a planning snapshot.")
+    if time_limit_seconds <= 0:
+        raise ValueError("The time limit must be positive.")
+    if num_workers < 1:
+        raise ValueError("At least one worker is required.")
+    start = monotonic()
+    deadline = start + time_limit_seconds
+
+    demands = _quota_demands(snapshot, periods, deadline, start)
+    if isinstance(demands, AnnualPlan):
+        return demands
+    build_start = monotonic()
+    diagnostics.phase_started("ANNUAL")
+    model = cp_model.CpModel()
+    variables = _add_quota_variables(model, demands, deadline, start)
+    if isinstance(variables, AnnualPlan):
+        return variables
+    (
+        q,
+        final,
+        waste,
+        last_week_vars,
+        last_week_by_assignment,
+        load_terms,
+        room_set_terms,
+        max_week,
+    ) = variables
+    available, room_minutes = _availability_minutes(demands)
+    for key, minutes in sorted(available.items()):
+        terms = load_terms.get(key)
+        if terms:
+            model.Add(sum(terms) <= minutes)
+    room_set_constraints = _impose_room_set_capacity(model, room_set_terms, room_minutes)
+
+    _add_quota_hints(
+        model,
+        demands,
+        available,
+        room_minutes,
+        q,
+        final,
+        waste,
+        last_week_by_assignment=last_week_by_assignment,
+    )
+    _exclude_quota_distributions(model, q, final, excluded)
     solver = cp_model.CpSolver()
     solver.parameters.num_search_workers = num_workers
     solver.parameters.random_seed = random_seed

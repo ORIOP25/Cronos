@@ -157,8 +157,8 @@ function getScheduleSlots(snapshot, scenario, params = {}) {
         teacher,
         room,
         class_info: classInfo,
-        active_schedule_block_id: scenario.blocks.indexOf(block) + 1,
-        // Normal schedule blocks are addressed through the active block id.
+        scheduler_lesson_id: scenario.blocks.indexOf(block) + 1,
+        // Normal schedule blocks are addressed through the scheduler lesson id.
         // An operational block id would make LessonLogModal treat every demo
         // lesson as an already-created occurrence.
         operational_block_id: block.isOperational ? scenario.blocks.indexOf(block) + 1 : null,
@@ -453,7 +453,7 @@ function handleScheduleRoutes(context) {
     if (method !== 'get') return methodNotAllowed(context)
     return read(getScheduleSlots(snapshot, scenario, config.params))
   }
-  if (!/^\/schedule\/(active|operational)-blocks\/\d+\/log$/.test(path)) return null
+  if (!/^\/schedule\/(lessons|operational-blocks)\/\d+\/log$/.test(path)) return null
   if (method !== 'put') return methodNotAllowed(context)
   return write(TUTORIAL_ACTIONS.CREATE_OCCURRENCE, { blockId: Number(path.split('/')[3]), status: context.body.status }, (_next, nextSnapshot) => nextSnapshot)
 }

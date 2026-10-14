@@ -22,12 +22,12 @@ async def read_rooms(
 async def create_room(
     room: schemas.RoomCreate,
     db: deps.DbSession,
-    # A CorreÃ§Ã£o: Pedimos o Utilizador Logado, nÃ£o o org_id direto
+    # A Correção: Pedimos o Utilizador Logado, não o org_id direto
     current_user: deps.AdminActor,
 ):
     """
     Cria uma nova sala.
-    O org_id Ã© preenchido automaticamente com base no utilizador logado.
+    O org_id é preenchido automaticamente com base no utilizador logado.
     """
     return await room_service.create_room(
         db,
@@ -40,7 +40,7 @@ async def create_room(
 @router.patch(
     "/{room_id}",
     response_model=schemas.RoomRead,
-    responses={404: {"description": "Sala nÃ£o encontrada"}},
+    responses={404: {"description": "Sala não encontrada"}},
 )
 async def update_room(
     room_id: int,
@@ -60,8 +60,8 @@ async def update_room(
 @router.delete(
     "/{room_id}",
     responses={
-        404: {"description": "Sala nÃ£o encontrada"},
-        400: {"description": "DependÃªncias existentes"},
+        404: {"description": "Sala não encontrada"},
+        400: {"description": "Dependências existentes"},
     },
 )
 async def delete_room(

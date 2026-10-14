@@ -1,7 +1,5 @@
 from datetime import date, time
 
-import pytest
-
 from app import models, schemas
 from app.services import grid_version_service, settings_service, timeslot_service
 
@@ -290,42 +288,3 @@ async def test_active_grid_configuration_rebuilds_legacy_blocks(db_session):
     assert payload["source"] == "BLOCKS"
     assert payload["configuration"]["closing_time"] == "10:50"
     assert payload["configuration"]["break_duration_minutes"] == 10
-
-
-async def test_pending_version_state_transitions(db_session):
-    organization = await _create_org(db_session)
-    pending = models.GridVersion(
-        organization_id=organization.id,
-        effective_date=date(2026, 1, 5),
-        state=models.GridVersionState.PENDING,
-    )
-    other_pending = models.GridVersion(
-        organization_id=organization.id,
-        effective_date=date(2026, 2, 2),
-        state=models.GridVersionState.PENDING,
-    )
-    db_session.add_all([pending, other_pending])
-    await db_session.flush()
-
-    activated = await grid_version_service.activate_pending_grid_version(
-        db_session, organization.id, pending.id
-    )
-    assert activated.state == models.GridVersionState.ACTIVE
-
-    with pytest.raises(ValueError):
-        await grid_version_service.activate_pending_grid_version(
-            db_session, organization.id, pending.id
-        )
-
-    rejected = await grid_version_service.reject_pending_grid_version(
-        db_session, organization.id, other_pending.id
-    )
-    assert rejected is not None
-    assert rejected.state == models.GridVersionState.REJECTED
-
-    assert (
-        await grid_version_service.reject_pending_grid_version(
-            db_session, organization.id, activated.id
-        )
-        is None
-    )

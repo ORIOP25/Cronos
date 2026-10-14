@@ -204,6 +204,13 @@ export function normalizeTimeLabel(value) {
 }
 
 /**
+ * Formata um intervalo de horas como "HH:MM–HH:MM"; vazio se faltar uma das pontas.
+ */
+export function formatTimeRange(start, end) {
+  return start && end ? `${normalizeTimeLabel(start)}–${normalizeTimeLabel(end)}` : ''
+}
+
+/**
  * Formata minutos como duração legível em português: "50 min" ou "1 h 40 min".
  * @param {number|null} minutes
  * @returns {string}

@@ -32,7 +32,8 @@ Short, controlled sentences reduce ambiguity during development, release, and in
 | Cronos agent guidance | `.agents/skills/cronos-*/` | Describe current engineering contracts. |
 | Imported skills | `.agents/skills/clerk*`, `grill-me`, `ponytail`, and others | Do not modify. |
 
-The `.agents/` directory is git-ignored. It is available in local development environments and is absent from a clean repository clone.
+Git tracks `.agents/skills/cronos-*`, `.agents/skills/ponytail/`, and agent guidance.
+Other imported skill directories are ignored and require local installation.
 
 ## Data or Request Flow
 

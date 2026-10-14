@@ -57,6 +57,11 @@ State-version events detect changes that can invalidate a published schedule.
 - Room types are `normal`, `lab`, `gym`, or `art`.
 - Calendar events use `national_holiday`, `school_break`, `exam_period`, `other`, or `internship_flow`.
 - Only an `internship_flow` event can link classes.
+- Internship impact previews reference published v1 `lesson_id` values and protect completed execution.
+- Applying an internship flow withdraws affected lessons durably through `SchedulerLessonLogV1.withdrawn_at`.
+- Withdrawn lessons remain in version history and are excluded from operational scheduling and weekly submission requirements.
+- Each withdrawn lesson also receives an `OCCURRENCE` log with a `GAP` decision, so the absence appears in `/absences`.
+- Withdrawn lessons are not carried into a new version. Their absences stay listed on the version that withdrew them.
 - Foundation status is `NOT_STARTED`, `IN_PROGRESS`, or `COMPLETED`.
 
 ## States and Transitions

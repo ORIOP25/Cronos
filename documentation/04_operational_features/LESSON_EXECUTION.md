@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document describes lesson logs (*Sumários*) for active and operational schedule blocks.
+This document describes lesson logs (*Sumários*) for published v1 lessons and operational substitute blocks.
 
 ## Intended Reader
 
@@ -27,8 +27,8 @@ Separating them preserves schedule history and supports occurrence decisions.
 | Responsibility | Implementation |
 | :--- | :--- |
 | API | `backend/app/api/v1/endpoints/schedule.py` |
-| Service | `backend/app/services/lesson_log_service.py` |
-| Models | `backend/app/models.py` (`LessonLog`, `ProgressLedgerEntry`) |
+| Service | `backend/app/scheduler/infrastructure/operations.py` |
+| Models | `SchedulerLessonLogV1`, `CurricularExecution`, `CurricularExecutionCredit`, and operational-block `LessonLog` |
 | UI | `frontend/src/components/LessonLogModal.jsx`, `frontend/src/components/WeekGrid.jsx` |
 
 ## Data or Request Flow
@@ -36,13 +36,12 @@ Separating them preserves schedule history and supports occurrence decisions.
 1. The teacher opens `/my-schedules`.
 2. The frontend loads `/api/v1/schedule/week`.
 3. The teacher selects an eligible block.
-4. The frontend sends a `PUT` request to the active or operational block log endpoint.
+4. The frontend sends a `PUT` request to the lesson or operational-block log endpoint.
 5. The service validates ownership, week state, and time rules.
 6. The service stores the log and related ledger changes.
 
-The write endpoints are `/api/v1/schedule/active-blocks/{id}/log`, `/api/v1/schedule/operational-blocks/{id}/log`, and the v1 route `/api/v1/schedule/lessons/{lesson_id}/log`.
-All three use `PUT` and return a lesson log.
-The operational-block route uses the v1 ledger when the block origin is `V1`.
+The write endpoints are `/api/v1/schedule/operational-blocks/{id}/log` and `/api/v1/schedule/lessons/{lesson_id}/log`.
+Both use `PUT` and return a lesson log. The operational-block route requires a `V1` origin and uses the v1 ledger.
 
 ## Contracts and Invariants
 
@@ -86,7 +85,6 @@ Completing a `V1` operational block credits the substitute curricular assignment
 ## Source Map
 
 - `backend/app/api/v1/endpoints/schedule.py`
-- `backend/app/services/lesson_log_service.py`
 - `backend/app/scheduler/infrastructure/operations.py`
 - `backend/app/models.py`
 - `frontend/src/components/LessonLogModal.jsx`

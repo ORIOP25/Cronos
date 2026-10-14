@@ -800,35 +800,10 @@ async def test_teacher_archive_restore_and_qualifications_invalidate_scheduler(d
         school_year_publication_state=models.SchoolYearPublicationState.UNPUBLISHED,
         scheduler_state_version=1,
     )
-    job = models.ScheduleGenerationJob(
-        organization_id=organization.id,
-        school_year_id=school_year.id,
-        requested_by_membership_id=admin_mem.id,
-        strategy=models.ScheduleGenerationStrategy.COMPLETE_GENERATION,
-    )
-    db_session.add(job)
-    await db_session.flush()
 
-    pending_draft = models.ScheduleDraft(
-        organization_id=organization.id,
-        school_year_id=school_year.id,
-        generation_job_id=job.id,
-        strategy=models.ScheduleGenerationStrategy.COMPLETE_GENERATION,
-        draft_state=models.ScheduleDraftState.PENDING,
-        result_category=models.ScheduleGenerationResultCategory.COMPLETE_SUCCESS,
-        trigger_type=models.ScheduleGenerationTrigger.FIRST_GENERATION,
-        generation_input_fingerprint="a" * 64,
-        scheduler_state_version_used=school_year_state.scheduler_state_version,
-        projected_completion_date=date(2026, 6, 30),
-        hard_end_date=school_year.hard_end_date,
-        summary_json={},
-        created_by_membership_id=admin_mem.id,
-    )
     subject1 = models.Subject(organization_id=organization.id, name="Sub1")
     subject2 = models.Subject(organization_id=organization.id, name="Sub2")
-    db_session.add_all([school_year_state, pending_draft, subject1, subject2])
-    await db_session.flush()
-    school_year_state.pending_draft_id = pending_draft.id
+    db_session.add_all([school_year_state, subject1, subject2])
     await db_session.flush()
 
     teacher_account = models.User(

@@ -9,7 +9,6 @@ export const TXT = {
   CANCEL: 'Cancelar',
   REMOVE: 'Remover',
   EDIT: 'Editar',
-  ADD: 'Adicionar',
   CONFIRM: 'Confirmar',
   CONFIRM_DELETE: 'Confirmar Remoção',
   CONFIRM_DELETE_MESSAGE: 'Tem a certeza de que deseja remover este registo? Esta ação não pode ser desfeita.',

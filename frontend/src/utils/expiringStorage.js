@@ -1,4 +1,4 @@
-export const DEFAULT_STORAGE_TTL_MS = 30 * 24 * 60 * 60 * 1000
+const DEFAULT_STORAGE_TTL_MS = 30 * 24 * 60 * 60 * 1000
 
 export function readExpiringValue(storage, key, now = Date.now()) {
   if (!storage || !key) return null

@@ -43,6 +43,7 @@ from app.scheduler.infrastructure.operations import (
     assert_week_open,
     lesson_context,
     lesson_lineage_ids,
+    local_times,
     record_lesson_log,
     reverse_lesson_execution,
 )
@@ -52,6 +53,10 @@ from app.scheduler.infrastructure.progress import (
     record_execution,
     revise_debt,
 )
+
+OCCURRENCE_NOT_FOUND = "Ocorrência não encontrada"
+OCCURRENCE_WITHOUT_LESSON = "Ocorrência sem aula publicada."
+
 
 DEBT_ORIGIN = "occurrence-debt:{occurrence_id}"
 DEBT_LIKE = "occurrence-debt:%"
@@ -169,7 +174,12 @@ async def _log_rows(
         .where(
             SchedulerLessonLogV1.organization_id == organization_id,
             SchedulerLessonLogV1.school_year_id == year.id,
-            SchedulerLessonV1.version_id == version.id,
+            # Withdrawn lessons are never carried into a new version, so their
+            # absence history stays on the version that withdrew them.
+            or_(
+                SchedulerLessonV1.version_id == version.id,
+                SchedulerLessonLogV1.withdrawn_at.is_not(None),
+            ),
             or_(
                 SchedulerLessonLogV1.status.in_(("OCCURRENCE", "REVOKED")),
                 SchedulerLessonLogV1.decision.is_not(None),
@@ -188,30 +198,6 @@ async def _log_rows(
     if date_to is not None:
         query = query.where(SchedulerLessonV1.school_date <= date_to)
     return (await db.execute(query)).all()
-
-
-async def _open_debt_by_origin(
-    db: AsyncSession, organization_id: int, origins: Sequence[str]
-) -> dict[str, int]:
-    if not origins:
-        return {}
-    claims = (
-        await db.scalars(
-            select(CurricularDebt).where(
-                CurricularDebt.organization_id == organization_id,
-                CurricularDebt.origin.in_(origins),
-            )
-        )
-    ).all()
-    if not claims:
-        return {}
-    open_by_claim = await _open_minutes_by_claim(db, claims)
-    open_by_origin: dict[str, int] = {}
-    for claim in claims:
-        minutes = open_by_claim.get(claim.id, 0)
-        if minutes:
-            open_by_origin[claim.origin] = open_by_origin.get(claim.origin, 0) + minutes
-    return open_by_origin
 
 
 async def _open_minutes_by_claim(
@@ -275,7 +261,7 @@ async def _executions_for_occurrences(
     ).all()
     if not executions:
         return [], {}
-    credits = (
+    execution_credits = (
         await db.scalars(
             select(CurricularExecutionCredit).where(
                 CurricularExecutionCredit.organization_id == organization_id,
@@ -284,7 +270,7 @@ async def _executions_for_occurrences(
         )
     ).all()
     totals: dict[int, dict[int, int]] = defaultdict(lambda: defaultdict(int))
-    for row in credits:
+    for row in execution_credits:
         totals[row.execution_id][row.module_id] += row.delta_minutes
     return list(executions), {key: dict(value) for key, value in totals.items()}
 
@@ -324,12 +310,6 @@ def _substitution_summary(
             "assignment_id": assignment_by_occurrence.get(occurrence_id),
         }
     return result
-
-
-def _local_times(lesson: SchedulerLessonV1, zone: ZoneInfo) -> tuple[time, time]:
-    start = lesson.starts_at.astimezone(zone)
-    end = lesson.ends_at.astimezone(zone)
-    return time(start.hour, start.minute), time(end.hour, end.minute)
 
 
 async def _timeslot_ids(
@@ -464,7 +444,7 @@ async def _items(
     )
     items: list[dict] = []
     for log, lesson, assignment, subject, teacher, class_model, _room in rows:
-        local_start, local_end = _local_times(lesson, zone)
+        local_start, local_end = local_times(lesson, zone)
         block = blocks.get(log.id)
         substitution = substitutions.get(log.id)
         lesson_finished = execution_allowed(moment, lesson.ends_at)
@@ -508,7 +488,6 @@ async def _items(
             {
                 "id": log.id,
                 "organization_id": organization_id,
-                "active_schedule_block_id": None,
                 "date": lesson.school_date,
                 "status": status_value,
                 "operational_state": operational_state,
@@ -679,7 +658,7 @@ async def get_occurrence(
 ):
     found = await _find_item(db, organization_id, occurrence_id, now_utc)
     if found is None:
-        raise _error(404, "Ocorrência não encontrada")
+        raise _error(404, OCCURRENCE_NOT_FOUND)
     return found[0]
 
 
@@ -816,7 +795,7 @@ def _reversal_credits(
         if execution.reversal_of_id is not None:
             continue
         key = (execution.origin, execution.revision)
-        credits = tuple(
+        execution_credits = tuple(
             ModuleCredit(
                 module_id,
                 -(minutes - reversed_by_source.get((key, module_id), 0)),
@@ -824,8 +803,8 @@ def _reversal_credits(
             for module_id, minutes in sorted(credits_by_execution.get(execution.id, {}).items())
             if minutes - reversed_by_source.get((key, module_id), 0) > 0
         )
-        if credits:
-            pending.append((execution, credits))
+        if execution_credits:
+            pending.append((execution, execution_credits))
     return pending
 
 
@@ -845,7 +824,7 @@ async def _reverse_substitutions(
     next_revisions: dict[str, int] = defaultdict(int)
     for execution in executions:
         next_revisions[execution.origin] = max(next_revisions[execution.origin], execution.revision)
-    for execution, credits in _reversal_credits(executions, credits_by_execution):
+    for execution, execution_credits in _reversal_credits(executions, credits_by_execution):
         next_revisions[execution.origin] += 1
         await record_execution(
             db,
@@ -857,7 +836,7 @@ async def _reverse_substitutions(
                 next_revisions[execution.origin],
                 membership_id,
                 "Substituição revertida",
-                credits,
+                execution_credits,
                 reversal_of=(execution.origin, execution.revision),
                 recorded_at=now_utc,
             ),
@@ -897,15 +876,6 @@ async def _requirements(
     )
 
 
-SUBSTITUTE_SETUP_ACTIONS = {
-    "teacher": "Confirme um docente ativo e associado à turma.",
-    "availability": "Edite a disponibilidade do docente em Membros.",
-    "assignment": "Configure a disciplina na turma em Disciplinas.",
-    "room": "Ajuste a sala ou a sala preferencial da disciplina.",
-    "capacity": "Amplie os módulos da disciplina substituta.",
-}
-
-
 def _substitution_exclusion(code: str, message: str, setup: str) -> dict:
     return {"code": code, "message": message, "setup": setup}
 
@@ -939,11 +909,7 @@ async def _substitute_exclusions(
         ]
     lesson = await db.get(SchedulerLessonV1, item["lesson_db_id"])
     if lesson is None:
-        return [
-            _substitution_exclusion(
-                "lesson_missing", "Ocorrência sem aula publicada.", "assignment"
-            )
-        ]
+        return [_substitution_exclusion("lesson_missing", OCCURRENCE_WITHOUT_LESSON, "assignment")]
     teacher = await db.scalar(
         select(models.Teacher).where(
             models.Teacher.organization_id == organization_id,
@@ -1122,7 +1088,7 @@ async def _ensure_debt_claim(
         return
     lesson = await db.get(SchedulerLessonV1, log.lesson_id)
     if lesson is None:
-        raise _error(404, "Ocorrência sem aula publicada.")
+        raise _error(404, OCCURRENCE_WITHOUT_LESSON)
     await record_debt(
         db,
         organization_id,
@@ -1258,9 +1224,9 @@ async def _plan_substitution(
     modules = await _requirements(db, organization_id, assignment.id)
     lesson = await db.get(SchedulerLessonV1, item["lesson_db_id"])
     if lesson is None:
-        raise _error(404, "Ocorrência sem aula publicada.")
+        raise _error(404, OCCURRENCE_WITHOUT_LESSON)
     timeslots = await _timeslot_ids(db, organization_id)
-    local_start, local_end = _local_times(lesson, zone)
+    local_start, local_end = local_times(lesson, zone)
     timeslot_id = timeslots.get((lesson.school_date.weekday(), local_start, local_end))
     if not timeslot_id:
         raise _error(422, "A aula substituta não tem um período compatível.")
@@ -1278,7 +1244,6 @@ async def _plan_substitution(
         origin_kind=models.OperationalBlockOrigin.V1,
         source_v1_lesson_log_id=item["id"],
         substitute_curricular_assignment_id=assignment.id,
-        planned_active_schedule_block_id=None,
         date=lesson.school_date,
         timeslot_id=timeslot_id,
         room_id=lesson.room_id,
@@ -1308,7 +1273,7 @@ async def update_occurrence(
     moment = now_utc or datetime.now(UTC)
     found = await _find_item(db, organization_id, occurrence_id, moment)
     if found is None:
-        raise _error(404, "Ocorrência não encontrada")
+        raise _error(404, OCCURRENCE_NOT_FOUND)
     item, year, version = found
     if item["status"] == "REVOKED":
         raise _error(409, "Ocorrência já revertida")
@@ -1321,7 +1286,9 @@ async def update_occurrence(
         .with_for_update()
     )
     if log is None:
-        raise _error(404, "Ocorrência não encontrada")
+        raise _error(404, OCCURRENCE_NOT_FOUND)
+    if log.withdrawn_at is not None and payload.status != models.LessonOccurrenceStatus.GAP:
+        raise _error(409, "A aula foi retirada por fluxo de estágio.")
     membership_id = decided_by_membership_id or log.logged_by_membership_id
     if _is_repeated_v1_decision(item, log, payload):
         return item
@@ -1457,7 +1424,7 @@ async def cancel_occurrence(
     moment = now_utc or datetime.now(UTC)
     found = await _find_item(db, organization_id, occurrence_id, moment)
     if found is None:
-        raise _error(404, "Ocorrência não encontrada")
+        raise _error(404, OCCURRENCE_NOT_FOUND)
     item, year, _ = found
     log = await db.scalar(
         select(SchedulerLessonLogV1)
@@ -1468,7 +1435,7 @@ async def cancel_occurrence(
         .with_for_update()
     )
     if log is None:
-        raise _error(404, "Ocorrência não encontrada")
+        raise _error(404, OCCURRENCE_NOT_FOUND)
     if log.status == "REVOKED":
         await _require_open_week(
             db,
@@ -1485,7 +1452,7 @@ async def cancel_occurrence(
             reason="Reconciliação de dívida de ocorrência revertida",
             now_utc=moment,
         )
-        return {"cancelled": True, "active_schedule_block_id": None, "revision": log.revision}
+        return {"cancelled": True, "revision": log.revision}
     if version != log.revision:
         raise _error(409, "OCCURRENCE_STALE_VERSION")
     membership_id = cancelled_by_membership_id or log.logged_by_membership_id
@@ -1555,7 +1522,6 @@ async def cancel_occurrence(
     await db.flush()
     return {
         "cancelled": True,
-        "active_schedule_block_id": None,
         "revision": log.revision,
     }
 
@@ -1565,7 +1531,7 @@ async def get_substitute_recommendations(
 ) -> list[dict]:
     found = await _find_item(db, organization_id, occurrence_id)
     if found is None:
-        raise _error(404, "Ocorrência não encontrada")
+        raise _error(404, OCCURRENCE_NOT_FOUND)
     item, year, version = found
     context = (year, version, ZoneInfo(year.timezone))
     rows = (
@@ -1630,7 +1596,7 @@ async def get_substitute_diagnostics(
     """Every candidate with the structured reasons that exclude them."""
     found = await _find_item(db, organization_id, occurrence_id)
     if found is None:
-        raise _error(404, "Ocorrência não encontrada")
+        raise _error(404, OCCURRENCE_NOT_FOUND)
     item, year, version = found
     context = (year, version, ZoneInfo(year.timezone))
     rows = (

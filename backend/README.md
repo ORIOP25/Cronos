@@ -18,9 +18,7 @@ FastAPI backend application for Cronos. Manages REST API endpoints, SQLAlchemy d
 
 ## Database Safety and Safeguards
 
-Backend test fixtures automatically reset the target database schema. To prevent accidental data loss, the test fixture execution enforces strict database name safeguards:
-- Pytest refuses execution unless the database name contains `test` or `ci`.
-- Overriding database safety requires explicit flag setting (`ALLOW_NON_TEST_DATABASE=1`).
+Backend test fixtures automatically reset the target database schema. To prevent accidental data loss, `tests/db.py` refuses any database other than `cronos_test_db`, `cronos_ci_db`, or the per-worker `cronos_test_gw<N>` and `cronos_ci_gw<N>` databases. No override exists.
 
 Execute backend tests against a dedicated test database:
 
@@ -29,7 +27,6 @@ $env:ENVIRONMENT='local'
 $env:TEST_DATABASE_URL='postgresql+asyncpg://cronos_app:app-ci@localhost:5432/cronos_test_db'
 $env:DATABASE_URL=$env:TEST_DATABASE_URL
 $env:DATABASE_POOLING_ENABLED='false'
-$env:SECRET_KEY='local-test-secret'
 $env:RATELIMIT_ENABLED='false'
 pytest tests/ -v
 ```
@@ -48,8 +45,11 @@ ruff check app scripts
 ```
 
 Run migrations with the privileged `cronos_migrator` role. Run application tests
-with a database name containing `test` or `ci`.
+only against the database names listed above.
+
+The migration chain has one baseline, `0001_scheduler_v1_baseline`, a PostgreSQL 18 schema dump. Add new migrations on top of it.
+A database on the old chain must run `alembic downgrade base` with the previous code first; see the [Deployment Runbook](../documentation/09_ops_observability/DEPLOYMENT_RUNBOOK.md#migration-baseline-and-reset-rule).
 
 ## Coverage Requirements
 
-CI enforces a minimum threshold of **70% backend code coverage** across the full database-backed test suite.
+CI runs the critical selection in `tests/critical_manifest.json` through `node ../scripts/test.mjs critical --scope backend`. The manifest owns the paths and the coverage thresholds.

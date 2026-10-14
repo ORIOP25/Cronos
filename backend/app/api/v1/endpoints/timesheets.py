@@ -130,29 +130,6 @@ async def submit_my_timesheet(
     return await db.run_sync(_run)
 
 
-@router.get(
-    "/{timesheet_id}/pending-occurrences",
-    summary="Listar ocorrÃªncias por decidir na semana de uma timesheet",
-)
-async def get_pending_occurrences_for_timesheet(
-    timesheet_id: int,
-    db: deps.DbSession,
-    current_user: deps.ActiveActor,
-):
-    """Devolve as ocorrÃªncias OPEN na semana associada Ã  timesheet."""
-    if not deps.user_has_admin_capability(current_user):
-        raise AppError(kind="forbidden", code="access_forbidden", detail="Acesso negado.")
-
-    def _run(sync_db):
-        return timesheet_service.get_open_occurrences_for_timesheet_sync(
-            sync_db,
-            organization_id=current_user.organization_id,
-            timesheet_id=timesheet_id,
-        )
-
-    return await db.run_sync(_run)
-
-
 @router.patch(
     "/{timesheet_id}/status",
     response_model=schemas.TeacherWeeklyTimesheetRead,

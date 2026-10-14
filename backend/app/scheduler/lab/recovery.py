@@ -21,15 +21,13 @@ from app.scheduler.domain.candidate import (
 )
 from app.scheduler.domain.oracle import optimal_candidate
 from app.scheduler.domain.recovery import RecoveryPolicy
-from app.scheduler.lab.annual import AnnualFixture
+from app.scheduler.infrastructure.constructive import construct_schedule
 from app.scheduler.lab.fixtures import (
     CaseExpectation,
-    Fixture,
     FixtureSpec,
     build_fixture,
     build_snapshot,
 )
-from app.scheduler.lab.scale import ScaleFixture
 
 CANCEL_LESSON = "CANCEL_LESSON"
 TEACHER_ABSENCE = "TEACHER_ABSENCE"
@@ -96,18 +94,16 @@ def _ordered(lessons: tuple) -> list:
 
 def apply_event(
     snapshot: PlanningSnapshot,
-    periods: tuple[Period, ...],
     baseline: CandidateSchedule,
     event: str,
     event_seed: int,
 ) -> PlanningSnapshot:
     """One audited perturbation over the published baseline."""
-    return apply_event_with_effect(snapshot, periods, baseline, event, event_seed)[0]
+    return apply_event_with_effect(snapshot, baseline, event, event_seed)[0]
 
 
 def apply_event_with_effect(
     snapshot: PlanningSnapshot,
-    periods: tuple[Period, ...],
     baseline: CandidateSchedule,
     event: str,
     event_seed: int,
@@ -178,20 +174,13 @@ def build_recovery_case(
     version: int = 1,
     fixture_seed: int = 0,
     event_seed: int = 0,
-    extra_events: tuple[int, ...] = (),
     solver_seed: int = 0,
 ) -> RecoveryCase:
-    """Build the published baseline and its deterministic perturbations.
-
-    ``event_seed`` selects the primary event; ``extra_events`` add further
-    perturbations for combined-scenario campaigns.
-    """
+    """Build the published baseline and its deterministic perturbation."""
     base = build_fixture(case_id + "-base", spec, fixture_seed=fixture_seed)
     baseline = base.witness
     event = recovery_event(event_seed)
-    snapshot = apply_event(base.snapshot, base.periods, baseline, event, event_seed)
-    for extra in extra_events:
-        snapshot = apply_event(snapshot, base.periods, baseline, recovery_event(extra), extra)
+    snapshot = apply_event(base.snapshot, baseline, event, event_seed)
     witness = optimal_candidate(snapshot, base.periods)
     expectation = (
         CaseExpectation.FEASIBLE_WITH_WITNESS
@@ -221,7 +210,6 @@ def build_constructed_recovery_case(
     version: int = 1,
     fixture_seed: int = 0,
     event_seed: int = 0,
-    extra_events: tuple[int, ...] = (),
     solver_seed: int = 0,
 ) -> RecoveryCase:
     """A repair case with independent constructive witnesses on both sides.
@@ -231,8 +219,6 @@ def build_constructed_recovery_case(
     independent validator. The minimal oracle is never called, so the case can
     grow beyond enumerable size without weakening the witness guarantee.
     """
-    from app.scheduler.lab.construct import construct_schedule
-
     snapshot = build_snapshot(spec)
     periods = tuple(
         normalize_period(day, start, end, spec.timezone_name) for day, start, end in spec.periods
@@ -241,9 +227,7 @@ def build_constructed_recovery_case(
     if baseline is None:
         raise ValueError("The constructed baseline has no independent witness.")
     event = recovery_event(event_seed)
-    perturbed = apply_event(snapshot, periods, baseline, event, event_seed)
-    for extra in extra_events:
-        perturbed = apply_event(perturbed, periods, baseline, recovery_event(extra), extra)
+    perturbed = apply_event(snapshot, baseline, event, event_seed)
     target = construct_schedule(perturbed, periods)
     if target is None:
         raise ValueError("The perturbed case has no independent constructive witness.")
@@ -259,34 +243,4 @@ def build_constructed_recovery_case(
         fixture_seed=fixture_seed,
         event_seed=event_seed,
         solver_seed=solver_seed,
-    )
-
-
-def perturb_constructed_fixture(
-    fixture: Fixture | AnnualFixture | ScaleFixture,
-    *,
-    event_seed: int,
-    extra_events: tuple[int, ...] = (),
-    case_id: str | None = None,
-    family: str = "recovery",
-    version: int = 1,
-) -> RecoveryCase:
-    """Perturb a constructed (large) fixture; feasibility stays exploratory."""
-    baseline = fixture.witness
-    if baseline is None:
-        raise ValueError("A constructed recovery fixture needs a witness baseline.")
-    event = recovery_event(event_seed)
-    snapshot = apply_event(fixture.snapshot, fixture.periods, baseline, event, event_seed)
-    for extra in extra_events:
-        snapshot = apply_event(snapshot, fixture.periods, baseline, recovery_event(extra), extra)
-    return RecoveryCase(
-        case_id=case_id or getattr(fixture, "case_id", "recovery"),
-        family=family,
-        version=version,
-        expectation=CaseExpectation.EXPLORATORY_UNKNOWN,
-        snapshot=snapshot,
-        periods=fixture.periods,
-        baseline=baseline,
-        event=event,
-        event_seed=event_seed,
     )

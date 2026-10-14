@@ -127,27 +127,12 @@ def is_physically_protected(
     return period.start_utc <= now_utc or period.school_date in protected_dates
 
 
-def event_blocks_class(event: Mapping[str, Any], class_id: int) -> bool:
-    """A general event blocks the school; a flow blocks only its classes."""
-    if _value(event.get("event_type")) != INTERNSHIP_FLOW_EVENT_TYPE:
-        return True
-    return class_id in (event.get("class_ids") or ())
-
-
 def event_dates(event: Mapping[str, Any]) -> tuple[date, ...]:
     start = _event_date(event["start_date"])
     end = _event_date(event["end_date"])
     if end < start:
         return ()
     return tuple(start + timedelta(days=offset) for offset in range((end - start).days + 1))
-
-
-def blocked_dates_for_class(events: Iterable[Mapping[str, Any]], class_id: int) -> set[date]:
-    blocked: set[date] = set()
-    for event in events:
-        if event_blocks_class(event, class_id):
-            blocked.update(event_dates(event))
-    return blocked
 
 
 def blocked_dates_by_class(

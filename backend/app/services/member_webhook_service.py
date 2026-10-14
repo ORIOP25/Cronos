@@ -13,8 +13,6 @@ from app.config import settings
 from app.db.tenant import set_async_tenant_context
 from app.services import clerk_sync
 
-RETRYABLE_CATEGORIES = {"temporary_failure", "provider_rate_limited"}
-
 
 def _now() -> datetime:
     return datetime.now(UTC)
@@ -152,6 +150,61 @@ async def _set_webhook_tenant_context(db: AsyncSession, clerk_org_id: str | None
     return True
 
 
+async def _dispatch_tenant_event(
+    db: AsyncSession,
+    event: models.ClerkWebhookEvent,
+    data: dict[str, Any],
+    clerk_org_id: str | None,
+) -> None:
+    if not await _set_webhook_tenant_context(db, clerk_org_id):
+        event.processing_status = models.ClerkWebhookProcessingStatus.ignored
+        return
+    if event.event_type in {"organizationMembership.created", "organizationMembership.updated"}:
+        matched = await _sync_membership(db, event, data)
+        if event.processing_status == models.ClerkWebhookProcessingStatus.sync_error:
+            return
+    elif event.event_type == "organizationMembership.deleted":
+        matched = await _delete_membership(db, data)
+    else:
+        matched = await _sync_invitation(db, event.event_type, data)
+    event.processing_status = (
+        models.ClerkWebhookProcessingStatus.processed
+        if matched
+        else models.ClerkWebhookProcessingStatus.ignored
+    )
+
+
+async def _dispatch_clerk_event(db: AsyncSession, event: models.ClerkWebhookEvent) -> None:
+    event_type = event.event_type
+    data = (event.payload_json or {}).get("data") or {}
+    clerk_org_id = (data.get("organization") or {}).get("id") or data.get("organization_id")
+    if event_type in {"organization.created", "organization.updated"}:
+        clerk_org_id = clerk_org_id or data.get("id")
+        if clerk_org_id:
+            await clerk_sync.ensure_organization_exists(
+                db, clerk_org_id, data.get("name") or "Organization"
+            )
+        event.processing_status = models.ClerkWebhookProcessingStatus.processed
+        return
+    if event_type in {"organization.deleted", "user.deleted"}:
+        deactivate = (
+            clerk_sync.deactivate_organization_by_clerk_id
+            if event_type == "organization.deleted"
+            else clerk_sync.deactivate_user_by_clerk_id
+        )
+        changed = await deactivate(db, data.get("id")) if data.get("id") else False
+        event.processing_status = (
+            models.ClerkWebhookProcessingStatus.processed
+            if changed
+            else models.ClerkWebhookProcessingStatus.ignored
+        )
+        return
+    if event_type.startswith(("organizationMembership.", "organizationInvitation.")):
+        await _dispatch_tenant_event(db, event, data, clerk_org_id)
+        return
+    event.processing_status = models.ClerkWebhookProcessingStatus.ignored
+
+
 async def process_clerk_event(db: AsyncSession, event: models.ClerkWebhookEvent) -> None:
     if event.processing_status == models.ClerkWebhookProcessingStatus.processed:
         return
@@ -160,67 +213,7 @@ async def process_clerk_event(db: AsyncSession, event: models.ClerkWebhookEvent)
     event.last_attempt_at = _now()
     await db.flush()
     try:
-        event_type = event.event_type
-        data = (event.payload_json or {}).get("data") or {}
-        clerk_org_id = (data.get("organization") or {}).get("id") or data.get("organization_id")
-        if event_type in {"organization.created", "organization.updated"}:
-            clerk_org_id = clerk_org_id or data.get("id")
-            if clerk_org_id:
-                await clerk_sync.ensure_organization_exists(
-                    db, clerk_org_id, data.get("name") or "Organization"
-                )
-            event.processing_status = models.ClerkWebhookProcessingStatus.processed
-        elif event_type == "organization.deleted":
-            changed = (
-                await clerk_sync.deactivate_organization_by_clerk_id(db, data.get("id"))
-                if data.get("id")
-                else False
-            )
-            event.processing_status = (
-                models.ClerkWebhookProcessingStatus.processed
-                if changed
-                else models.ClerkWebhookProcessingStatus.ignored
-            )
-        elif event_type == "user.deleted":
-            changed = (
-                await clerk_sync.deactivate_user_by_clerk_id(db, data.get("id"))
-                if data.get("id")
-                else False
-            )
-            event.processing_status = (
-                models.ClerkWebhookProcessingStatus.processed
-                if changed
-                else models.ClerkWebhookProcessingStatus.ignored
-            )
-        elif event_type in {"user.created", "user.updated"}:
-            event.processing_status = models.ClerkWebhookProcessingStatus.ignored
-        elif event_type.startswith(("organizationMembership.", "organizationInvitation.")):
-            if not await _set_webhook_tenant_context(db, clerk_org_id):
-                event.processing_status = models.ClerkWebhookProcessingStatus.ignored
-            elif event_type in {"organizationMembership.created", "organizationMembership.updated"}:
-                matched = await _sync_membership(db, event, data)
-                if event.processing_status != models.ClerkWebhookProcessingStatus.sync_error:
-                    event.processing_status = (
-                        models.ClerkWebhookProcessingStatus.processed
-                        if matched
-                        else models.ClerkWebhookProcessingStatus.ignored
-                    )
-            elif event_type == "organizationMembership.deleted":
-                matched = await _delete_membership(db, data)
-                event.processing_status = (
-                    models.ClerkWebhookProcessingStatus.processed
-                    if matched
-                    else models.ClerkWebhookProcessingStatus.ignored
-                )
-            else:
-                matched = await _sync_invitation(db, event_type, data)
-                event.processing_status = (
-                    models.ClerkWebhookProcessingStatus.processed
-                    if matched
-                    else models.ClerkWebhookProcessingStatus.ignored
-                )
-        else:
-            event.processing_status = models.ClerkWebhookProcessingStatus.ignored
+        await _dispatch_clerk_event(db, event)
         event.error_category = None
         event.processed_at = _now()
         if event.processing_status in {
@@ -240,33 +233,6 @@ async def process_clerk_event(db: AsyncSession, event: models.ClerkWebhookEvent)
                 * 2 ** max(event.attempt_count - 1, 0)
             )
         event.error_category = "temporary_failure"
-
-
-async def _sync_organization(db: AsyncSession, data: dict[str, Any]) -> None:
-    clerk_org_id = (data.get("organization") or {}).get("id") or data.get("id")
-    if not clerk_org_id:
-        return
-    org = await db.scalar(
-        select(models.Organization).where(models.Organization.clerk_org_id == clerk_org_id)
-    )
-    if org is None:
-        org = models.Organization(
-            name=data.get("name") or (data.get("organization") or {}).get("name") or "Organization",
-            clerk_org_id=clerk_org_id,
-            plan_status="active",
-        )
-        db.add(org)
-    elif data.get("name"):
-        org.name = data["name"]
-
-
-async def _archive_organization(db: AsyncSession, data: dict[str, Any]) -> None:
-    clerk_org_id = data.get("id")
-    org = await db.scalar(
-        select(models.Organization).where(models.Organization.clerk_org_id == clerk_org_id)
-    )
-    if org is not None:
-        org.plan_status = models.OrganizationPlanStatus.inactive
 
 
 async def _load_matching_membership(
@@ -313,6 +279,35 @@ def _mark_identity_conflict(
         event.error_category = "identity_conflict"
 
 
+async def _reject_conflicting_member_identity(
+    db: AsyncSession,
+    event: models.ClerkWebhookEvent,
+    member: models.OrganizationMembership,
+    webhook_user_id: str,
+    provider_role: str | None,
+) -> bool:
+    if member.account.clerk_user_id and member.account.clerk_user_id != webhook_user_id:
+        _mark_identity_conflict(member, event=event)
+        return True
+    conflicting_account = await db.scalar(
+        select(models.User).where(
+            models.User.clerk_user_id == webhook_user_id,
+            models.User.id != member.account_id,
+        )
+    )
+    if conflicting_account is not None:
+        _mark_identity_conflict(member, event=event)
+        return True
+    expected_role = member.expected_clerk_role.value if member.expected_clerk_role else None
+    if expected_role and provider_role != expected_role:
+        member.access_status = models.MembershipAccessStatus.sync_error
+        member.access_error_category = "provider_role_mismatch"
+        member.access_error_safe_message = "Os dados de acesso precisam de ser confirmados."
+        event.processing_status = models.ClerkWebhookProcessingStatus.sync_error
+        return True
+    return False
+
+
 async def _sync_membership(
     db: AsyncSession, event: models.ClerkWebhookEvent, data: dict[str, Any]
 ) -> bool:
@@ -343,26 +338,10 @@ async def _sync_membership(
     webhook_user_id = user_data.get("user_id")
     if not webhook_user_id:
         return False
-    if member.account.clerk_user_id and member.account.clerk_user_id != webhook_user_id:
-        _mark_identity_conflict(member, event=event)
-        return True
-    conflicting_account = await db.scalar(
-        select(models.User).where(
-            models.User.clerk_user_id == webhook_user_id,
-            models.User.id != member.account_id,
-        )
-    )
-    if conflicting_account is not None:
-        _mark_identity_conflict(member, event=event)
+    provider_role = _normalize_role(data.get("role"))
+    if await _reject_conflicting_member_identity(db, event, member, webhook_user_id, provider_role):
         return True
     expected_role = member.expected_clerk_role.value if member.expected_clerk_role else None
-    provider_role = _normalize_role(data.get("role"))
-    if expected_role and provider_role != expected_role:
-        member.access_status = models.MembershipAccessStatus.sync_error
-        member.access_error_category = "provider_role_mismatch"
-        member.access_error_safe_message = "Os dados de acesso precisam de ser confirmados."
-        event.processing_status = models.ClerkWebhookProcessingStatus.sync_error
-        return True
     linked_account = await clerk_sync.ensure_user_exists(
         db,
         clerk_user_id=webhook_user_id,
@@ -436,83 +415,3 @@ async def _sync_invitation(db: AsyncSession, event_type: str, data: dict[str, An
     ):
         member.access_status = models.MembershipAccessStatus.invite_expired
     return True
-
-
-async def _sync_user_identity(db: AsyncSession, data: dict[str, Any]) -> bool:
-    clerk_user_id = data.get("id")
-    email = _normalize_email(data.get("email_address"))
-    if not clerk_user_id or not email:
-        return False
-    result = await db.execute(select(models.User).where(func.lower(models.User.email) == email))
-    accounts = result.scalars().all()
-    if len(accounts) != 1:
-        return False
-    account = accounts[0]
-    if account.clerk_user_id and account.clerk_user_id != clerk_user_id:
-        members = await db.execute(
-            select(models.OrganizationMembership).where(
-                models.OrganizationMembership.account_id == account.id,
-                models.OrganizationMembership.access_status.in_(
-                    [
-                        models.MembershipAccessStatus.pending_invite,
-                        models.MembershipAccessStatus.invite_expired,
-                        models.MembershipAccessStatus.active,
-                    ]
-                ),
-            )
-        )
-        matched_members = members.scalars().all()
-        for member in matched_members:
-            _mark_identity_conflict(member)
-        return bool(matched_members)
-    conflicting_account = await db.scalar(
-        select(models.User).where(
-            models.User.clerk_user_id == clerk_user_id, models.User.id != account.id
-        )
-    )
-    if conflicting_account is not None:
-        members = await db.execute(
-            select(models.OrganizationMembership).where(
-                models.OrganizationMembership.account_id == account.id,
-                models.OrganizationMembership.access_status.in_(
-                    [
-                        models.MembershipAccessStatus.pending_invite,
-                        models.MembershipAccessStatus.invite_expired,
-                        models.MembershipAccessStatus.active,
-                    ]
-                ),
-            )
-        )
-        matched_members = members.scalars().all()
-        for member in matched_members:
-            _mark_identity_conflict(member)
-        return bool(matched_members)
-    profile_name = " ".join(filter(None, [data.get("first_name"), data.get("last_name")])) or None
-    linked_account = await clerk_sync.ensure_user_exists(
-        db,
-        clerk_user_id=clerk_user_id,
-        email=email,
-        name=profile_name,
-    )
-    if linked_account is None or linked_account.id != account.id:
-        return False
-    await db.refresh(account)
-    return True
-
-
-async def _block_deleted_user(db: AsyncSession, data: dict[str, Any]) -> bool:
-    clerk_user_id = data.get("id")
-    if not clerk_user_id:
-        return False
-    result = await db.execute(
-        select(models.OrganizationMembership)
-        .join(models.User)
-        .where(models.User.clerk_user_id == clerk_user_id)
-        .options(selectinload(models.OrganizationMembership.account))
-    )
-    members = result.scalars().all()
-    for member in members:
-        member.access_status = models.MembershipAccessStatus.blocked
-        member.access_block_reason = "provider_user_deleted"
-        member.clerk_membership_id = None
-    return bool(members)

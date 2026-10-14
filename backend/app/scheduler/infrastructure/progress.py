@@ -35,11 +35,12 @@ from app.scheduler.infrastructure.models import (
     CurricularExecution,
     CurricularExecutionCredit,
     CurricularRequirement,
-    SchedulerLessonSliceV1,
     SchedulerLessonV1,
     SchedulerRecoveryReservationV1,
     SchedulerVersionV1,
 )
+
+ERR_MISSING_STATE = "Scheduler school-year state does not exist."
 
 
 async def _locked_assignment(
@@ -54,7 +55,7 @@ async def _locked_assignment(
         .with_for_update()
     )
     if state is None:
-        raise ValueError("Scheduler school-year state does not exist.")
+        raise ValueError(ERR_MISSING_STATE)
     assignment = await db.scalar(
         select(CurricularAssignment).where(
             CurricularAssignment.id == assignment_id,
@@ -240,7 +241,7 @@ def _validate_debt_state(
     )
 
 
-async def _active_version_id(
+async def load_active_version_id(
     db: AsyncSession, organization_id: int, school_year_id: int
 ) -> int | None:
     return await db.scalar(
@@ -294,7 +295,7 @@ async def _future_lesson_credits(
             )
         )
     ).all()
-    return {lesson_id: minutes for lesson_id, minutes in rows}
+    return dict(rows)
 
 
 async def _release_excess_reservations(
@@ -442,6 +443,26 @@ def _reversed_settlements(
     return tuple(selected)
 
 
+def _execution_settlements(
+    modules, earlier, debts, revisions, prior_settlements, entry, settlements
+):
+    if settlements is None:
+        balances = _validate_debt_state(modules, earlier, debts, revisions, prior_settlements)
+        positive_credit = sum(credit.minutes for credit in entry.credits)
+        if positive_credit > 0 and debts:
+            settlements = settlements_for_positive_credit(
+                tuple(DebtClaim(debt.id, debt.origin_date, debt.created_minutes) for debt in debts),
+                balances,
+                entry.key,
+                positive_credit,
+            )
+        elif positive_credit < 0:
+            settlements = _reversed_settlements(entry, prior_settlements, abs(positive_credit))
+        else:
+            settlements = ()
+    return settlements
+
+
 async def record_execution(
     db: AsyncSession,
     organization_id: int,
@@ -465,7 +486,7 @@ async def record_execution(
     debts, revisions, recorded_settlements, prior_settlements = await _debt_history(
         db, organization_id, assignment_id, stored
     )
-    active_version_id = await _active_version_id(db, organization_id, school_year_id)
+    active_version_id = await load_active_version_id(db, organization_id, school_year_id)
     reservations = await _active_reservations(
         db, organization_id, school_year_id, assignment_id, active_version_id
     )
@@ -499,27 +520,16 @@ async def record_execution(
             for row, settlement in zip(recorded_settlements, prior_settlements, strict=True)
             if row.execution_id == previous.id
         )
-        if settlements is not None:
-            if len(previous_settlements) != len(settlements) or set(previous_settlements) != set(
-                settlements
-            ):
-                raise ValueError("Conflicting replay of execution debt settlements.")
+        if settlements is not None and (
+            len(previous_settlements) != len(settlements)
+            or set(previous_settlements) != set(settlements)
+        ):
+            raise ValueError("Conflicting replay of execution debt settlements.")
         return previous.id
 
-    if settlements is None:
-        balances = _validate_debt_state(modules, earlier, debts, revisions, prior_settlements)
-        positive_credit = sum(credit.minutes for credit in entry.credits)
-        if positive_credit > 0 and debts:
-            settlements = settlements_for_positive_credit(
-                tuple(DebtClaim(debt.id, debt.origin_date, debt.created_minutes) for debt in debts),
-                balances,
-                entry.key,
-                positive_credit,
-            )
-        elif positive_credit < 0:
-            settlements = _reversed_settlements(entry, prior_settlements, abs(positive_credit))
-        else:
-            settlements = ()
+    settlements = _execution_settlements(
+        modules, earlier, debts, revisions, prior_settlements, entry, settlements
+    )
     if any(settlement.execution_key != entry.key for settlement in settlements):
         raise ValueError("New debt settlements must belong to this execution event.")
     balances_after = _validate_debt_state(
@@ -772,7 +782,7 @@ async def configure_school_year(
         .with_for_update()
     )
     if state is None:
-        raise ValueError("Scheduler school-year state does not exist.")
+        raise ValueError(ERR_MISSING_STATE)
     year = await db.scalar(
         select(models.SchedulerSchoolYear).where(
             models.SchedulerSchoolYear.id == school_year_id,
@@ -872,7 +882,7 @@ async def revise_debt(
         .with_for_update()
     )
     if state is None:
-        raise ValueError("Scheduler school-year state does not exist.")
+        raise ValueError(ERR_MISSING_STATE)
     debt = await db.scalar(
         select(CurricularDebt).where(
             CurricularDebt.id == debt_id,
@@ -941,192 +951,6 @@ async def revise_debt(
     return row.id
 
 
-async def plan_recovery(
-    db: AsyncSession,
-    organization_id: int,
-    school_year_id: int,
-    assignment_id: int,
-    version_id: int,
-    allocations: Sequence[RecoveryAllocation],
-) -> bool:
-    """Replace the active recovery reservations of one version and assignment."""
-    state, assignment = await _locked_assignment(db, organization_id, school_year_id, assignment_id)
-    if type(version_id) is not int or version_id <= 0:
-        raise ValueError("Recovery planning needs a positive version.")
-    modules = await _requirements(db, organization_id, assignment)
-    stored, _, entries = await _execution_history(db, organization_id, assignment_id)
-    debts, revisions, _, settlements = await _debt_history(
-        db, organization_id, assignment_id, stored
-    )
-    future = await _future_lesson_credits(
-        db, organization_id, school_year_id, assignment_id, version_id
-    )
-    if any(
-        allocation.version_id != version_id or allocation.lesson_id not in future
-        for allocation in allocations
-    ):
-        raise ValueError("A recovery reservation must belong to the planned version.")
-    existing = list(
-        (
-            await db.scalars(
-                select(SchedulerRecoveryReservationV1).where(
-                    SchedulerRecoveryReservationV1.organization_id == organization_id,
-                    SchedulerRecoveryReservationV1.school_year_id == school_year_id,
-                    SchedulerRecoveryReservationV1.assignment_id == assignment_id,
-                    SchedulerRecoveryReservationV1.version_id == version_id,
-                )
-            )
-        ).all()
-    )
-    current = {(row.lesson_id, row.debt_id): row.minutes for row in existing}
-    desired = {(row.lesson_id, row.claim_id): row.minutes for row in allocations}
-    if current == desired:
-        return False
-    _validate_debt_state(
-        modules,
-        entries,
-        debts,
-        revisions,
-        settlements,
-        allocations=tuple(allocations),
-        active_version_id=version_id,
-        future_lesson_credits=future,
-    )
-    existing_by_key = {(row.lesson_id, row.debt_id): row for row in existing}
-    for key, row in existing_by_key.items():
-        if key not in desired:
-            await db.delete(row)
-    for key, minutes in desired.items():
-        row = existing_by_key.get(key)
-        if row is None:
-            db.add(
-                SchedulerRecoveryReservationV1(
-                    organization_id=organization_id,
-                    school_year_id=school_year_id,
-                    version_id=version_id,
-                    assignment_id=assignment_id,
-                    lesson_id=key[0],
-                    debt_id=key[1],
-                    minutes=minutes,
-                )
-            )
-        elif row.minutes != minutes:
-            row.minutes = minutes
-    state.input_revision += 1
-    state.planning_revision += 1
-    await db.flush()
-    return True
-
-
-async def cancel_recovery(
-    db: AsyncSession,
-    organization_id: int,
-    school_year_id: int,
-    assignment_id: int,
-    version_id: int,
-    lesson_id: int,
-    debt_id: int,
-) -> bool:
-    """Release one recovery reservation without creating a new debt."""
-    state, _ = await _locked_assignment(db, organization_id, school_year_id, assignment_id)
-    row = await db.scalar(
-        select(SchedulerRecoveryReservationV1).where(
-            SchedulerRecoveryReservationV1.organization_id == organization_id,
-            SchedulerRecoveryReservationV1.school_year_id == school_year_id,
-            SchedulerRecoveryReservationV1.assignment_id == assignment_id,
-            SchedulerRecoveryReservationV1.version_id == version_id,
-            SchedulerRecoveryReservationV1.lesson_id == lesson_id,
-            SchedulerRecoveryReservationV1.debt_id == debt_id,
-        )
-    )
-    if row is None:
-        return False
-    await db.delete(row)
-    state.input_revision += 1
-    state.planning_revision += 1
-    await db.flush()
-    return True
-
-
-async def ensure_no_physical_collisions(
-    db: AsyncSession,
-    organization_id: int,
-    school_year_id: int,
-    version_id: int,
-) -> None:
-    """Transactional boundary before publication.
-
-    Rejects a version where two lessons overlap for the same class, teacher or
-    room, where physical minutes do not match the interval, or where a slice
-    leaves the assignment curriculum.
-    """
-    rows = (
-        await db.execute(
-            select(SchedulerLessonV1, CurricularAssignment)
-            .join(
-                CurricularAssignment,
-                (CurricularAssignment.organization_id == SchedulerLessonV1.organization_id)
-                & (CurricularAssignment.school_year_id == SchedulerLessonV1.school_year_id)
-                & (CurricularAssignment.id == SchedulerLessonV1.assignment_id),
-            )
-            .where(
-                SchedulerLessonV1.organization_id == organization_id,
-                SchedulerLessonV1.school_year_id == school_year_id,
-                SchedulerLessonV1.version_id == version_id,
-            )
-        )
-    ).all()
-    intervals: dict[tuple[str, int, date], list[tuple]] = defaultdict(list)
-    lesson_by_id: dict[int, SchedulerLessonV1] = {}
-    requirements: dict[int, set[int]] = defaultdict(set)
-    for lesson, assignment in rows:
-        lesson_by_id[lesson.id] = lesson
-        if lesson.physical_minutes * 60 != int((lesson.ends_at - lesson.starts_at).total_seconds()):
-            raise ValueError("Lesson physical minutes do not match its interval.")
-        intervals[("class", assignment.class_id, lesson.school_date)].append(
-            (lesson.starts_at, lesson.ends_at)
-        )
-        intervals[("teacher", assignment.teacher_id, lesson.school_date)].append(
-            (lesson.starts_at, lesson.ends_at)
-        )
-        intervals[("room", lesson.room_id, lesson.school_date)].append(
-            (lesson.starts_at, lesson.ends_at)
-        )
-    for (kind, resource_id, _), values in sorted(intervals.items(), key=lambda item: str(item[0])):
-        previous_end = None
-        for start, end in sorted(values):
-            if previous_end is not None and start < previous_end:
-                raise ValueError(f"Version {version_id} overlaps resource {kind}:{resource_id}.")
-            previous_end = end if previous_end is None else max(previous_end, end)
-    if not lesson_by_id:
-        return
-    slices = (
-        await db.scalars(
-            select(SchedulerLessonSliceV1).where(
-                SchedulerLessonSliceV1.organization_id == organization_id,
-                SchedulerLessonSliceV1.school_year_id == school_year_id,
-                SchedulerLessonSliceV1.lesson_id.in_(lesson_by_id),
-            )
-        )
-    ).all()
-    requirement_rows = (
-        await db.execute(
-            select(CurricularRequirement.assignment_id, CurricularRequirement.module_id).where(
-                CurricularRequirement.organization_id == organization_id,
-                CurricularRequirement.assignment_id.in_(
-                    {lesson.assignment_id for lesson in lesson_by_id.values()}
-                ),
-            )
-        )
-    ).all()
-    for assignment_id, module_id in requirement_rows:
-        requirements[assignment_id].add(module_id)
-    for slice_ in slices:
-        lesson = lesson_by_id[slice_.lesson_id]
-        if slice_.module_id not in requirements.get(lesson.assignment_id, set()):
-            raise ValueError("A lesson slice leaves the assignment curriculum.")
-
-
 async def load_execution_entries(
     db: AsyncSession, organization_id: int, assignment_id: int
 ) -> tuple[ExecutionEntry, ...]:
@@ -1135,19 +959,7 @@ async def load_execution_entries(
     return entries
 
 
-async def load_executed_minutes(
-    db: AsyncSession,
-    organization_id: int,
-    assignment_ids: Sequence[int],
-) -> dict[int, dict[int, int]]:
-    """Executed minutes per assignment and module, batched for reading snapshots.
-
-    The append-only ledger is replayed exactly like the write path: reversals
-    subtract credit, so a correction never counts the same minute twice.
-    """
-    identifiers = sorted(set(assignment_ids))
-    if not identifiers:
-        return {}
+async def _load_assignment_requirements(db, organization_id, identifiers):
     requirements: dict[int, list[ModuleRequirement]] = defaultdict(list)
     requirement_rows = (
         await db.execute(
@@ -1166,6 +978,23 @@ async def load_executed_minutes(
     ).all()
     for assignment_id, module_id, sequence, required_minutes in requirement_rows:
         requirements[assignment_id].append(ModuleRequirement(module_id, sequence, required_minutes))
+    return requirements
+
+
+async def load_executed_minutes(
+    db: AsyncSession,
+    organization_id: int,
+    assignment_ids: Sequence[int],
+) -> dict[int, dict[int, int]]:
+    """Executed minutes per assignment and module, batched for reading snapshots.
+
+    The append-only ledger is replayed exactly like the write path: reversals
+    subtract credit, so a correction never counts the same minute twice.
+    """
+    identifiers = sorted(set(assignment_ids))
+    if not identifiers:
+        return {}
+    requirements = await _load_assignment_requirements(db, organization_id, identifiers)
     stored = (
         await db.scalars(
             select(CurricularExecution)

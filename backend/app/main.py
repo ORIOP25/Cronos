@@ -1,5 +1,3 @@
-# Ficheiro: app/main.py
-
 from contextlib import asynccontextmanager
 
 import httpx
@@ -87,11 +85,7 @@ def _legacy_public_context(code: str, metadata: dict) -> dict:
     """Keep explicitly safe fields from pre-contract callers during migration."""
     if code == "preflight_failed":
         return {key: metadata[key] for key in ("status", "report", "issues") if key in metadata}
-    return {
-        key: metadata[key]
-        for key in ("job_id", "pending_draft_id", "draft_state")
-        if key in metadata
-    }
+    return {key: metadata[key] for key in ("job_id",) if key in metadata}
 
 
 def _cors_headers(request: Request) -> dict[str, str]:
@@ -225,7 +219,7 @@ async def request_context(request: Request, call_next):
     return response
 
 
-async def rate_limit_error_handler(request: Request, exc: RateLimitExceeded):
+def rate_limit_error_handler(request: Request, exc: RateLimitExceeded):
     return _error_response(
         request,
         status_code=429,

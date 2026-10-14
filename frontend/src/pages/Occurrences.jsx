@@ -1,8 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'react-hot-toast'
 import PageHeader from '../components/PageHeader'
-import { useSearchParams } from 'react-router-dom'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import {
   CCard, CCardBody, CCol, CRow, CBadge, CSpinner,
   CButton, CFormSelect, CFormLabel, CTabs, CTabList, CTab,
@@ -18,7 +17,7 @@ import {
 } from '../features/operations/data'
 import { useClasses, useSubjects } from '../features/catalog/data'
 import { useTeachers } from '../features/members/data'
-import { formatDate, formatDateTime, formatDurationHours, isAfterDate } from '../utils/formatUtils'
+import { formatDate, formatDateTime, formatDurationHours, formatTimeRange, isAfterDate } from '../utils/formatUtils'
 import { TXT, OPERATIONAL_STATE_LABELS, OPERATIONAL_STATE_COLORS } from '../utils/terminology'
 import ConfirmationModal from '../components/ConfirmationModal'
 import FeedbackBanner from '../components/FeedbackBanner'
@@ -332,9 +331,9 @@ const EditOccurrenceModal = ({
             </CButton>
           </CButtonGroup>
           {lessonNotFinished && (
-            <p className="small text-muted mt-2" role="status">
+            <output className="small text-muted mt-2 d-block">
               Só pode decidir “Dada” depois do término desta aula.
-            </p>
+            </output>
           )}
         </div>
 
@@ -541,9 +540,7 @@ const OccurrenceHistoryCards = ({
       const isRevokedV1 = operationalState === 'REVOKED' && occ.creation_source === 'scheduler_v1'
       const hasDetail = Boolean(occ.lesson_log_summary || occ.lesson_log_notes)
       const isExpanded = expandedId === occ.id
-      const timeRange = occ.timeslot_start_time && occ.timeslot_end_time
-        ? `${occ.timeslot_start_time.slice(0, 5)}–${occ.timeslot_end_time.slice(0, 5)}`
-        : ''
+      const timeRange = formatTimeRange(occ.timeslot_start_time, occ.timeslot_end_time)
       return (
         <div key={occ.id} className="border rounded p-3 mb-2">
           <div className="d-flex justify-content-between align-items-start gap-2">
@@ -846,9 +843,7 @@ const OccurrencesPanel = ({
             const classLabel = occ.class_name ?? '—'
             const subjectLabel = occ.subject_name
               ?? resolveName(subjectById, occ.subject_id, 'Disciplina')
-            const timeRange = occ.timeslot_start_time && occ.timeslot_end_time
-              ? `${occ.timeslot_start_time.slice(0,5)}–${occ.timeslot_end_time.slice(0,5)}`
-              : ''
+            const timeRange = formatTimeRange(occ.timeslot_start_time, occ.timeslot_end_time)
             const summaryPreview = occ.lesson_log_summary
               ? (occ.lesson_log_summary.length > 80 ? occ.lesson_log_summary.slice(0, 80) + '…' : occ.lesson_log_summary)
               : '—'

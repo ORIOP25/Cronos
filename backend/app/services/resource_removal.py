@@ -18,7 +18,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app import models
 from app.scheduler.infrastructure import models as scheduler_models
 
-_ACTIVE_BLOCK = models.ActiveScheduleBlockStatus.ACTIVE
 _ACTIVE_OPERATIONAL = models.OperationalBlockStatus.ACTIVE
 
 
@@ -33,15 +32,39 @@ def _references(model, organization_id: int, column) -> object:
     return select(model.id).where(model.organization_id == organization_id, column)
 
 
+def _published_lessons(organization_id: int):
+    return (
+        select(scheduler_models.SchedulerLessonV1.id)
+        .join(
+            scheduler_models.SchedulerVersionV1,
+            (
+                scheduler_models.SchedulerVersionV1.id
+                == scheduler_models.SchedulerLessonV1.version_id
+            )
+            & (scheduler_models.SchedulerVersionV1.organization_id == organization_id),
+        )
+        .join(
+            scheduler_models.CurricularAssignment,
+            (
+                scheduler_models.CurricularAssignment.id
+                == scheduler_models.SchedulerLessonV1.assignment_id
+            )
+            & (scheduler_models.CurricularAssignment.organization_id == organization_id),
+        )
+        .where(
+            scheduler_models.SchedulerLessonV1.organization_id == organization_id,
+            scheduler_models.SchedulerVersionV1.status == "ACTIVE",
+        )
+    )
+
+
 # --- ROOMS ---
 async def room_in_use(db: AsyncSession, organization_id: int, room_id: int) -> bool:
     return await _any(
         db,
         [
-            select(models.ActiveScheduleBlock.id).where(
-                models.ActiveScheduleBlock.organization_id == organization_id,
-                models.ActiveScheduleBlock.room_id == room_id,
-                models.ActiveScheduleBlock.status == _ACTIVE_BLOCK,
+            _published_lessons(organization_id).where(
+                scheduler_models.SchedulerLessonV1.room_id == room_id
             ),
             select(models.OperationalScheduleBlock.id).where(
                 models.OperationalScheduleBlock.organization_id == organization_id,
@@ -57,16 +80,6 @@ async def room_has_history(db: AsyncSession, organization_id: int, room_id: int)
         db,
         [
             _references(
-                models.ActiveScheduleBlock,
-                organization_id,
-                models.ActiveScheduleBlock.room_id == room_id,
-            ),
-            _references(
-                models.ScheduleDraftBlock,
-                organization_id,
-                models.ScheduleDraftBlock.room_id == room_id,
-            ),
-            _references(
                 models.OperationalScheduleBlock,
                 organization_id,
                 models.OperationalScheduleBlock.room_id == room_id,
@@ -75,13 +88,6 @@ async def room_has_history(db: AsyncSession, organization_id: int, room_id: int)
                 models.LessonOccurrence,
                 organization_id,
                 models.LessonOccurrence.planned_room_id == room_id,
-            ),
-            select(models.ScheduleDiffEntry.id).where(
-                models.ScheduleDiffEntry.organization_id == organization_id,
-                or_(
-                    models.ScheduleDiffEntry.before_room_id == room_id,
-                    models.ScheduleDiffEntry.after_room_id == room_id,
-                ),
             ),
             select(scheduler_models.SchedulerLessonV1.id).where(
                 scheduler_models.SchedulerLessonV1.organization_id == organization_id,
@@ -96,10 +102,8 @@ async def subject_in_use(db: AsyncSession, organization_id: int, subject_id: int
     return await _any(
         db,
         [
-            select(models.ActiveScheduleBlock.id).where(
-                models.ActiveScheduleBlock.organization_id == organization_id,
-                models.ActiveScheduleBlock.subject_id == subject_id,
-                models.ActiveScheduleBlock.status == _ACTIVE_BLOCK,
+            _published_lessons(organization_id).where(
+                scheduler_models.CurricularAssignment.subject_id == subject_id
             ),
             select(models.OperationalScheduleBlock.id).where(
                 models.OperationalScheduleBlock.organization_id == organization_id,
@@ -126,26 +130,6 @@ async def subject_has_history(db: AsyncSession, organization_id: int, subject_id
     return await _any(
         db,
         [
-            _references(
-                models.ActiveScheduleBlock,
-                organization_id,
-                models.ActiveScheduleBlock.subject_id == subject_id,
-            ),
-            _references(
-                models.ScheduleDraftBlock,
-                organization_id,
-                models.ScheduleDraftBlock.subject_id == subject_id,
-            ),
-            _references(
-                models.ScheduleDiffEntry,
-                organization_id,
-                models.ScheduleDiffEntry.subject_id == subject_id,
-            ),
-            _references(
-                models.PlannedRecoveryLink,
-                organization_id,
-                models.PlannedRecoveryLink.subject_id == subject_id,
-            ),
             _references(
                 models.OperationalScheduleBlock,
                 organization_id,
@@ -193,10 +177,8 @@ async def class_in_use(db: AsyncSession, organization_id: int, class_id: int) ->
     return await _any(
         db,
         [
-            select(models.ActiveScheduleBlock.id).where(
-                models.ActiveScheduleBlock.organization_id == organization_id,
-                models.ActiveScheduleBlock.class_id == class_id,
-                models.ActiveScheduleBlock.status == _ACTIVE_BLOCK,
+            _published_lessons(organization_id).where(
+                scheduler_models.CurricularAssignment.class_id == class_id
             ),
             select(models.OperationalScheduleBlock.id).where(
                 models.OperationalScheduleBlock.organization_id == organization_id,
@@ -211,26 +193,6 @@ async def class_has_history(db: AsyncSession, organization_id: int, class_id: in
     return await _any(
         db,
         [
-            _references(
-                models.ActiveScheduleBlock,
-                organization_id,
-                models.ActiveScheduleBlock.class_id == class_id,
-            ),
-            _references(
-                models.ScheduleDraftBlock,
-                organization_id,
-                models.ScheduleDraftBlock.class_id == class_id,
-            ),
-            _references(
-                models.ScheduleDiffEntry,
-                organization_id,
-                models.ScheduleDiffEntry.class_id == class_id,
-            ),
-            _references(
-                models.PlannedRecoveryLink,
-                organization_id,
-                models.PlannedRecoveryLink.class_id == class_id,
-            ),
             _references(
                 models.OperationalScheduleBlock,
                 organization_id,

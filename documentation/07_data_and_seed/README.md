@@ -6,3 +6,4 @@ This section documents how Cronos creates application data.
 
 - [DATA_AND_SEED.md](DATA_AND_SEED.md): Session bootstrap, foundation setup, bulk CSV import, and test-data preparation.
 - [BULK_IMPORT_CSV.md](BULK_IMPORT_CSV.md): Administrative CSV templates, validation, and atomic commit.
+- [sample_import_48_classes/](sample_import_48_classes/): Sample CSV import set for 48 classes and 16 courses.

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy import select
@@ -15,8 +15,6 @@ from app.scheduler.domain.grid_versions import (
     build_grid_configuration,
     select_effective_grid_version,
 )
-
-GridSignature = tuple[int, time, time]
 
 
 @dataclass(frozen=True)
@@ -279,32 +277,6 @@ async def ensure_active_grid_version(
         configuration_json=None,
     )
     db.add(version)
-    await db.flush()
-    return version
-
-
-async def activate_pending_grid_version(
-    db: AsyncSession, organization_id: int, version_id: int
-) -> models.GridVersion:
-    """Promote the proposal to the active grid inside the caller transaction."""
-    version = await get_grid_version(db, organization_id, version_id)
-    if version is None:
-        raise ValueError("Grid version was not found.")
-    if version.state != models.GridVersionState.PENDING:
-        raise ValueError("Only a pending grid version can be activated.")
-    version.state = models.GridVersionState.ACTIVE
-    await db.flush()
-    return version
-
-
-async def reject_pending_grid_version(
-    db: AsyncSession, organization_id: int, version_id: int
-) -> models.GridVersion | None:
-    """Mark the proposal as rejected without deleting its blocks."""
-    version = await get_grid_version(db, organization_id, version_id)
-    if version is None or version.state == models.GridVersionState.ACTIVE:
-        return None
-    version.state = models.GridVersionState.REJECTED
     await db.flush()
     return version
 

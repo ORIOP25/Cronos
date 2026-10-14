@@ -1,0 +1,4 @@
+interface:
+  display_name: "Ponytail"
+  short_description: "Prefer the smallest correct implementation"
+  default_prompt: "Use $ponytail to find the smallest correct implementation; apply ultra intensity only when explicitly requested."

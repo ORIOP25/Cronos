@@ -4,18 +4,18 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models
 from app.core.task_keys import resolve_repair_window_days
 from app.scheduler.domain.calendar import first_editable_grid_date
-from app.services import grid_version_service
-from app.services.scheduler_serialization import (
-    canonical_json_bytes,
+from app.scheduler.domain.serialization import (
+    canonical_json,
     canonical_json_value,
-    sha256_json,
+    payload_digest,
 )
+from app.services import grid_version_service
 
 
 class SchedulerFingerprintError(RuntimeError):
@@ -39,13 +39,6 @@ def _constraint_payload(row) -> dict:
 class SchedulerFingerprint:
     value: str
     snapshot: dict
-
-
-@dataclass(frozen=True)
-class DebtBasisFingerprint:
-    value: str
-    snapshot: dict
-    unresolved_debt_minutes: int
 
 
 @dataclass(frozen=True)
@@ -119,7 +112,7 @@ class SchedulerFingerprintService:
             }
         )
         return RepairPolicySnapshot(
-            value=sha256_json(snapshot),
+            value=payload_digest(snapshot),
             snapshot=snapshot,
             editable_start_date=editable_start_date,
         )
@@ -137,7 +130,7 @@ class SchedulerFingerprintService:
             strategy,
             grid_version_id=grid_version_id,
         )
-        return SchedulerFingerprint(value=sha256_json(snapshot), snapshot=snapshot)
+        return SchedulerFingerprint(value=payload_digest(snapshot), snapshot=snapshot)
 
     async def generation_input_snapshot(
         self,
@@ -506,7 +499,7 @@ class SchedulerFingerprintService:
                     constraint_rows,
                     key=lambda row: (
                         row.rule_type.value,
-                        canonical_json_bytes(_constraint_payload(row)),
+                        canonical_json(_constraint_payload(row)),
                     ),
                 )
             ],
@@ -597,252 +590,4 @@ class SchedulerFingerprintService:
             ],
         }
 
-        if strategy in (
-            models.ScheduleGenerationStrategy.ADAPTIVE_REPAIR,
-            models.ScheduleGenerationStrategy.GRID_CHANGE,
-        ):
-            active_rows = (
-                await self._db.execute(
-                    select(
-                        models.ActiveScheduleBlock,
-                        models.ScheduleDraftBlock.module_sequence_index.label(
-                            "module_sequence_index"
-                        ),
-                        models.LessonLog.status.label("lesson_log_status"),
-                        models.PlannedRecoveryLink.debt_occurrence_id,
-                        models.PlannedRecoveryLink.debt_occurrence_revision,
-                    )
-                    .join(
-                        models.ScheduleDraftBlock,
-                        and_(
-                            models.ScheduleDraftBlock.id
-                            == models.ActiveScheduleBlock.source_draft_block_id,
-                            models.ScheduleDraftBlock.organization_id
-                            == models.ActiveScheduleBlock.organization_id,
-                            models.ScheduleDraftBlock.school_year_id
-                            == models.ActiveScheduleBlock.school_year_id,
-                        ),
-                    )
-                    .outerjoin(
-                        models.LessonLog,
-                        and_(
-                            models.LessonLog.active_schedule_block_id
-                            == models.ActiveScheduleBlock.id,
-                            models.LessonLog.organization_id
-                            == models.ActiveScheduleBlock.organization_id,
-                        ),
-                    )
-                    .outerjoin(
-                        models.PlannedRecoveryLink,
-                        and_(
-                            models.PlannedRecoveryLink.planned_active_block_id
-                            == models.ActiveScheduleBlock.id,
-                            models.PlannedRecoveryLink.organization_id
-                            == models.ActiveScheduleBlock.organization_id,
-                            models.PlannedRecoveryLink.school_year_id
-                            == models.ActiveScheduleBlock.school_year_id,
-                        ),
-                    )
-                    .where(
-                        models.ActiveScheduleBlock.organization_id == organization_id,
-                        models.ActiveScheduleBlock.school_year_id == school_year_id,
-                        models.ActiveScheduleBlock.status
-                        == (models.ActiveScheduleBlockStatus.ACTIVE),
-                    )
-                )
-            ).all()
-            snapshot["active_schedule"] = [
-                {
-                    "id": row.id,
-                    "schedule_version_id": row.schedule_version_id,
-                    "stable_block_key": row.stable_block_key,
-                    "class_id": row.class_id,
-                    "subject_id": row.subject_id,
-                    "teacher_id": row.teacher_id,
-                    "room_id": row.room_id,
-                    "date": row.date,
-                    "timeslot_id": row.timeslot_id,
-                    "duration_minutes": row.duration_minutes,
-                    "module_sequence_index": module_sequence_index,
-                    "is_recovery_block": row.is_recovery_block,
-                    "recovery_source_occurrence_id": debt_occurrence_id,
-                    "recovery_source_occurrence_revision": debt_occurrence_revision,
-                    "lesson_log_status": lesson_log_status,
-                }
-                for (
-                    row,
-                    module_sequence_index,
-                    lesson_log_status,
-                    debt_occurrence_id,
-                    debt_occurrence_revision,
-                ) in sorted(
-                    active_rows,
-                    key=lambda pair: pair[0].id,
-                )
-            ]
-
         return canonical_json_value(snapshot)
-
-    async def debt_basis_fingerprint(
-        self,
-        organization_id: int,
-        school_year_id: int,
-    ) -> DebtBasisFingerprint | None:
-        snapshot = await self.debt_basis_snapshot(organization_id, school_year_id)
-        unresolved = sum(item["unresolved_debt_minutes"] for item in snapshot["items"])
-        if unresolved <= 0:
-            return None
-        return DebtBasisFingerprint(
-            value=sha256_json(snapshot),
-            snapshot=snapshot,
-            unresolved_debt_minutes=unresolved,
-        )
-
-    async def debt_basis_snapshot(
-        self,
-        organization_id: int,
-        school_year_id: int,
-    ) -> dict:
-        school_year = await self._db.scalar(
-            select(models.SchedulerSchoolYear).where(
-                models.SchedulerSchoolYear.id == school_year_id,
-                models.SchedulerSchoolYear.organization_id == organization_id,
-            )
-        )
-        if school_year is None:
-            raise SchedulerFingerprintError("Scheduler school year was not found.")
-
-        debt_rows = (
-            await self._db.execute(
-                select(
-                    models.LessonOccurrence,
-                    models.LessonOccurrence.planned_timeslot_id.label("source_timeslot_id"),
-                    models.Timeslot.start_time.label("source_start_time"),
-                    models.Timeslot.end_time.label("source_end_time"),
-                    models.LessonOccurrence.class_id.label("source_class_id"),
-                    models.LessonOccurrence.subject_id.label("source_subject_id"),
-                    models.LessonOccurrence.planned_teacher_id.label("source_teacher_id"),
-                )
-                .outerjoin(
-                    models.Timeslot,
-                    and_(
-                        models.Timeslot.id == models.LessonOccurrence.planned_timeslot_id,
-                        models.Timeslot.organization_id == models.LessonOccurrence.organization_id,
-                    ),
-                )
-                .where(
-                    models.LessonOccurrence.organization_id == organization_id,
-                    models.LessonOccurrence.is_active.is_(True),
-                    models.LessonOccurrence.status.in_(
-                        (
-                            models.LessonOccurrenceStatus.GAP,
-                            models.LessonOccurrenceStatus.SUBSTITUTED,
-                        )
-                    ),
-                    models.LessonOccurrence.date >= school_year.start_date,
-                    models.LessonOccurrence.date <= school_year.hard_end_date,
-                )
-            )
-        ).all()
-        occurrence_ids = [row.LessonOccurrence.id for row in debt_rows]
-
-        links = []
-        if occurrence_ids:
-            links = (
-                await self._db.execute(
-                    select(
-                        models.PlannedRecoveryLink,
-                        models.ActiveScheduleBlock.status.label("active_block_status"),
-                    )
-                    .outerjoin(
-                        models.ActiveScheduleBlock,
-                        and_(
-                            models.ActiveScheduleBlock.id
-                            == models.PlannedRecoveryLink.planned_active_block_id,
-                            models.ActiveScheduleBlock.organization_id
-                            == models.PlannedRecoveryLink.organization_id,
-                            models.ActiveScheduleBlock.school_year_id
-                            == models.PlannedRecoveryLink.school_year_id,
-                        ),
-                    )
-                    .where(
-                        models.PlannedRecoveryLink.organization_id == organization_id,
-                        models.PlannedRecoveryLink.school_year_id == school_year_id,
-                        models.PlannedRecoveryLink.debt_occurrence_id.in_(occurrence_ids),
-                    )
-                )
-            ).all()
-
-        links_by_occurrence: dict[int, list] = {}
-        for link, active_block_status in links:
-            links_by_occurrence.setdefault(link.debt_occurrence_id, []).append(
-                (link, active_block_status)
-            )
-
-        items = []
-        for row in sorted(debt_rows, key=lambda item: item.LessonOccurrence.id):
-            occurrence = row.LessonOccurrence
-            if occurrence.planned_hours > 0:
-                declared_minutes = max(0, int(round(float(occurrence.planned_hours) * 60)))
-            elif row.source_start_time is not None and row.source_end_time is not None:
-                start_minutes = row.source_start_time.hour * 60 + row.source_start_time.minute
-                end_minutes = row.source_end_time.hour * 60 + row.source_end_time.minute
-                declared_minutes = max(0, end_minutes - start_minutes)
-            else:
-                declared_minutes = max(0, int(round(float(occurrence.hours_given or 0) * 60)))
-            delivered_minutes = 0
-            active_planned_minutes = 0
-            ordered_links = sorted(
-                links_by_occurrence.get(occurrence.id, []),
-                key=lambda pair: (
-                    pair[0].status.value,
-                    -1
-                    if pair[0].planned_active_block_id is None
-                    else pair[0].planned_active_block_id,
-                    -1
-                    if pair[0].planned_draft_block_id is None
-                    else pair[0].planned_draft_block_id,
-                    pair[0].planned_recovery_minutes,
-                ),
-            )
-            for link, active_block_status in ordered_links:
-                if link.status == models.PlannedRecoveryLinkStatus.DELIVERED:
-                    delivered_minutes += link.delivered_recovery_minutes
-                elif (
-                    link.status == models.PlannedRecoveryLinkStatus.PLANNED
-                    and link.planned_active_block_id is not None
-                    and active_block_status == models.ActiveScheduleBlockStatus.ACTIVE
-                ):
-                    active_planned_minutes += link.planned_recovery_minutes
-
-            unresolved_minutes = max(
-                0,
-                declared_minutes - delivered_minutes - active_planned_minutes,
-            )
-            items.append(
-                {
-                    "occurrence_id": occurrence.id,
-                    "occurrence_revision": occurrence.revision,
-                    "debt_status": occurrence.status,
-                    "source_planned_block_id": occurrence.active_schedule_block_id,
-                    "class_id": occurrence.class_id or row.source_class_id,
-                    "subject_id": occurrence.subject_id or row.source_subject_id,
-                    "teacher_id": occurrence.planned_teacher_id or row.source_teacher_id,
-                    "original_planned_date": occurrence.date,
-                    "original_timeslot_id": (
-                        occurrence.planned_timeslot_id or row.source_timeslot_id
-                    ),
-                    "declared_debt_minutes": declared_minutes,
-                    "delivered_recovery_minutes": delivered_minutes,
-                    "active_planned_recovery_minutes": active_planned_minutes,
-                    "unresolved_debt_minutes": unresolved_minutes,
-                }
-            )
-
-        return canonical_json_value(
-            {
-                "organization_id": organization_id,
-                "school_year_id": school_year_id,
-                "items": items,
-            }
-        )

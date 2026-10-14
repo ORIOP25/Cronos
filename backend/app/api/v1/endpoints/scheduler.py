@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from typing import Annotated
 
 import structlog
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import schemas
@@ -172,7 +172,7 @@ async def get_current_proposal(
     current_user: deps.ActiveActor,
 ) -> dict:
     """Current pending proposal with product metrics and warnings."""
-    proposal = await queries.current_proposal(db, current_user.organization_id, now_utc=_now())
+    proposal = await queries.current_proposal(db, current_user.organization_id)
     if proposal is None:
         _raise_scheduler_error(
             kind="not_found",
@@ -201,31 +201,6 @@ async def get_proposal_diff(
             detail="Schedule proposal was not found.",
         )
     return diff
-
-
-@router.get(
-    "/drafts/{proposal_id}/lessons",
-    response_model=schemas.SchedulerV1ProposalLessonsRead,
-    responses={404: {"description": "Proposal not found"}},
-)
-async def get_proposal_lessons(
-    proposal_id: int,
-    db: deps.DbSession,
-    current_user: deps.AdminActor,
-    skip: Annotated[int, Query(ge=0)] = 0,
-    limit: Annotated[int, Query(ge=1, le=2000)] = 500,
-) -> dict:
-    """Read materialized proposal lessons and module slices before approval."""
-    result = await queries.proposal_lessons(
-        db, current_user.organization_id, proposal_id, skip=skip, limit=limit
-    )
-    if result is None:
-        _raise_scheduler_error(
-            kind="not_found",
-            code="scheduler_draft_not_found",
-            detail="Schedule proposal was not found.",
-        )
-    return result
 
 
 @router.post(

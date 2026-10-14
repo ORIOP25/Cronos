@@ -1,6 +1,3 @@
-# Ficheiro: backend/app/api/endpoints/analytics.py
-
-
 from fastapi import APIRouter
 from sqlalchemy import func, select
 
@@ -18,9 +15,9 @@ async def get_availability_heatmap(
 ):
     """
     Calcula a taxa de disponibilidade.
-    LÃ³gica V3 (Corrigida):
-    - DisponÃ­veis = Total - ImpossÃ­veis.
-    - 'Evitar' (0) conta como DISPONÃVEL para efeitos de cobertura.
+    Lógica V3 (Corrigida):
+    - Disponíveis = Total - Impossíveis.
+    - 'Evitar' (0) conta como DISPONÍVEL para efeitos de cobertura.
     """
     organization_id = current_user.organization_id
 
@@ -43,13 +40,13 @@ async def get_availability_heatmap(
     )
     timeslots = sorted(resolved.blocks, key=lambda slot: (slot.day_of_week, slot.start_time))
 
-    # 3. Contar Apenas os IMPOSSÃVEIS (Score == -1)
-    # Agora o 'Evitar' (0) nÃ£o entra aqui, logo Ã© contado como 'DisponÃ­vel' em baixo.
+    # 3. Contar Apenas os IMPOSSÍVEIS (Score == -1)
+    # Agora o 'Evitar' (0) não entra aqui, logo é contado como 'Disponível' em baixo.
     stmt = (
         select(models.Availability.timeslot_id, func.count(models.Availability.teacher_id))
         .join(models.Teacher)
         .where(models.Teacher.organization_id == organization_id)
-        .where(models.Availability.score == -1)  # <--- MUDANÃ‡A AQUI (Era <= 0)
+        .where(models.Availability.score == -1)  # <--- MUDANÇA AQUI (Era <= 0)
         .group_by(models.Availability.timeslot_id)
     )
 
@@ -62,8 +59,8 @@ async def get_availability_heatmap(
     for slot in timeslots:
         impossible_count = impossible_map.get(slot.id, 0)
 
-        # DisponÃ­veis = Todos - Os que disseram "ImpossÃ­vel"
-        # Assim, o "Evitar" estÃ¡ incluÃ­do nos disponÃ­veis.
+        # Disponíveis = Todos - Os que disseram "Impossível"
+        # Assim, o "Evitar" está incluído nos disponíveis.
         available_count = max(0, total_teachers - impossible_count)
 
         ratio = available_count / total_teachers if total_teachers > 0 else 0

@@ -133,7 +133,7 @@ describe('tutorial v3 local API adapter', () => {
 
   it('creates an occurrence and then decides the prepared substitution', async () => {
     const occurrenceRuntime = makeRuntime('occurrences')
-    await occurrenceRuntime.request('/schedule/active-blocks/1/log', {
+    await occurrenceRuntime.request('/schedule/lessons/1/log', {
       method: 'put',
       data: JSON.stringify({ status: 'OCCURRENCE', summary: '', notes: '' }),
     })

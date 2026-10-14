@@ -1,17 +1,20 @@
 from contextlib import contextmanager
-from datetime import date, datetime, time
+from datetime import UTC, date, datetime, time
 
 from sqlalchemy import event
 
 from app import models, schemas
+from app.scheduler.domain.demand import ExecutionEntry, ModuleCredit
+from app.scheduler.infrastructure.models import SchedulerLessonLogV1
+from app.scheduler.infrastructure.operations import week_schedule
+from app.scheduler.infrastructure.progress import record_execution
 from app.services import (
     dashboard_service,
     member_service,
-    occurrence_service,
-    schedule_service,
     timesheet_service,
 )
 from tests._support.db_fixtures import TestingSessionLocal, create_teacher_profile
+from tests._support.scheduler_v1 import add_lesson, add_version, lesson_interval, seed_v1_assignment
 
 
 @contextmanager
@@ -71,6 +74,7 @@ def test_dashboard_uses_at_most_four_statements(sync_db):
                 complete=False,
             ),
             prevalidation=schemas.PreflightReport(status="BLOCKED"),
+            debt_summary=schemas.DebtSummary(as_of_date=date(2026, 4, 20)),
         )
 
     assert len(statements) <= 4
@@ -132,41 +136,108 @@ async def test_teacher_history_detection_uses_one_statement(db_session):
     assert len(statements) == 1
 
 
-def test_occurrence_context_uses_one_joined_statement(sync_db):
-    organization = models.Organization(name="Occurrence Budget", plan_status="active")
-    sync_db.add(organization)
-    sync_db.flush()
-    organization_id = organization.id
-    sync_db.commit()
-
-    with _statement_counter(sync_db) as statements:
-        occurrence = occurrence_service._get_occurrence_with_context_sync(
-            sync_db,
-            occurrence_id=999_999,
-            organization_id=organization_id,
-        )
-
-    assert occurrence is None
-    assert len(statements) == 1
-
-
-def test_week_schedule_uses_two_statements(sync_db):
+async def test_week_schedule_without_a_published_year_uses_one_statement(db_session):
     organization = models.Organization(name="Week Budget", plan_status="active")
-    sync_db.add(organization)
-    sync_db.flush()
+    db_session.add(organization)
+    await db_session.flush()
     organization_id = organization.id
-    sync_db.commit()
+    await db_session.commit()
 
-    with _statement_counter(sync_db) as statements:
-        rows = schedule_service.get_week_schedule_sync(
-            sync_db,
+    with _statement_counter(db_session) as statements:
+        rows = await week_schedule(
+            db_session,
             organization_id,
             week_start=date(2026, 4, 20),
+            class_id=None,
             teacher_id=999_999,
         )
 
-    assert rows == []
-    assert len(statements) == 2
+    assert rows is None
+    assert len(statements) == 1
+
+
+async def test_dashboard_overview_counts_pending_v1_occurrences(db_session):
+    seed = await seed_v1_assignment(db_session)
+    version = await add_version(db_session, seed)
+    today = date(2026, 9, 22)
+    for index, (day, decision) in enumerate(
+        ((today, None), (today, "GAP"), (date(2026, 9, 21), None))
+    ):
+        start, end = lesson_interval(day, 9 + index)
+        lesson = await add_lesson(
+            db_session,
+            seed,
+            version,
+            stable_key=f"alert-{index}",
+            school_date=day,
+            start=start,
+            end=end,
+        )
+        db_session.add(
+            SchedulerLessonLogV1(
+                organization_id=seed.organization.id,
+                school_year_id=seed.year.id,
+                lesson_id=lesson.id,
+                status="OCCURRENCE",
+                decision=decision,
+                decided_at=end if decision else None,
+                decided_by_membership_id=seed.membership.id if decision else None,
+                logged_by_membership_id=seed.membership.id,
+                logged_at=end,
+                created_at=end,
+                updated_at=end,
+            )
+        )
+    await db_session.commit()
+
+    alerts, _, _, _ = await db_session.run_sync(
+        lambda db: dashboard_service._get_overview(db, seed.organization.id, today)
+    )
+
+    assert alerts.pending_occurrences_today == 1
+    assert alerts.pending_occurrences_total == 2
+
+
+async def test_dashboard_class_progress_uses_v1_execution_credits(db_session):
+    seed = await seed_v1_assignment(db_session, module_minutes=120)
+    await record_execution(
+        db_session,
+        seed.organization.id,
+        seed.year.id,
+        seed.assignment.id,
+        ExecutionEntry(
+            "dashboard:lesson",
+            1,
+            seed.membership.id,
+            "Confirmed",
+            (ModuleCredit(seed.module.id, 60),),
+            recorded_at=datetime(2026, 9, 22, 12, tzinfo=UTC),
+        ),
+        planning_relevant=False,
+    )
+    db_session.add(
+        models.ProgressLedgerEntry(
+            organization_id=seed.organization.id,
+            source_type="MANUAL_ADJUSTMENT",
+            source_id=seed.class_.id,
+            class_id=seed.class_.id,
+            module_id=seed.module.id,
+            completed_minutes_delta=600,
+            debt_minutes_delta=0,
+            idempotency_key="retired-progress",
+        )
+    )
+    await db_session.commit()
+
+    progress = await db_session.run_sync(
+        lambda db: dashboard_service._get_class_progress(db, seed.organization.id)
+    )
+
+    assert len(progress) == 1
+    assert progress[0].class_id == seed.class_.id
+    assert progress[0].completed_hours == 1.0
+    assert progress[0].total_hours == 2.0
+    assert progress[0].overall_percentage == 50.0
 
 
 async def test_async_dashboard_summary_uses_bounded_statements(db_session):

@@ -334,8 +334,7 @@ The following matrix maps the visible symptom to the first recovery action.
 | `422 FOUNDATION_INCOMPLETE` | Required Foundation field or interval is invalid | Correct the highlighted data and submit again. |
 | `409 FOUNDATION_ALREADY_COMPLETED` | A completed organization received another draft write | Refresh member and Foundation status. |
 | Dashboard shows preparation after Foundation | Expected until first real schedule approval | Complete readiness, generate, review, and approve a real schedule. |
-| Tutorial loses progress | Browser storage was cleared or invalid | Start a new local run. The tutorial never owns operational data. |
-| Tutorial loses progress | Browser storage expired or the user changed scope | Start a new local run. |
+| Tutorial loses progress | Browser storage was cleared, invalid, or expired, or the user changed scope | Start a new local run. The tutorial never owns operational data. |
 
 ## Security and Data Integrity
 

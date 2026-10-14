@@ -189,7 +189,3 @@ def aggregate_capacity_check(
         if available < remaining:
             deficits[assignment.assignment_id] = remaining - available
     return CapacityCheck(deficits)
-
-
-def unavailable_resource_types() -> tuple[str, ...]:
-    return tuple(row.value for row in UnavailableResource)

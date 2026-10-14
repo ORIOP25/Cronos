@@ -253,43 +253,6 @@ async def delete_class_in_course(
     return effect
 
 
-async def get_class_curriculum(db: AsyncSession, class_id: int, organization_id: int):
-    """
-    Retorna a lista de disciplinas que a turma precisa ter.
-
-    A turma está associada a um curso, e o curso tem disciplinas.
-    Esta função facilita o frontend para apresentar qual disciplinas a turma necessita.
-
-    Útil para a "Matriz de Distribuição de Serviço" (Atribuição de Professores).
-
-    Retorna: List[SubjectRead]
-    """
-    # 1. Buscar a Turma
-    db_class = await _get_class_by_org(db, class_id, organization_id)
-
-    if not db_class:
-        return []
-
-    # 2. Se não tiver curso associado, retorna vazio
-    if not db_class.course_id:
-        return []
-
-    # 3. Buscar o Curso e carregar as Disciplinas (LEFT JOIN)
-    course_query = (
-        select(models.Course)
-        .where(models.Course.id == db_class.course_id)
-        .options(selectinload(models.Course.subjects))
-    )
-    course_result = await db.execute(course_query)
-    course = course_result.scalars().first()
-
-    if not course:
-        return []
-
-    # 4. Retornar as disciplinas do curso
-    return course.subjects if course.subjects else []
-
-
 # ==========================================
 #  DASHBOARD DA TURMA (ClassFullDetail)
 # ==========================================
@@ -506,11 +469,12 @@ async def update_class_progress(
         )
 
     # 3. Construir mapa de módulos válidos: {module_id: hours_total}
-    valid_modules = {}
-    for link in links:
-        if link.subject:
-            for module in link.subject.modules:
-                valid_modules[module.id] = module.hours_total
+    valid_modules = {
+        module.id: module.hours_total
+        for link in links
+        if link.subject is not None
+        for module in link.subject.modules
+    }
 
     # 4. Validar que todos os module_ids pertencem às disciplinas da turma
     for update in progress_updates:

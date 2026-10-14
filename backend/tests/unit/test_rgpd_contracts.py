@@ -46,8 +46,6 @@ async def test_privacy_locked_erasure_requires_provider_confirmation(monkeypatch
 
 def test_occurrence_commands_reject_free_text_reasons():
     with pytest.raises(ValidationError):
-        schemas.LessonOccurrenceCreate(active_schedule_block_id=1, reason="texto")
-    with pytest.raises(ValidationError):
         schemas.LessonOccurrenceUpdate(status=LessonOccurrenceStatus.GAP, version=1, reason="texto")
     with pytest.raises(ValidationError):
         schemas.LessonOccurrenceCancel(version=1, reason="texto")

@@ -524,70 +524,76 @@ def _unrestricted_scope(snapshot: PlanningSnapshot, periods: tuple[Period, ...])
     )
 
 
+def _add_assignment_options(state, assignment_id, row):
+    model = state.model
+    snapshot = state.snapshot
+    assignment = state.assignment_by_id[assignment_id]
+    for period in row.periods:
+        key = (assignment_id, period)
+        state.x[key] = model.NewBoolVar(f"x_{assignment_id}_{period.start_utc.isoformat()}")
+        rooms = available_rooms(snapshot, assignment, period)
+        if not rooms:
+            raise NoEligiblePeriodsError(f"Assignment {assignment_id} lost its eligible rooms.")
+        state.rooms_of[key] = rooms
+        pair = (assignment.class_id, assignment.subject_id)
+        for room_id in rooms:
+            variable = model.NewBoolVar(
+                f"r_{assignment_id}_{period.start_utc.isoformat()}_{room_id}"
+            )
+            state.room_choice[(assignment_id, period, room_id)] = variable
+            state.room_pairs.setdefault(pair, {}).setdefault(room_id, []).append(variable)
+        model.Add(
+            sum(state.room_choice[(assignment_id, period, room_id)] for room_id in rooms)
+            == state.x[key]
+        )
+        if row.last_window:
+            state.last[key] = model.NewBoolVar(f"l_{assignment_id}_{period.start_utc.isoformat()}")
+            state.waste[key] = model.NewIntVar(
+                0,
+                period.duration_minutes - 1,
+                f"u_{assignment_id}_{period.start_utc.isoformat()}",
+            )
+            model.Add(state.waste[key] <= (period.duration_minutes - 1) * state.last[key])
+            model.Add(state.last[key] <= state.x[key])
+        position = _slot_position(state.slots_by_day, period)
+        if position is not None:
+            state.position_of[period] = position
+
+
+def _add_assignment_credit(state, assignment_id, row):
+    model = state.model
+    keys = [(assignment_id, period) for period in row.periods]
+    if row.groups is not None:
+        model.Add(sum(state.x[key] for key in keys) == sum(count for _, count in row.groups))
+        for duration, count in row.groups:
+            group_keys = [key for key in keys if key[1].duration_minutes == duration]
+            if len(group_keys) < count:
+                raise ValueError("A quota distribution does not fit the snapshot.")
+            model.Add(sum(state.x[key] for key in group_keys) == count)
+    if row.last_window:
+        model.Add(sum(state.last[key] for key in keys) == 1)
+        if row.final_periods:
+            final_keys = [key for key in keys if key[1] in row.final_periods]
+            model.Add(sum(state.last[key] for key in final_keys) == 1)
+        for index, key in enumerate(keys):
+            model.Add(state.x[key] <= sum(state.last[other] for other in keys[index:]))
+        if row.waste_target is not None:
+            model.Add(sum(state.waste[key] for key in keys) == row.waste_target)
+        model.Add(
+            sum(key[1].duration_minutes * state.x[key] - state.waste[key] for key in keys)
+            == row.credit_target
+        )
+    else:
+        model.Add(sum(key[1].duration_minutes * state.x[key] for key in keys) == row.credit_target)
+
+
 def _build_scope_state(snapshot: PlanningSnapshot, scope: _WindowScope) -> _ScopeState:
     state = _ScopeState(model=cp_model.CpModel(), snapshot=snapshot, scope=scope)
     state.assignment_by_id = {row.assignment_id: row for row in snapshot.assignments}
     state.slots_by_day = _sorted_slots(snapshot)
-    model = state.model
     for assignment_id, row in sorted(scope.assignments.items()):
-        assignment = state.assignment_by_id[assignment_id]
-        for period in row.periods:
-            key = (assignment_id, period)
-            state.x[key] = model.NewBoolVar(f"x_{assignment_id}_{period.start_utc.isoformat()}")
-            rooms = available_rooms(snapshot, assignment, period)
-            if not rooms:
-                raise NoEligiblePeriodsError(f"Assignment {assignment_id} lost its eligible rooms.")
-            state.rooms_of[key] = rooms
-            pair = (assignment.class_id, assignment.subject_id)
-            for room_id in rooms:
-                variable = model.NewBoolVar(
-                    f"r_{assignment_id}_{period.start_utc.isoformat()}_{room_id}"
-                )
-                state.room_choice[(assignment_id, period, room_id)] = variable
-                state.room_pairs.setdefault(pair, {}).setdefault(room_id, []).append(variable)
-            model.Add(
-                sum(state.room_choice[(assignment_id, period, room_id)] for room_id in rooms)
-                == state.x[key]
-            )
-            if row.last_window:
-                state.last[key] = model.NewBoolVar(
-                    f"l_{assignment_id}_{period.start_utc.isoformat()}"
-                )
-                state.waste[key] = model.NewIntVar(
-                    0,
-                    period.duration_minutes - 1,
-                    f"u_{assignment_id}_{period.start_utc.isoformat()}",
-                )
-                model.Add(state.waste[key] <= (period.duration_minutes - 1) * state.last[key])
-                model.Add(state.last[key] <= state.x[key])
-            position = _slot_position(state.slots_by_day, period)
-            if position is not None:
-                state.position_of[period] = position
-        keys = [(assignment_id, period) for period in row.periods]
-        if row.groups is not None:
-            model.Add(sum(state.x[key] for key in keys) == sum(count for _, count in row.groups))
-            for duration, count in row.groups:
-                group_keys = [key for key in keys if key[1].duration_minutes == duration]
-                if len(group_keys) < count:
-                    raise ValueError("A quota distribution does not fit the snapshot.")
-                model.Add(sum(state.x[key] for key in group_keys) == count)
-        if row.last_window:
-            model.Add(sum(state.last[key] for key in keys) == 1)
-            if row.final_periods:
-                final_keys = [key for key in keys if key[1] in row.final_periods]
-                model.Add(sum(state.last[key] for key in final_keys) == 1)
-            for index, key in enumerate(keys):
-                model.Add(state.x[key] <= sum(state.last[other] for other in keys[index:]))
-            if row.waste_target is not None:
-                model.Add(sum(state.waste[key] for key in keys) == row.waste_target)
-            model.Add(
-                sum(key[1].duration_minutes * state.x[key] - state.waste[key] for key in keys)
-                == row.credit_target
-            )
-        else:
-            model.Add(
-                sum(key[1].duration_minutes * state.x[key] for key in keys) == row.credit_target
-            )
+        _add_assignment_options(state, assignment_id, row)
+        _add_assignment_credit(state, assignment_id, row)
     _add_conflicts(state)
     _add_lunch(state)
     _add_completion_measure(state)
@@ -610,7 +616,7 @@ def _add_resource_exclusivity(model: cp_model.CpModel, rows: Sequence[tuple[Peri
         if len(literals) >= 2:
             model.AddAtMostOne(literals)
     for index in range(len(ordered)):
-        start, end = ordered[index][0]
+        _start, end = ordered[index][0]
         literals = ordered[index][1]
         other = index + 1
         while other < len(ordered) and ordered[other][0][0] < end:
@@ -648,9 +654,7 @@ def _period_minutes(period: Period) -> tuple[int, int]:
     )
 
 
-def _lunch_options(
-    boundaries: list[int], window_start: int, window_end: int, minimum: int
-) -> list[tuple[int, int]]:
+def _lunch_options(boundaries: list[int], window_end: int, minimum: int) -> list[tuple[int, int]]:
     """Minimal windows of at least the minimum length, anchored at a boundary.
 
     A maximal free run always starts at a boundary. Its first boundary at or
@@ -666,20 +670,7 @@ def _lunch_options(
     return options
 
 
-def _add_lunch(state: _ScopeState) -> None:
-    """Require one continuous lunch window per class and teacher on active days.
-
-    Each option is a boolean "this interval is free". It is forced off whenever
-    a lesson overlapping it is placed, so at least one option must remain free.
-    Protected lessons can block an option permanently; a resource with no free
-    option makes the window infeasible instead of silently ignoring the rule.
-    """
-    rule = state.snapshot.lunch_rule
-    if rule is None:
-        return
-    model = state.model
-    window_start = rule.window_start_minutes
-    window_end = rule.window_end_minutes
+def _lunch_resource_rows(state):
     by_resource: dict[tuple[str, int, date], list[tuple[Period, Any]]] = defaultdict(list)
     for (assignment_id, period), variable in state.x.items():
         assignment = state.assignment_by_id[assignment_id]
@@ -701,39 +692,68 @@ def _add_lunch(state: _ScopeState) -> None:
             (lesson.period, 1)
         )
         by_resource[("teacher", teacher_id, lesson.period.school_date)].append((lesson.period, 1))
+    return by_resource
+
+
+def _lunch_overlap_terms(rows, option_start, option_end):
+    terms = []
+    blocked = False
+    for period, variable in rows:
+        period_start, period_end = _period_minutes(period)
+        if period_start < option_end and option_start < period_end:
+            if type(variable) is int:
+                blocked = True
+                break
+            terms.append(variable)
+    return terms, blocked
+
+
+def _add_resource_lunch(state, resource, rows):
+    model = state.model
+    rule = state.snapshot.lunch_rule
+    window_start = rule.window_start_minutes
+    window_end = rule.window_end_minutes
+    kind, resource_id, school_date = resource
+    boundaries = {window_start, window_end}
+    for period, _variable in rows:
+        period_start, period_end = _period_minutes(period)
+        if window_start < period_start < window_end:
+            boundaries.add(period_start)
+        if window_start < period_end < window_end:
+            boundaries.add(period_end)
+    options = []
+    for option_start, option_end in _lunch_options(
+        sorted(boundaries), window_end, rule.minimum_minutes
+    ):
+        terms, blocked = _lunch_overlap_terms(rows, option_start, option_end)
+        if blocked:
+            continue
+        flag = model.NewBoolVar(
+            f"lunch_{kind}_{resource_id}_{school_date.isoformat()}_{option_start}"
+        )
+        for term in terms:
+            model.Add(flag + term <= 1)
+        options.append(flag)
+    if options:
+        model.Add(sum(options) >= 1)
+    else:
+        model.AddBoolOr([])
+
+
+def _add_lunch(state: _ScopeState) -> None:
+    """Require one continuous lunch window per class and teacher on active days.
+
+    Each option is a boolean "this interval is free". It is forced off whenever
+    a lesson overlapping it is placed, so at least one option must remain free.
+    Protected lessons can block an option permanently; a resource with no free
+    option makes the window infeasible instead of silently ignoring the rule.
+    """
+    rule = state.snapshot.lunch_rule
+    if rule is None:
+        return
+    by_resource = _lunch_resource_rows(state)
     for (kind, resource_id, school_date), rows in sorted(by_resource.items()):
-        boundaries = {window_start, window_end}
-        for period, _variable in rows:
-            period_start, period_end = _period_minutes(period)
-            if window_start < period_start < window_end:
-                boundaries.add(period_start)
-            if window_start < period_end < window_end:
-                boundaries.add(period_end)
-        options = []
-        for option_start, option_end in _lunch_options(
-            sorted(boundaries), window_start, window_end, rule.minimum_minutes
-        ):
-            terms = []
-            blocked = False
-            for period, variable in rows:
-                period_start, period_end = _period_minutes(period)
-                if period_start < option_end and option_start < period_end:
-                    if type(variable) is int:
-                        blocked = True
-                        break
-                    terms.append(variable)
-            if blocked:
-                continue
-            flag = model.NewBoolVar(
-                f"lunch_{kind}_{resource_id}_{school_date.isoformat()}_{option_start}"
-            )
-            for term in terms:
-                model.Add(flag + term <= 1)
-            options.append(flag)
-        if options:
-            model.Add(sum(options) >= 1)
-        else:
-            model.AddBoolOr([])
+        _add_resource_lunch(state, (kind, resource_id, school_date), rows)
 
 
 def _add_completion_measure(state: _ScopeState) -> None:
@@ -741,7 +761,7 @@ def _add_completion_measure(state: _ScopeState) -> None:
     if not state.scope.completing_classes:
         return
     values: set[int] = {0, *state.scope.protected_days.values()}
-    for assignment_id, period in state.x:
+    for (assignment_id, period), _variable in state.x.items():
         if state.assignment_by_id[assignment_id].class_id in state.scope.completing_classes:
             values.add((period.school_date - state.snapshot.origin).days)
     upper = max(values)
@@ -814,8 +834,7 @@ def _room_disruption_expression(
     return sum(terms)
 
 
-def _gap_expression(state: _ScopeState, kind: str) -> Any | None:
-    model = state.model
+def _gap_resource_rows(state, kind):
     groups: dict[tuple[int, date], dict[int, list[Any]]] = defaultdict(lambda: defaultdict(list))
     for (assignment_id, period), variable in state.x.items():
         assignment = state.assignment_by_id[assignment_id]
@@ -838,32 +857,44 @@ def _gap_expression(state: _ScopeState, kind: str) -> Any | None:
         position = _slot_position(state.slots_by_day, lesson.period)
         if position is not None:
             groups[(resource_id, lesson.period.school_date)][position].append(1)
+    return groups
+
+
+def _resource_gap_terms(state, kind, resource_id, school_date, by_position):
+    model = state.model
+    terms = []
+    slots = state.slots_by_day.get(school_date.weekday(), ())
+    if len(slots) < 3:
+        return terms
+    occupancies: list[Any] = [
+        _or_expressions(
+            model,
+            f"{kind}_occ_{resource_id}_{school_date.isoformat()}_{position}",
+            by_position.get(position, []),
+        )
+        for position in range(len(slots))
+    ]
+    for position in range(1, len(slots) - 1):
+        prefix = f"{kind}_{resource_id}_{school_date.isoformat()}_{position}"
+        before = _or_expressions(model, f"{prefix}_before", occupancies[:position])
+        after = _or_expressions(model, f"{prefix}_after", occupancies[position + 1 :])
+        if (type(before) is int and before == 0) or (type(after) is int and after == 0):
+            continue
+        occupied = occupancies[position]
+        gap = model.NewBoolVar(f"{prefix}_gap")
+        model.Add(gap <= before)
+        model.Add(gap <= after)
+        model.Add(gap + occupied <= 1)
+        model.Add(gap >= before + after - 1 - occupied)
+        terms.append(_slot_duration_minutes(slots[position]) * gap)
+    return terms
+
+
+def _gap_expression(state: _ScopeState, kind: str) -> Any | None:
+    groups = _gap_resource_rows(state, kind)
     terms = []
     for (resource_id, school_date), by_position in sorted(groups.items()):
-        slots = state.slots_by_day.get(school_date.weekday(), ())
-        if len(slots) < 3:
-            continue
-        occupancies: list[Any] = [
-            _or_expressions(
-                model,
-                f"{kind}_occ_{resource_id}_{school_date.isoformat()}_{position}",
-                by_position.get(position, []),
-            )
-            for position in range(len(slots))
-        ]
-        for position in range(1, len(slots) - 1):
-            prefix = f"{kind}_{resource_id}_{school_date.isoformat()}_{position}"
-            before = _or_expressions(model, f"{prefix}_before", occupancies[:position])
-            after = _or_expressions(model, f"{prefix}_after", occupancies[position + 1 :])
-            if (type(before) is int and before == 0) or (type(after) is int and after == 0):
-                continue
-            occupied = occupancies[position]
-            gap = model.NewBoolVar(f"{prefix}_gap")
-            model.Add(gap <= before)
-            model.Add(gap <= after)
-            model.Add(gap + occupied <= 1)
-            model.Add(gap >= before + after - 1 - occupied)
-            terms.append(_slot_duration_minutes(slots[position]) * gap)
+        terms.extend(_resource_gap_terms(state, kind, resource_id, school_date, by_position))
     if not terms:
         return None
     return sum(terms)
@@ -873,7 +904,7 @@ def _evidence_order(record: _StageRecord) -> tuple:
     rank = _COMPONENT_ORDER[record.stage.split(":", 1)[0]]
     if rank == 0:
         return (rank, -(record.threshold or 0), -(record.window or 0))
-    return (rank, -(record.window or 0))
+    return (rank, 0, -(record.window or 0))
 
 
 def _room_continuity_expression(state: _ScopeState) -> Any:
@@ -950,8 +981,6 @@ def _solve_scope(
     state: _ScopeState,
     *,
     deadline: float,
-    num_workers: int,
-    random_seed: int,
     solver: cp_model.CpSolver,
     stop_at_first_complete: bool = False,
     optimize_room_continuity: bool = False,
@@ -1512,8 +1541,6 @@ def solve_placement(
             status, selections, scope_records, stop_reason = _solve_scope(
                 state,
                 deadline=window_deadline,
-                num_workers=num_workers,
-                random_seed=random_seed,
                 solver=solver,
                 optimize_room_continuity=optimize_room_continuity,
                 should_cancel=should_cancel,

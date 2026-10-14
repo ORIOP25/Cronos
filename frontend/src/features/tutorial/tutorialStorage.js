@@ -56,6 +56,6 @@ export function saveTutorialState(storage, key, state) {
   }
 }
 
-export function isValidTutorialStepId(stepId) {
+function isValidTutorialStepId(stepId) {
   return TUTORIAL_STEPS.some((step) => step.id === stepId)
 }

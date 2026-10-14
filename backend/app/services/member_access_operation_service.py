@@ -100,7 +100,6 @@ class MemberAccessOperationService:
         intended_role: models.ClerkOrganizationRole | None,
         intent: dict[str, Any],
         membership_id: int | None = None,
-        account_id: int | None = None,
         lock_version: int | None = None,
         previous_snapshot: dict[str, Any] | None = None,
         draft_payload: dict[str, Any] | None = None,

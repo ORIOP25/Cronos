@@ -348,7 +348,7 @@ async def test_approval_revalidates_and_activates_the_version(db_session, monkey
     await _enqueue(db_session, seed)
     await db_session.commit()
     await _run_worker(monkeypatch, db_session)
-    proposal = await current_proposal(db_session, seed.organization.id, now_utc=MOMENT)
+    proposal = await current_proposal(db_session, seed.organization.id)
     assert proposal is not None
 
     conflict_state = await SchedulerStateService(db_session).get_state(
@@ -373,7 +373,7 @@ async def test_approval_revalidates_and_activates_the_version(db_session, monkey
     await _enqueue(db_session, seed, key="after-change")
     await db_session.commit()
     await _run_worker(monkeypatch, db_session)
-    fresh = await current_proposal(db_session, seed.organization.id, now_utc=MOMENT)
+    fresh = await current_proposal(db_session, seed.organization.id)
     assert fresh is not None
     result = await approve_proposal(
         db_session,
@@ -401,7 +401,7 @@ async def test_repeated_approval_returns_the_same_activation(db_session, monkeyp
     await _enqueue(db_session, seed)
     await db_session.commit()
     await _run_worker(monkeypatch, db_session)
-    proposal = await current_proposal(db_session, seed.organization.id, now_utc=MOMENT)
+    proposal = await current_proposal(db_session, seed.organization.id)
 
     first = await approve_proposal(
         db_session,
@@ -436,7 +436,7 @@ async def test_repeated_approval_returns_the_same_activation(db_session, monkeyp
     await _enqueue(db_session, seed, key="second-update")
     await db_session.commit()
     await _run_worker(monkeypatch, db_session)
-    second = await current_proposal(db_session, seed.organization.id, now_utc=MOMENT)
+    second = await current_proposal(db_session, seed.organization.id)
     await approve_proposal(
         db_session,
         organization_id=seed.organization.id,
@@ -461,7 +461,7 @@ async def test_first_approval_marks_the_organization_operational_once(db_session
     await _enqueue(db_session, seed)
     await db_session.commit()
     await _run_worker(monkeypatch, db_session)
-    proposal = await current_proposal(db_session, seed.organization.id, now_utc=MOMENT)
+    proposal = await current_proposal(db_session, seed.organization.id)
     assert proposal is not None
 
     first = await approve_proposal(
@@ -507,7 +507,7 @@ async def test_first_approval_marks_the_organization_operational_once(db_session
     await _enqueue(db_session, seed, key="operational-update")
     await db_session.commit()
     await _run_worker(monkeypatch, db_session)
-    second = await current_proposal(db_session, seed.organization.id, now_utc=MOMENT)
+    second = await current_proposal(db_session, seed.organization.id)
     assert second is not None
     later = MOMENT + timedelta(minutes=5)
     await approve_proposal(
@@ -532,7 +532,7 @@ async def test_the_operational_marker_stays_inside_the_approved_organization(
     await _enqueue(db_session, first, key="marker-a")
     await db_session.commit()
     await _run_worker(monkeypatch, db_session)
-    proposal = await current_proposal(db_session, first.organization.id, now_utc=MOMENT)
+    proposal = await current_proposal(db_session, first.organization.id)
     assert proposal is not None
 
     await approve_proposal(
@@ -561,7 +561,7 @@ async def test_rejection_keeps_the_clock_and_does_not_unlock_a_reroll(db_session
     completed_revision = state.last_completed_planning_revision
     success_at = state.last_successful_generation_at
 
-    proposal = await current_proposal(db_session, seed.organization.id, now_utc=MOMENT)
+    proposal = await current_proposal(db_session, seed.organization.id)
     await reject_proposal(
         db_session,
         organization_id=seed.organization.id,
@@ -778,7 +778,7 @@ async def test_a_failure_during_approval_rolls_everything_back(db_session, monke
     await _enqueue(db_session, seed)
     await db_session.commit()
     await _run_worker(monkeypatch, db_session)
-    proposal = await current_proposal(db_session, seed.organization.id, now_utc=MOMENT)
+    proposal = await current_proposal(db_session, seed.organization.id)
     organization_id = seed.organization.id
     school_year_id = seed.year.id
     membership_id = seed.membership.id

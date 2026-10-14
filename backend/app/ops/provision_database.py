@@ -35,37 +35,36 @@ def provision(environment: Mapping[str, str] = os.environ) -> None:
     migrator_password = _required(environment, "CRONOS_MIGRATOR_PASSWORD")
     app_password = _required(environment, "CRONOS_APP_PASSWORD")
 
-    with psycopg2.connect(database_url) as connection:
-        with connection.cursor() as cursor:
-            for role_name, attributes in ROLE_DEFINITIONS.items():
-                _ensure_role(cursor, role_name, attributes)
-            cursor.execute(
-                sql.SQL("ALTER ROLE {} PASSWORD %s").format(sql.Identifier("cronos_migrator")),
-                (migrator_password,),
+    with psycopg2.connect(database_url) as connection, connection.cursor() as cursor:
+        for role_name, attributes in ROLE_DEFINITIONS.items():
+            _ensure_role(cursor, role_name, attributes)
+        cursor.execute(
+            sql.SQL("ALTER ROLE {} PASSWORD %s").format(sql.Identifier("cronos_migrator")),
+            (migrator_password,),
+        )
+        cursor.execute(
+            sql.SQL("ALTER ROLE {} PASSWORD %s").format(sql.Identifier("cronos_app")),
+            (app_password,),
+        )
+        cursor.execute(
+            sql.SQL("GRANT {} TO {}").format(
+                sql.Identifier("cronos_auth_definer"),
+                sql.Identifier("cronos_migrator"),
             )
-            cursor.execute(
-                sql.SQL("ALTER ROLE {} PASSWORD %s").format(sql.Identifier("cronos_app")),
-                (app_password,),
+        )
+        database_name = connection.get_dsn_parameters()["dbname"]
+        cursor.execute(
+            sql.SQL("ALTER DATABASE {} OWNER TO {}").format(
+                sql.Identifier(database_name),
+                sql.Identifier("cronos_migrator"),
             )
-            cursor.execute(
-                sql.SQL("GRANT {} TO {}").format(
-                    sql.Identifier("cronos_auth_definer"),
-                    sql.Identifier("cronos_migrator"),
-                )
+        )
+        cursor.execute(
+            sql.SQL("GRANT CONNECT ON DATABASE {} TO {}").format(
+                sql.Identifier(database_name),
+                sql.Identifier("cronos_app"),
             )
-            database_name = connection.get_dsn_parameters()["dbname"]
-            cursor.execute(
-                sql.SQL("ALTER DATABASE {} OWNER TO {}").format(
-                    sql.Identifier(database_name),
-                    sql.Identifier("cronos_migrator"),
-                )
-            )
-            cursor.execute(
-                sql.SQL("GRANT CONNECT ON DATABASE {} TO {}").format(
-                    sql.Identifier(database_name),
-                    sql.Identifier("cronos_app"),
-                )
-            )
+        )
 
 
 def main() -> int:

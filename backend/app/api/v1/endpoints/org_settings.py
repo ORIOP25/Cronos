@@ -1,15 +1,14 @@
-"""Endpoints para ConfiguraÃ§Ãµes da Escola e CalendÃ¡rio Escolar.
+"""Endpoints para Configurações da Escola e Calendário Escolar.
 
 Rotas:
-  GET    /settings/                          â€” obtÃ©m a configuraÃ§Ã£o da escola
-  POST   /settings/                          â€” cria/atualiza configuraÃ§Ã£o da escola
-  GET    /grid-settings/                     â€” obtÃ©m a configuraÃ§Ã£o da grelha horÃ¡ria
-  POST   /grid-settings/                     â€” cria/atualiza configuraÃ§Ã£o da grelha horÃ¡ria
-  POST   /grid-settings/regenerate           â€” guarda e regenera a grelha atomicamente
-  POST   /settings/sync-holidays             â€” importa feriados automÃ¡ticos
-  GET    /calendar-events/                   â€” lista eventos do calendÃ¡rio
-  POST   /calendar-events/                   â€” cria evento manual
-  DELETE /calendar-events/{event_id}         â€” elimina evento
+  GET    /settings/                          — obtém a configuração da escola
+  POST   /settings/                          — cria/atualiza configuração da escola
+  GET    /grid-settings/                     — obtém a configuração da grelha horária
+  POST   /grid-settings/                     — cria/atualiza configuração da grelha horária
+  POST   /grid-settings/regenerate           — guarda e regenera a grelha atomicamente
+  GET    /calendar-events/                   — lista eventos do calendário
+  POST   /calendar-events/                   — cria evento manual
+  DELETE /calendar-events/{event_id}         — elimina evento
 """
 
 from datetime import date
@@ -54,7 +53,7 @@ async def _settings_read(
 
 @router.get(
     "/settings/",
-    summary="Obter configuraÃ§Ãµes da escola",
+    summary="Obter configurações da escola",
 )
 async def get_org_settings(
     db: deps.DbSession,
@@ -70,7 +69,7 @@ async def get_org_settings(
 
 @router.post(
     "/settings/",
-    summary="Criar ou atualizar configuraÃ§Ã£o da escola",
+    summary="Criar ou atualizar configuração da escola",
 )
 async def upsert_org_settings(
     payload: schemas.OrganizationSettingsUpsert,
@@ -113,7 +112,7 @@ async def soft_reset_year_endpoint(
         raise AppError(
             kind="bad_request",
             code="soft_reset_confirmation_required",
-            detail="A frase de confirmaÃ§Ã£o deve ser exatamente 'Confirmo'.",
+            detail="A frase de confirmação deve ser exatamente 'Confirmo'.",
         )
 
     try:
@@ -150,7 +149,7 @@ async def soft_reset_year_endpoint(
 
 @router.get(
     "/grid-settings/",
-    summary="Obter configuraÃ§Ãµes da grelha horÃ¡ria",
+    summary="Obter configurações da grelha horária",
 )
 async def get_grid_settings(
     db: deps.DbSession,
@@ -161,14 +160,14 @@ async def get_grid_settings(
         raise AppError(
             kind="not_found",
             code="grid_settings_not_found",
-            detail="ConfiguraÃ§Ãµes da grelha nÃ£o encontradas",
+            detail="Configurações da grelha não encontradas",
         )
     return settings
 
 
 @router.post(
     "/grid-settings/",
-    summary="Criar ou atualizar configuraÃ§Ã£o da grelha horÃ¡ria",
+    summary="Criar ou atualizar configuração da grelha horária",
 )
 async def upsert_grid_settings(
     payload: schemas.OrganizationGridSettingsUpsert,
@@ -189,7 +188,7 @@ async def upsert_grid_settings(
 @router.post(
     "/grid-settings/regenerate",
     response_model=schemas.GridConfigurationResponse,
-    summary="Guardar configuraÃ§Ã£o e regenerar grelha atomicamente",
+    summary="Guardar configuração e regenerar grelha atomicamente",
 )
 async def regenerate_grid_settings(
     payload: schemas.GridConfigurationCommand,
@@ -210,7 +209,7 @@ async def regenerate_grid_settings(
 @router.get(
     "/grid-configuration/",
     response_model=schemas.GridConfigurationRead,
-    summary="Obter a configuraÃ§Ã£o da grelha visÃ­vel (versÃ£o ativa)",
+    summary="Obter a configuração da grelha visível (versão ativa)",
 )
 async def get_grid_configuration(
     db: deps.DbSession,
@@ -224,7 +223,7 @@ async def get_grid_configuration(
 @router.post(
     "/grid-changes/preview",
     response_model=schemas.GridChangePreviewResponse,
-    summary="Analisar uma alteraÃ§Ã£o da grelha sem escrever dados",
+    summary="Analisar uma alteração da grelha sem escrever dados",
 )
 async def preview_grid_change(
     payload: schemas.GridChangePreviewRequest,
@@ -242,7 +241,7 @@ async def preview_grid_change(
 @router.post(
     "/grid-changes",
     response_model=schemas.GridChangeProposalResponse,
-    summary="Propor uma alteraÃ§Ã£o da grelha e iniciar a geraÃ§Ã£o",
+    summary="Propor uma alteração da grelha e iniciar a geração",
 )
 async def create_grid_change(
     payload: schemas.GridChangeProposeRequest,
@@ -310,36 +309,6 @@ async def get_pending_grid_change(
     return await grid_change_service.pending_grid_change(db, current_user.organization_id)
 
 
-@router.post(
-    "/settings/sync-holidays",
-    summary="Importar feriados nacionais automaticamente",
-)
-async def sync_holidays(
-    db: deps.DbSession,
-    current_user: deps.AdminActor,
-) -> schemas.HolidaysSyncResponse:
-    """Importa feriados via package `holidays` (Portugal).
-    Elimina todos os eventos AUTO anteriores e recria-os (idempotente).
-    """
-    try:
-        count = await settings_service.sync_holidays(
-            db,
-            organization_id=current_user.organization_id,
-            changed_by_membership_id=current_user.membership_id,
-        )
-    except settings_service.HolidaySyncError as exc:
-        raise AppError(
-            kind="unavailable",
-            code=exc.code,
-            detail=str(exc),
-            public_retryable=True,
-        ) from exc
-    return schemas.HolidaysSyncResponse(
-        imported_count=count,
-        message=f"{count} feriados importados com sucesso.",
-    )
-
-
 # ==========================================
 #  SCHOOL CALENDAR EVENTS
 # ==========================================
@@ -347,7 +316,7 @@ async def sync_holidays(
 
 @router.get(
     "/calendar-events/",
-    summary="Listar eventos do calendÃ¡rio escolar",
+    summary="Listar eventos do calendário escolar",
 )
 async def list_calendar_events(
     db: deps.DbSession,
@@ -355,7 +324,7 @@ async def list_calendar_events(
     from_date: Annotated[
         date | None, Query(description="Filtrar eventos a partir desta data")
     ] = None,
-    to_date: Annotated[date | None, Query(description="Filtrar eventos atÃ© a esta data")] = None,
+    to_date: Annotated[date | None, Query(description="Filtrar eventos até a esta data")] = None,
 ) -> list[schemas.SchoolCalendarEventRead]:
     return await settings_service.list_calendar_events(
         db, current_user.organization_id, from_date, to_date
@@ -447,8 +416,8 @@ async def update_calendar_event(
 
 @router.delete(
     "/calendar-events/{event_id}",
-    responses={404: {"description": "Evento nÃ£o encontrado"}},
-    summary="Eliminar evento do calendÃ¡rio",
+    responses={404: {"description": "Evento não encontrado"}},
+    summary="Eliminar evento do calendário",
 )
 async def delete_calendar_event(
     event_id: int,
@@ -463,6 +432,6 @@ async def delete_calendar_event(
     )
     if not success:
         raise AppError(
-            kind="not_found", code="calendar_event_not_found", detail="Evento nÃ£o encontrado"
+            kind="not_found", code="calendar_event_not_found", detail="Evento não encontrado"
         )
     return {"ok": True}

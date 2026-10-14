@@ -5,13 +5,6 @@ import { fileURLToPath } from 'node:url'
 
 export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 export const BASELINE_PATH = join(ROOT, 'documentation', '08_security_quality', 'loc-baseline.json')
-export const PHASE_TWO_EVIDENCE_PATH = join(
-  ROOT,
-  'documentation',
-  '08_security_quality',
-  'loc-phase-2-evidence',
-  'loc-after.json',
-)
 
 const CATEGORIES = ['backendProduction', 'frontendProduction', 'backendTests', 'frontendTests', 'e2eTests']
 const SOURCE_EXTENSIONS = new Set(['.css', '.js', '.jsx', '.py', '.ts', '.tsx'])
@@ -114,17 +107,12 @@ export function printReport(result, hasBaseline) {
 
 function main() {
   const writeBaseline = process.argv.includes('--write-baseline')
-  const writeEvidence = process.argv.includes('--write-evidence')
   const baseline = existsSync(BASELINE_PATH) ? JSON.parse(readFileSync(BASELINE_PATH, 'utf8')) : null
   const result = report({ baseline })
   printReport(result, Boolean(baseline))
   if (writeBaseline) {
     writeFileSync(BASELINE_PATH, `${JSON.stringify({ revision: result.revision, counts: result.counts }, null, 2)}\n`)
     console.log(`baseline: ${relative(ROOT, BASELINE_PATH)}`)
-  }
-  if (writeEvidence) {
-    writeFileSync(PHASE_TWO_EVIDENCE_PATH, `${JSON.stringify(result, null, 2)}\n`)
-    console.log(`evidence: ${relative(ROOT, PHASE_TWO_EVIDENCE_PATH)}`)
   }
 }
 

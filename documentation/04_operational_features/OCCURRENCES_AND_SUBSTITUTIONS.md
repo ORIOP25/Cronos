@@ -14,7 +14,7 @@ Read [Lesson Execution](LESSON_EXECUTION.md) and [Scheduler Engine](../03_schedu
 
 ## What the System Does
 
-Cronos creates an occurrence from an active schedule block when a lesson needs an operational decision.
+Cronos records an occurrence on a published v1 lesson log when a lesson needs an operational decision.
 An administrator records the decision `GIVEN`, `GAP`, or `SUBSTITUTED`.
 A substitution creates a planned substitute lesson. Execution starts only when the substitute lesson is concluded.
 
@@ -29,11 +29,14 @@ Planning a substitution must not anticipate curricular execution.
 | Responsibility | Implementation |
 | :--- | :--- |
 | API | `backend/app/api/v1/endpoints/occurrences.py` |
-| Legacy domain service | `backend/app/services/occurrence_service.py` |
 | Scheduler v1 consumer | `backend/app/scheduler/infrastructure/occurrences.py` |
 | Substitute execution | `backend/app/scheduler/infrastructure/operations.py` |
-| Models | `SchedulerLessonLogV1`, `OperationalScheduleBlock`, `LessonOccurrence` |
+| Models | `SchedulerLessonLogV1`, `OperationalScheduleBlock`, and the v1 curricular ledger |
 | UI | `frontend/src/pages/Occurrences.jsx` |
+
+Routes under `/api/v1/occurrences`: `GET /` (list), `GET /debts`, `GET /{id}`, `PATCH /{id}` (decision), and `POST /{id}/cancel`.
+Substitute routes are `GET /{id}/substitutes/recommendations` and `GET /{id}/substitutes/diagnostics`.
+Create a v1 occurrence through the scheduled lesson workflow. There is no standalone create or general substitute listing route.
 
 ## Data or Request Flow
 
@@ -70,6 +73,8 @@ Planning a substitution must not anticipate curricular execution.
 - Debt claims follow source lessons across published versions. Each claim contributes only its remaining balance to debt totals.
 - Repeating cancellation can reconcile residual historical debt in an open week. It preserves revocation metadata and adds only needed debt revisions.
 - Valid completed lessons without an occurrence decision stay outside occurrence history.
+- An internship flow withdraws its lessons and records a `GAP` decision for each. Withdrawn-lesson absences stay listed after a new schedule version.
+- A withdrawn lesson accepts only a `GAP` decision; any other decision returns `409`.
 - The diagnostics endpoint explains each excluded candidate with a structured reason and a setup path.
 
 ## States and Transitions
@@ -112,12 +117,11 @@ snapshot must not count them twice.
 ## Source Map
 
 - `backend/app/api/v1/endpoints/occurrences.py`
-- `backend/app/services/occurrence_service.py`
 - `backend/app/scheduler/infrastructure/occurrences.py`
 - `backend/app/scheduler/infrastructure/operations.py`
 - `backend/app/models.py`
 - `frontend/src/pages/Occurrences.jsx`
-- Tests: `backend/tests/unit/test_occurrence_transition_plan.py`, `backend/tests/integration/committed/test_occurrence_accounting.py`, `backend/tests/integration/committed/test_scheduler_v1_occurrences.py`
+- Tests: `backend/tests/integration/committed/test_scheduler_v1_occurrences.py`, `backend/tests/integration/committed/test_scheduler_v1_operations.py`
 
 ## Related Documents
 

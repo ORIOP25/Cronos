@@ -15,6 +15,7 @@ cabeçalhos CORS, o que o navegador apresentava como falha de rede.
 """
 
 from datetime import date, time
+from types import SimpleNamespace
 
 import pytest
 from httpx import AsyncClient
@@ -23,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models
 from app.config import settings
+from app.scheduler.infrastructure.models import CurricularAssignment
 from app.services import class_service, room_service, subject_service
 from tests._support.db_fixtures import create_teacher_profile
 from tests._support.scheduler_v1 import (
@@ -101,74 +103,35 @@ async def _seed_scheduler(db_session: AsyncSession) -> dict:
     }
 
 
-async def _publish_block(
-    db_session: AsyncSession,
-    ctx: dict,
-    *,
-    key: str,
-    status: models.ActiveScheduleBlockStatus = models.ActiveScheduleBlockStatus.ACTIVE,
-) -> models.ActiveScheduleBlock:
-    org_id = ctx["org_id"]
-    job = models.ScheduleGenerationJob(
-        organization_id=org_id,
+async def _publish_block(db_session, ctx, *, key, status="ACTIVE"):
+    assignment = CurricularAssignment(
+        organization_id=ctx["org_id"],
         school_year_id=ctx["school_year"].id,
-        strategy=models.ScheduleGenerationStrategy.COMPLETE_GENERATION,
-        trigger_type=models.ScheduleGenerationTrigger.FIRST_GENERATION,
-        idempotency_key=f"job-{key}",
-    )
-    db_session.add(job)
-    await db_session.flush()
-    draft = models.ScheduleDraft(
-        organization_id=org_id,
-        school_year_id=ctx["school_year"].id,
-        generation_job_id=job.id,
-        strategy=models.ScheduleGenerationStrategy.COMPLETE_GENERATION,
-        draft_state=models.ScheduleDraftState.PENDING,
-        result_category=models.ScheduleGenerationResultCategory.COMPLETE_SUCCESS,
-        trigger_type=models.ScheduleGenerationTrigger.FIRST_GENERATION,
-        generation_input_fingerprint="0" * 64,
-        projected_completion_date=date(2026, 7, 31),
-        hard_end_date=date(2026, 7, 31),
-        summary_json={},
-        created_by_membership_id=ctx["teacher"].organization_membership_id,
-    )
-    db_session.add(draft)
-    await db_session.flush()
-    draft_block = models.ScheduleDraftBlock(
-        organization_id=org_id,
-        school_year_id=ctx["school_year"].id,
-        draft_id=draft.id,
-        stable_block_key=key,
         class_id=ctx["class"].id,
         subject_id=ctx["subject"].id,
         teacher_id=ctx["teacher"].id,
-        room_id=ctx["room"].id,
-        date=date(2025, 10, 6),
-        timeslot_id=ctx["slot"].id,
-        duration_minutes=60,
-        change_type=models.ScheduleDraftBlockChangeType.ADDED,
     )
-    db_session.add(draft_block)
+    db_session.add(assignment)
     await db_session.flush()
-    active = models.ActiveScheduleBlock(
-        organization_id=org_id,
-        school_year_id=ctx["school_year"].id,
-        schedule_version_id="v1",
-        stable_block_key=key,
-        class_id=ctx["class"].id,
-        subject_id=ctx["subject"].id,
-        teacher_id=ctx["teacher"].id,
-        room_id=ctx["room"].id,
-        date=date(2025, 10, 6),
-        timeslot_id=ctx["slot"].id,
-        duration_minutes=60,
-        source_draft_block_id=draft_block.id,
-        status=status,
+    seed = SimpleNamespace(
+        organization=SimpleNamespace(id=ctx["org_id"]),
+        year=ctx["school_year"],
+        assignment=assignment,
+        room=ctx["room"],
     )
-    db_session.add(active)
-    await db_session.flush()
+    version = await add_version(db_session, seed, status=status)
+    start, end = lesson_interval(date(2025, 10, 6), 9)
+    lesson = await add_lesson(
+        db_session,
+        seed,
+        version,
+        stable_key=key,
+        school_date=start.date(),
+        start=start,
+        end=end,
+    )
     await db_session.commit()
-    return active
+    return lesson
 
 
 async def _add_progress_history(db_session: AsyncSession, ctx: dict) -> None:
@@ -238,9 +201,7 @@ class TestRoomRemoval:
         self, async_client: AsyncClient, db_session: AsyncSession, clerk_admin_headers: dict
     ):
         ctx = await _seed_scheduler(db_session)
-        await _publish_block(
-            db_session, ctx, key="room-removed", status=models.ActiveScheduleBlockStatus.REMOVED
-        )
+        await _publish_block(db_session, ctx, key="room-removed", status="SUPERSEDED")
 
         response = await async_client.delete(
             f"{API}/rooms/{ctx['room'].id}", headers=clerk_admin_headers
@@ -475,7 +436,7 @@ class TestSchedulerV1References:
 
     async def test_room_with_scheduler_lesson_is_archived(self, db_session: AsyncSession):
         seed = await seed_v1_assignment(db_session)
-        version = await add_version(db_session, seed)
+        version = await add_version(db_session, seed, status="SUPERSEDED")
         start, end = lesson_interval(date(2026, 9, 22), 9)
         await add_lesson(
             db_session,

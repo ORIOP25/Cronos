@@ -16,6 +16,9 @@ Os modelos estão disponíveis em `/api/v1/imports/templates/{resource}`.
 Cada modelo usa ponto e vírgula, CRLF, BOM e uma linha de exemplo.
 Substitua ou apague a linha de exemplo antes de importar.
 
+Um conjunto completo de exemplo, com 48 turmas e 16 cursos, está em [`sample_import_48_classes/`](sample_import_48_classes/).
+Use-o para testar a importação num ambiente descartável.
+
 | Secção | Ficheiro | Cabeçalhos exatos |
 | --- | --- | --- |
 | Salas | `Cronos_Salas_Template.csv` | `Nome da sala;Tipo de sala;Capacidade` |

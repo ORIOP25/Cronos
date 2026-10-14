@@ -64,18 +64,18 @@ jobs:
     timeout-minutes: 45
     services:
       postgres:
-        image: postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
+        image: postgres:18-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
         env:
           POSTGRES_USER: postgres
           POSTGRES_HOST_AUTH_METHOD: trust
           POSTGRES_DB: cronos_test_db
         ports: ["5432:5432"]
         options: >-
-          --tmpfs /var/lib/postgresql/data:size=1073741824
+          --tmpfs /var/lib/postgresql:size=1073741824
           --health-cmd "pg_isready -U postgres -d cronos_test_db"
           --health-interval 5s --health-timeout 5s --health-retries 10
       redis:
-        image: redis:7-alpine@sha256:ff02b58f971e7d7d156a1267e283fcbbeee91773b6aa36c49dac28ecfe28eadf
+        image: redis:8.2-alpine@sha256:b51665e66f00759be7c3152ad5ac3c66fb2f619c13ef62dea7cc1f9914524635
         ports: ["6379:6379"]
         options: >-
           --health-cmd "redis-cli ping"
@@ -100,21 +100,18 @@ jobs:
           CI_APP_PASSWORD="$(openssl rand -hex 24)" # NOSONAR - ephemeral credential generated at execution time, never stored
           echo "::add-mask::${CI_MIGRATOR_PASSWORD}"
           echo "::add-mask::${CI_APP_PASSWORD}"
-          echo "CI_MIGRATOR_PASSWORD=${CI_MIGRATOR_PASSWORD}" >> "$GITHUB_ENV"
-          echo "CI_APP_PASSWORD=${CI_APP_PASSWORD}" >> "$GITHUB_ENV"
+          echo "CRONOS_MIGRATOR_PASSWORD=${CI_MIGRATOR_PASSWORD}" >> "$GITHUB_ENV"
+          echo "CRONOS_APP_PASSWORD=${CI_APP_PASSWORD}" >> "$GITHUB_ENV"
           echo "TEST_DATABASE_URL=postgresql+asyncpg://cronos_app:${CI_APP_PASSWORD}@localhost:5432/cronos_test_db" >> "$GITHUB_ENV"
           echo "DATABASE_URL=postgresql+asyncpg://cronos_app:${CI_APP_PASSWORD}@localhost:5432/cronos_test_db" >> "$GITHUB_ENV"
           echo "MIGRATION_DATABASE_URL=postgresql+psycopg2://cronos_migrator:${CI_MIGRATOR_PASSWORD}@localhost:5432/cronos_test_db" >> "$GITHUB_ENV"
       - name: Provision database roles
+        env:
+          PGHOST: localhost
+          POSTGRES_USER: postgres
+          POSTGRES_DB: cronos_test_db
         run: |
-          psql postgresql://postgres@localhost/cronos_test_db <<SQL
-          CREATE ROLE cronos_migrator LOGIN NOSUPERUSER BYPASSRLS PASSWORD '${CI_MIGRATOR_PASSWORD}';
-          CREATE ROLE cronos_app LOGIN NOSUPERUSER NOBYPASSRLS PASSWORD '${CI_APP_PASSWORD}';
-          CREATE ROLE cronos_auth_definer NOLOGIN NOSUPERUSER BYPASSRLS;
-          GRANT cronos_auth_definer TO cronos_migrator;
-          ALTER DATABASE cronos_test_db OWNER TO cronos_migrator;
-          GRANT CONNECT ON DATABASE cronos_test_db TO cronos_app;
-          SQL
+          sh backend/scripts/provision_database.sh
           for worker_db in cronos_test_gw0 cronos_test_gw1 cronos_test_gw2 cronos_test_gw3; do
             psql postgresql://postgres@localhost/postgres \
               --set=ON_ERROR_STOP=1 --set=db_name="$worker_db" <<'SQL'
@@ -241,13 +238,17 @@ jobs:
     timeout-minutes: 30
     concurrency: cronos-e2e
     env:
-      CI_E2E_CLERK_ADMIN_EMAIL: "cronos-ci-admin+clerk_test@example.com"
-      CI_E2E_CLERK_TEACHER_EMAIL: "cronos-ci-teacher+clerk_test@example.com"
-      CI_E2E_CLERK_AUTO_PROVISION: "true"
+      COMPOSE_PROJECT_NAME: cronos-ci-${{ github.run_id }}-${{ github.run_attempt }}
+      POSTGRES_DB: cronos_ci_db
+      VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
+      CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+      E2E_CLERK_ADMIN_EMAIL: "cronos-ci-admin+clerk_test@example.com"
+      E2E_CLERK_TEACHER_EMAIL: "cronos-ci-teacher+clerk_test@example.com"
+      E2E_CLERK_AUTO_PROVISION: "true"
       # Reuse the single dedicated E2E organization. Founder onboarding still
       # creates a fresh organization in the real Clerk flow; CI preparation
       # only mirrors the shared admin/teacher fixture into the local database.
-      CI_E2E_CLERK_CREATE_ORGANIZATION: "false"
+      E2E_CLERK_CREATE_ORGANIZATION: "false"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -292,17 +293,11 @@ jobs:
             *+clerk_test@example.com:*+clerk_test@example.com) ;;
             *) echo "ERROR: Invitation identities must use Clerk reserved test emails."; exit 1 ;;
           esac
-        env:
-          VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
-          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
-          E2E_CLERK_ADMIN_EMAIL: ${{ env.CI_E2E_CLERK_ADMIN_EMAIL }}
-          E2E_CLERK_TEACHER_EMAIL: ${{ env.CI_E2E_CLERK_TEACHER_EMAIL }}
-          E2E_CLERK_AUTO_PROVISION: ${{ env.CI_E2E_CLERK_AUTO_PROVISION }}
 
       - name: Generate ephemeral CI database credentials
         shell: bash
         run: |
-          for credential_name in POSTGRES_PASSWORD CI_MIGRATOR_PASSWORD CI_APP_PASSWORD; do
+          for credential_name in POSTGRES_PASSWORD CRONOS_MIGRATOR_PASSWORD CRONOS_APP_PASSWORD; do
             credential_value="$(openssl rand -hex 24)"
             echo "::add-mask::${credential_value}"
             echo "${credential_name}=${credential_value}" >> "$GITHUB_ENV"
@@ -312,16 +307,6 @@ jobs:
         # Compose builds both services in parallel, so the frontend image no
         # longer waits for the backend image before `up` starts.
         run: docker compose -f docker-compose.ci.yml build backend frontend
-        env:
-          COMPOSE_PROJECT_NAME: cronos-ci-${{ github.run_id }}-${{ github.run_attempt }}
-          CRONOS_MIGRATOR_PASSWORD: ${{ env.CI_MIGRATOR_PASSWORD }}
-          CRONOS_APP_PASSWORD: ${{ env.CI_APP_PASSWORD }}
-          VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
-          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
-          E2E_CLERK_ADMIN_EMAIL: ${{ env.CI_E2E_CLERK_ADMIN_EMAIL }}
-          E2E_CLERK_TEACHER_EMAIL: ${{ env.CI_E2E_CLERK_TEACHER_EMAIL }}
-          E2E_CLERK_INVITE_CREATE_EMAIL: ${{ env.E2E_CLERK_INVITE_CREATE_EMAIL }}
-          E2E_CLERK_INVITE_CONVERT_EMAIL: ${{ env.E2E_CLERK_INVITE_CONVERT_EMAIL }}
 
       - name: Verify privacy maintenance task and administrative cleanup in production image
         run: |
@@ -333,63 +318,15 @@ jobs:
 
       - name: Start CI infrastructure
         run: docker compose -f docker-compose.ci.yml up -d --wait db redis
-        env:
-          COMPOSE_PROJECT_NAME: cronos-ci-${{ github.run_id }}-${{ github.run_attempt }}
-          POSTGRES_DB: cronos_ci_db
-          POSTGRES_PASSWORD: ${{ env.POSTGRES_PASSWORD }}
-          CRONOS_MIGRATOR_PASSWORD: ${{ env.CI_MIGRATOR_PASSWORD }}
-          CRONOS_APP_PASSWORD: ${{ env.CI_APP_PASSWORD }}
-          VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
-          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
-          E2E_CLERK_ADMIN_EMAIL: ${{ env.CI_E2E_CLERK_ADMIN_EMAIL }}
-          E2E_CLERK_TEACHER_EMAIL: ${{ env.CI_E2E_CLERK_TEACHER_EMAIL }}
-          E2E_CLERK_INVITE_CREATE_EMAIL: ${{ env.E2E_CLERK_INVITE_CREATE_EMAIL }}
-          E2E_CLERK_INVITE_CONVERT_EMAIL: ${{ env.E2E_CLERK_INVITE_CONVERT_EMAIL }}
 
       - name: Provision CI database roles
         run: docker compose -f docker-compose.ci.yml --profile maintenance run --rm provision-db
-        env:
-          COMPOSE_PROJECT_NAME: cronos-ci-${{ github.run_id }}-${{ github.run_attempt }}
-          POSTGRES_DB: cronos_ci_db
-          POSTGRES_PASSWORD: ${{ env.POSTGRES_PASSWORD }}
-          CRONOS_MIGRATOR_PASSWORD: ${{ env.CI_MIGRATOR_PASSWORD }}
-          CRONOS_APP_PASSWORD: ${{ env.CI_APP_PASSWORD }}
-          VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
-          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
-          E2E_CLERK_ADMIN_EMAIL: ${{ env.CI_E2E_CLERK_ADMIN_EMAIL }}
-          E2E_CLERK_TEACHER_EMAIL: ${{ env.CI_E2E_CLERK_TEACHER_EMAIL }}
-          E2E_CLERK_INVITE_CREATE_EMAIL: ${{ env.E2E_CLERK_INVITE_CREATE_EMAIL }}
-          E2E_CLERK_INVITE_CONVERT_EMAIL: ${{ env.E2E_CLERK_INVITE_CONVERT_EMAIL }}
 
       - name: Apply CI database migrations
         run: docker compose -f docker-compose.ci.yml --profile maintenance run --rm db-maintenance
-        env:
-          COMPOSE_PROJECT_NAME: cronos-ci-${{ github.run_id }}-${{ github.run_attempt }}
-          POSTGRES_DB: cronos_ci_db
-          POSTGRES_PASSWORD: ${{ env.POSTGRES_PASSWORD }}
-          CRONOS_MIGRATOR_PASSWORD: ${{ env.CI_MIGRATOR_PASSWORD }}
-          CRONOS_APP_PASSWORD: ${{ env.CI_APP_PASSWORD }}
-          VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
-          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
-          E2E_CLERK_ADMIN_EMAIL: ${{ env.CI_E2E_CLERK_ADMIN_EMAIL }}
-          E2E_CLERK_TEACHER_EMAIL: ${{ env.CI_E2E_CLERK_TEACHER_EMAIL }}
-          E2E_CLERK_INVITE_CREATE_EMAIL: ${{ env.E2E_CLERK_INVITE_CREATE_EMAIL }}
-          E2E_CLERK_INVITE_CONVERT_EMAIL: ${{ env.E2E_CLERK_INVITE_CONVERT_EMAIL }}
 
       - name: Start full application stack
         run: docker compose -f docker-compose.ci.yml up -d --wait backend worker beat frontend
-        env:
-          COMPOSE_PROJECT_NAME: cronos-ci-${{ github.run_id }}-${{ github.run_attempt }}
-          POSTGRES_DB: cronos_ci_db
-          CRONOS_MIGRATOR_PASSWORD: ${{ env.CI_MIGRATOR_PASSWORD }}
-          CRONOS_APP_PASSWORD: ${{ env.CI_APP_PASSWORD }}
-          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
-          CLERK_WEBHOOK_SECRET: ${{ secrets.CLERK_WEBHOOK_SECRET }}
-          VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
-          E2E_CLERK_ADMIN_EMAIL: ${{ env.CI_E2E_CLERK_ADMIN_EMAIL }}
-          E2E_CLERK_TEACHER_EMAIL: ${{ env.CI_E2E_CLERK_TEACHER_EMAIL }}
-          E2E_CLERK_INVITE_CREATE_EMAIL: ${{ env.E2E_CLERK_INVITE_CREATE_EMAIL }}
-          E2E_CLERK_INVITE_CONVERT_EMAIL: ${{ env.E2E_CLERK_INVITE_CONVERT_EMAIL }}
 
       - name: Prepare E2E Clerk local state
         id: prepare-e2e-clerk-state
@@ -410,22 +347,13 @@ jobs:
           fi
           echo "clerk_org_id=$clerk_org_id" >> "$GITHUB_OUTPUT"
         env:
-          COMPOSE_PROJECT_NAME: cronos-ci-${{ github.run_id }}-${{ github.run_attempt }}
-          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
-          DATABASE_URL: postgresql+asyncpg://cronos_migrator:${{ env.CI_MIGRATOR_PASSWORD }}@db:5432/cronos_ci_db
-          E2E_CLERK_ADMIN_EMAIL: ${{ env.CI_E2E_CLERK_ADMIN_EMAIL }}
-          E2E_CLERK_TEACHER_EMAIL: ${{ env.CI_E2E_CLERK_TEACHER_EMAIL }}
-          E2E_CLERK_AUTO_PROVISION: ${{ env.CI_E2E_CLERK_AUTO_PROVISION }}
-          E2E_CLERK_CREATE_ORGANIZATION: ${{ env.CI_E2E_CLERK_CREATE_ORGANIZATION }}
+          DATABASE_URL: postgresql+asyncpg://cronos_migrator:${{ env.CRONOS_MIGRATOR_PASSWORD }}@db:5432/cronos_ci_db
 
       - name: Run E2E Tests
         id: e2e_tests
         run: node scripts/test.mjs e2e
         env:
           CI: "true"
-          COMPOSE_PROJECT_NAME: cronos-ci-${{ github.run_id }}-${{ github.run_attempt }}
-          CRONOS_MIGRATOR_PASSWORD: ${{ env.CI_MIGRATOR_PASSWORD }}
-          CRONOS_APP_PASSWORD: ${{ env.CI_APP_PASSWORD }}
           E2E_EXTERNAL_STACK: "1"
           BASE_URL: http://localhost:5173
           PLAYWRIGHT_SKIP_WEB_SERVER: "1"
@@ -433,13 +361,7 @@ jobs:
           # `isolated`, `readonly` stay at one worker and `auth` is bounded to
           # two in the Playwright config. The runner is authoritative.
           PLAYWRIGHT_WORKERS: "2"
-          VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
-          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
-          E2E_CLERK_ADMIN_EMAIL: ${{ env.CI_E2E_CLERK_ADMIN_EMAIL }}
-          E2E_CLERK_TEACHER_EMAIL: ${{ env.CI_E2E_CLERK_TEACHER_EMAIL }}
           E2E_CLERK_ORG_ID: ${{ steps.prepare-e2e-clerk-state.outputs.clerk_org_id }}
-          E2E_CLERK_INVITE_CREATE_EMAIL: ${{ env.E2E_CLERK_INVITE_CREATE_EMAIL }}
-          E2E_CLERK_INVITE_CONVERT_EMAIL: ${{ env.E2E_CLERK_INVITE_CONVERT_EMAIL }}
 
       - name: Run capacity smoke
         run: node scripts/test.mjs capacity-smoke
@@ -449,10 +371,6 @@ jobs:
           BASE_URL: http://localhost:5173
           PLAYWRIGHT_SKIP_WEB_SERVER: "1"
           PLAYWRIGHT_WORKERS: "2"
-          VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
-          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
-          E2E_CLERK_ADMIN_EMAIL: ${{ env.CI_E2E_CLERK_ADMIN_EMAIL }}
-          E2E_CLERK_TEACHER_EMAIL: ${{ env.CI_E2E_CLERK_TEACHER_EMAIL }}
           E2E_CLERK_ORG_ID: ${{ steps.prepare-e2e-clerk-state.outputs.clerk_org_id }}
           CAPACITY_HEALTH_URL: http://localhost:8000/health/ready
           CAPACITY_REPORT_PATH: playwright-report/capacity-report.json
@@ -501,8 +419,6 @@ jobs:
       - name: Dump compose logs
         if: failure()
         run: docker compose -f docker-compose.ci.yml logs --no-color
-        env:
-          COMPOSE_PROJECT_NAME: cronos-ci-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Revoke E2E Clerk invitations
         if: ${{ always() && steps.prepare-e2e-clerk-state.outcome == 'success' }}
         run: |
@@ -517,18 +433,11 @@ jobs:
               backend python scripts/cleanup_e2e_clerk_invitations.py
           fi
         env:
-          COMPOSE_PROJECT_NAME: cronos-ci-${{ github.run_id }}-${{ github.run_attempt }}
-          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
-          DATABASE_URL: postgresql+asyncpg://cronos_migrator:${{ env.CI_MIGRATOR_PASSWORD }}@db:5432/cronos_ci_db
-          E2E_CLERK_ADMIN_EMAIL: ${{ env.CI_E2E_CLERK_ADMIN_EMAIL }}
-          E2E_CLERK_INVITE_CREATE_EMAIL: ${{ env.E2E_CLERK_INVITE_CREATE_EMAIL }}
-          E2E_CLERK_INVITE_CONVERT_EMAIL: ${{ env.E2E_CLERK_INVITE_CONVERT_EMAIL }}
+          DATABASE_URL: postgresql+asyncpg://cronos_migrator:${{ env.CRONOS_MIGRATOR_PASSWORD }}@db:5432/cronos_ci_db
 
       - name: Stop full application stack
         if: always()
         run: docker compose -f docker-compose.ci.yml down -v --remove-orphans
-        env:
-          COMPOSE_PROJECT_NAME: cronos-ci-${{ github.run_id }}-${{ github.run_attempt }}
 
   # Native cross-layer runtime proof. It needs no Clerk or provider credential,
   # so it is mandatory on every pull request, including Dependabot and forks.
@@ -541,18 +450,18 @@ jobs:
     timeout-minutes: 25
     services:
       postgres:
-        image: postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
+        image: postgres:18-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
         env:
           POSTGRES_USER: postgres
           POSTGRES_HOST_AUTH_METHOD: trust
           POSTGRES_DB: cronos_test_db
         ports: ["5432:5432"]
         options: >-
-          --tmpfs /var/lib/postgresql/data:size=1073741824
+          --tmpfs /var/lib/postgresql:size=1073741824
           --health-cmd "pg_isready -U postgres -d cronos_test_db"
           --health-interval 5s --health-timeout 5s --health-retries 10
       redis:
-        image: redis:7-alpine@sha256:ff02b58f971e7d7d156a1267e283fcbbeee91773b6aa36c49dac28ecfe28eadf
+        image: redis:8.2-alpine@sha256:b51665e66f00759be7c3152ad5ac3c66fb2f619c13ef62dea7cc1f9914524635
         ports: ["6379:6379"]
         options: >-
           --health-cmd "redis-cli ping"
@@ -580,21 +489,18 @@ jobs:
           CI_APP_PASSWORD="$(openssl rand -hex 24)"
           echo "::add-mask::${CI_MIGRATOR_PASSWORD}"
           echo "::add-mask::${CI_APP_PASSWORD}"
-          echo "CI_MIGRATOR_PASSWORD=${CI_MIGRATOR_PASSWORD}" >> "$GITHUB_ENV"
-          echo "CI_APP_PASSWORD=${CI_APP_PASSWORD}" >> "$GITHUB_ENV"
+          echo "CRONOS_MIGRATOR_PASSWORD=${CI_MIGRATOR_PASSWORD}" >> "$GITHUB_ENV"
+          echo "CRONOS_APP_PASSWORD=${CI_APP_PASSWORD}" >> "$GITHUB_ENV"
           echo "TEST_DATABASE_URL=postgresql+asyncpg://cronos_app:${CI_APP_PASSWORD}@localhost:5432/cronos_test_db" >> "$GITHUB_ENV"
           echo "DATABASE_URL=postgresql+asyncpg://cronos_app:${CI_APP_PASSWORD}@localhost:5432/cronos_test_db" >> "$GITHUB_ENV"
           echo "MIGRATION_DATABASE_URL=postgresql+psycopg2://cronos_migrator:${CI_MIGRATOR_PASSWORD}@localhost:5432/cronos_test_db" >> "$GITHUB_ENV"
       - name: Provision runtime database roles
+        env:
+          PGHOST: localhost
+          POSTGRES_USER: postgres
+          POSTGRES_DB: cronos_test_db
         run: |
-          psql postgresql://postgres@localhost/cronos_test_db <<SQL
-          CREATE ROLE cronos_migrator LOGIN NOSUPERUSER BYPASSRLS PASSWORD '${CI_MIGRATOR_PASSWORD}';
-          CREATE ROLE cronos_app LOGIN NOSUPERUSER NOBYPASSRLS PASSWORD '${CI_APP_PASSWORD}';
-          CREATE ROLE cronos_auth_definer NOLOGIN NOSUPERUSER BYPASSRLS;
-          GRANT cronos_auth_definer TO cronos_migrator;
-          ALTER DATABASE cronos_test_db OWNER TO cronos_migrator;
-          GRANT CONNECT ON DATABASE cronos_test_db TO cronos_app;
-          SQL
+          sh backend/scripts/provision_database.sh
       - name: Install locked dependencies
         working-directory: backend
         run: >-

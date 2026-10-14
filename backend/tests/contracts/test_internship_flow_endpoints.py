@@ -8,7 +8,14 @@ from sqlalchemy import select
 from app import models
 from app.api import deps
 from app.main import app
+from app.scheduler.infrastructure.models import (
+    CurricularAssignment,
+    CurricularRequirement,
+    SchedulerLessonLogV1,
+    SchedulerLessonSliceV1,
+)
 from tests._support.db_fixtures import accept_current_legal_documents
+from tests._support.scheduler_v1 import add_lesson, add_version, lesson_interval
 
 pytestmark = pytest.mark.postgresql
 
@@ -157,30 +164,6 @@ async def _prepare_context(db_session):
             subject_id=subject.id,
         )
     )
-    job = models.ScheduleGenerationJob(
-        organization_id=org.id,
-        school_year_id=school_year.id,
-        strategy=models.ScheduleGenerationStrategy.COMPLETE_GENERATION,
-        trigger_type=models.ScheduleGenerationTrigger.FIRST_GENERATION,
-        idempotency_key="flow-api-job",
-    )
-    db_session.add(job)
-    await db_session.flush()
-    draft = models.ScheduleDraft(
-        organization_id=org.id,
-        school_year_id=school_year.id,
-        generation_job_id=job.id,
-        strategy=models.ScheduleGenerationStrategy.COMPLETE_GENERATION,
-        draft_state=models.ScheduleDraftState.PENDING,
-        result_category=models.ScheduleGenerationResultCategory.COMPLETE_SUCCESS,
-        trigger_type=models.ScheduleGenerationTrigger.FIRST_GENERATION,
-        generation_input_fingerprint="0" * 64,
-        projected_completion_date=FLOW_END,
-        hard_end_date=school_year.hard_end_date,
-        summary_json={},
-        created_by_membership_id=membership.id,
-    )
-    db_session.add(draft)
     await db_session.commit()
     actor = deps.Actor(
         account_id=user.id,
@@ -200,47 +183,71 @@ async def _prepare_context(db_session):
         teacher=teacher,
         membership=membership,
         school_year=school_year,
-        draft=draft,
         actor=actor,
     )
 
 
 async def _publish_block(db_session, ctx, block_date, key):
-    draft_block = models.ScheduleDraftBlock(
-        organization_id=ctx.org.id,
-        school_year_id=ctx.school_year.id,
-        draft_id=ctx.draft.id,
-        stable_block_key=key,
-        class_id=ctx.class_.id,
-        subject_id=ctx.subject.id,
-        teacher_id=ctx.teacher.id,
-        room_id=ctx.room.id,
-        date=block_date,
-        timeslot_id=ctx.slot.id,
-        duration_minutes=60,
-        module_sequence_index=1,
-        change_type=models.ScheduleDraftBlockChangeType.ADDED,
+    if block_date.weekday() != ctx.slot.day_of_week:
+        db_session.add(
+            models.Timeslot(
+                organization_id=ctx.org.id,
+                day_of_week=block_date.weekday(),
+                start_time=time(9),
+                end_time=time(10),
+            )
+        )
+        await db_session.flush()
+    if not hasattr(ctx, "assignment"):
+        ctx.assignment = CurricularAssignment(
+            organization_id=ctx.org.id,
+            school_year_id=ctx.school_year.id,
+            class_id=ctx.class_.id,
+            subject_id=ctx.subject.id,
+            teacher_id=ctx.teacher.id,
+        )
+        db_session.add(ctx.assignment)
+        await db_session.flush()
+        module_id = await db_session.scalar(
+            select(models.Module.id).where(models.Module.organization_id == ctx.org.id)
+        )
+        db_session.add(
+            CurricularRequirement(
+                organization_id=ctx.org.id,
+                assignment_id=ctx.assignment.id,
+                module_id=module_id,
+                sequence=1,
+                required_minutes=600,
+            )
+        )
+        seed = SimpleNamespace(
+            organization=ctx.org, year=ctx.school_year, assignment=ctx.assignment, room=ctx.room
+        )
+        ctx.version = await add_version(db_session, seed)
+    seed = SimpleNamespace(
+        organization=ctx.org, year=ctx.school_year, assignment=ctx.assignment, room=ctx.room
     )
-    db_session.add(draft_block)
-    await db_session.flush()
-    active = models.ActiveScheduleBlock(
-        organization_id=ctx.org.id,
-        school_year_id=ctx.school_year.id,
-        schedule_version_id="flow-api-v1",
-        stable_block_key=key,
-        class_id=ctx.class_.id,
-        subject_id=ctx.subject.id,
-        teacher_id=ctx.teacher.id,
-        room_id=ctx.room.id,
-        date=block_date,
-        timeslot_id=ctx.slot.id,
-        duration_minutes=60,
-        source_draft_block_id=draft_block.id,
-        status=models.ActiveScheduleBlockStatus.ACTIVE,
+    start, end = lesson_interval(block_date, 9)
+    lesson = await add_lesson(
+        db_session, seed, ctx.version, stable_key=key, school_date=block_date, start=start, end=end
     )
-    db_session.add(active)
+    module_id = await db_session.scalar(
+        select(CurricularRequirement.module_id).where(
+            CurricularRequirement.assignment_id == ctx.assignment.id
+        )
+    )
+    db_session.add(
+        SchedulerLessonSliceV1(
+            organization_id=ctx.org.id,
+            school_year_id=ctx.school_year.id,
+            lesson_id=lesson.id,
+            module_id=module_id,
+            offset_minutes=0,
+            minutes=60,
+        )
+    )
     await db_session.commit()
-    return active
+    return lesson
 
 
 async def test_internship_flow_endpoint_lifecycle(db_session, override_auth_actor):
@@ -304,20 +311,6 @@ async def test_flow_creation_with_classes_removes_lessons_and_records_absences(
     ctx = await _prepare_context(db_session)
     first = await _publish_block(db_session, ctx, FLOW_START, "flow-api-first")
     second = await _publish_block(db_session, ctx, FLOW_END, "flow-api-second")
-    db_session.add_all(
-        [
-            models.LessonLog(
-                organization_id=ctx.org.id,
-                active_schedule_block_id=first.id,
-                status=models.LessonLogStatus.PENDING,
-            ),
-            models.LessonLog(
-                organization_id=ctx.org.id,
-                active_schedule_block_id=second.id,
-                status=models.LessonLogStatus.PENDING,
-            ),
-        ]
-    )
     await db_session.commit()
     override_auth_actor(ctx.actor)
 
@@ -350,20 +343,15 @@ async def test_flow_creation_with_classes_removes_lessons_and_records_absences(
         )
         assert created.status_code == 200
 
-    await db_session.refresh(first)
-    await db_session.refresh(second)
-    assert first.status is models.ActiveScheduleBlockStatus.REMOVED
-    assert second.status is models.ActiveScheduleBlockStatus.REMOVED
-
-    occurrences = (
+    logs = (
         await db_session.scalars(
-            select(models.LessonOccurrence).where(
-                models.LessonOccurrence.active_schedule_block_id.in_([first.id, second.id])
+            select(SchedulerLessonLogV1).where(
+                SchedulerLessonLogV1.lesson_id.in_([first.id, second.id])
             )
         )
     ).all()
-    assert len(occurrences) == 2
-    assert all(item.status is models.LessonOccurrenceStatus.GAP for item in occurrences)
+    assert len(logs) == 2
+    assert all(log.status == "OCCURRENCE" and log.decision == "GAP" for log in logs)
 
 
 async def test_flow_endpoint_maps_validation_and_missing_event(db_session, override_auth_actor):

@@ -113,7 +113,7 @@ async def test_a_rule_change_invalidates_a_pending_proposal(db_session, monkeypa
     )
     await db_session.commit()
     await _queue_generation(db_session, monkeypatch, seed, key="rule-pending")
-    proposal = await current_proposal(db_session, seed.organization.id, now_utc=MOMENT)
+    proposal = await current_proposal(db_session, seed.organization.id)
     assert proposal is not None
     assert proposal["can_approve"] is True
     timeslot_id = await _timeslot_id(db_session, seed.organization.id)
@@ -125,7 +125,7 @@ async def test_a_rule_change_invalidates_a_pending_proposal(db_session, monkeypa
     )
     await db_session.commit()
 
-    summary = await current_proposal(db_session, seed.organization.id, now_utc=MOMENT)
+    summary = await current_proposal(db_session, seed.organization.id)
     assert summary["can_approve"] is False
     assert summary["stale_reason"] == "REVISIONS_CHANGED"
     with pytest.raises(ProposalConflict) as conflict:
@@ -156,29 +156,6 @@ async def test_a_past_rule_does_not_consume_a_planning_revision(db_session, monk
     assert seed.state.planning_revision == before[1]
     status = await scheduler_status(db_session, seed.organization.id, now_utc=MOMENT)
     assert "PLANNING_CHANGE" not in status["eligibility"]["reasons"]
-
-
-async def test_deleting_a_future_rule_consumes_a_planning_revision(db_session, monkeypatch):
-    seed = await _published_school(db_session, monkeypatch, suffix="delete")
-    timeslot_id = await _timeslot_id(db_session, seed.organization.id)
-    rule = await schedule_service.create_constraint(
-        db_session,
-        _future_rule(seed.assignment.teacher_id, timeslot_id),
-        seed.organization.id,
-    )
-    await db_session.commit()
-    await db_session.refresh(seed.state)
-    before = (seed.state.input_revision, seed.state.planning_revision)
-
-    deleted = await schedule_service.delete_constraint(db_session, rule.id, seed.organization.id)
-    await db_session.commit()
-    await db_session.refresh(seed.state)
-
-    assert deleted is True
-    assert seed.state.input_revision == before[0] + 1
-    assert seed.state.planning_revision == before[1] + 1
-    status = await scheduler_status(db_session, seed.organization.id, now_utc=MOMENT)
-    assert "PLANNING_CHANGE" in status["eligibility"]["reasons"]
 
 
 async def test_a_rename_that_the_planner_ignores_does_not_consume_revisions(

@@ -1,7 +1,7 @@
 # Design System
 
 ## Purpose
-This document specifies the Cronos visual design system, color palette tokens, typography rules, component patterns, and visual baseline standards.
+This document specifies the Cronos visual design system, color palette tokens, typography rules, and component patterns.
 
 ## Intended Reader
 This document targets UI designers and frontend engineers.
@@ -15,7 +15,7 @@ Cronos employs a warm, authoritative visual identity designed for educational tr
 - **30% Structural Navigation**: Deep brown, `#3B2415`.
 - **10% Action Accents**: Amber gold, `#d4940b`.
 
-`frontend/src/index.css` defines these values. `frontend/src/styles/brand.tokens.css` defines the `--cronos-*` tokens and their aliases.
+`frontend/src/index.css` defines these values (`--brand-50`, `--brand-950`, `--brand-500`). `frontend/src/styles/brand.tokens.css` defines the `--cronos-*` tokens and their aliases.
 
 ## Color Palette Tokens Table
 
@@ -26,8 +26,10 @@ Cronos employs a warm, authoritative visual identity designed for educational tr
 | `--cronos-ink` | `#3d2b1f` | Primary controls and headings |
 | `--cronos-ink-muted` | `#67584c` | Muted text and secondary elements |
 | `--brand-500` | `#d4940b` | Calls to action and active states |
-| `--rs-teal` | `#15803d` | Success and completed states |
-| `--rs-deep` | `#b91c1c` | Error and gap states |
+| `--cronos-success` | `#23634f` | Toast success icon |
+| `--cronos-danger` | `#8f2d0b` | Toast error icon |
+| `--rs-teal` | `#15803d` | Success and completed states (`index.css`) |
+| `--rs-deep` | `#b91c1c` | Error and gap states (`index.css`) |
 
 ## Typography Pairings
 - **Headings**: `Playfair Display` (Editorial Serif, authoritative tone).
@@ -39,13 +41,6 @@ Cronos employs a warm, authoritative visual identity designed for educational tr
 - **Motion & Hardware Acceleration**: Continuous CSS marquees must use GPU compositing transforms (`translate3d`), pause on hover, and respect `@media (prefers-reduced-motion: reduce)`.
 - **Layer Isolation**: Fixed elements with backdrop blur (`.cronos-header`) use composite layer isolation (`isolation: isolate; contain: layout style;`).
 
-## Visual Evidence Baseline Standards
-The repository maintains visual snapshot baselines under `documentation/06_frontend_ux/visual-baselines/`:
-- `css-coverage.json`: CSS execution coverage metrics.
-- `login-{,375,768,1440}.png`, `marketing-{,375,768,1440}.png`: Visual reference screenshots.
-
-*Note: Visual snapshots serve as design review evidence and baseline references.*
-
 ## Feedback Components
 - Transient toasts use the `--cronos-font-body` font, the `--cronos-surface` background, and the `--cronos-ink` text.
 - Toast icons use the `--cronos-success` and `--cronos-danger` semantic tokens.
@@ -56,12 +51,12 @@ The repository maintains visual snapshot baselines under `documentation/06_front
 - Authenticated application tokens live in `frontend/src/index.css`.
 - Canonical shared tokens live in `frontend/src/styles/brand.tokens.css`.
 - Marketing-specific tokens live in `frontend/src/features/marketing/styles/`.
-- The implementation contains semantic state tokens for given, gap, substituted, and open states.
+- `index.css` defines `--color-state-*` tokens (with `-bg` variants) for given, gap, substituted, and open states.
 - JSX can use inline layout styles, but colors should reference CSS variables.
 - Date fields keep help text outside the calendar control and associate it through `aria-describedby`.
 
 ## Verification Procedure
-Run CSS coverage audit script: `node frontend/scripts/capture-css-coverage.mjs`.
+Run `npm run lint` and `npm run test` inside `frontend/`, then review the changed screens in a browser at 375, 768, and 1440 px.
 
 ## Source Map
 - Global CSS Tokens: `frontend/src/index.css`
@@ -69,7 +64,6 @@ Run CSS coverage audit script: `node frontend/scripts/capture-css-coverage.mjs`.
 - Marketing Components: `frontend/src/features/marketing/components/`
 - Marketing Pages: `frontend/src/pages/marketing/`
 - Route Metadata: `frontend/src/features/marketing/content/metadata.js`
-- Visual Baseline Dir: `documentation/06_frontend_ux/visual-baselines/`
 
 ## Related Documents
 - [Frontend Architecture](FRONTEND_ARCHITECTURE.md)

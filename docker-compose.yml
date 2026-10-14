@@ -23,14 +23,14 @@ x-runtime-security: &runtime-security
 
 services:
   db:
-    image: postgres:16-alpine@sha256:3c5c8892d184f738f4fe282d14ddaa613a38f00f4189d2d94725ebe6f2909ddb
+    image: postgres:18-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       POSTGRES_DB: ${POSTGRES_DB:-cronos_db}
     ports: ["127.0.0.1:5432:5432"]
-    volumes: [postgres_data:/var/lib/postgresql/data]
+    volumes: [postgres_data:/var/lib/postgresql]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d ${POSTGRES_DB:-cronos_db}"]
       interval: 5s
@@ -38,7 +38,7 @@ services:
       retries: 10
 
   redis:
-    image: redis:7-alpine@sha256:520775a41a63e77e06c73e35d2fd9cc15921a609516818796b4ecbb813078bc7
+    image: redis:8.2-alpine@sha256:b51665e66f00759be7c3152ad5ac3c66fb2f619c13ef62dea7cc1f9914524635
     restart: unless-stopped
     command: redis-server --appendonly yes
     volumes: [redis_data:/data]
@@ -50,7 +50,7 @@ services:
 
   provision-db:
     profiles: [maintenance]
-    image: postgres:16-alpine@sha256:3c5c8892d184f738f4fe282d14ddaa613a38f00f4189d2d94725ebe6f2909ddb
+    image: postgres:18-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
     command: ["/bin/sh", "/scripts/provision_database.sh"]
     environment:
       POSTGRES_USER: postgres
@@ -161,6 +161,6 @@ services:
 
 volumes:
   postgres_data:
-    name: cronos_postgres_data_v16_baseline
+    name: cronos_postgres_data_v18
   redis_data:
     name: cronos_redis_data

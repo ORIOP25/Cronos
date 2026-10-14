@@ -11,6 +11,7 @@ from app import models, schemas
 from app.core.auth import Actor
 from app.core.exceptions import AppError
 from app.db.tenant import set_async_tenant_context
+from app.scheduler.infrastructure.models import CurricularAssignment
 from app.services.clerk_access_service import (
     SAFE_PROVIDER_ERROR,
     ClerkAccessResult,
@@ -28,6 +29,9 @@ from app.services.scheduler_state_service import record_scheduler_change
 logger = structlog.get_logger(__name__)
 
 INVITATION_RESEND_COOLDOWN = timedelta(seconds=60)
+
+
+MEMBER_NOT_FOUND = "Member not found."
 
 
 def _require_operation_service(
@@ -158,7 +162,6 @@ def _provider_state(member: models.OrganizationMembership) -> str:
 
 def _member_actions(
     member: models.OrganizationMembership,
-    teacher: models.Teacher | None,
     *,
     has_history: bool = False,
 ) -> schemas.MemberActionFlags:
@@ -192,7 +195,7 @@ def _to_read(
     account = member.account
     teacher = member.teacher_profile
     caps = sorted(cap.capability.value for cap in member.capabilities)
-    actions = _member_actions(member, teacher, has_history=has_history)
+    actions = _member_actions(member, has_history=has_history)
     invitation_expired = (
         reference_time is not None
         and member.access_status == models.MembershipAccessStatus.pending_invite
@@ -331,11 +334,8 @@ async def _teacher_ids_with_history(
         (models.Availability, models.Availability.teacher_id),
         (models.TeacherWeeklyTimesheet, models.TeacherWeeklyTimesheet.teacher_id),
         (models.ClassSubjectLink, models.ClassSubjectLink.teacher_id),
-        (models.ScheduleDraftBlock, models.ScheduleDraftBlock.teacher_id),
-        (models.ScheduleDiffEntry, models.ScheduleDiffEntry.teacher_id),
-        (models.ActiveScheduleBlock, models.ActiveScheduleBlock.teacher_id),
-        (models.PlannedRecoveryLink, models.PlannedRecoveryLink.teacher_id),
         (models.OperationalScheduleBlock, models.OperationalScheduleBlock.teacher_id),
+        (CurricularAssignment, CurricularAssignment.teacher_id),
     ]
     columns = [column for _, column in simple_checks]
     columns.extend(
@@ -375,6 +375,11 @@ async def _teacher_ids_with_scheduler_references(
         return set()
 
     references = [
+        select(CurricularAssignment.teacher_id).where(
+            CurricularAssignment.organization_id == organization_id,
+            CurricularAssignment.school_year_id == active_year_id,
+            CurricularAssignment.teacher_id.in_(teacher_ids),
+        ),
         select(models.ClassSubjectLink.teacher_id)
         .join(models.Class, models.Class.id == models.ClassSubjectLink.class_id)
         .where(
@@ -384,58 +389,12 @@ async def _teacher_ids_with_scheduler_references(
             models.Class.is_archived.is_(False),
             models.ClassSubjectLink.grade_level == models.Class.grade_level,
         ),
-        select(models.ScheduleDraftBlock.teacher_id).where(
-            models.ScheduleDraftBlock.organization_id == organization_id,
-            models.ScheduleDraftBlock.school_year_id == active_year_id,
-            models.ScheduleDraftBlock.teacher_id.in_(teacher_ids),
-        ),
-        select(models.ScheduleDiffEntry.teacher_id).where(
-            models.ScheduleDiffEntry.organization_id == organization_id,
-            models.ScheduleDiffEntry.school_year_id == active_year_id,
-            models.ScheduleDiffEntry.teacher_id.in_(teacher_ids),
-        ),
-        select(models.ActiveScheduleBlock.teacher_id).where(
-            models.ActiveScheduleBlock.organization_id == organization_id,
-            models.ActiveScheduleBlock.school_year_id == active_year_id,
-            models.ActiveScheduleBlock.status == models.ActiveScheduleBlockStatus.ACTIVE,
-            models.ActiveScheduleBlock.teacher_id.in_(teacher_ids),
-        ),
-        select(models.PlannedRecoveryLink.teacher_id).where(
-            models.PlannedRecoveryLink.organization_id == organization_id,
-            models.PlannedRecoveryLink.school_year_id == active_year_id,
-            models.PlannedRecoveryLink.teacher_id.in_(teacher_ids),
-            models.PlannedRecoveryLink.status.notin_(
-                {
-                    models.PlannedRecoveryLinkStatus.CANCELED,
-                    models.PlannedRecoveryLinkStatus.REPLACED,
-                }
-            ),
-        ),
         select(models.OperationalScheduleBlock.teacher_id).where(
             models.OperationalScheduleBlock.organization_id == organization_id,
             models.OperationalScheduleBlock.teacher_id.in_(teacher_ids),
             models.OperationalScheduleBlock.status == models.OperationalBlockStatus.ACTIVE,
         ),
     ]
-    references.extend(
-        select(column)
-        .join(
-            models.ActiveScheduleBlock,
-            models.ActiveScheduleBlock.id == models.LessonOccurrence.active_schedule_block_id,
-        )
-        .where(
-            models.LessonOccurrence.organization_id == organization_id,
-            models.LessonOccurrence.is_active.is_(True),
-            models.ActiveScheduleBlock.organization_id == organization_id,
-            models.ActiveScheduleBlock.school_year_id == active_year_id,
-            column.in_(teacher_ids),
-        )
-        for column in (
-            models.LessonOccurrence.substitute_teacher_id,
-            models.LessonOccurrence.planned_teacher_id,
-            models.LessonOccurrence.executed_teacher_id,
-        )
-    )
     rows = await db.execute(union_all(*references))
     return {row[0] for row in rows.all() if row[0] is not None}
 
@@ -507,6 +466,40 @@ async def _validate_subject_ids(
     return valid_subject_ids
 
 
+async def _replace_teacher_competencies(
+    db: AsyncSession,
+    organization_id: int,
+    teacher_id: int,
+    subject_ids: list[int] | None,
+    before_subjects: list[int],
+) -> list[int]:
+    if subject_ids is None:
+        return before_subjects
+    valid_subject_ids = await _validate_subject_ids(db, organization_id, subject_ids)
+    after_subjects = sorted(valid_subject_ids)
+    if before_subjects != after_subjects:
+        await db.execute(
+            delete(models.teacher_subject_link).where(
+                models.teacher_subject_link.c.organization_id == organization_id,
+                models.teacher_subject_link.c.teacher_id == teacher_id,
+            )
+        )
+        if valid_subject_ids:
+            await db.execute(
+                insert(models.teacher_subject_link).values(
+                    [
+                        {
+                            "organization_id": organization_id,
+                            "teacher_id": teacher_id,
+                            "subject_id": subject_id,
+                        }
+                        for subject_id in valid_subject_ids
+                    ]
+                )
+            )
+    return after_subjects
+
+
 async def _sync_teacher_profile(
     db: AsyncSession,
     member: models.OrganizationMembership,
@@ -574,30 +567,9 @@ async def _sync_teacher_profile(
             scheduler_relevant = teacher.id in await _teacher_ids_with_scheduler_references(
                 db, member.organization_id, [teacher.id]
             )
-        after_subjects = before_subjects
-        if subject_ids is not None:
-            valid_subject_ids = await _validate_subject_ids(db, member.organization_id, subject_ids)
-            after_subjects = sorted(valid_subject_ids)
-            if before_subjects != after_subjects:
-                await db.execute(
-                    delete(models.teacher_subject_link).where(
-                        models.teacher_subject_link.c.organization_id == member.organization_id,
-                        models.teacher_subject_link.c.teacher_id == teacher.id,
-                    )
-                )
-                if valid_subject_ids:
-                    await db.execute(
-                        insert(models.teacher_subject_link).values(
-                            [
-                                {
-                                    "organization_id": member.organization_id,
-                                    "teacher_id": teacher.id,
-                                    "subject_id": subject_id,
-                                }
-                                for subject_id in valid_subject_ids
-                            ]
-                        )
-                    )
+        after_subjects = await _replace_teacher_competencies(
+            db, member.organization_id, teacher.id, subject_ids, before_subjects
+        )
         changed = (
             teacher_was_created
             or (previous_can_teach is not None and previous_can_teach is not True)
@@ -765,7 +737,6 @@ async def _send_invitation(
             intended_role=expected_role,
             intent=intent,
             membership_id=membership_id,
-            account_id=account_id,
             lock_version=member.lock_version,
             previous_snapshot=previous_snapshot or _access_snapshot(member),
             draft_payload=draft_payload,
@@ -1000,7 +971,6 @@ async def _change_provider_role(
             intended_role=target_role,
             intent={"target_role": target_role.value},
             membership_id=member.id,
-            account_id=member.account_id,
             lock_version=member.lock_version,
             previous_snapshot=previous_snapshot,
             clerk_org_id=clerk_org_id,
@@ -1092,7 +1062,6 @@ async def _revoke_provider_access(
                 intended_role=None,
                 intent=intent,
                 membership_id=membership_id,
-                account_id=account_id,
                 lock_version=member.lock_version,
                 previous_snapshot=_access_snapshot(member),
                 clerk_org_id=org.clerk_org_id,
@@ -1278,7 +1247,7 @@ async def get_member_read(
 ) -> schemas.MemberRead:
     member = await _load_member(db, organization_id, member_id)
     if member is None:
-        raise member_error("not_found", "member_not_found", "Member not found.")
+        raise member_error("not_found", "member_not_found", MEMBER_NOT_FOUND)
     history_ids = await _teacher_ids_with_history(
         db,
         organization_id,
@@ -1411,7 +1380,7 @@ async def update_member(
 ) -> schemas.MemberRead:
     member = await _load_member(db, organization_id, member_id)
     if member is None:
-        raise member_error("not_found", "member_not_found", "Member not found.")
+        raise member_error("not_found", "member_not_found", MEMBER_NOT_FOUND)
     if member.lifecycle_status != models.MembershipLifecycleStatus.active:
         raise member_error("conflict", "member_archived", "Restore the member before editing.")
     if member.access_status == models.MembershipAccessStatus.sync_error:
@@ -1625,7 +1594,7 @@ async def remove_member(
 ) -> dict:
     member = await _load_member(db, organization_id, member_id)
     if member is None:
-        raise member_error("not_found", "member_not_found", "Member not found.")
+        raise member_error("not_found", "member_not_found", MEMBER_NOT_FOUND)
     await _assert_member_removal_allowed(
         db,
         member,
@@ -1640,7 +1609,6 @@ async def remove_member(
     )
     actions = _member_actions(
         member,
-        member.teacher_profile,
         has_history=member.teacher_profile is not None and member.teacher_profile.id in history_ids,
     )
     teacher_id = member.teacher_profile.id if member.teacher_profile else None
@@ -1690,7 +1658,7 @@ async def restore_member(
 ) -> schemas.MemberRead:
     member = await _load_member(db, organization_id, member_id)
     if member is None:
-        raise member_error("not_found", "member_not_found", "Member not found.")
+        raise member_error("not_found", "member_not_found", MEMBER_NOT_FOUND)
     if member.lifecycle_status != models.MembershipLifecycleStatus.archived:
         raise member_error(
             "conflict", "member_not_archived", "Only archived members can be restored."
@@ -1806,7 +1774,7 @@ async def resend_invitation(
 ) -> schemas.MemberRead:
     member = await _load_member(db, organization_id, member_id, for_update=True)
     if member is None:
-        raise member_error("not_found", "member_not_found", "Member not found.")
+        raise member_error("not_found", "member_not_found", MEMBER_NOT_FOUND)
     if member.access_status not in {
         models.MembershipAccessStatus.pending_invite,
         models.MembershipAccessStatus.invite_expired,
@@ -1884,7 +1852,7 @@ async def retry_sync(
 ) -> schemas.MemberRead:
     member = await _load_member(db, organization_id, member_id)
     if member is None:
-        raise member_error("not_found", "member_not_found", "Member not found.")
+        raise member_error("not_found", "member_not_found", MEMBER_NOT_FOUND)
     if member.access_status != models.MembershipAccessStatus.sync_error:
         raise member_error(
             "conflict", "retry_not_available", "Retry is only available for members in sync error."

@@ -10,7 +10,8 @@ import {
 import CIcon from '@coreui/icons-react'
 import { cilSave, cilTrash, cilCalendar, cilPencil } from '@coreui/icons'
 import { useOrganization } from '@clerk/react'
-import { formatDate } from '../../utils/formatUtils'
+import { DAY_LABELS } from '../../constants'
+import { formatDate, normalizeTimeLabel } from '../../utils/formatUtils'
 import { TXT, EVENT_TYPE_LABELS } from '../../utils/terminology'
 import { getApiErrorCode, getApiErrorMessage } from '../../utils/apiErrors'
 import {
@@ -51,6 +52,21 @@ import {
 
 const EMPTY_CALENDAR_EVENT = {
   name: '', start_date: '', end_date: '', event_type: 'school_break', class_ids: [],
+}
+
+function flowResultMessage(result) {
+  if (result.removedCount > 0) return `${result.removedCount} aula(s) saíram do horário ativo. `
+  if (result.scopeChanged) return 'As datas ficaram bloqueadas para as turmas associadas. '
+  if (result.isEdit) return 'O nome foi atualizado sem alterar o horário. '
+  return 'O fluxo ficou sem turmas associadas e não altera o horário. '
+}
+
+function deleteEventMessage(event) {
+  if (!event) return ''
+  if (event.event_type === 'internship_flow') {
+    return `O fluxo “${event.name}” será eliminado. As aulas já retiradas não são repostas automaticamente.`
+  }
+  return `O evento “${event.name}” será eliminado. Esta ação não pode ser desfeita.`
 }
 
 export const CalendarSection = () => {
@@ -320,13 +336,7 @@ export const CalendarSection = () => {
               </button>
             ) : null}
           >
-            {lastFlowResult.removedCount > 0
-              ? `${lastFlowResult.removedCount} aula(s) saíram do horário ativo. `
-              : lastFlowResult.scopeChanged
-                ? 'As datas ficaram bloqueadas para as turmas associadas. '
-                : lastFlowResult.isEdit
-                  ? 'O nome foi atualizado sem alterar o horário. '
-                  : 'O fluxo ficou sem turmas associadas e não altera o horário. '}
+            {flowResultMessage(lastFlowResult)}
             Fluxo “{lastFlowResult.name}” guardado.
           </FeedbackBanner>
         </div>
@@ -419,9 +429,8 @@ export const CalendarSection = () => {
                   onChange={(e) => setClassFilter(e.target.value)}
                   aria-describedby="eventClassSearchHelp"
                 />
-                <div
+                <fieldset
                   id="eventClassOptions"
-                  role="group"
                   aria-label="Turmas abrangidas"
                   className="border rounded p-2 mt-2"
                   style={{ maxHeight: '180px', overflowY: 'auto' }}
@@ -443,7 +452,7 @@ export const CalendarSection = () => {
                       }))}
                     />
                   ))}
-                </div>
+                </fieldset>
                 <div id="eventClassSearchHelp" className="form-text">
                   Sem turmas, o fluxo não bloqueia aulas. As aulas afetadas saem do horário quando guardar.
                 </div>
@@ -515,7 +524,7 @@ export const CalendarSection = () => {
             </CTableHead>
             <CTableBody>
               {previewState?.affected_lessons.map((lesson) => (
-                <CTableRow key={lesson.active_schedule_block_id}>
+                <CTableRow key={lesson.lesson_id}>
                   <CTableDataCell>{lesson.class_name ?? 'Turma'}</CTableDataCell>
                   <CTableDataCell className="text-nowrap">{formatDate(lesson.date)}</CTableDataCell>
                   <CTableDataCell>{lesson.subject_name ?? 'Disciplina'}</CTableDataCell>
@@ -576,11 +585,7 @@ export const CalendarSection = () => {
           }))
         }}
         title="Eliminar evento"
-        message={deleteTarget
-          ? (deleteTarget.event_type === 'internship_flow'
-            ? `O fluxo “${deleteTarget.name}” será eliminado. As aulas já retiradas não são repostas automaticamente.`
-            : `O evento “${deleteTarget.name}” será eliminado. Esta ação não pode ser desfeita.`)
-          : ''}
+        message={deleteEventMessage(deleteTarget)}
         confirmText="Eliminar evento"
         isLoading={deleteMutation.isPending}
       />
@@ -891,8 +896,8 @@ export const GridSection = () => {
   }
   const data = settingsQuery.data
   const initialGridSettings = {
-    lunch_window_start: data?.lunch_window_start?.slice(0, 5) || '12:00',
-    lunch_window_end: data?.lunch_window_end?.slice(0, 5) || '14:00',
+    lunch_window_start: normalizeTimeLabel(data?.lunch_window_start) || '12:00',
+    lunch_window_end: normalizeTimeLabel(data?.lunch_window_end) || '14:00',
     lunch_min_duration_minutes: data?.lunch_min_duration_minutes ?? 60,
   }
 
@@ -908,13 +913,9 @@ export const GridSection = () => {
   )
 }
 
-const DAY_LABELS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo']
-
 const RULE_TYPE_LABELS = {
   CLASS_DAY_OFF: 'Regra de dia sem aulas',
 }
-
-const shortTime = (value) => String(value ?? '').slice(0, 5)
 
 const PendingProposalBanner = ({ proposal }) => {
   if (!proposal?.grid_version_id) return null
@@ -1004,7 +1005,7 @@ const GridChangeImpactPanel = ({ preview, decisions, onDecision, onPropose, isPr
                 <fieldset key={target.current_timeslot_id} className="border rounded p-3 mb-3">
                   <legend className="fs-6 fw-semibold">
                     {isAvailability
-                      ? `${DAY_LABELS[target.current.day_of_week]} ${shortTime(target.current.start_time)}-${shortTime(target.current.end_time)}`
+                      ? `${DAY_LABELS[target.current.day_of_week]} ${normalizeTimeLabel(target.current.start_time)}-${normalizeTimeLabel(target.current.end_time)}`
                       : RULE_TYPE_LABELS[target.rule_type] || 'Regra'}
                   </legend>
                   <div className="text-muted small mb-2">
@@ -1013,7 +1014,7 @@ const GridChangeImpactPanel = ({ preview, decisions, onDecision, onPropose, isPr
                       : 'Regra aplicada a este bloco horário.'}
                     {' '}
                     {target.proposed
-                      ? `Novo bloco: ${DAY_LABELS[target.proposed.day_of_week]} ${shortTime(target.proposed.start_time)}-${shortTime(target.proposed.end_time)}.`
+                      ? `Novo bloco: ${DAY_LABELS[target.proposed.day_of_week]} ${normalizeTimeLabel(target.proposed.start_time)}-${normalizeTimeLabel(target.proposed.end_time)}.`
                       : 'Sem bloco de destino.'}
                   </div>
                   <CFormCheck
@@ -1040,9 +1041,9 @@ const GridChangeImpactPanel = ({ preview, decisions, onDecision, onPropose, isPr
 
         <div className="d-flex justify-content-end align-items-center gap-3">
           {preview.can_propose && missing.length > 0 && (
-            <span className="text-danger small" role="status">
+            <output className="text-danger small">
               Faltam decisões para {missing.length} bloco(s) afetado(s).
-            </span>
+            </output>
           )}
           <CButton
             type="button"

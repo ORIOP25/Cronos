@@ -1,15 +1,12 @@
 # Scheduler Engine Index
 
-This section documents the Cronos scheduler v1: complete annual generation, adaptive repair, CP-SAT optimization, the global queue, proposal approval, and the laboratory that validates them.
+This section documents the Cronos scheduler v1: complete annual generation, adaptive repair, CP-SAT optimization, the global queue, proposal approval, and the test fixtures that validate them.
 
-The scheduler v1 is active and delivered. W00–W14 concluded; W14 closed on 28 September 2026.
+The scheduler v1 is active in production. The original execution plan and work breakdown (packages W00–W14) were removed once delivered; they remain in git history. Their binding product decisions (D01–D31) now live in section 1.1 of the technical specification.
 
 ## Documents
 
-- [SCHEDULER_V1_REVAMP_PLAN_V2.md](SCHEDULER_V1_REVAMP_PLAN_V2.md): Execution plan rev 2 — product decisions, revamp boundary, as-built W00–W14.
-- [SCHEDULER_V1_WBS_V2.md](SCHEDULER_V1_WBS_V2.md): Work packages rev 2 — W00–W14, campaigns and gates.
-- [SCHEDULER_V1_TECH_SPEC_V2.md](SCHEDULER_V1_TECH_SPEC_V2.md): Technical specification rev 2 — implemented contracts, models, API and operations.
-- [Adaptive recovery evidence](review_evidence/2026-10-01-adaptive-recovery/EVIDENCE.md): Regression checks and isolated planning-change experiments.
+- [SCHEDULER_V1_TECH_SPEC_V2.md](SCHEDULER_V1_TECH_SPEC_V2.md): Technical specification — product decisions, contracts, models, quality policy, queue, API and operations.
 
 ## Engine
 
@@ -82,27 +79,22 @@ Endpoints under `/api/v1/scheduler` (`backend/app/api/v1/endpoints/scheduler.py`
 | `POST /drafts/{proposal_id}/approve` | Atomic approval with revalidation. |
 | `POST /drafts/{proposal_id}/reject` | Audited rejection. |
 
-## Laboratory
+## Test fixtures and verification
 
-Run a campaign through the existing runner:
+The retained `backend/app/scheduler/lab/` modules build deterministic minimal, scale, annual, recovery, and typology fixtures.
+Unit tests use those fixtures to verify the actual engine and independent validator.
+Historical campaign commands, JSON corpora, matrix reports, and stored-candidate revalidation tools were removed.
 
-```text
-node scripts/test.mjs campaign [--manifest <path>] [--out <dir>] [--case <id>]... [--mode witness|generator|repair|trajectory|longitudinal] [--time-limit <s>] [--workers <n>] [--resume]
-```
-
-Manifests live in `backend/tests/scheduler_lab/`. The `repair` mode evaluates AdaptiveRecovery against a published baseline; `trajectory` records the incumbent trajectory and replays stopping policies; `longitudinal` chains simulated execution and events over an annual baseline. Results are one JSON file per case plus `report.json`.
-
-Matrix coverage from a campaign report:
+Run maintained checks through the root runner:
 
 ```text
-python -m app.scheduler.lab.matrix --manifest <manifest> --report <report.json> --out <matrix_report.json>
+node scripts/test.mjs critical --scope backend
+node scripts/test.mjs integration
+node scripts/test.mjs capacity-smoke
 ```
 
-Revalidate a stored candidate without running the solver:
-
-```text
-python -m app.scheduler.lab.revalidate <case.json>
-```
+The 48-class correctness regression lives in `backend/tests/unit/test_scheduler_typology_v1.py`.
+It uses the configured 900-second safety budget and validates the first complete candidate.
 
 ## Current limitations
 

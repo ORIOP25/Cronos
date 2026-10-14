@@ -42,123 +42,66 @@ Commands:
   capacity-smoke
   all --scope backend|frontend|all
   benchmark --profile fast|integration|e2e|all [--scope backend|frontend|all]
-  campaign [--manifest <path>] [--out <dir>] [--case <id>]... [--mode witness|generator|repair|trajectory|longitudinal] [--time-limit <s>] [--workers <n>] [--resume]
 `
+
+function parseOptions(options, parsed) {
+  const provided = new Set()
+  for (let index = 0; index < options.length; index += 2) {
+    const option = options[index]
+    if (!option.startsWith('--')) throw usageError(`Unexpected argument: ${option}`)
+    const name = option.slice(2)
+    const value = options[index + 1]
+    if (!value || value.startsWith('--')) throw usageError(`Option --${name} requires a value.`)
+    if (!['scope', 'profile', 'project'].includes(name)) throw usageError(`Unknown option: --${name}`)
+    if (provided.has(name)) throw usageError(`Only one --${name} option is allowed.`)
+    provided.add(name)
+    parsed[name] = value
+  }
+  return provided
+}
+
+function validateParsedArgs(parsed, provided) {
+  const { command, scope, profile, project } = parsed
+  if (['setup', 'fast', 'critical', 'all'].includes(command) && !SCOPES.has(scope)) {
+    throw usageError(`Invalid scope: ${scope}`)
+  }
+  if (command === 'critical' && scope !== 'backend') {
+    throw usageError('The critical run only supports --scope backend.')
+  }
+  if (['doctor', 'benchmark'].includes(command) && !PROFILES.has(profile)) {
+    throw usageError(`Invalid profile: ${profile}`)
+  }
+  if (command === 'e2e' && project !== undefined && !E2E_PROJECTS.has(project)) {
+    throw usageError(`Invalid E2E project: ${project}`)
+  }
+  if (command !== 'e2e' && project !== undefined) throw usageError('--project is only valid for e2e.')
+  if (command === 'benchmark' && profile !== 'fast' && provided.has('scope')) {
+    throw usageError('--scope is only valid for benchmark --profile fast.')
+  }
+}
 
 export function parseArgs(argv) {
   const [command, ...rest] = argv
   if (!command) throw usageError('A command is required.')
+  if (!['setup', 'doctor', 'fast', 'critical', 'integration', 'e2e', 'capacity', 'capacity-smoke', 'all', 'benchmark'].includes(command)) {
+    throw usageError(`Unknown command: ${command}`)
+  }
   const separator = rest.indexOf('--')
   const options = separator === -1 ? rest : rest.slice(0, separator)
   const forwarded = separator === -1 ? [] : rest.slice(separator + 1)
-  const parsed = {
-    command,
-    scope: 'all',
-    profile: command === 'integration' ? 'integration'
-      : command === 'e2e' ? 'e2e'
-        : command === 'all' ? 'all'
-          : 'fast',
-    project: undefined,
-    manifest: undefined,
-    out: undefined,
-    caseIds: [],
-    mode: 'witness',
-    timeLimit: undefined,
-    workers: undefined,
-    resume: false,
-    forwarded,
-  }
-  let scopeWasProvided = false
-  let profileWasProvided = false
-
-  if (!['setup', 'doctor', 'fast', 'critical', 'integration', 'e2e', 'capacity', 'capacity-smoke', 'all', 'benchmark', 'campaign'].includes(command)) {
-    throw usageError(`Unknown command: ${command}`)
-  }
   if (forwarded.length && !['fast', 'integration'].includes(command)) {
     throw usageError(`Arguments after -- are not supported by ${command}.`)
   }
-
-  for (let index = 0; index < options.length; index += 1) {
-    const option = options[index]
-    if (!option.startsWith('--')) throw usageError(`Unexpected argument: ${option}`)
-    const name = option.slice(2)
-    if (name === 'resume') {
-      parsed.resume = true
-      continue
-    }
-    const value = options[index + 1]
-    if (!value || value.startsWith('--')) throw usageError(`Option --${name} requires a value.`)
-    if (name === 'scope') {
-      if (scopeWasProvided) throw usageError('Only one --scope option is allowed.')
-      scopeWasProvided = true
-      parsed.scope = value
-    } else if (name === 'profile') {
-      if (profileWasProvided) throw usageError('Only one --profile option is allowed.')
-      profileWasProvided = true
-      parsed.profile = value
-    } else if (name === 'project') {
-      if (parsed.project !== undefined) throw usageError('Only one --project option is allowed.')
-      parsed.project = value
-    } else if (name === 'manifest') {
-      parsed.manifest = value
-    } else if (name === 'out') {
-      parsed.out = value
-    } else if (name === 'case') {
-      parsed.caseIds.push(value)
-    } else if (name === 'mode') {
-      if (!['witness', 'generator', 'repair', 'trajectory', 'longitudinal'].includes(value)) throw usageError(`Invalid campaign mode: ${value}`)
-      parsed.mode = value
-    } else if (name === 'time-limit') {
-      if (!Number.isFinite(Number(value)) || Number(value) <= 0) throw usageError(`Invalid time limit: ${value}`)
-      parsed.timeLimit = value
-    } else if (name === 'workers') {
-      if (!Number.isInteger(Number(value)) || Number(value) < 1) throw usageError(`Invalid worker count: ${value}`)
-      parsed.workers = value
-    } else {
-      throw usageError(`Unknown option: --${name}`)
-    }
-    index += 1
+  const parsed = {
+    command,
+    scope: 'all',
+    profile: { integration: 'integration', e2e: 'e2e', all: 'all' }[command] ?? 'fast',
+    project: undefined,
+    forwarded,
   }
-
-  if (command === 'campaign' && (scopeWasProvided || profileWasProvided)) {
-    throw usageError('--scope and --profile are not valid for campaign.')
-  }
-  if (
-    command !== 'campaign'
-    && (
-      parsed.manifest !== undefined
-      || parsed.out !== undefined
-      || parsed.caseIds.length
-      || parsed.mode !== 'witness'
-      || parsed.timeLimit !== undefined
-      || parsed.workers !== undefined
-      || parsed.resume
-    )
-  ) {
-    throw usageError('campaign options are only valid for campaign.')
-  }
-
-  if (command === 'critical' && !scopeWasProvided) {
-    parsed.scope = 'backend'
-  }
-  if (['setup', 'fast', 'critical', 'all'].includes(command) && !SCOPES.has(parsed.scope)) {
-    throw usageError(`Invalid scope: ${parsed.scope}`)
-  }
-  if (command === 'critical' && parsed.scope !== 'backend') {
-    throw usageError('The critical run only supports --scope backend.')
-  }
-  if (['doctor', 'benchmark'].includes(command) && !PROFILES.has(parsed.profile)) {
-    throw usageError(`Invalid profile: ${parsed.profile}`)
-  }
-  if (command === 'e2e' && parsed.project !== undefined && !E2E_PROJECTS.has(parsed.project)) {
-    throw usageError(`Invalid E2E project: ${parsed.project}`)
-  }
-  if (command !== 'e2e' && parsed.project !== undefined) {
-    throw usageError(`--project is only valid for e2e.`)
-  }
-  if (command === 'benchmark' && parsed.profile !== 'fast' && scopeWasProvided) {
-    throw usageError(`--scope is only valid for benchmark --profile fast.`)
-  }
+  const provided = parseOptions(options, parsed)
+  if (command === 'critical' && !provided.has('scope')) parsed.scope = 'backend'
+  validateParsedArgs(parsed, provided)
   return parsed
 }
 
@@ -364,9 +307,9 @@ export function runtimeProofFailures(xml, { minCollected = 10, required = [] } =
     .map((match) => ({ attrs: match[1] ?? '', body: match[2] ?? '' }))
   const nameOf = (attrs) => attrs.match(/\bname="([^"]*)"/)?.[1] ?? ''
   if (!cases.length) failures.push('no test cases')
-  const names = cases.map((testCase) => nameOf(testCase.attrs))
+  const names = new Set(cases.map((testCase) => nameOf(testCase.attrs)))
   for (const requiredName of required) {
-    if (!names.includes(requiredName)) failures.push(`missing case ${requiredName}`)
+    if (!names.has(requiredName)) failures.push(`missing case ${requiredName}`)
   }
   const skipped = cases.filter((testCase) => /<skipped\b/.test(testCase.body)).length
   if (skipped) failures.push(`${skipped} skipped case(s)`)
@@ -393,7 +336,7 @@ async function runRecorded(spec, options, context, metadata = {}) {
   } finally {
     const durationMs = result?.durationMs ?? Math.round(monotonicMs() - startedAt)
     addPhaseTime(context, metadata.phase || 'tests_ms', durationMs)
-    if (context && metadata.name) {
+    if (context?.suites && metadata.name) {
       const counts = await readJunitSummary(metadata.reportPath)
       context.suites.push({
         name: metadata.name,
@@ -579,7 +522,7 @@ export function parseCriticalManifest(value) {
       const value = typeof path === 'string' ? path : ''
       // A trusted path or pytest node id (`file.py::test_name`). Passed as a
       // native argument, never evaluated by a shell.
-      if (!/^tests\/[A-Za-z0-9_\-/]+\.py(?:::test_[A-Za-z0-9_]+)?$/.test(value)) {
+      if (!/^tests\/[A-Za-z0-9_\-/]+\.py(?:::test_\w+)?$/.test(value)) {
         fail(`path is outside tests/: ${JSON.stringify(path)}`)
       }
       if (seenPaths.has(value)) fail(`path is duplicated: ${value}`)
@@ -668,29 +611,6 @@ async function runFast(scope, forwarded, context) {
       'frontend-fast',
     )
   }
-}
-
-async function runCampaign(parsed, context) {
-  const manifestPath = resolve(parsed.manifest ?? join(BACKEND, 'tests', 'scheduler_lab', 'manifest.json'))
-  const outDir = resolve(parsed.out ?? join(context.artifactDir, 'scheduler-lab'))
-  const env = baseTestEnvironment({ RATELIMIT_ENABLED: 'false' })
-  const codeIdentity = `${context.revision.slice(0, 12)}+${context.git.tree?.slice(0, 12) ?? 'unknown'}`
-  const args = [
-    '-m', 'app.scheduler.lab.campaign',
-    '--manifest', manifestPath,
-    '--out', outDir,
-    '--commit', context.revision,
-    '--code-identity', codeIdentity,
-    '--policy-version', 'quality-v1',
-    '--mode', parsed.mode,
-  ]
-  for (const caseId of parsed.caseIds) args.push('--case', caseId)
-  if (parsed.timeLimit !== undefined) args.push('--time-limit', parsed.timeLimit)
-  if (parsed.workers !== undefined) args.push('--workers', parsed.workers)
-  if (parsed.resume) args.push('--resume')
-  await runRecorded(backendPythonSpec(args, env, context), {
-    cwd: BACKEND, env, label: 'scheduler lab campaign',
-  }, context, { name: 'scheduler-campaign', kind: 'campaign' })
 }
 
 function composeSpec(args) {
@@ -831,21 +751,7 @@ async function startTestStack(context, { full = false } = {}) {
     project,
     rest: ['exec', '-T', '-e', `PGPASSWORD=${postgresPassword}`, 'db', 'psql', '-v', 'ON_ERROR_STOP=1', '-U', 'postgres', '-d', database, '-c', sql],
   })
-  const rolesSql = `DO $$ BEGIN
-    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'cronos_migrator') THEN
-      CREATE ROLE cronos_migrator LOGIN NOSUPERUSER BYPASSRLS PASSWORD '${migratorPassword}';
-    END IF;
-    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'cronos_app') THEN
-      CREATE ROLE cronos_app LOGIN NOSUPERUSER NOBYPASSRLS PASSWORD '${appPassword}';
-    END IF;
-    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'cronos_auth_definer') THEN
-      CREATE ROLE cronos_auth_definer NOLOGIN NOSUPERUSER BYPASSRLS;
-    END IF;
-  END $$;
-  GRANT cronos_auth_definer TO cronos_migrator;
-  ALTER DATABASE cronos_test_db OWNER TO cronos_migrator;
-  GRANT CONNECT ON DATABASE cronos_test_db TO cronos_app;`
-  await runChecked(psql('cronos_test_db', rolesSql), {
+  await runChecked(compose(['--profile', 'maintenance', 'run', '--rm', 'provision-db']), {
     env: composeEnv, label: 'provision test database roles', environmentFailure: true,
   })
   for (let worker = 0; worker < INTEGRATION_WORKERS; worker += 1) {
@@ -1439,24 +1345,25 @@ export async function main(argv = process.argv.slice(2)) {
   }
   let primaryCode = 0
   try {
-    if (parsed.command === 'setup') await runSetup(parsed.scope, context)
-    else if (parsed.command === 'doctor') await runDoctor(parsed.profile, context)
-    else if (parsed.command === 'fast') await runFast(parsed.scope, parsed.forwarded, context)
-    else if (parsed.command === 'critical') await runCriticalBackend(context)
-    else if (parsed.command === 'integration') await runIntegration(parsed.forwarded, context)
-    else if (parsed.command === 'e2e') await runE2e(parsed.project, context)
-    else if (parsed.command === 'capacity') await runE2e('capacity', context)
-    else if (parsed.command === 'capacity-smoke') {
-      await runE2e('capacity', context, {
-        CAPACITY_ENABLED: '1',
-        CAPACITY_PROFILE: 'smoke',
-        CAPACITY_DURATION_SECONDS: '30',
-        CAPACITY_REPORT_PATH: join(context.artifactDir, 'capacity-smoke.json'),
-      })
+    switch (parsed.command) {
+      case 'setup': await runSetup(parsed.scope, context); break
+      case 'doctor': await runDoctor(parsed.profile, context); break
+      case 'fast': await runFast(parsed.scope, parsed.forwarded, context); break
+      case 'critical': await runCriticalBackend(context); break
+      case 'integration': await runIntegration(parsed.forwarded, context); break
+      case 'e2e': await runE2e(parsed.project, context); break
+      case 'capacity': await runE2e('capacity', context); break
+      case 'capacity-smoke':
+        await runE2e('capacity', context, {
+          CAPACITY_ENABLED: '1',
+          CAPACITY_PROFILE: 'smoke',
+          CAPACITY_DURATION_SECONDS: '30',
+          CAPACITY_REPORT_PATH: join(context.artifactDir, 'capacity-smoke.json'),
+        })
+        break
+      case 'all': await runAll(parsed.scope, context); break
+      case 'benchmark': await runBenchmark(parsed.profile, parsed.scope, context); break
     }
-    else if (parsed.command === 'all') await runAll(parsed.scope, context)
-    else if (parsed.command === 'benchmark') await runBenchmark(parsed.profile, parsed.scope, context)
-    else if (parsed.command === 'campaign') await runCampaign(parsed, context)
   } catch (error) {
     primaryCode = error.runnerCode || 1
     console.error(`[test] ${error.message}`)
@@ -1474,8 +1381,10 @@ export async function main(argv = process.argv.slice(2)) {
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  main().then((code) => { process.exitCode = code }).catch((error) => {
+  try {
+    process.exitCode = await main()
+  } catch (error) {
     console.error(error)
     process.exitCode = 3
-  })
+  }
 }

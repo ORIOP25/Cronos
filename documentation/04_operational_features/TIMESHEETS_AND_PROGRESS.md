@@ -37,6 +37,8 @@ Ledger entries preserve idempotent evidence for progress and recovery.
 | Ledger model | `backend/app/models.py` (`ProgressLedgerEntry`) |
 | UI | `frontend/src/pages/Timesheets.jsx`, `MyProgress.jsx` |
 
+Routes under `/api/v1/timesheets`: `GET /` (admin list), `GET /me/{week_start_date}`, `POST /me/{week_start_date}/submit` and `PATCH /{timesheet_id}/status` (approve or reopen). The submit route validates lesson coverage itself; there is no separate pending-occurrences route.
+
 ## Data or Request Flow
 
 1. A teacher opens `/my-schedules` or `/timesheets`.

@@ -10,15 +10,22 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
-import structlog
 from sqlalchemy import and_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import Session, aliased
+from sqlalchemy.orm import Session
 
 from app import models, schemas
-from app.core.logging import safe_exception_frames
-from app.services.scheduler_serialization import sha256_json
+from app.scheduler.domain.serialization import payload_digest
+from app.scheduler.infrastructure import occurrences as occurrences_v1
+from app.scheduler.infrastructure import operations
+from app.scheduler.infrastructure.models import (
+    CurricularAssignment,
+    SchedulerLessonLogV1,
+    SchedulerLessonV1,
+    SchedulerVersionV1,
+)
 from app.services.scheduler_state_service import (
     SchedulerStateService,
     record_scheduler_change,
@@ -28,13 +35,8 @@ CONFIRMATION_REQUIRED_MESSAGE = (
     "O fluxo de estágio remove aulas do horário. Pré-visualize e confirme a alteração."
 )
 STALE_MESSAGE = "As aulas afetadas mudaram desde a pré-visualização. Repita a pré-visualização."
-BLOCKED_LESSON_MESSAGE = (
-    "Este dia de estágio não permite criar aulas para a turma. Ajuste ou remova o fluxo primeiro."
-)
 MISSING_SCHOOL_YEAR_MESSAGE = "Configure o ano letivo antes de criar fluxos de estágio."
 INTERNSHIP_FLOW_OCCURRENCE_REASON = "Aula retirada por fluxo de estágio"
-
-logger = structlog.get_logger(__name__)
 
 
 class InternshipFlowError(RuntimeError):
@@ -49,13 +51,9 @@ class InternshipFlowStale(InternshipFlowError):
     code = "CALENDAR_EVENT_STALE"
 
 
-class InternshipFlowBlockedLesson(InternshipFlowError):
-    code = "INTERNSHIP_FLOW_BLOCKS_LESSON"
-
-
 @dataclass(frozen=True)
 class AffectedLesson:
-    active_schedule_block_id: int
+    lesson_id: int
     class_id: int
     class_name: str | None
     subject_id: int
@@ -70,7 +68,7 @@ class AffectedLesson:
 
     def fingerprint_payload(self) -> dict[str, Any]:
         return {
-            "id": self.active_schedule_block_id,
+            "id": self.lesson_id,
             "date": self.date,
             "class_id": self.class_id,
             "timeslot_id": self.timeslot_id,
@@ -222,115 +220,119 @@ async def compute_impact(
 ) -> FlowImpact:
     if not class_ids:
         return FlowImpact(lessons=(), fingerprint=None)
-    given_log = (
+    given_substitute = (
         select(models.LessonLog.id)
+        .join(
+            models.OperationalScheduleBlock,
+            models.OperationalScheduleBlock.id == models.LessonLog.operational_block_id,
+        )
         .where(
             models.LessonLog.organization_id == organization_id,
-            models.LessonLog.active_schedule_block_id == models.ActiveScheduleBlock.id,
             models.LessonLog.status == models.LessonLogStatus.COMPLETED,
+            models.OperationalScheduleBlock.organization_id == organization_id,
+            models.OperationalScheduleBlock.source_v1_lesson_log_id == SchedulerLessonLogV1.id,
         )
         .exists()
     )
-    given_occurrence = (
-        select(models.LessonOccurrence.id)
-        .where(
-            models.LessonOccurrence.organization_id == organization_id,
-            models.LessonOccurrence.active_schedule_block_id == models.ActiveScheduleBlock.id,
-            models.LessonOccurrence.is_active.is_(True),
-            models.LessonOccurrence.status == models.LessonOccurrenceStatus.GIVEN,
-        )
-        .exists()
-    )
-    class_alias = aliased(models.Class)
-    subject_alias = aliased(models.Subject)
-    block_rows = (
+    rows = (
         await db.execute(
             select(
-                models.ActiveScheduleBlock,
-                class_alias.name,
-                subject_alias.name,
+                SchedulerLessonV1,
+                CurricularAssignment,
+                models.Class.name,
+                models.Subject.name,
+                models.SchedulerSchoolYear.timezone,
+                SchedulerLessonLogV1,
+            )
+            .join(
+                SchedulerVersionV1,
+                (SchedulerVersionV1.id == SchedulerLessonV1.version_id)
+                & (SchedulerVersionV1.organization_id == organization_id),
+            )
+            .join(
+                models.SchedulerSchoolYear,
+                (models.SchedulerSchoolYear.id == SchedulerLessonV1.school_year_id)
+                & (models.SchedulerSchoolYear.organization_id == organization_id),
+            )
+            .join(
+                CurricularAssignment,
+                (CurricularAssignment.id == SchedulerLessonV1.assignment_id)
+                & (CurricularAssignment.organization_id == organization_id),
+            )
+            .join(
+                models.Class,
+                (models.Class.id == CurricularAssignment.class_id)
+                & (models.Class.organization_id == organization_id),
+            )
+            .join(
+                models.Subject,
+                (models.Subject.id == CurricularAssignment.subject_id)
+                & (models.Subject.organization_id == organization_id),
             )
             .outerjoin(
-                class_alias,
-                and_(
-                    class_alias.id == models.ActiveScheduleBlock.class_id,
-                    class_alias.organization_id == organization_id,
-                ),
-            )
-            .outerjoin(
-                subject_alias,
-                and_(
-                    subject_alias.id == models.ActiveScheduleBlock.subject_id,
-                    subject_alias.organization_id == organization_id,
-                ),
+                SchedulerLessonLogV1,
+                (SchedulerLessonLogV1.lesson_id == SchedulerLessonV1.id)
+                & (SchedulerLessonLogV1.organization_id == organization_id),
             )
             .where(
-                models.ActiveScheduleBlock.organization_id == organization_id,
-                models.ActiveScheduleBlock.status == models.ActiveScheduleBlockStatus.ACTIVE,
-                models.ActiveScheduleBlock.class_id.in_(class_ids),
-                models.ActiveScheduleBlock.date >= start_date,
-                models.ActiveScheduleBlock.date <= end_date,
-                ~given_log,
-                ~given_occurrence,
+                SchedulerLessonV1.organization_id == organization_id,
+                SchedulerVersionV1.status == "ACTIVE",
+                models.SchedulerSchoolYear.is_active.is_(True),
+                CurricularAssignment.class_id.in_(class_ids),
+                SchedulerLessonV1.school_date.between(start_date, end_date),
+                SchedulerLessonLogV1.withdrawn_at.is_(None),
+                (SchedulerLessonLogV1.id.is_(None) | (SchedulerLessonLogV1.status != "COMPLETED")),
+                ~given_substitute,
             )
             .order_by(
-                models.ActiveScheduleBlock.date,
-                models.ActiveScheduleBlock.timeslot_id,
-                models.ActiveScheduleBlock.id,
+                SchedulerLessonV1.school_date, SchedulerLessonV1.starts_at, SchedulerLessonV1.id
             )
         )
     ).all()
-    if not block_rows:
+    if not rows:
         return FlowImpact(lessons=(), fingerprint=None)
-
-    block_ids = [row[0].id for row in block_rows]
-    logs = {
-        log.active_schedule_block_id: log
-        for log in (
-            await db.scalars(
-                select(models.LessonLog).where(
-                    models.LessonLog.organization_id == organization_id,
-                    models.LessonLog.active_schedule_block_id.in_(block_ids),
-                )
-            )
-        ).all()
-    }
-    occurrences = {
-        occurrence.active_schedule_block_id: occurrence
-        for occurrence in (
-            await db.scalars(
-                select(models.LessonOccurrence)
-                .where(
-                    models.LessonOccurrence.organization_id == organization_id,
-                    models.LessonOccurrence.active_schedule_block_id.in_(block_ids),
-                    models.LessonOccurrence.is_active.is_(True),
-                )
-                .order_by(models.LessonOccurrence.id)
-            )
-        ).all()
-    }
-
-    lessons = tuple(
-        AffectedLesson(
-            active_schedule_block_id=block.id,
-            class_id=block.class_id,
-            class_name=class_name,
-            subject_id=block.subject_id,
-            subject_name=subject_name,
-            date=block.date,
-            timeslot_id=block.timeslot_id,
-            duration_minutes=block.duration_minutes,
-            log_id=logs[block.id].id if block.id in logs else None,
-            log_status=_value(logs[block.id].status) if block.id in logs else None,
-            occurrence_id=occurrences[block.id].id if block.id in occurrences else None,
-            occurrence_status=(
-                _value(occurrences[block.id].status) if block.id in occurrences else None
-            ),
+    slots = (
+        await db.scalars(
+            select(models.Timeslot).where(models.Timeslot.organization_id == organization_id)
         )
-        for block, class_name, subject_name in block_rows
+    ).all()
+    lessons = []
+    for lesson, assignment, class_name, subject_name, timezone_name, log in rows:
+        local_start = lesson.starts_at.astimezone(ZoneInfo(timezone_name))
+        slot = next(
+            (
+                slot
+                for slot in slots
+                if slot.day_of_week == lesson.school_date.weekday()
+                and slot.start_time == local_start.time().replace(tzinfo=None)
+            ),
+            None,
+        )
+        if slot is None:
+            raise InternshipFlowError("A aula publicada não tem um bloco horário correspondente.")
+        lessons.append(
+            AffectedLesson(
+                lesson_id=lesson.id,
+                class_id=assignment.class_id,
+                class_name=class_name,
+                subject_id=assignment.subject_id,
+                subject_name=subject_name,
+                date=lesson.school_date,
+                timeslot_id=slot.id,
+                duration_minutes=lesson.physical_minutes,
+                log_id=log.id if log else None,
+                log_status=log.status if log else None,
+                occurrence_id=log.id if log and log.status == "OCCURRENCE" else None,
+                occurrence_status=log.decision if log else None,
+            )
+        )
+    result = tuple(lessons)
+    return FlowImpact(
+        lessons=result,
+        fingerprint=payload_digest(
+            {"lessons": [lesson.fingerprint_payload() for lesson in result]}
+        ),
     )
-    fingerprint = sha256_json({"lessons": [lesson.fingerprint_payload() for lesson in lessons]})
-    return FlowImpact(lessons=lessons, fingerprint=fingerprint)
 
 
 def require_confirmation(impact: FlowImpact, fingerprint: str | None) -> None:
@@ -350,15 +352,12 @@ async def remove_affected_blocks(
     if not lessons:
         return
     await db.execute(
-        update(models.ActiveScheduleBlock)
+        update(SchedulerLessonLogV1)
         .where(
-            models.ActiveScheduleBlock.organization_id == organization_id,
-            models.ActiveScheduleBlock.status == models.ActiveScheduleBlockStatus.ACTIVE,
-            models.ActiveScheduleBlock.id.in_(
-                [lesson.active_schedule_block_id for lesson in lessons]
-            ),
+            SchedulerLessonLogV1.organization_id == organization_id,
+            SchedulerLessonLogV1.lesson_id.in_([lesson.lesson_id for lesson in lessons]),
         )
-        .values(status=models.ActiveScheduleBlockStatus.REMOVED)
+        .values(withdrawn_at=datetime.now(UTC))
     )
 
 
@@ -372,42 +371,22 @@ async def _lock_scheduler_state(db: AsyncSession, organization_id: int) -> None:
     await state_service.get_state(organization_id, school_year.id, for_update=True)
 
 
-async def _lock_affected_blocks(
-    db: AsyncSession,
-    organization_id: int,
-    block_ids: list[int],
-) -> None:
-    ids = sorted(set(block_ids))
-    if not ids:
-        return
-    await db.execute(
-        select(models.ActiveScheduleBlock.id)
-        .where(
-            models.ActiveScheduleBlock.organization_id == organization_id,
-            models.ActiveScheduleBlock.id.in_(ids),
-        )
-        .order_by(models.ActiveScheduleBlock.id)
-        .with_for_update()
-    )
-
-
 async def _lock_affected_occurrences(
     db: AsyncSession,
     organization_id: int,
-    block_ids: list[int],
+    lesson_ids: list[int],
 ) -> None:
-    """Occurrences are locked before blocks to match the decision-service order."""
-    ids = sorted(set(block_ids))
+    """Lock operational logs while the scheduler year state is held."""
+    ids = sorted(set(lesson_ids))
     if not ids:
         return
     await db.execute(
-        select(models.LessonOccurrence.id)
+        select(SchedulerLessonLogV1.id)
         .where(
-            models.LessonOccurrence.organization_id == organization_id,
-            models.LessonOccurrence.active_schedule_block_id.in_(ids),
-            models.LessonOccurrence.is_active.is_(True),
+            SchedulerLessonLogV1.organization_id == organization_id,
+            SchedulerLessonLogV1.lesson_id.in_(ids),
         )
-        .order_by(models.LessonOccurrence.id)
+        .order_by(SchedulerLessonLogV1.id)
         .with_for_update()
     )
 
@@ -422,11 +401,10 @@ async def _stable_impact(
     """Recompute the impact while holding the affected rows so confirmation stays exact."""
     impact = await compute_impact(db, organization_id, class_ids, start_date, end_date)
     for _ in range(3):
-        ids = [lesson.active_schedule_block_id for lesson in impact.lessons]
+        ids = [lesson.lesson_id for lesson in impact.lessons]
         await _lock_affected_occurrences(db, organization_id, ids)
-        await _lock_affected_blocks(db, organization_id, ids)
         refreshed = await compute_impact(db, organization_id, class_ids, start_date, end_date)
-        if [lesson.active_schedule_block_id for lesson in refreshed.lessons] == ids:
+        if [lesson.lesson_id for lesson in refreshed.lessons] == ids:
             return refreshed
         impact = refreshed
     raise InternshipFlowStale(STALE_MESSAGE)
@@ -441,53 +419,34 @@ async def _record_internship_occurrences(
     """Turn every removed lesson into an absence record visible in /absences."""
     if not lessons:
         return
-    # Local import avoids the occurrence-service <-> internship-flow import cycle.
-    from app.services import occurrence_service
-
+    if changed_by_membership_id is None:
+        raise InternshipFlowError("A alteração de aulas exige um membro responsável.")
     for lesson in lessons:
-        try:
-            async with db.begin_nested():
-                occurrence, _ = await occurrence_service.create_occurrence_from_active_block(
-                    db,
-                    organization_id,
-                    lesson.active_schedule_block_id,
-                    created_by_membership_id=changed_by_membership_id,
-                    creation_source="internship_flow",
-                    reason=INTERNSHIP_FLOW_OCCURRENCE_REASON,
-                )
-        except Exception as exc:
-            logger.warning(
-                "internship_flow_occurrence_creation_failed",
-                organization_id=organization_id,
-                active_schedule_block_id=lesson.active_schedule_block_id,
-                error_type=type(exc).__name__,
-                exception_frames=safe_exception_frames(exc),
+        await operations.record_lesson_log(
+            db,
+            organization_id,
+            membership_id=changed_by_membership_id,
+            lesson_id=lesson.lesson_id,
+            status="OCCURRENCE",
+            summary=None,
+            notes=INTERNSHIP_FLOW_OCCURRENCE_REASON,
+            now_utc=datetime.now(UTC),
+        )
+        log = await db.scalar(
+            select(SchedulerLessonLogV1).where(
+                SchedulerLessonLogV1.organization_id == organization_id,
+                SchedulerLessonLogV1.lesson_id == lesson.lesson_id,
             )
-            continue
-        if occurrence is None or occurrence.status is not None:
-            continue
-        try:
-            async with db.begin_nested():
-                decided = await occurrence_service.update_occurrence(
-                    db,
-                    occurrence.id,
-                    organization_id,
-                    schemas.LessonOccurrenceUpdate(
-                        status=models.LessonOccurrenceStatus.GAP,
-                        version=occurrence.version,
-                    ),
-                    decided_by_membership_id=changed_by_membership_id,
-                )
-                decided.reason = INTERNSHIP_FLOW_OCCURRENCE_REASON
-        except Exception as exc:
-            logger.warning(
-                "internship_flow_occurrence_decision_failed",
-                organization_id=organization_id,
-                active_schedule_block_id=lesson.active_schedule_block_id,
-                occurrence_id=occurrence.id,
-                error_type=type(exc).__name__,
-                exception_frames=safe_exception_frames(exc),
-            )
+        )
+        await occurrences_v1.update_occurrence(
+            db,
+            organization_id,
+            log.id,
+            schemas.LessonOccurrenceUpdate(
+                status=models.LessonOccurrenceStatus.GAP, version=log.revision
+            ),
+            decided_by_membership_id=changed_by_membership_id,
+        )
 
 
 async def _cancel_pending_operational_blocks(
@@ -741,7 +700,7 @@ async def _load_flow(
 def _preview_response(impact: FlowImpact) -> schemas.CalendarEventChangePreviewRead:
     lessons = [
         schemas.AffectedLessonRead(
-            active_schedule_block_id=lesson.active_schedule_block_id,
+            lesson_id=lesson.lesson_id,
             class_id=lesson.class_id,
             class_name=lesson.class_name,
             subject_id=lesson.subject_id,

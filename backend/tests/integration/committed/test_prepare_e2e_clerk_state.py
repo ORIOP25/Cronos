@@ -2,7 +2,7 @@ import pytest
 from sqlalchemy import func, select
 
 from app import models
-from app.services.e2e_clerk_state import (
+from scripts.e2e_clerk_state import (
     ClerkOrganization,
     ClerkOrganizationMembership,
     ClerkUser,

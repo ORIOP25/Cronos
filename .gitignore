@@ -5,38 +5,45 @@ __pycache__/
 .venv/
 venv/
 .pytest_cache/
+.ruff_cache/
 .coverage
 coverage.xml
 htmlcov/
 
-# --- Variáveis de Ambiente (SEGURANÇA MÁXIMA) ---
+# --- Environment variables ---
 .env
 .env.local
 
-# --- Artefactos Gerados / Logs ---
+# --- Generated artifacts / logs ---
 celerybeat-schedule
-test_output.txt
 test-results.xml
 coverage/
 frontend/playwright-report/
 frontend/test-results/
-frontend/coverage/
 frontend/.auth/
 .test-artifacts/
+*.log
 
 # --- Frontend (Node) ---
 node_modules/
-frontend/node_modules/
 .pnpm-store/
 dist/
+dist-ssr/
 build/
 .npm
-*.log
+*.local
+*.sw?
 
-# --- IDEs / Sistemas Operativos ---
+# --- IDEs / operating systems ---
 .vscode/
 .idea/
 .DS_Store
 Thumbs.db
-.agents/
+
+# --- Agent skills: only the repository's own skills are tracked ---
+.agents/skills/*
+!.agents/skills/cronos-*/
+!.agents/skills/ponytail/
+
+# --- Local documents ---
 *.docx

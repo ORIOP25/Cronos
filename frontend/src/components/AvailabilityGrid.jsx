@@ -1,9 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { PREFERENCE_LEVELS, DEFAULT_PREFERENCE } from '../constants'
-
-const DAY_LABELS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo']
-
-function timeLabel(time = '') { return time.slice(0, 5) }
+import { PREFERENCE_LEVELS, DEFAULT_PREFERENCE, DAY_LABELS } from '../constants'
+import { normalizeTimeLabel } from '../utils/formatUtils'
 
 export default function AvailabilityGrid({ timeslots = [], availabilityMap, onChange, selectedMode }) {
   const [focusedId, setFocusedId] = useState(null)
@@ -11,9 +8,9 @@ export default function AvailabilityGrid({ timeslots = [], availabilityMap, onCh
   const cellRefs = useRef(new Map())
 
   const model = useMemo(() => {
-    const slotByKey = new Map(timeslots.map((slot) => [`${slot.day_of_week}:${timeLabel(slot.start_time)}`, slot]))
+    const slotByKey = new Map(timeslots.map((slot) => [`${slot.day_of_week}:${normalizeTimeLabel(slot.start_time)}`, slot]))
     const days = [...new Set(timeslots.map((slot) => slot.day_of_week))].sort((a, b) => a - b)
-    const times = [...new Set(timeslots.map((slot) => timeLabel(slot.start_time)))].sort((a, b) => a.localeCompare(b))
+    const times = [...new Set(timeslots.map((slot) => normalizeTimeLabel(slot.start_time)))].sort((a, b) => a.localeCompare(b))
     return { slotByKey, days, times }
   }, [timeslots])
 
@@ -40,7 +37,7 @@ export default function AvailabilityGrid({ timeslots = [], availabilityMap, onCh
 
   const moveFocus = (currentSlot, dayOffset, timeOffset) => {
     const dayIndex = model.days.indexOf(currentSlot.day_of_week)
-    const timeIndex = model.times.indexOf(timeLabel(currentSlot.start_time))
+    const timeIndex = model.times.indexOf(normalizeTimeLabel(currentSlot.start_time))
     const nextDay = model.days[dayIndex + dayOffset]
     const nextTime = model.times[timeIndex + timeOffset]
     if (nextDay === undefined || nextTime === undefined) return
@@ -60,7 +57,7 @@ export default function AvailabilityGrid({ timeslots = [], availabilityMap, onCh
     }
     if (event.key === 'Home' || event.key === 'End') {
       event.preventDefault()
-      const time = timeLabel(slot.start_time)
+      const time = normalizeTimeLabel(slot.start_time)
       const day = event.key === 'Home' ? model.days[0] : model.days.at(-1)
       const next = model.slotByKey.get(`${day}:${time}`)
       if (next) {
@@ -78,7 +75,11 @@ export default function AvailabilityGrid({ timeslots = [], availabilityMap, onCh
   return (
     <>
     <p className="small text-muted d-lg-none mb-1">Deslize horizontalmente para ver todos os dias.</p>
-    <div className="availability-grid-scroll" role="region" aria-label="Grelha de preferências de disponibilidade" tabIndex="0">
+    <section
+      className="availability-grid-scroll"
+      aria-label="Grelha de preferências de disponibilidade"
+      tabIndex="0" // NOSONAR: a scrollable region must be keyboard focusable (WCAG 2.1.1)
+    >
       <div className="availability-grid" style={{ '--availability-days': model.days.length }}>
         <div className="availability-grid__header">Hora</div>
         {model.days.map((day) => <div className="availability-grid__header" key={day}>{DAY_LABELS[day] ?? `Dia ${day + 1}`}</div>)}
@@ -88,6 +89,7 @@ export default function AvailabilityGrid({ timeslots = [], availabilityMap, onCh
             {model.days.map((day) => {
               const slot = model.slotByKey.get(`${day}:${time}`)
               if (!slot) return <div className="availability-grid__empty" key={`${day}-${time}`} aria-label="Bloco indisponível">—</div>
+              const dayLabel = DAY_LABELS[day] ?? `Dia ${day + 1}`
               const score = getScore(slot.id)
               const preference = PREFERENCE_LEVELS[score]
               const selected = effectiveFocusedId === slot.id
@@ -103,7 +105,7 @@ export default function AvailabilityGrid({ timeslots = [], availabilityMap, onCh
                   className="availability-grid__cell"
                   style={{ '--preference-color': preference.color }}
                   tabIndex={selected ? 0 : -1}
-                  aria-label={`${DAY_LABELS[day] ?? `Dia ${day + 1}`}, ${time}, estado guardado: ${preference.label}, ferramenta ativa: ${PREFERENCE_LEVELS[selectedMode].label}`}
+                  aria-label={`${dayLabel}, ${time}, estado guardado: ${preference.label}, ferramenta ativa: ${PREFERENCE_LEVELS[selectedMode].label}`}
                   onFocus={() => setFocusedId(slot.id)}
                   onKeyDown={(event) => handleKeyDown(event, slot)}
                   onPointerDown={(event) => {
@@ -124,7 +126,7 @@ export default function AvailabilityGrid({ timeslots = [], availabilityMap, onCh
           </div>
         ))}
       </div>
-    </div>
+    </section>
     </>
   )
 }

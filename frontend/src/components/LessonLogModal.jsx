@@ -50,7 +50,6 @@ const LessonLogModal = ({ onClose, slot, isAdmin = false, readOnly = false, allo
     setErrorMessage('')
     try {
       await upsertLogMutation.mutateAsync({
-        activeScheduleBlockId: slot.active_schedule_block_id,
         operationalBlockId: slot.operational_block_id,
         schedulerLessonId: slot.scheduler_lesson_id,
         payload: { status, summary, notes },
@@ -303,7 +302,7 @@ const LessonLogModal = ({ onClose, slot, isAdmin = false, readOnly = false, allo
                 </CButton>
                 <CButton
                   color="warning" size="sm" className="text-white"
-                  onClick={() => { setShowOccurrenceConfirm(false); handleSubmit('OCCURRENCE') }}
+                  onClick={() => { setShowOccurrenceConfirm(false); void handleSubmit('OCCURRENCE') }}
                   disabled={upsertLogMutation.isPending}
                 >
                   {upsertLogMutation.isPending && <CSpinner size="sm" className="me-1" />}

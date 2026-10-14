@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models
@@ -22,15 +22,10 @@ from app.scheduler.infrastructure.jobs import queue_position
 from app.scheduler.infrastructure.models import (
     JOB_ACTIVE_STATUSES,
     JOB_TERMINAL_STATUSES,
-    CurricularAssignment,
     SchedulerJobV1,
-    SchedulerLessonLogV1,
-    SchedulerLessonSliceV1,
-    SchedulerLessonV1,
     SchedulerProposalV1,
-    SchedulerVersionV1,
 )
-from app.scheduler.infrastructure.progress import load_executed_minutes
+from app.scheduler.infrastructure.progress import load_active_version_id
 
 
 def _iso(value: datetime | None) -> str | None:
@@ -53,18 +48,6 @@ async def _year_and_state(db: AsyncSession, organization_id: int):
         )
     )
     return year, state
-
-
-async def _active_version_id(
-    db: AsyncSession, organization_id: int, school_year_id: int
-) -> int | None:
-    return await db.scalar(
-        select(SchedulerVersionV1.id).where(
-            SchedulerVersionV1.organization_id == organization_id,
-            SchedulerVersionV1.school_year_id == school_year_id,
-            SchedulerVersionV1.status == "ACTIVE",
-        )
-    )
 
 
 async def _eligibility(
@@ -134,8 +117,7 @@ async def _job_summary(db: AsyncSession, job: SchedulerJobV1) -> dict:
     }
 
 
-async def _proposal_summary(
-    db: AsyncSession,
+def _proposal_summary(
     proposal: SchedulerProposalV1,
     *,
     state: models.SchedulerSchoolYearState | None,
@@ -201,7 +183,7 @@ async def scheduler_status(db: AsyncSession, organization_id: int, *, now_utc: d
             "active_job": None,
             "pending_proposal": None,
         }
-    active_version_id = await _active_version_id(db, organization_id, year.id)
+    active_version_id = await load_active_version_id(db, organization_id, year.id)
     active_proposal_id = (
         await db.scalar(
             select(SchedulerProposalV1.id)
@@ -255,9 +237,7 @@ async def scheduler_status(db: AsyncSession, organization_id: int, *, now_utc: d
         "pending_proposal": (
             None
             if proposal is None
-            else await _proposal_summary(
-                db, proposal, state=state, active_version_id=active_version_id
-            )
+            else _proposal_summary(proposal, state=state, active_version_id=active_version_id)
         ),
     }
 
@@ -280,9 +260,7 @@ async def get_job(db: AsyncSession, organization_id: int, job_id: int) -> dict |
     return summary
 
 
-async def current_proposal(
-    db: AsyncSession, organization_id: int, *, now_utc: datetime
-) -> dict | None:
+async def current_proposal(db: AsyncSession, organization_id: int) -> dict | None:
     year, state = await _year_and_state(db, organization_id)
     if year is None:
         return None
@@ -297,10 +275,8 @@ async def current_proposal(
     )
     if proposal is None:
         return None
-    active_version_id = await _active_version_id(db, organization_id, year.id)
-    summary = await _proposal_summary(
-        db, proposal, state=state, active_version_id=active_version_id
-    )
+    active_version_id = await load_active_version_id(db, organization_id, year.id)
+    summary = _proposal_summary(proposal, state=state, active_version_id=active_version_id)
     job = await db.scalar(select(SchedulerJobV1).where(SchedulerJobV1.id == proposal.job_id))
     summary["strategy"] = job.strategy if job is not None else None
     return summary
@@ -316,120 +292,3 @@ async def proposal_diff(db: AsyncSession, organization_id: int, proposal_id: int
     if proposal is None:
         return None
     return dict(proposal.diff_json or {})
-
-
-async def proposal_lessons(
-    db: AsyncSession, organization_id: int, proposal_id: int, *, skip: int = 0, limit: int = 500
-) -> dict | None:
-    """Read the persisted version and its actual module slices without publishing it."""
-    proposal = await db.scalar(
-        select(SchedulerProposalV1).where(
-            SchedulerProposalV1.id == proposal_id,
-            SchedulerProposalV1.organization_id == organization_id,
-        )
-    )
-    if proposal is None:
-        return None
-    scope = (
-        SchedulerLessonV1.organization_id == organization_id,
-        SchedulerLessonV1.school_year_id == proposal.school_year_id,
-        SchedulerLessonV1.version_id == proposal.version_id,
-    )
-    total = await db.scalar(select(func.count()).select_from(SchedulerLessonV1).where(*scope))
-    rows = (
-        await db.execute(
-            select(SchedulerLessonV1, CurricularAssignment)
-            .join(
-                CurricularAssignment,
-                (
-                    (CurricularAssignment.id == SchedulerLessonV1.assignment_id)
-                    & (CurricularAssignment.organization_id == organization_id)
-                    & (CurricularAssignment.school_year_id == proposal.school_year_id)
-                ),
-            )
-            .where(*scope)
-            .order_by(SchedulerLessonV1.id)
-            .offset(skip)
-            .limit(limit)
-        )
-    ).all()
-    slices_by_lesson = {lesson.id: [] for lesson, _ in rows}
-    assignment_ids = list(
-        await db.scalars(
-            select(CurricularAssignment.id).where(
-                CurricularAssignment.organization_id == organization_id,
-                CurricularAssignment.school_year_id == proposal.school_year_id,
-            )
-        )
-    )
-    executed = await load_executed_minutes(db, organization_id, assignment_ids)
-    log_lesson_ids = {
-        identity
-        for lesson, _ in rows
-        for identity in (lesson.id, lesson.source_lesson_id)
-        if identity is not None
-    }
-    logs = (
-        {
-            log.lesson_id: log.status
-            for log in await db.scalars(
-                select(SchedulerLessonLogV1).where(
-                    SchedulerLessonLogV1.organization_id == organization_id,
-                    SchedulerLessonLogV1.school_year_id == proposal.school_year_id,
-                    SchedulerLessonLogV1.lesson_id.in_(log_lesson_ids),
-                )
-            )
-        }
-        if log_lesson_ids
-        else {}
-    )
-    if slices_by_lesson:
-        slices = await db.scalars(
-            select(SchedulerLessonSliceV1)
-            .where(
-                SchedulerLessonSliceV1.organization_id == organization_id,
-                SchedulerLessonSliceV1.school_year_id == proposal.school_year_id,
-                SchedulerLessonSliceV1.lesson_id.in_(slices_by_lesson),
-            )
-            .order_by(SchedulerLessonSliceV1.id)
-        )
-        for item in slices:
-            slices_by_lesson[item.lesson_id].append(
-                {
-                    "module_id": item.module_id,
-                    "offset_minutes": item.offset_minutes,
-                    "minutes": item.minutes,
-                }
-            )
-    return {
-        "proposal_id": proposal.id,
-        "organization_id": organization_id,
-        "school_year_id": proposal.school_year_id,
-        "version_id": proposal.version_id,
-        "total": total,
-        "executed": [
-            {"assignment_id": assignment_id, "module_id": module_id, "minutes": minutes}
-            for assignment_id, modules in sorted(executed.items())
-            for module_id, minutes in sorted(modules.items())
-            if minutes > 0
-        ],
-        "lessons": [
-            {
-                "id": lesson.id,
-                "assignment_id": lesson.assignment_id,
-                "class_id": assignment.class_id,
-                "subject_id": assignment.subject_id,
-                "teacher_id": assignment.teacher_id,
-                "room_id": lesson.room_id,
-                "school_date": lesson.school_date,
-                "starts_at": lesson.starts_at,
-                "ends_at": lesson.ends_at,
-                "physical_minutes": lesson.physical_minutes,
-                "credit_minutes": lesson.credit_minutes,
-                "source_lesson_id": lesson.source_lesson_id,
-                "lesson_log_status": logs.get(lesson.id, logs.get(lesson.source_lesson_id)),
-                "slices": slices_by_lesson[lesson.id],
-            }
-            for lesson, assignment in rows
-        ],
-    }

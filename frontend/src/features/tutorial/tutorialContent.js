@@ -1,5 +1,5 @@
 export const TUTORIAL_VERSION = 3
-export const TUTORIAL_STORAGE_PREFIX = `cronos:tutorial:v${TUTORIAL_VERSION}`
+const TUTORIAL_STORAGE_PREFIX = `cronos:tutorial:v${TUTORIAL_VERSION}`
 
 export const TUTORIAL_STATUSES = Object.freeze([
   'NOT_STARTED',
@@ -8,7 +8,7 @@ export const TUTORIAL_STATUSES = Object.freeze([
   'SKIPPED',
 ])
 
-export const TUTORIAL_PAGES = Object.freeze([
+const TUTORIAL_PAGES = Object.freeze([
   'Subjects',
   'CourseDetails',
   'Members',

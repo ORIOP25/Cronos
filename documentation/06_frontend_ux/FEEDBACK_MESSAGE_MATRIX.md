@@ -3,7 +3,7 @@
 ## Purpose
 
 This document records the channel and owner for each feedback message.
-It complements the [Feedback UX Tech Spec](FEEDBACK_UX_TECH_SPEC.md).
+The feedback contracts live in [Frontend Architecture](FRONTEND_ARCHITECTURE.md) and [Accessibility](ACCESSIBILITY.md).
 
 ## Intended Reader
 
@@ -11,7 +11,7 @@ This document targets frontend engineers and reviewers.
 
 ## Prerequisites
 
-Read the [Feedback UX Tech Spec](FEEDBACK_UX_TECH_SPEC.md) and the [Frontend Architecture](FRONTEND_ARCHITECTURE.md).
+Read the [Frontend Architecture](FRONTEND_ARCHITECTURE.md).
 
 ## Classification Rules
 
@@ -75,7 +75,7 @@ Other client responses stay in context.
 
 ## Justified Exceptions
 
-Three `CAlert` panels remain because they hold structured lists.
+`CAlert` remains only in `BulkImport.jsx` and `Schedules.jsx`, for structured lists.
 The import issues and warnings in `BulkImport` need per-line reading.
 The generation prevalidation list in `Schedules` links to the affected configuration.
 These panels keep their hierarchy, actions, and keyboard access.
@@ -90,6 +90,5 @@ These panels keep their hierarchy, actions, and keyboard access.
 
 ## Related Documents
 
-- [Feedback UX Tech Spec](FEEDBACK_UX_TECH_SPEC.md).
 - [Frontend Architecture](FRONTEND_ARCHITECTURE.md).
 - [Accessibility](ACCESSIBILITY.md).

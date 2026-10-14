@@ -5,6 +5,7 @@ clerk-backend-api==7.0.0
 email-validator==2.3.0
 fastapi==0.143.0
 holidays==0.106
+httpx==0.28.1
 ortools==9.15.6755
 psycopg2-binary==2.9.13
 pydantic-settings==2.15.0
