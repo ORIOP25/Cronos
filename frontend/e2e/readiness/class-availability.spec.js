@@ -50,9 +50,11 @@ async function completeFoundation(page, dates) {
   await expectRouteReady(page, '/dashboard')
 }
 
-// A second class in the same course receives the source grid. Both classes
-// share the fixture subject, the assigned teacher and the grade level the
-// prevalidation filter requires.
+// A second class in the same course is the neutral source. Both classes share
+// the fixture subject and the assigned teacher the prevalidation filter needs.
+// The class-subject link uses the current API defaults: POST selects every
+// module of the subject (D03) and the PATCH sets the teacher without clearing
+// the selection.
 async function createSecondClass(page, firstClass) {
   const courses = await apiRequest(page, 'GET', '/courses/')
   const course = courses.find((item) => item.name === 'E2E Dashboard Course')
@@ -95,9 +97,16 @@ function blockerLink(page, className) {
   return page.getByRole('link', { name: new RegExp(`${className} tem todos os blocos`) })
 }
 
+// The grid endpoint returns one entry per visible block, so a saved grid is
+// proven by checking every score, never by a single sample.
+function expectEveryGridScore(grid, score) {
+  expect(grid.length).toBeGreaterThan(0)
+  for (const item of grid) expect(item.score).toBe(score)
+}
+
 test.describe.configure({ mode: 'serial' })
 
-test('an all-impossible class blocks generation until another grid is copied', async ({ page }) => {
+test('an all-impossible class blocks generation until a neutral grid is copied onto it', async ({ page }) => {
   test.setTimeout(600_000)
 
   attachRuntimeGuards(page)
@@ -134,17 +143,26 @@ test('an all-impossible class blocks generation until another grid is copied', a
       await expect(blockerLink(page, firstClass.name)).toBeVisible({ timeout: 30_000 })
     })
 
-    await test.step('copies the other class grid and clears the block', async () => {
-      await goTo(page, `/courses/${courseId}/classes/${firstClass.id}`)
+    await test.step('copies a neutral grid onto the blocked class through the editor', async () => {
+      const blockedGrid = await apiRequest(page, 'GET', `/classes/${firstClass.id}/availability`)
+      expectEveryGridScore(blockedGrid, -1)
+      const sourceGrid = await apiRequest(page, 'GET', `/classes/${secondClass.id}/availability`)
+      expectEveryGridScore(sourceGrid, 1)
+
+      await goTo(page, `/courses/${courseId}/classes/${secondClass.id}`)
       await page.getByRole('button', { name: /editar disponibilidade/i }).click()
+      await expect(page.getByText(`Disponibilidade — ${secondClass.name}`)).toBeVisible()
       await page.getByRole('button', { name: /aplicar a outras turmas/i }).click()
-      await page.getByRole('checkbox', { name: SECOND_CLASS_NAME }).check()
+      await page.getByRole('checkbox', { name: firstClass.name, exact: true }).check()
       await page.getByRole('button', { name: 'Aplicar a 1 turmas', exact: true }).click()
       const confirmation = page.getByRole('dialog').filter({ hasText: 'Vai substituir' })
       await confirmation.getByRole('button', { name: 'Aplicar', exact: true }).click()
       await expect(page.getByText(/Disponibilidade aplicada a 1 turmas/)).toBeVisible({ timeout: 30_000 })
-      const secondGrid = await apiRequest(page, 'GET', `/classes/${secondClass.id}/availability`)
-      expect(Array.isArray(secondGrid)).toBe(true)
+
+      const copiedGrid = await apiRequest(page, 'GET', `/classes/${firstClass.id}/availability`)
+      expect(copiedGrid).toEqual(sourceGrid)
+      const untouchedGrid = await apiRequest(page, 'GET', `/classes/${secondClass.id}/availability`)
+      expect(untouchedGrid).toEqual(sourceGrid)
       await page.getByRole('button', { name: 'Fechar', exact: true }).click()
     })
 

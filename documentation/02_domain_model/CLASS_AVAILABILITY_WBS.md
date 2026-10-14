@@ -34,8 +34,8 @@ Os pacotes de documentação 2.7, 3.9 e 4.7 são atualizados no mesmo ramo, nos 
 As provas de migração correram numa stack de teste descartável e isolada e passaram: `alembic upgrade head` (`0001 → 0002 → 0003`), `alembic check` sem drift, `alembic downgrade 0002_class_subject_modules`, nova subida para head, `python -m scripts.audit_triggers` e `python -m scripts.audit_database_integrity`. Evidência sanitizada em `.test-artifacts/cronos-avail-verify-migration-evidence.md`.
 
 Pendentes: 2.8, 3.10 e 4.8 (entrega de pull request), 5.1 (verificação manual) e 5.2 (estado final dos documentos).
-Pendente também o percurso 3.8: o e2e local está bloqueado pela política de execução, não por credenciais em falta.
-A entrega é acompanhada no pull request do ramo `feat/class-availability-engine`. A CI obrigatória final não é reclamada.
+O percurso 3.8 continua pendente: a verificação e2e local funciona (`doctor --profile e2e` devolve exit 0); a primeira tentativa de execução parou por porto 5174 ocupado.
+A entrega e o estado da CI são acompanhados no pull request [#133](https://github.com/ORIOP25/Cronos/pull/133). A CI obrigatória final não é reclamada.
 
 ## Intended Reader
 

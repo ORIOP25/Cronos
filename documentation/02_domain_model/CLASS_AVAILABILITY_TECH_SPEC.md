@@ -39,11 +39,13 @@ O código e a verificação local estão presentes. A CI obrigatória final (`ba
 
 As provas de migração correram numa stack de teste descartável e isolada e passaram: `alembic upgrade head` (`0001 → 0002 → 0003`), `alembic check` sem drift, `alembic downgrade 0002_class_subject_modules`, nova subida para head, `python -m scripts.audit_triggers` e `python -m scripts.audit_database_integrity`. Evidência sanitizada em `.test-artifacts/cronos-avail-verify-migration-evidence.md`.
 
-A entrega é acompanhada no pull request do ramo `feat/class-availability-engine`.
+A entrega é acompanhada no pull request [#133](https://github.com/ORIOP25/Cronos/pull/133), onde vive o estado atual da CI e da verificação.
+Na primeira corrida de CI, `backend`, `frontend`, `e2e-runtime` e SonarCloud ficaram verdes; o job `e2e-browser` falhou no estado de autenticação partilhado (organização Clerk não encontrada), o que bloqueia o percurso da aplicação. A correção do fluxo e2e está a ser integrada.
 
-O percurso e2e local está bloqueado pela política de execução, não por credenciais em falta. As credenciais de teste do Clerk estão fornecidas fora do repositório, mas a regra de permissões nega a leitura de ficheiros `*.env` (mesmo `node --env-file`). O ficheiro de credenciais não é lido, copiado nem codificado.
+A verificação e2e local está operacional depois de o ramo integrar o carregador de entradas documentado de `main` (#132): `node scripts/test.mjs doctor --profile e2e` devolve exit 0 com o runner normal, sem alteração de política nem inspeção de credenciais.
+Uma tentativa de `node scripts/test.mjs e2e --project app` terminou com exit 3 antes de arrancar porque o porto 5174 pertencia a outro teste.
 
-A reconstrução do contentor do frontend foi tentada com `docker compose up -d --build frontend`. Falhou antes de alterar serviços porque faltam `CRONOS_APP_PASSWORD`, `POSTGRES_PASSWORD` e `VITE_CLERK_PUBLISHABLE_KEY` neste worktree novo. A configuração segura fica pendente; não se copiam valores reais de ambiente.
+A reconstrução do contentor do frontend com `docker compose up -d --build frontend` continua bloqueada pela configuração local de base de dados em falta (`CRONOS_APP_PASSWORD`, `POSTGRES_PASSWORD`, `VITE_CLERK_PUBLISHABLE_KEY`) neste worktree. A configuração segura fica pendente; não se copiam valores reais de ambiente. O e2e não foi construído nem executado.
 
 ## Intended Reader
 
