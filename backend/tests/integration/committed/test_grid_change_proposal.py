@@ -1,7 +1,7 @@
 from datetime import UTC, date, datetime, time, timedelta
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from app import models, schemas
 from app.api import deps
@@ -590,3 +590,101 @@ async def test_grid_change_endpoint_keeps_the_job_queued_on_dispatch_failure(
     await db_session.refresh(job)
     assert job.status == "QUEUED"
     assert await grid_change_service.pending_grid_change(db_session, organization.id) is not None
+
+
+async def _first_published_class_block(db_session, seed, *, score):
+    published = await grid_version_service.get_active_grid_version(db_session, seed.organization.id)
+    block = (
+        await grid_version_service.get_version_blocks(
+            db_session, seed.organization.id, published.id
+        )
+    )[0]
+    # Regeneration seeds neutral teacher rows; drop them so the block is class-only.
+    await db_session.execute(
+        delete(models.Availability).where(
+            models.Availability.organization_id == seed.organization.id
+        )
+    )
+    db_session.add(
+        models.ClassAvailability(
+            organization_id=seed.organization.id,
+            class_id=seed.class_.id,
+            timeslot_id=block.id,
+            score=score,
+        )
+    )
+    await db_session.flush()
+    return block
+
+
+async def _new_version_class_rows(db_session, seed, grid_version_id):
+    blocks = await grid_version_service.get_version_blocks(
+        db_session, seed.organization.id, grid_version_id
+    )
+    rows = await db_session.scalars(
+        select(models.ClassAvailability).where(
+            models.ClassAvailability.organization_id == seed.organization.id,
+            models.ClassAvailability.class_id == seed.class_.id,
+            models.ClassAvailability.timeslot_id.in_({block.id for block in blocks}),
+        )
+    )
+    return list(rows.all())
+
+
+async def test_proposal_copies_class_availability_with_copy(db_session):
+    seed = await _published_grid_org(db_session)
+    block = await _first_published_class_block(
+        db_session, seed, score=models.PreferenceLevel.IMPOSSIBLE.value
+    )
+
+    payload = _bulk(slot_duration_minutes=55, break_duration_minutes=5)
+    preview = await grid_change_service.preview_grid_change(
+        db_session, seed.organization.id, schemas.GridChangePreviewRequest(timeslots=payload)
+    )
+    entry = next(
+        item for item in preview.affected_availabilities if item.current_timeslot_id == block.id
+    )
+    assert entry.requires_decision is True
+    assert entry.classes == [
+        {"class_id": seed.class_.id, "score": models.PreferenceLevel.IMPOSSIBLE.value}
+    ]
+
+    with pytest.raises(grid_change_service.GridChangeError) as excinfo:
+        await grid_change_service.propose_grid_change(
+            db_session,
+            seed.organization.id,
+            schemas.GridChangeProposeRequest(
+                timeslots=payload, fingerprint=preview.fingerprint, decisions=[]
+            ),
+            membership_id=seed.membership.id,
+        )
+    assert excinfo.value.code == "GRID_CHANGE_DECISION_REQUIRED"
+    assert await grid_change_service.pending_grid_change(db_session, seed.organization.id) is None
+
+    _, response = await _propose(
+        db_session,
+        seed,
+        bulk=payload,
+        decisions=[
+            schemas.GridChangeDecision(current_timeslot_id=block.id, action="COPY"),
+        ],
+    )
+    copied = await _new_version_class_rows(db_session, seed, response.grid_version_id)
+    assert [row.score for row in copied] == [models.PreferenceLevel.IMPOSSIBLE.value]
+
+
+async def test_proposal_discards_class_availability_when_decided(db_session):
+    seed = await _published_grid_org(db_session)
+    block = await _first_published_class_block(
+        db_session, seed, score=models.PreferenceLevel.AVOID.value
+    )
+
+    _, response = await _propose(
+        db_session,
+        seed,
+        bulk=_bulk(slot_duration_minutes=55, break_duration_minutes=5),
+        decisions=[
+            schemas.GridChangeDecision(current_timeslot_id=block.id, action="DISCARD"),
+        ],
+    )
+    assert await _new_version_class_rows(db_session, seed, response.grid_version_id) == []

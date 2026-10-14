@@ -30,6 +30,12 @@ Other client responses stay in context.
 | Save availability | Success | — | Toast, 4 s | `MyAvailability` | — |
 | Save availability | Transient failure | Network, 429, 5xx | Toast, 6 s | `MyAvailability` | Draft stays, retry |
 | Save availability | Context changed before the response | — | No feedback | `useAttemptScope` guard | Retry in the new context |
+| Save class availability | Success | — | Toast, 4 s | `ClassAvailabilityModal` | — |
+| Save class availability | Transient failure | Network, 429, 5xx | Toast, 6 s | `ClassAvailabilityModal` | Draft stays, retry |
+| Save class availability | Server block | `bad_request`, `duplicate_timeslot` | Banner in the modal | `ClassAvailabilityModal` | Fix the grid |
+| Apply class availability to other classes | Success | — | Toast, 4 s | `ClassAvailabilityModal` | — |
+| Apply class availability to other classes | Server block | `bad_request`, `resource_not_found` | Banner in the modal | `ClassAvailabilityModal` | Fix the selection |
+| Apply class availability to other classes | Transient failure | Network, 429, 5xx | Toast, 6 s | `ClassAvailabilityModal` | Retry |
 | Remove or archive a row | Success | — | Toast, 4 s | `SmartTable` | — |
 | Remove a row | Business block | `resource_in_use`, `course_has_classes` | Banner in context | `SmartTable` | Fix and retry |
 | Remove a row | Transient failure | Network, 429, 5xx | Toast, 6 s | `SmartTable` | Retry |
@@ -67,9 +73,11 @@ Other client responses stay in context.
 | Approve or reject a proposal | Success | — | Toast, 4 s | `Schedules` | — |
 | Approve a proposal | Stale proposal | `proposal_stale` | Persistent banner | `Schedules` | Generate a new proposal |
 | Generation failure | Known failure | `NO_ELIGIBLE_ROOM` and others | `FailureState` in context | `Schedules` | Retry or open rooms |
+| Generation failure | Proven per-class deficit | `INSUFFICIENT_CLASS_TIME`, `INSUFFICIENT_INTERSECTION` | `FailureState` in context | `Schedules` | Review class availability |
 | Validate or commit an import | Success | — | Toast, 4 s | `BulkImport` | — |
 | Validate or commit an import | Transient failure | Network, 429, 5xx | Toast, 6 s | `BulkImport` | Retry |
 | Import issues | Structured list | — | List panel | `BulkImport` | Consult each issue |
+| Class availability import issue | Cell error | `level_invalid` and others | List panel; the field is the hour column title | `BulkImport` | Fix the cell |
 | Invite, sync, or restore a member | Success | — | Toast, 4 s | `Members` | — |
 | Member action | Transient failure | Network, 429, 5xx | Toast, 6 s | `Members` | Retry |
 | Member action | Access block | `member_sync_error` and others | Banner in context | `Members` | Resolve the sync |

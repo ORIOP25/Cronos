@@ -9,7 +9,7 @@ import CIcon from '@coreui/icons-react'
 import {
   cilArrowLeft, cilPencil, cilSave, cilX,
   cilPeople, cilBook, cilCheckCircle,
-  cilBookmark, cilChevronRight, cilSettings,
+  cilBookmark, cilChevronRight, cilSettings, cilCalendar,
 } from '@coreui/icons'
 
 import {
@@ -17,10 +17,12 @@ import {
   useUpdateCourseClass,
   useUpdateClassProgress,
   useClassSubjects,
+  useClassAvailability,
 } from '../features/catalog/data'
 import Breadcrumbs from '../components/Breadcrumbs'
 import FeedbackBanner from '../components/FeedbackBanner'
 import RoomTypeBadge from '../components/RoomTypeBadge'
+import ClassAvailabilityModal from '../components/ClassAvailabilityModal'
 import { getApiErrorMessage } from '../utils/apiErrors'
 import { useAttemptScope } from '../hooks/useAttemptScope'
 import { formatGradeLevel } from '../utils/presentation'
@@ -35,6 +37,21 @@ const getProgressColor = (pct) => {
   if (pct >= 60)  return 'var(--rs-progress-yellow)'
   if (pct >= 30)  return 'var(--rs-progress-orange)'
   return 'var(--rs-progress-red)'
+}
+
+/** Resumo dos níveis diferentes de Neutro. Omite os níveis com zero. */
+const summarizeClassAvailability = (rows) => {
+  const counts = { impossible: 0, avoid: 0, preferred: 0 }
+  for (const row of Array.isArray(rows) ? rows : []) {
+    if (row.score === -1) counts.impossible += 1
+    else if (row.score === 0) counts.avoid += 1
+    else if (row.score === 2) counts.preferred += 1
+  }
+  const parts = []
+  if (counts.impossible) parts.push(`${counts.impossible} impossíveis`)
+  if (counts.avoid) parts.push(`${counts.avoid} a evitar`)
+  if (counts.preferred) parts.push(`${counts.preferred} preferenciais`)
+  return parts.length ? parts.join(' · ') : 'Sem restrições. Todos os blocos estão em Neutro.'
 }
 
 // ==========================================
@@ -180,6 +197,7 @@ const ClassDetails = () => {
   // --- DATA ---
   const { data: classData, isLoading, error } = useClassDetails(numClassId)
   const { data: classSubjects } = useClassSubjects(numClassId)
+  const classAvailabilityQuery = useClassAvailability({ classId: numClassId })
   const updateClass = useUpdateCourseClass()
   const updateProgress = useUpdateClassProgress()
   const attemptScope = useAttemptScope()
@@ -187,6 +205,14 @@ const ClassDetails = () => {
   // --- STATE: Edição do header ---
   const [editingHeader, setEditingHeader] = useState(false)
   const [headerForm, setHeaderForm] = useState({ name: '', size: 25 })
+
+  // --- STATE: Disponibilidade da turma ---
+  const [availabilityOpen, setAvailabilityOpen] = useState(false)
+
+  const availabilitySummary = useMemo(() => {
+    if (classAvailabilityQuery.error) return 'Não foi possível carregar a disponibilidade.'
+    return summarizeClassAvailability(classAvailabilityQuery.data)
+  }, [classAvailabilityQuery.error, classAvailabilityQuery.data])
 
   // --- STATE: Edição de progresso ---
   const [editingProgress, setEditingProgress] = useState(false)
@@ -407,6 +433,30 @@ const ClassDetails = () => {
         </CCardBody>
       </CCard>
 
+      {/* ==== DISPONIBILIDADE DA TURMA ==== */}
+      <CCard className="mb-4 border-0 shadow-sm">
+        <CCardHeader className="bg-transparent d-flex justify-content-between align-items-center">
+          <div className="d-flex align-items-center gap-2">
+            <CIcon icon={cilCalendar} className="text-primary" />
+            <strong>Disponibilidade</strong>
+          </div>
+          {!classData.is_archived && (
+            <CButton
+              color="primary"
+              variant="outline"
+              size="sm"
+              onClick={() => setAvailabilityOpen(true)}
+            >
+              <CIcon icon={cilPencil} size="sm" className="me-1" />
+              Editar disponibilidade
+            </CButton>
+          )}
+        </CCardHeader>
+        <CCardBody className="py-2">
+          <p className="text-muted mb-0">{availabilitySummary}</p>
+        </CCardBody>
+      </CCard>
+
       {/* ==== RESUMO DISCIPLINAS & PROFESSORES (inline) ==== */}
       <CCard className="mb-4 border-0 shadow-sm">
         <CCardHeader className="bg-transparent d-flex justify-content-between align-items-center">
@@ -557,6 +607,13 @@ const ClassDetails = () => {
           )}
         </CCardBody>
       </CCard>
+
+      {availabilityOpen && (
+        <ClassAvailabilityModal
+          schoolClass={classData}
+          onClose={() => setAvailabilityOpen(false)}
+        />
+      )}
     </div>
   )
 }

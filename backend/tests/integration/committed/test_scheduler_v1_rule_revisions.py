@@ -11,7 +11,12 @@ from sqlalchemy import select
 from app import models, schemas
 from app.scheduler.infrastructure.proposals import ProposalConflict, approve_proposal
 from app.scheduler.infrastructure.queries import current_proposal, scheduler_status
-from app.services import room_service, schedule_service
+from app.services import (
+    class_availability_service,
+    grid_version_service,
+    room_service,
+    schedule_service,
+)
 from tests._support.scheduler_v1 import (
     MOMENT,
     run_generation,
@@ -177,3 +182,86 @@ async def test_a_rename_that_the_planner_ignores_does_not_consume_revisions(
     assert (seed.state.input_revision, seed.state.planning_revision) == before
     status = await scheduler_status(db_session, seed.organization.id, now_utc=MOMENT)
     assert "PLANNING_CHANGE" not in status["eligibility"]["reasons"]
+
+
+async def _visible_block_ids(db_session, organization_id: int) -> list[int]:
+    today = await grid_version_service.school_today(db_session, organization_id)
+    resolved = await grid_version_service.resolve_grid(db_session, organization_id, today)
+    return [block.id for block in resolved.blocks]
+
+
+def _class_request(block_ids: list[int]) -> list[schemas.AvailabilitySelfCreate]:
+    return [
+        schemas.AvailabilitySelfCreate(timeslot_id=block_id, score=models.PreferenceLevel.AVOID)
+        for block_id in block_ids
+    ]
+
+
+async def test_class_availability_write_invalidates_a_pending_proposal(db_session, monkeypatch):
+    seed = await seed_generatable_school(
+        db_session,
+        clerk_user_id="rule_class_avail",
+        clerk_org_id="rule_org_class_avail",
+    )
+    await db_session.commit()
+    await _queue_generation(db_session, monkeypatch, seed, key="rule-class-avail")
+    proposal = await current_proposal(db_session, seed.organization.id)
+    assert proposal is not None
+    assert proposal["can_approve"] is True
+
+    await class_availability_service.replace_class_availability(
+        db_session,
+        seed.class_.id,
+        _class_request(await _visible_block_ids(db_session, seed.organization.id)),
+        seed.organization.id,
+    )
+    await db_session.commit()
+
+    summary = await current_proposal(db_session, seed.organization.id)
+    assert summary["can_approve"] is False
+    assert summary["stale_reason"] == "REVISIONS_CHANGED"
+    with pytest.raises(ProposalConflict) as conflict:
+        await approve_proposal(
+            db_session,
+            organization_id=seed.organization.id,
+            proposal_id=proposal["proposal_id"],
+            decided_by_membership_id=seed.membership.id,
+            now_utc=MOMENT,
+        )
+    assert conflict.value.code == "proposal_stale"
+
+
+async def test_class_availability_write_without_links_keeps_the_proposal(db_session, monkeypatch):
+    seed = await seed_generatable_school(
+        db_session,
+        clerk_user_id="rule_class_unlinked",
+        clerk_org_id="rule_org_class_unlinked",
+    )
+    await db_session.commit()
+    await _queue_generation(db_session, monkeypatch, seed, key="rule-class-unlinked")
+    proposal = await current_proposal(db_session, seed.organization.id)
+    assert proposal is not None
+    assert proposal["can_approve"] is True
+
+    unlinked = models.Class(
+        organization_id=seed.organization.id,
+        course_id=seed.course.id,
+        name="Turma Sem Ligações",
+        size=20,
+        grade_level=11,
+        start_year=2026,
+        end_year=2029,
+    )
+    db_session.add(unlinked)
+    await db_session.flush()
+
+    await class_availability_service.replace_class_availability(
+        db_session,
+        unlinked.id,
+        _class_request(await _visible_block_ids(db_session, seed.organization.id)),
+        seed.organization.id,
+    )
+    await db_session.commit()
+
+    summary = await current_proposal(db_session, seed.organization.id)
+    assert summary["can_approve"] is True

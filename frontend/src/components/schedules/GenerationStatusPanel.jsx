@@ -5,6 +5,7 @@ import { useScheduleTaskStatus } from '../../features/scheduling/data'
 import FailureState from '../FailureState'
 import FeedbackBanner from '../FeedbackBanner'
 import { getApiErrorPresentation } from '../../utils/apiErrors'
+import { formatDurationMinutes } from '../../utils/formatUtils'
 
 const ACTIVE_STATUSES = new Set(['QUEUED', 'RUNNING', 'VALIDATING'])
 const TERMINAL_STATUSES = new Set([
@@ -31,6 +32,33 @@ const TERMINAL_MESSAGES = {
   INCONCLUSIVE:
     'Não foi possível concluir a pesquisa. Isto não significa que o horário seja impossível.',
   FAILED: 'Ocorreu um erro durante a geração. Tente novamente.',
+}
+
+// A proven class diagnostic always carries the current name, the course and a
+// positive deficit. An unresolved class (deleted after the failure) or one
+// without a proven number never appears as a known name or as "0 min".
+const provenClassDiagnostics = (diagnostics) => (Array.isArray(diagnostics) ? diagnostics : [])
+  .filter((item) => (
+    item.class_id
+    && item.class_name
+    && item.course_id
+    && typeof item.minimum_missing_minutes === 'number'
+    && Number.isFinite(item.minimum_missing_minutes)
+    && item.minimum_missing_minutes > 0
+  ))
+
+const DiagnosticLine = ({ diagnostic }) => {
+  const isIntersection = diagnostic.code === 'INSUFFICIENT_INTERSECTION' && diagnostic.subject_name
+  return (
+    <li>
+      <Link to={`/courses/${diagnostic.course_id}/classes/${diagnostic.class_id}`}>
+        {diagnostic.class_name}
+      </Link>
+      {isIntersection ? ` · ${diagnostic.subject_name}` : ''}
+      {`: faltam pelo menos ${formatDurationMinutes(Math.ceil(diagnostic.minimum_missing_minutes))}`}
+      {isIntersection ? ' em que a turma e o professor estejam livres.' : '.'}
+    </li>
+  )
 }
 
 const GenerationStatusPanel = ({ jobId }) => {
@@ -81,6 +109,9 @@ const GenerationStatusPanel = ({ jobId }) => {
   }
   if (TERMINAL_STATUSES.has(status)) {
     const roomBlocked = job.stop_reason === 'NO_ELIGIBLE_ROOM'
+    const classDiagnostics = status === 'INFEASIBLE' && !roomBlocked
+      ? provenClassDiagnostics(job.diagnostics)
+      : []
     return (
       <div className="mb-4" data-testid="generation-terminal">
         <FeedbackBanner tone={status === 'CANCELLED' || status === 'STALE' ? 'warning' : 'danger'}>
@@ -90,6 +121,16 @@ const GenerationStatusPanel = ({ jobId }) => {
             <>
               Existem turmas sem sala compatível com o tipo e a lotação.{' '}
               <Link to="/rooms">Abrir Salas</Link> para corrigir e voltar a gerar.
+            </>
+          ) : classDiagnostics.length > 0 ? (
+            <>
+              Turmas sem tempo suficiente:
+              <ul className="mb-1 mt-1 ps-3">
+                {classDiagnostics.map((diagnostic) => (
+                  <DiagnosticLine key={diagnostic.class_id} diagnostic={diagnostic} />
+                ))}
+              </ul>
+              Reveja a disponibilidade destas turmas.
             </>
           ) : (TERMINAL_MESSAGES[status] || '')}
         </FeedbackBanner>

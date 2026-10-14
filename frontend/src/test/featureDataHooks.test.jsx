@@ -10,12 +10,15 @@ import {
 } from '../features/members/data'
 import {
   useAvailableSubjects,
+  useClassAvailability,
   useClasses,
   useClassSubjects,
+  useCopyClassAvailability,
   useCourses,
   useCreateSubject,
   useEligibleTeachers,
   useRooms,
+  useSaveClassAvailability,
   useSubjects,
   useTimeslots,
   useUpdateClassSubject,
@@ -235,6 +238,49 @@ describe('vertical feature data hooks', () => {
     expect(invalidate.mock.calls.map(([options]) => options.queryKey)).toEqual(expect.arrayContaining([
       ['courses', 'org-a'],
       ['classes', 'org-a'],
+      ['readiness-bases', 'org-a'],
+    ]))
+  })
+
+  it('reads, saves, and copies class availability with tenant keys and invalidations', async () => {
+    const { queryClient, wrapper } = createHarness()
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
+    const read = renderHook(() => useClassAvailability({ classId: 9, onDate: '2031-01-01' }), { wrapper })
+
+    await waitFor(() => expect(read.result.current.isSuccess).toBe(true))
+    expect(apiClient.get).toHaveBeenCalledWith('/classes/9/availability', {
+      params: { on_date: '2031-01-01' },
+    })
+    expect(queryClient.getQueryCache().getAll().map(({ queryKey }) => queryKey))
+      .toContainEqual(['class-availability', 'org-a', 9, '2031-01-01'])
+    read.unmount()
+
+    const save = renderHook(() => useSaveClassAvailability(), { wrapper })
+    const payload = [{ timeslot_id: 11, score: 0 }]
+    await act(() => save.result.current.mutateAsync({
+      classId: 9, payload, onDate: '2031-01-01',
+    }))
+    expect(apiClient.put).toHaveBeenCalledWith('/classes/9/availability', payload, {
+      params: { on_date: '2031-01-01' },
+    })
+    expect(queryClient.getQueryData(['class-availability', 'org-a', 9, '2031-01-01'])).toEqual(payload)
+    expect(invalidate.mock.calls.map(([options]) => options.queryKey)).toEqual(expect.arrayContaining([
+      ['class-availability', 'org-a'],
+      ['dashboard', 'org-a'],
+      ['readiness-bases', 'org-a'],
+      ['scheduler-prevalidation', 'org-a'],
+    ]))
+
+    invalidate.mockClear()
+    const copy = renderHook(() => useCopyClassAvailability(), { wrapper })
+    await act(() => copy.result.current.mutateAsync({
+      classId: 9, targetClassIds: [3, 4], onDate: '2031-01-01',
+    }))
+    expect(apiClient.post).toHaveBeenCalledWith('/classes/9/availability/copy', {
+      target_class_ids: [3, 4],
+    }, { params: { on_date: '2031-01-01' } })
+    expect(invalidate.mock.calls.map(([options]) => options.queryKey)).toEqual(expect.arrayContaining([
+      ['class-availability', 'org-a'],
       ['readiness-bases', 'org-a'],
     ]))
   })

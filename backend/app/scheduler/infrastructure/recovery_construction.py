@@ -157,6 +157,12 @@ def construct_recovery(
                         UnavailableResource.TEACHER, item[0].teacher_id, period.school_date
                     )
                 ),
+                any(
+                    row.overlaps(period)
+                    for row in snapshot.soft_unavailable_on(
+                        UnavailableResource.CLASS, item[0].class_id, period.school_date
+                    )
+                ),
                 item[0].assignment_id,
             )
         )

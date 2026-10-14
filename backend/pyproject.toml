@@ -12,6 +12,7 @@ addopts = ["--strict-config", "--strict-markers", "-ra", "--tb=short"]
 markers = [
     "postgresql: Testes que exigem schema PostgreSQL criado por Alembic",
     "redis: Testes que exigem Redis real",
+    "slow_solver: Prova CP-SAT longa; o perfil fast exclui-a e a CI corre-a",
 ]
 
 [tool.ruff]

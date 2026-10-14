@@ -245,10 +245,11 @@ jobs:
       E2E_CLERK_ADMIN_EMAIL: "cronos-ci-admin+clerk_test@example.com"
       E2E_CLERK_TEACHER_EMAIL: "cronos-ci-teacher+clerk_test@example.com"
       E2E_CLERK_AUTO_PROVISION: "true"
-      # Reuse the single dedicated E2E organization. Founder onboarding still
-      # creates a fresh organization in the real Clerk flow; CI preparation
-      # only mirrors the shared admin/teacher fixture into the local database.
-      E2E_CLERK_CREATE_ORGANIZATION: "false"
+      # Each run owns a disposable organization: preparation creates a fresh one
+      # instead of adopting a shared organization a concurrent run could delete.
+      # The cleanup step below then deletes only this run's organization.
+      # Founder onboarding still creates a fresh organization in the real flow.
+      E2E_CLERK_CREATE_ORGANIZATION: "true"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 

@@ -127,6 +127,67 @@ async def _validate_teacher_availabilities(
     )
 
 
+async def _validate_class_availability(
+    db: AsyncSession,
+    organization_id: int,
+    timeslot_ids: set[int],
+) -> list[schemas.PreflightIssue]:
+    """One blocker per eligible class whose every visible block is IMPOSSIBLE.
+
+    A missing class-availability row means the block is possible (NEUTRAL), so the
+    class is blocked only when the count of impossible rows matches every visible
+    block. The eligibility filter mirrors the generation inputs: non-archived
+    class, class-subject link with a teacher, and a matching grade level.
+    """
+    if not timeslot_ids:
+        return []
+    impossible_blocks = (
+        sa_select(func.count())
+        .select_from(models.ClassAvailability)
+        .where(
+            models.ClassAvailability.organization_id == organization_id,
+            models.ClassAvailability.class_id == models.Class.id,
+            models.ClassAvailability.timeslot_id.in_(timeslot_ids),
+            models.ClassAvailability.score == models.PreferenceLevel.IMPOSSIBLE.value,
+        )
+        .correlate(models.Class)
+        .scalar_subquery()
+    )
+    rows = (
+        await db.execute(
+            sa_select(
+                models.Class.id,
+                models.Class.name,
+                models.Class.course_id,
+            )
+            .select_from(models.ClassSubjectLink)
+            .join(models.Class, models.Class.id == models.ClassSubjectLink.class_id)
+            .where(
+                models.Class.organization_id == organization_id,
+                models.ClassSubjectLink.organization_id == organization_id,
+                models.Class.is_archived.is_(False),
+                models.ClassSubjectLink.teacher_id.isnot(None),
+                models.ClassSubjectLink.grade_level == models.Class.grade_level,
+                impossible_blocks == len(timeslot_ids),
+            )
+            .distinct()
+            .order_by(models.Class.name, models.Class.id)
+        )
+    ).all()
+    return [
+        schemas.PreflightIssue(
+            code="CLASS_WITHOUT_AVAILABILITY",
+            severity="BLOCKER",
+            message=(
+                f"A turma {row.name} tem todos os blocos marcados como Impossível. "
+                "Marque pelo menos um bloco como Neutro, Evitar ou Preferencial."
+            ),
+            route=f"/courses/{row.course_id}/classes/{row.id}",
+        )
+        for row in rows
+    ]
+
+
 async def _validate_subject_requirements(
     db: AsyncSession,
     organization_id: int,
@@ -339,15 +400,15 @@ class PreflightService:
                 )
             )
 
-        ts_count = (
-            await self.db.scalar(
-                sa_select(func.count(models.Timeslot.id)).where(
-                    models.Timeslot.organization_id == organization_id
-                )
-            )
-            or 0
+        # Resolve the visible grid once: it answers both "is there a grid?" and
+        # the teacher/class availability checks below.
+        resolved_grid = await grid_version_service.resolve_grid(
+            self.db,
+            organization_id,
+            await grid_version_service.school_today(self.db, organization_id),
         )
-        if ts_count == 0:
+        timeslot_ids = {slot.id for slot in resolved_grid.blocks}
+        if not timeslot_ids:
             issues.append(
                 schemas.PreflightIssue(
                     code="MISSING_TIMESLOTS",
@@ -581,12 +642,6 @@ class PreflightService:
             )
 
         teacher_ids = await _collect_generation_teacher_ids(self.db, organization_id)
-        resolved_grid = await grid_version_service.resolve_grid(
-            self.db,
-            organization_id,
-            await grid_version_service.school_today(self.db, organization_id),
-        )
-        timeslot_ids = {slot.id for slot in resolved_grid.blocks}
         teacher_error = await _validate_teacher_availabilities(
             self.db,
             organization_id,
@@ -603,6 +658,8 @@ class PreflightService:
                 )
             )
 
+        issues.extend(await _validate_class_availability(self.db, organization_id, timeslot_ids))
+
         if (
             strategy
             in (
@@ -611,7 +668,7 @@ class PreflightService:
             )
             and org_settings is not None
             and school_year_id is not None
-            and ts_count > 0
+            and timeslot_ids
         ):
             policy = await SchedulerFingerprintService(self.db).repair_policy_snapshot(
                 organization_id,

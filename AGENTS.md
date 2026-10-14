@@ -40,6 +40,8 @@ The skills live in `.agents/skills/`. `.claude/skills/` holds thin adapters so C
 | Sumários, Faltas, substituições, timesheets, debt | `cronos-operations` |
 | CP-SAT solver, generation, proposals | `cronos-scheduler` |
 | Railway, Cloudflare, Clerk dashboard, mail, deploys, production diagnosis | `cronos-infra` |
+| Writing a tech spec and WBS | `cronos-planning` |
+| Implementing a tech spec and WBS, or any multi-slice feature | `cronos-plan-execution` |
 
 [.agents/README.md](.agents/README.md) lists the imported third-party skills and how to install them.
 
@@ -74,7 +76,7 @@ Read the relevant guide before editing a subsystem:
 
 1. Restate the request as observable behavior and acceptance criteria. Ask the owner only for product decisions that the code cannot answer.
 2. Identify the affected change path, invariants, permissions, and integrations from the Repository Map.
-3. Implement with TDD and the four mandatory practices.
+3. Implement with TDD and the four mandatory practices. For a planned or multi-slice feature, follow `cronos-plan-execution`.
 4. Verify with the proof that the [Command Reference](documentation/00_getting_started/COMMAND_REFERENCE.md#verification-by-change-type) requires for the change type.
 5. Deliver through a pull request (see below). The description states behavior, evidence (exact commands and results), limitations, and open product questions.
 6. Report to the owner in plain language: what changed for users, what was proven, and what remains.

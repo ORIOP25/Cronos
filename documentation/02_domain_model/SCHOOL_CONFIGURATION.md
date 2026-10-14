@@ -35,6 +35,7 @@ State-version events detect changes that can invalidate a published schedule.
 | Foundation draft | `organization_foundation_draft` (payload, version, current step) |
 | Rooms | `backend/app/api/v1/endpoints/rooms.py` |
 | Timeslots | `backend/app/api/v1/endpoints/timeslots.py` |
+| Class availability | `class_availability`, `backend/app/services/class_availability_service.py`, `backend/app/api/v1/endpoints/classes.py` |
 | Configuration UI | `frontend/src/pages/SchoolConfig.jsx` |
 
 ## Data or Request Flow
@@ -64,6 +65,9 @@ State-version events detect changes that can invalidate a published schedule.
 - Each withdrawn lesson also receives an `OCCURRENCE` log with a `GAP` decision, so the absence appears in `/absences`.
 - Withdrawn lessons are not carried into a new version. Their absences stay listed on the version that withdrew them.
 - Foundation status is `NOT_STARTED`, `IN_PROGRESS`, or `COMPLETED`.
+- A `class_availability` row stores a level different from Neutral; a missing row means Neutral.
+- Saving class availability replaces the class grid in the version visible on `on_date`.
+- Grid regeneration and grid changes copy class rows by block signature, like teacher rows.
 
 ## States and Transitions
 
@@ -93,6 +97,7 @@ Foundation moves from `NOT_STARTED` to `IN_PROGRESS` on the first draft write an
 - Settings router: `backend/app/api/v1/endpoints/org_settings.py`
 - Room router: `backend/app/api/v1/endpoints/rooms.py`
 - Timeslot router: `backend/app/api/v1/endpoints/timeslots.py`
+- Class availability service: `backend/app/services/class_availability_service.py`
 - Tests: `backend/tests/integration/committed/test_org_settings_endpoints.py`, `backend/tests/integration/committed/test_timeslots_crud.py`
 
 ## Foundation and School Configuration Boundary
@@ -119,6 +124,27 @@ The readiness service then checks the cumulative bases needed for generation:
 Foundation creates the weekly timeslot grid. It is not a public readiness step;
 final prevalidation still blocks generation with `MISSING_TIMESLOTS` when the grid
 is missing.
+
+## Class Availability
+
+Administrators set a weekly availability grid for each class, like the teacher grid.
+The four levels are Preferencial, Neutro, Evitar, and Impossível.
+A missing row means Neutro, so the service stores only rows that differ from Neutro.
+Only an administrator reads or writes the class grid.
+
+The scheduler reads the class grid as hard and soft unavailability.
+An Impossível block is hard; an Evitar block is soft.
+A class with one Preferencial block treats its other blocks as Evitar, like a teacher.
+
+Saving, copying, and CSV import replace the whole grid of a class in the visible grid version.
+A changed save bumps the planning revision, so a pending proposal becomes stale.
+That happens only for a class with at least one class-subject link (`active_resource`).
+A class without links does not invalidate the proposal.
+
+Grid regeneration and grid changes treat class rows like teacher rows.
+A block with the same signature keeps the class level.
+A changed block requires an administrator decision.
+See the [Class Availability Tech Spec](CLASS_AVAILABILITY_TECH_SPEC.md) and the [Scheduler Engine](../03_scheduler_engine/README.md).
 
 ## Related Documents
 

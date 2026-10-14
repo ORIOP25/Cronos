@@ -21,11 +21,13 @@ from app.config import settings
 from app.db.database import SessionLocal, engine_async
 from app.db.tenant import set_async_tenant_context
 from app.scheduler.application.publishing import (
+    diagnostics_summary,
     initial_proposal_payload,
     recovery_proposal_payload,
 )
 from app.scheduler.composition import generate_schedule, repair_published_schedule
 from app.scheduler.domain.candidate import SchedulingStrategy
+from app.scheduler.domain.diagnostics import Diagnosis
 from app.scheduler.domain.quality import QUALITY_POLICY_VERSION
 from app.scheduler.domain.results import (
     OUTCOME_CANCELLED,
@@ -164,7 +166,7 @@ async def _execute_claim(claim: JobClaim, lock_connection=None) -> dict[str, obj
         status, result_code, stop_reason = _TERMINAL_BY_OUTCOME.get(
             result.outcome, ("FAILED", "SYSTEM_ERROR", "FAILED")
         )
-        written = await _finish(claim, status, result_code, stop_reason)
+        written = await _finish(claim, status, result_code, stop_reason, diagnoses=result.diagnoses)
         return {"job_id": claim.job_id, "status": written, "calculated": status}
 
 
@@ -283,7 +285,14 @@ async def _monitor_attempt(
             return
 
 
-async def _finish(claim: JobClaim, status: str, result_code: str, stop_reason: str | None) -> str:
+async def _finish(
+    claim: JobClaim,
+    status: str,
+    result_code: str,
+    stop_reason: str | None,
+    *,
+    diagnoses: tuple[Diagnosis, ...] = (),
+) -> str:
     async with SessionLocal() as db:
         await set_async_tenant_context(db, claim.organization_id)
         written = await finish_job(
@@ -294,6 +303,7 @@ async def _finish(claim: JobClaim, status: str, result_code: str, stop_reason: s
             status=status,
             result_code=result_code,
             stop_reason=stop_reason,
+            diagnostics=diagnostics_summary(diagnoses),
             now_utc=_now(),
         )
         await db.commit()

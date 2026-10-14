@@ -20,6 +20,8 @@ This directory holds the agent skills for Cronos. [AGENTS.md](../AGENTS.md) defi
 | [`cronos-operations`](skills/cronos-operations/SKILL.md) | Sumários, Faltas, substitutions, timesheets, debt | `documentation/04_operational_features/` |
 | [`cronos-scheduler`](skills/cronos-scheduler/SKILL.md) | CP-SAT solver, jobs, proposals | `backend/app/scheduler/` |
 | [`cronos-infra`](skills/cronos-infra/SKILL.md) | Docker, CI, delivery, Railway, Cloudflare, Clerk dashboard, mail | `.github/`, `scripts/`, `docker-compose*.yml`, `backend/railway/` |
+| [`cronos-planning`](skills/cronos-planning/SKILL.md) | Tech spec and WBS for a feature | `documentation/<area>/*_TECH_SPEC.md`, `*_WBS.md` |
+| [`cronos-plan-execution`](skills/cronos-plan-execution/SKILL.md) | Implementing a tech spec and WBS | Worktrees, slices, test budget, delivery |
 
 `ponytail` is required for every task. Git tracks it with the Cronos skills.
 

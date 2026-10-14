@@ -17,23 +17,32 @@ def _load_migration(path: Path, module_name: str):
     return migration
 
 
-def _revision_chain(paths) -> dict[str, object]:
-    chain: dict[str, object] = {}
-    for path in paths:
-        migration = _load_migration(path, f"migration_{path.stem}")
-        assert migration.revision not in chain, f"duplicate revision {migration.revision}"
-        chain[migration.revision] = migration.down_revision
-    return chain
+def _load_revisions() -> list[tuple[str, str | None]]:
+    return [
+        (migration.revision, migration.down_revision)
+        for migration in (
+            _load_migration(path, f"migration_{path.stem}")
+            for path in sorted(VERSIONS.glob("*.py"))
+        )
+    ]
 
 
-def _assert_linear_chain(chain: dict[str, object], baseline_revision: str) -> None:
+def _assert_linear_chain(
+    revisions: list[tuple[str, str | None]],
+    baseline_revision: str = BASELINE_REVISION,
+) -> None:
     """One chain from the frozen baseline root to a single head.
 
-    Rejects merges (tuple parent), branches (two children), missing parents,
-    cycles, and disconnected revisions.
+    Rejects duplicate revisions, merges (tuple parent), branches (two children),
+    unknown parents, cycles, disconnected revisions and a baseline that is not
+    the chain root.
     """
-    assert baseline_revision in chain, f"missing frozen baseline {baseline_revision}"
-    assert chain[baseline_revision] is None, "the frozen baseline must be the root"
+    revision_ids = [revision for revision, _ in revisions]
+    assert len(revision_ids) == len(set(revision_ids)), "migration revisions must be unique"
+    chain = dict(revisions)
+    assert chain.get(baseline_revision, "missing") is None, (
+        "the frozen baseline must be the chain root"
+    )
     children: dict[str, list[str]] = {}
     for revision, down_revision in chain.items():
         if revision == baseline_revision:
@@ -55,54 +64,62 @@ def _assert_linear_chain(chain: dict[str, object], baseline_revision: str) -> No
 
 
 def test_migration_history_is_one_linear_chain_from_the_frozen_baseline():
-    chain = _revision_chain(sorted(VERSIONS.glob("*.py")))
-    _assert_linear_chain(chain, BASELINE_REVISION)
+    _assert_linear_chain(_load_revisions())
 
 
 def test_linear_chain_validation_accepts_a_single_chain():
     _assert_linear_chain(
-        {BASELINE_REVISION: None, "0002_class_subject_modules": BASELINE_REVISION},
-        BASELINE_REVISION,
+        [(BASELINE_REVISION, None), ("0002_class_subject_modules", BASELINE_REVISION)]
     )
 
 
 def test_linear_chain_validation_rejects_a_branch():
     with pytest.raises(AssertionError, match="branches"):
         _assert_linear_chain(
-            {BASELINE_REVISION: None, "a": BASELINE_REVISION, "b": BASELINE_REVISION},
-            BASELINE_REVISION,
+            [(BASELINE_REVISION, None), ("a", BASELINE_REVISION), ("b", BASELINE_REVISION)]
         )
 
 
 def test_linear_chain_validation_rejects_a_merge():
     with pytest.raises(AssertionError, match="merges"):
         _assert_linear_chain(
-            {BASELINE_REVISION: None, "a": BASELINE_REVISION, "b": (BASELINE_REVISION, "a")},
-            BASELINE_REVISION,
+            [(BASELINE_REVISION, None), ("a", BASELINE_REVISION), ("b", (BASELINE_REVISION, "a"))]
         )
 
 
 def test_linear_chain_validation_rejects_a_cycle():
     with pytest.raises(AssertionError):
-        _assert_linear_chain(
-            {BASELINE_REVISION: None, "a": "b", "b": "a"},
-            BASELINE_REVISION,
-        )
+        _assert_linear_chain([(BASELINE_REVISION, None), ("a", "b"), ("b", "a")])
 
 
 def test_linear_chain_validation_rejects_a_missing_parent():
     with pytest.raises(AssertionError, match="unknown parent"):
-        _assert_linear_chain({BASELINE_REVISION: None, "a": "ghost"}, BASELINE_REVISION)
+        _assert_linear_chain([(BASELINE_REVISION, None), ("a", "ghost")])
+
+
+def test_migration_chain_rejects_duplicate_revision_ids():
+    with pytest.raises(AssertionError, match="unique"):
+        _assert_linear_chain(
+            [
+                (BASELINE_REVISION, None),
+                ("0002_class_subject_modules", BASELINE_REVISION),
+                ("0002_class_subject_modules", BASELINE_REVISION),
+            ]
+        )
 
 
 def test_frozen_baseline_is_present_and_unchanged():
     assert BASELINE.exists()
+
+
+def test_migration_history_has_one_frozen_baseline():
     baseline = _load_migration(BASELINE, "baseline_migration")
     assert baseline.revision == BASELINE_REVISION
     assert baseline.down_revision is None
     source = BASELINE.read_text(encoding="utf-8")
     for forbidden in ("app.models", "Base.metadata", "create_all", "drop_all"):
         assert forbidden not in source
+    _assert_linear_chain(_load_revisions())
 
 
 def test_baseline_contains_native_tenant_integrity():

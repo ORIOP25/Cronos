@@ -124,6 +124,7 @@ For Vite hot reload, run `docker compose -f docker-compose.yml -f docker-compose
 ### Verification by change type
 
 Run the narrowest proof during the TDD cycle. Open a pull request for the full CI proof.
+`fast --scope backend` skips the tests marked `slow_solver`. Pass `-m slow_solver` to run them.
 
 | Change | Local proof before the pull request |
 | :--- | :--- |
@@ -134,7 +135,7 @@ Run the narrowest proof during the TDD cycle. Open a pull request for the full C
 | Tenant data or RLS | `integration`. Keep `test_rls_database_policies.py` and the tenant isolation tests green. |
 | Frontend component or hook | `fast --scope frontend -- <test file>`, then `npm run verify:checks`. |
 | Frontend route or user journey | The above, then `e2e --project <name>` when Clerk test inputs exist. |
-| Scheduler solver | `fast --scope backend -- -k scheduler`. Expect real CP-SAT runs of several minutes. |
+| Scheduler solver | `fast --scope backend -- -k scheduler`, then `fast --scope backend -- -m slow_solver` before the pull request. The second run can take several minutes. |
 | Scheduler jobs, proposals, or API | `integration -- -k scheduler`. CI does not run `test_scheduler_v1_api.py` or `test_scheduler_v1_lifecycle.py`. |
 | CI, runner, or scripts | `npm run test:scripts` in `frontend/`. |
 
@@ -169,7 +170,7 @@ The [Cloud Operations](../09_ops_observability/CLOUD_OPERATIONS.md) guide covers
 
 | Profile | Includes | Excludes |
 | :--- | :--- | :--- |
-| `fast` | Backend unit corpus, including the 48-class CP-SAT test with a 900-second budget. Vitest without coverage. | Database, Redis, coverage gates, lint. |
+| `fast` | Backend unit corpus without the `slow_solver` tests. Vitest without coverage. | Database, Redis, coverage gates, lint, the 48-class CP-SAT test. |
 | `critical` | The backend CI test selection with coverage. | Ruff, Alembic drift, audits, the full corpus. |
 | `all --scope backend` | Ruff, full unit, integration, and contract corpus with coverage; 70% overall; 100% for `constraint_policy.py`. | Alembic drift and downgrade, trigger and integrity audits, `pip-audit`, and the 90% gate for `candidate_validation.py`. |
 | `all --scope frontend` | ESLint, both Knip runs, marketing build tests, asset audit, full coverage, build, and production audit. | Legal contract, repository script tests, and the edge worker test. |
