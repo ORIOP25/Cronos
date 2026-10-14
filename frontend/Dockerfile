@@ -1,7 +1,7 @@
 # Shared base for build and dev stages: installs dependencies once. Docker
 # builds this stage a single time and both the build and dev stages reuse
 # its layers, instead of running `npm ci` twice.
-FROM node:24-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1 AS deps
+FROM node:26-alpine@sha256:143494b1da2945f061539253adc65e4f1569ddf07da2d384c022c791a9d90a4a AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --ignore-scripts
