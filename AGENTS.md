@@ -97,6 +97,8 @@ Limits:
 
 - Never force-push `main`, rewrite published history, skip hooks, or merge a red or pending pull request.
 - Never weaken, skip, or delete a test or gate to make CI pass.
+- SonarCloud is not a required check. A Sonar failure blocks the merge only when it reports a bug, vulnerability, or security hotspot in the changed code.
+  Complexity or maintainability findings in functions the change did not make worse do not block the merge. Note them in the pull request and merge.
 - A merge deploys to production. Production data operations, provider settings, secrets, and DNS still need explicit owner approval.
 
 ## Conflict resolution

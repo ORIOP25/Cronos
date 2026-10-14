@@ -125,11 +125,12 @@ These items were observed on 2026-10-14 and are not resolved. Re-verify them bef
 
 - Railway ends support for existing `railway.json` config-as-code on 1 December 2026. See the [Deployment Runbook](DEPLOYMENT_RUNBOOK.md#required-migration-railway-configuration-as-code).
 - The `scheduler-supervisor` settings live only in the Railway dashboard. Compare them with `backend/railway/supervisor.json`.
-- An audit reported Railway shared variables `SECRET_KEY`, `SOLVER_ENGINE_VERSION`, and `SOLVER_V2_ROLLING_WEEKS`. The code no longer reads them. Per-service variable lists do not show them; check the shared variables in the dashboard.
 - Railway showed a warning on `Postgres` without a cause in the consulted view.
 - Backup policy, restore evidence, log retention, and alerts are unverified.
 - The Cloudflare API returned `403` to the available token. Cloudflare state is readable only through the dashboard or public endpoints.
 - Locally, the API reports revision `unknown` because no `DEPLOYED_REVISION` is set.
+
+Resolved on 2026-10-14: the owner removed the unused shared variables `SECRET_KEY`, `SOLVER_ENGINE_VERSION`, and `SOLVER_V2_ROLLING_WEEKS` in the Railway dashboard.
 
 ## Verification Procedure
 
