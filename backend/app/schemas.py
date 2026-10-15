@@ -920,6 +920,7 @@ class BulkImportFiles(BaseModel):
     assignments: BulkImportFilePayload | None = None
     class_availability: BulkImportFilePayload | None = None
     teacher_availability: BulkImportFilePayload | None = None
+    teacher_presence: BulkImportFilePayload | None = None
 
     @model_validator(mode="after")
     def require_a_file(self):
@@ -933,6 +934,7 @@ class BulkImportFiles(BaseModel):
                 "assignments",
                 "class_availability",
                 "teacher_availability",
+                "teacher_presence",
             )
         ):
             raise ValueError("Selecione pelo menos um ficheiro de importação.")

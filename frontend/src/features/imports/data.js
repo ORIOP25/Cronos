@@ -136,6 +136,26 @@ export const IMPORT_RESOURCES = Object.freeze([
       day: 'Dia',
     },
   },
+  {
+    key: 'teacher_presence',
+    label: 'Presença dos professores',
+    filename: 'Cronos_PresencaProfessores_Template.csv',
+    origin: '/members',
+    instructions: [
+      'O modelo já traz os professores ativos e a regra atual.',
+      'O email identifica o professor; pode já existir ou vir no ficheiro de Professores.',
+      'Hora de almoço: Sim ou Não. Uma célula vazia vale Sim.',
+      'Mínimo vazio quer dizer sem regra. Furo vazio com um mínimo vale 1 hora.',
+      'Cada linha substitui os três valores desse professor. Os professores ausentes ficam iguais.',
+    ],
+    fields: {
+      name: 'Nome do professor',
+      email: 'Email do professor',
+      lunch: 'Hora de almoço',
+      minimum_hours: 'Mínimo de horas por presença',
+      max_gap_hours: 'Furo máximo (horas)',
+    },
+  },
 ])
 
 const IMPORT_COUNT_LABELS = Object.freeze({
@@ -149,6 +169,7 @@ const IMPORT_COUNT_LABELS = Object.freeze({
   assignments: 'Atribuições',
   class_availability: 'Disponibilidade das turmas',
   teacher_availability: 'Disponibilidade dos professores',
+  teacher_presence: 'Presença dos professores',
 })
 
 function getImportResource(resource) {
@@ -177,9 +198,9 @@ export function formatImportIssue(issue) {
 const IMPORT_INVALIDATIONS = [
   'members', 'teachers', 'eligible-teachers', 'rooms', 'subjects', 'courses',
   'classes', 'class-subjects', 'available-subjects', 'class-availability',
-  'teacher-availability', 'substitute-recommendations', 'substitute-diagnostics',
-  'occurrences', 'teacher-progress', 'my-availability', 'heatmap',
-  'dashboard', 'readiness', 'scheduler-status',
+  'teacher-availability', 'teacher-presence', 'substitute-recommendations',
+  'substitute-diagnostics', 'occurrences', 'teacher-progress', 'my-availability',
+  'my-presence', 'heatmap', 'dashboard', 'readiness', 'scheduler-status',
 ]
 
 function fileError(code, message) {

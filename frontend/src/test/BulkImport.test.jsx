@@ -59,11 +59,11 @@ describe('BulkImport', () => {
     expect(screen.getByRole('heading', { name: 'Importar dados' })).toBeInTheDocument()
     expect(
       screen.getByText(
-        'Adicione várias salas, disciplinas, cursos, turmas e professores e atualize a disponibilidade das turmas e dos professores de uma só vez.',
+        'Adicione várias salas, disciplinas, cursos, turmas e professores e atualize a disponibilidade das turmas, a disponibilidade dos professores e a presença dos professores de uma só vez.',
       ),
     ).toBeInTheDocument()
     expect(screen.getByText('Descarregue o modelo da secção pretendida.')).toBeInTheDocument()
-    expect(screen.getAllByRole('button', { name: 'Descarregar modelo' })).toHaveLength(7)
+    expect(screen.getAllByRole('button', { name: 'Descarregar modelo' })).toHaveLength(8)
     expect(screen.queryByText(/UTF-8|BOM|backend|atómica|Recurso|JSON/i)).not.toBeInTheDocument()
   })
 
@@ -95,6 +95,23 @@ describe('BulkImport', () => {
     ).toBeInTheDocument()
     expect(
       screen.getByLabelText('Selecionar ficheiro CSV de disponibilidade dos professores'),
+    ).toBeInTheDocument()
+  })
+
+  it('lists the teacher presence section with its instructions', () => {
+    renderPage()
+
+    expect(screen.getByText('Presença dos professores')).toBeInTheDocument()
+    expect(
+      screen.getByText('Hora de almoço: Sim ou Não. Uma célula vazia vale Sim.'),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        'Cada linha substitui os três valores desse professor. Os professores ausentes ficam iguais.',
+      ),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByLabelText('Selecionar ficheiro CSV de presença dos professores'),
     ).toBeInTheDocument()
   })
 

@@ -138,7 +138,7 @@ A joint lesson group joins two or more classes of one subject for a set of modul
 | `POST` | `/api/v1/imports/commit` | Admin; body limit 8 MiB; returns `201` |
 
 See [Bulk Import CSV](../07_data_and_seed/BULK_IMPORT_CSV.md) for the exact templates, limits, issues and atomicity rules.
-The `class_availability` and `teacher_availability` resources accept `files.class_availability` and `files.teacher_availability`.
+The `class_availability`, `teacher_availability` and `teacher_presence` resources accept `files.class_availability`, `files.teacher_availability` and `files.teacher_presence`.
 
 ### School configuration
 

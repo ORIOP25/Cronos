@@ -13,8 +13,44 @@ from app import models
 from app.config import settings
 from app.services.scheduler_fingerprint_service import SchedulerFingerprintService
 from app.services.scheduler_state_service import SchedulerStateService
+from tests._support.db_fixtures import create_teacher_profile
 
 API = settings.API_V1_STR
+
+
+TEACHER_PRESENCE_HEADER = (
+    "Nome do professor;Email do professor;Hora de almoço;"
+    "Mínimo de horas por presença;Furo máximo (horas)\r\n"
+)
+
+
+def teacher_presence_row(
+    name: str, email: str, lunch: str = "", minimum: str = "", gap: str = ""
+) -> str:
+    return f"{name};{email};{lunch};{minimum};{gap}\r\n"
+
+
+async def _org_id(db_session: AsyncSession) -> int:
+    return await db_session.scalar(
+        select(models.Organization.id).where(models.Organization.clerk_org_id == "org_test_001")
+    )
+
+
+async def _seed_scheduler_year(db_session, organization_id: int) -> models.SchedulerSchoolYear:
+    year = models.SchedulerSchoolYear(
+        organization_id=organization_id,
+        label="2025/2026",
+        start_date=date(2025, 9, 1),
+        hard_end_date=date(2026, 7, 15),
+        timezone="Europe/Lisbon",
+    )
+    db_session.add(year)
+    await db_session.flush()
+    db_session.add(
+        models.SchedulerSchoolYearState(organization_id=organization_id, school_year_id=year.id)
+    )
+    await db_session.flush()
+    return year
 
 
 def csv_payload(filename: str, content: str, *, bom: bool = True) -> dict[str, str]:
@@ -1339,3 +1375,337 @@ async def test_imports_endpoints_require_an_admin(
     assert template.status_code == 403
     assert validation.status_code == 403
     assert commit.status_code == 403
+
+
+async def test_teacher_presence_commit_applies_after_creation_and_counts_each_change(
+    async_client: AsyncClient, clerk_admin_headers: dict, db_session: AsyncSession
+):
+    organization_id = await _org_id(db_session)
+    await _seed_scheduler_year(db_session, organization_id)
+    await db_session.commit()
+    suffix = uuid4().hex[:8]
+    emails = {name: f"{name.lower()}.{suffix}@example.com" for name in ("Ana", "Bruno", "Carla")}
+    teachers = csv_payload(
+        "Cronos_ProfessoresECompetencias_Template.csv",
+        "Nome do professor;Email do professor;Nome da disciplina\r\n"
+        + "".join(f"{name};{emails[name]};\r\n" for name in emails),
+    )
+    presence = csv_payload(
+        "Cronos_PresencaProfessores_Template.csv",
+        TEACHER_PRESENCE_HEADER
+        + teacher_presence_row("Ana", emails["Ana"], "Sim", "3", "1")
+        + teacher_presence_row("Bruno", emails["Bruno"], "Não"),
+    )
+    files = {"teachers": teachers, "teacher_presence": presence}
+
+    validation = await async_client.post(
+        f"{API}/imports/validate", json={"files": files}, headers=clerk_admin_headers
+    )
+    assert validation.status_code == 200
+    assert validation.json()["can_commit"] is True
+    assert validation.json()["preview"]["counts"]["teacher_presence"] == 2
+
+    commit = await async_client.post(
+        f"{API}/imports/commit", json={"files": files}, headers=clerk_admin_headers
+    )
+    assert commit.status_code == 201, commit.text
+    assert commit.json()["created_counts"]["teacher_presence"] == 2
+
+    saved_rows = (
+        await db_session.execute(
+            select(
+                models.User.email,
+                models.Teacher.lunch_required,
+                models.Teacher.minimum_presence_hours,
+                models.Teacher.maximum_presence_gap_hours,
+            )
+            .join(
+                models.OrganizationMembership,
+                models.OrganizationMembership.account_id == models.User.id,
+            )
+            .join(
+                models.Teacher,
+                models.Teacher.organization_membership_id == models.OrganizationMembership.id,
+            )
+            .where(models.User.email.in_(emails.values()))
+        )
+    ).all()
+    saved = {email: (lunch, minimum, gap) for email, lunch, minimum, gap in saved_rows}
+    assert saved[emails["Ana"]] == (True, 3, 1)
+    assert saved[emails["Bruno"]] == (False, None, None)
+    assert saved[emails["Carla"]] == (True, None, None)
+
+    events = (
+        await db_session.scalars(
+            select(models.SchedulerStateVersionEvent).where(
+                models.SchedulerStateVersionEvent.organization_id == organization_id,
+                models.SchedulerStateVersionEvent.entity_type == "TEACHER_PRESENCE",
+            )
+        )
+    ).all()
+    assert len(events) == 2
+
+
+async def test_teacher_presence_commit_keeps_an_absent_teacher_and_skips_noop_rows(
+    async_client: AsyncClient, clerk_admin_headers: dict, db_session: AsyncSession
+):
+    organization_id = await _org_id(db_session)
+    await _seed_scheduler_year(db_session, organization_id)
+    changed = await create_teacher_profile(
+        db_session, organization_id=organization_id, name="Changed"
+    )
+    untouched = await create_teacher_profile(
+        db_session, organization_id=organization_id, name="Untouched"
+    )
+    changed_account = await db_session.get(
+        models.User,
+        (
+            await db_session.get(models.OrganizationMembership, changed.organization_membership_id)
+        ).account_id,
+    )
+    changed_account.email = f"changed.{uuid4().hex[:8]}@example.com"
+    untouched_account = await db_session.get(
+        models.User,
+        (
+            await db_session.get(
+                models.OrganizationMembership, untouched.organization_membership_id
+            )
+        ).account_id,
+    )
+    untouched_account.email = f"untouched.{uuid4().hex[:8]}@example.com"
+    await db_session.commit()
+
+    noop = csv_payload(
+        "Cronos_PresencaProfessores_Template.csv",
+        TEACHER_PRESENCE_HEADER + teacher_presence_row("Untouched", untouched_account.email),
+    )
+    commit = await async_client.post(
+        f"{API}/imports/commit",
+        json={"files": {"teacher_presence": noop}},
+        headers=clerk_admin_headers,
+    )
+    assert commit.status_code == 201, commit.text
+    assert commit.json()["created_counts"]["teacher_presence"] == 0
+
+    assert (
+        await db_session.scalar(
+            select(func.count())
+            .select_from(models.SchedulerStateVersionEvent)
+            .where(
+                models.SchedulerStateVersionEvent.organization_id == organization_id,
+                models.SchedulerStateVersionEvent.entity_type == "TEACHER_PRESENCE",
+            )
+        )
+        == 0
+    )
+
+    real = csv_payload(
+        "Cronos_PresencaProfessores_Template.csv",
+        TEACHER_PRESENCE_HEADER
+        + teacher_presence_row("Changed", changed_account.email, "Sim", "3", "1"),
+    )
+    commit = await async_client.post(
+        f"{API}/imports/commit",
+        json={"files": {"teacher_presence": real}},
+        headers=clerk_admin_headers,
+    )
+    assert commit.status_code == 201, commit.text
+    assert commit.json()["created_counts"]["teacher_presence"] == 1
+
+    await db_session.refresh(changed)
+    await db_session.refresh(untouched)
+    assert (
+        changed.lunch_required,
+        changed.minimum_presence_hours,
+        changed.maximum_presence_gap_hours,
+    ) == (True, 3, 1)
+    assert (
+        untouched.lunch_required,
+        untouched.minimum_presence_hours,
+        untouched.maximum_presence_gap_hours,
+    ) == (True, None, None)
+
+
+async def test_teacher_presence_validate_rejects_a_teacher_from_another_organization(
+    async_client: AsyncClient, clerk_admin_headers: dict, db_session: AsyncSession
+):
+    foreign_org = models.Organization(name=f"Foreign {uuid4().hex[:6]}", plan_status="active")
+    db_session.add(foreign_org)
+    await db_session.flush()
+    foreign = await create_teacher_profile(
+        db_session, organization_id=foreign_org.id, name="Foreign"
+    )
+    foreign_account = await db_session.get(
+        models.User,
+        (
+            await db_session.get(models.OrganizationMembership, foreign.organization_membership_id)
+        ).account_id,
+    )
+    foreign_account.email = f"foreign.{uuid4().hex[:8]}@example.com"
+    await db_session.commit()
+
+    presence = csv_payload(
+        "Cronos_PresencaProfessores_Template.csv",
+        TEACHER_PRESENCE_HEADER
+        + teacher_presence_row("Foreign", foreign_account.email, "Sim", "3", "1"),
+    )
+
+    validation = await async_client.post(
+        f"{API}/imports/validate",
+        json={"files": {"teacher_presence": presence}},
+        headers=clerk_admin_headers,
+    )
+    assert validation.status_code == 200
+    body = validation.json()
+    assert body["can_commit"] is False
+    assert any(
+        issue["code"] == "teacher_reference_missing"
+        and issue["message"] == "Professor não encontrado."
+        and issue["field"] == "email"
+        for issue in body["issues"]
+    )
+
+    commit = await async_client.post(
+        f"{API}/imports/commit",
+        json={"files": {"teacher_presence": presence}},
+        headers=clerk_admin_headers,
+    )
+    assert commit.status_code == 422
+
+    await db_session.refresh(foreign)
+    assert (
+        foreign.lunch_required,
+        foreign.minimum_presence_hours,
+        foreign.maximum_presence_gap_hours,
+    ) == (True, None, None)
+
+
+async def test_teacher_presence_template_lists_active_teachers_and_current_values(
+    async_client: AsyncClient, clerk_admin_headers: dict, db_session: AsyncSession
+):
+    organization_id = await _org_id(db_session)
+    teacher = await create_teacher_profile(
+        db_session, organization_id=organization_id, name="Zeta Template"
+    )
+    account = await db_session.get(
+        models.User,
+        (
+            await db_session.get(models.OrganizationMembership, teacher.organization_membership_id)
+        ).account_id,
+    )
+    account.email = "zeta.template@example.invalid"
+    teacher.lunch_required = False
+    teacher.minimum_presence_hours = 4
+    teacher.maximum_presence_gap_hours = 2
+    await db_session.commit()
+
+    response = await async_client.get(
+        f"{API}/imports/templates/teacher_presence", headers=clerk_admin_headers
+    )
+
+    assert response.status_code == 200
+    assert response.content.startswith(b"\xef\xbb\xbf")
+    assert (
+        'filename="Cronos_PresencaProfessores_Template.csv"'
+        in response.headers["content-disposition"]
+    )
+    lines = response.content.decode("utf-8-sig").splitlines()
+    assert lines[0] == (
+        "Nome do professor;Email do professor;Hora de almoço;"
+        "Mínimo de horas por presença;Furo máximo (horas)"
+    )
+    assert "Zeta Template;zeta.template@example.invalid;Não;4;2" in lines
+
+
+async def test_teacher_presence_commit_skips_a_nondefault_noop_row(
+    async_client: AsyncClient, clerk_admin_headers: dict, db_session: AsyncSession
+):
+    organization_id = await _org_id(db_session)
+    await _seed_scheduler_year(db_session, organization_id)
+    teacher = await create_teacher_profile(
+        db_session, organization_id=organization_id, name="Stable"
+    )
+    account = await db_session.get(
+        models.User,
+        (
+            await db_session.get(models.OrganizationMembership, teacher.organization_membership_id)
+        ).account_id,
+    )
+    account.email = f"stable.{uuid4().hex[:8]}@example.com"
+    teacher.minimum_presence_hours = 2
+    teacher.maximum_presence_gap_hours = 1
+    await db_session.commit()
+
+    payload = csv_payload(
+        "Cronos_PresencaProfessores_Template.csv",
+        TEACHER_PRESENCE_HEADER + teacher_presence_row("Stable", account.email, "Sim", "2", "1"),
+    )
+    commit = await async_client.post(
+        f"{API}/imports/commit",
+        json={"files": {"teacher_presence": payload}},
+        headers=clerk_admin_headers,
+    )
+    assert commit.status_code == 201, commit.text
+    assert commit.json()["created_counts"]["teacher_presence"] == 0
+    assert (
+        await db_session.scalar(
+            select(func.count())
+            .select_from(models.SchedulerStateVersionEvent)
+            .where(
+                models.SchedulerStateVersionEvent.organization_id == organization_id,
+                models.SchedulerStateVersionEvent.entity_type == "TEACHER_PRESENCE",
+            )
+        )
+        == 0
+    )
+
+
+async def test_teacher_presence_template_excludes_archived_teachers(
+    async_client: AsyncClient, clerk_admin_headers: dict, db_session: AsyncSession
+):
+    organization_id = await _org_id(db_session)
+    archived = await create_teacher_profile(
+        db_session, organization_id=organization_id, name="Archived Presence"
+    )
+    membership = await db_session.get(
+        models.OrganizationMembership, archived.organization_membership_id
+    )
+    account = await db_session.get(models.User, membership.account_id)
+    account.email = "archived.presence@example.invalid"
+    membership.lifecycle_status = models.MembershipLifecycleStatus.archived
+    await db_session.commit()
+
+    response = await async_client.get(
+        f"{API}/imports/templates/teacher_presence", headers=clerk_admin_headers
+    )
+
+    assert response.status_code == 200
+    lines = response.content.decode("utf-8-sig").splitlines()
+    assert all("archived.presence@example.invalid" not in line for line in lines)
+
+
+async def test_teacher_presence_template_excludes_active_members_without_teacher_capability(
+    async_client: AsyncClient, clerk_admin_headers: dict, db_session: AsyncSession
+):
+    organization_id = await _org_id(db_session)
+    teacher = await create_teacher_profile(
+        db_session, organization_id=organization_id, name="Sem Capacidade"
+    )
+    membership = await db_session.get(
+        models.OrganizationMembership, teacher.organization_membership_id
+    )
+    account = await db_session.get(models.User, membership.account_id)
+    account.email = "sem.capacidade@example.invalid"
+    membership.lifecycle_status = models.MembershipLifecycleStatus.active
+    membership.can_admin = True
+    membership.can_teach = False
+    membership.teacher_access_mode = None
+    await db_session.commit()
+
+    response = await async_client.get(
+        f"{API}/imports/templates/teacher_presence", headers=clerk_admin_headers
+    )
+
+    assert response.status_code == 200
+    lines = response.content.decode("utf-8-sig").splitlines()
+    assert all("sem.capacidade@example.invalid" not in line for line in lines)
