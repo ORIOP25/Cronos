@@ -146,14 +146,14 @@ const BulkImport = () => {
       <PageHeader
         preTitle="Administração"
         title="Importar dados"
-        description="Adicione várias salas, disciplinas, cursos, turmas e professores e atualize a disponibilidade das turmas e dos professores de uma só vez."
+        description="Adicione várias salas, disciplinas, cursos, turmas e professores e atualize a disponibilidade das turmas, a disponibilidade dos professores e a presença dos professores de uma só vez."
       />
 
       <section className="mb-4" aria-labelledby="import-steps-title">
         <h2 id="import-steps-title" className="h5">Como preparar os ficheiros</h2>
         <ol className="mb-2">
           <li>Descarregue o modelo da secção pretendida.</li>
-          <li>Substitua a linha de exemplo sem alterar os títulos das colunas.</li>
+          <li>Preencha as linhas sem alterar os títulos das colunas.</li>
           <li>Guarde como CSV, selecione o ficheiro e escolha “Verificar ficheiros”.</li>
         </ol>
         <p className="small text-muted mb-0">

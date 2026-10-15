@@ -73,4 +73,23 @@ describe('bulk import invalidations', () => {
       ]),
     )
   })
+
+  it('invalidates every teacher presence reader after a commit', async () => {
+    const { queryClient, wrapper } = createHarness()
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
+    const mutation = renderHook(() => useCommitBulkImport(), { wrapper })
+    const file = new File(['x'], 'Cronos_PresencaProfessores_Template.csv', { type: 'text/csv' })
+
+    await act(() => mutation.result.current.mutateAsync({ teacher_presence: file }))
+
+    await waitFor(() => expect(invalidate).toHaveBeenCalled())
+    expect(invalidate.mock.calls.map(([options]) => options.queryKey)).toEqual(
+      expect.arrayContaining([
+        ['teacher-presence', 'org-a'],
+        ['my-presence', 'org-a'],
+        ['members', 'org-a'],
+        ['teacher-availability', 'org-a'],
+      ]),
+    )
+  })
 })

@@ -58,6 +58,7 @@ describe('bulk import file utilities', () => {
       'Cronos_Atribuicoes_Template.csv',
       'Cronos_DisponibilidadeTurmas_Template.csv',
       'Cronos_DisponibilidadeProfessores_Template.csv',
+      'Cronos_PresencaProfessores_Template.csv',
     ])
     expect(IMPORT_RESOURCES.every((item) => item.instructions.length > 0)).toBe(true)
     expect(IMPORT_RESOURCES[0].instructions.join(' ')).toContain('Normal')
@@ -66,6 +67,7 @@ describe('bulk import file utilities', () => {
     expect(getImportCountLabel('assignments')).toBe('Atribuições')
     expect(getImportCountLabel('class_availability')).toBe('Disponibilidade das turmas')
     expect(getImportCountLabel('teacher_availability')).toBe('Disponibilidade dos professores')
+    expect(getImportCountLabel('teacher_presence')).toBe('Presença dos professores')
   })
 
   it('defines the teacher availability resource right after the class availability resource', () => {

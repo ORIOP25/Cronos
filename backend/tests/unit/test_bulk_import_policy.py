@@ -5,6 +5,9 @@ from app.services.bulk_import_policy import (
     CLASS_AVAILABILITY,
     IMPORT_RESOURCES,
     TEACHER_AVAILABILITY,
+    TEACHER_PRESENCE,
+    TEACHER_PRESENCE_FILENAME,
+    TEACHER_PRESENCE_HEADERS,
     TEMPLATE_DEFINITIONS,
     ExistingClass,
     ExistingCourse,
@@ -15,6 +18,7 @@ from app.services.bulk_import_policy import (
     ImportSnapshot,
     parse_resource_file,
     render_availability_template,
+    render_teacher_presence_template,
     render_template,
     template_filename,
     validate_import,
@@ -1041,3 +1045,220 @@ def test_changed_blocks_is_zero_when_the_stored_grid_already_matches():
     assert class_result.can_commit is True
     assert teacher_result.teacher_availability[0].changed_blocks == 0
     assert class_result.class_availability[0].changed_blocks == 0
+
+
+TEACHER_PRESENCE_ROW = (
+    "Nome do professor;Email do professor;Hora de almoço;"
+    "Mínimo de horas por presença;Furo máximo (horas)\r\n"
+)
+
+
+def _teacher_presence_snapshot(**kwargs) -> ImportSnapshot:
+    return ImportSnapshot(
+        teachers=[
+            ExistingTeacher(id=1, email="ana@example.com", name="Ana"),
+            ExistingTeacher(id=2, email="bruno@example.com", name="Bruno"),
+            ExistingTeacher(id=3, email="carla@example.com", name="Carla"),
+        ],
+        **kwargs,
+    )
+
+
+def test_teacher_presence_resource_uses_the_official_filename_and_headers():
+    assert TEACHER_PRESENCE in IMPORT_RESOURCES
+    assert TEACHER_PRESENCE_FILENAME == "Cronos_PresencaProfessores_Template.csv"
+    assert TEACHER_PRESENCE_HEADERS == (
+        "Nome do professor",
+        "Email do professor",
+        "Hora de almoço",
+        "Mínimo de horas por presença",
+        "Furo máximo (horas)",
+    )
+
+
+def test_teacher_presence_template_lists_active_teachers_sorted_by_name_with_current_values():
+    teachers = (
+        ExistingTeacher(
+            id=2,
+            email="bruno@example.invalid",
+            name="Bruno",
+            lunch_required=False,
+            minimum_hours=3,
+            max_gap_hours=2,
+        ),
+        ExistingTeacher(id=1, email="ana@example.invalid", name="Ana"),
+    )
+
+    rendered = render_teacher_presence_template(teachers)
+
+    assert rendered.startswith(b"\xef\xbb\xbf")
+    lines = rendered.decode("utf-8-sig").splitlines()
+    assert lines[0] == ";".join(TEACHER_PRESENCE_HEADERS)
+    assert lines[1] == "Ana;ana@example.invalid;Sim;;"
+    assert lines[2] == "Bruno;bruno@example.invalid;Não;3;2"
+
+
+def test_teacher_presence_template_without_teachers_is_header_only():
+    rendered = render_teacher_presence_template(())
+
+    assert rendered.decode("utf-8-sig") == ";".join(TEACHER_PRESENCE_HEADERS) + "\r\n"
+
+
+def test_teacher_presence_parser_reads_the_five_columns_and_rejects_other_headers():
+    parsed = parse_resource_file(
+        TEACHER_PRESENCE,
+        "presenca.csv",
+        encoded(TEACHER_PRESENCE_ROW + "Ana;ana@example.com;NÃO;;\r\n"),
+    )
+    mismatch = parse_resource_file(
+        TEACHER_PRESENCE,
+        "salas.csv",
+        encoded("Nome da sala;Tipo de sala;Capacidade\r\nSala;Normal;20\r\n"),
+    )
+
+    assert parsed.issues == ()
+    assert parsed.rows[0]["email"] == "ana@example.com"
+    assert mismatch.issues[0].code == "resource_mismatch"
+
+
+def test_teacher_presence_validation_applies_lunch_and_hour_rules():
+    parsed = parse_resource_file(
+        TEACHER_PRESENCE,
+        "presenca.csv",
+        encoded(
+            TEACHER_PRESENCE_ROW
+            + "Ana;ana@example.com;Não;;\r\n"
+            + "Bruno;bruno@example.com;;4;\r\n"
+            + "Carla;carla@example.com;sim;2;0\r\n"
+        ),
+    )
+
+    result = validate_import({TEACHER_PRESENCE: parsed}, _teacher_presence_snapshot())
+
+    assert result.can_commit is True
+    assert [
+        (item.email, item.lunch_required, item.minimum_hours, item.max_gap_hours)
+        for item in result.teacher_presence
+    ] == [
+        ("ana@example.com", False, None, None),
+        ("bruno@example.com", True, 4, 1),
+        ("carla@example.com", True, 2, 0),
+    ]
+    assert result.counts[TEACHER_PRESENCE] == 3
+
+
+def test_teacher_presence_validation_rejects_invalid_values_with_exact_messages():
+    parsed = parse_resource_file(
+        TEACHER_PRESENCE,
+        "presenca.csv",
+        encoded(
+            TEACHER_PRESENCE_ROW
+            + "Ana;ana@example.com;Talvez;;\r\n"
+            + "Bruno;bruno@example.com;Sim;0;\r\n"
+            + "Carla;carla@example.com;Sim;13;\r\n"
+            + "Ana;ana2@example.com;Sim;3.5;\r\n"
+        ),
+    )
+
+    result = validate_import({TEACHER_PRESENCE: parsed}, _teacher_presence_snapshot())
+
+    assert result.can_commit is False
+    issues = {(issue.code, issue.field): issue for issue in result.issues}
+    assert issues[("lunch_invalid", "lunch")].message == "Escreva Sim ou Não."
+    assert issues[("minimum_hours_invalid", "minimum_hours")].message == (
+        "Escreva um número inteiro de horas entre 1 e 12."
+    )
+    assert [issue.code for issue in result.issues].count("minimum_hours_invalid") == 3
+    assert result.teacher_presence == ()
+
+
+def test_teacher_presence_validation_rejects_gap_without_minimum_and_out_of_range_gap():
+    parsed = parse_resource_file(
+        TEACHER_PRESENCE,
+        "presenca.csv",
+        encoded(
+            TEACHER_PRESENCE_ROW
+            + "Ana;ana@example.com;Sim;;2\r\n"
+            + "Bruno;bruno@example.com;Sim;3;13\r\n"
+        ),
+    )
+
+    result = validate_import({TEACHER_PRESENCE: parsed}, _teacher_presence_snapshot())
+
+    assert result.can_commit is False
+    issues = {(issue.code, issue.field): issue for issue in result.issues}
+    assert issues[("max_gap_hours_without_minimum", "max_gap_hours")].message == (
+        "O furo máximo só se aplica com um mínimo de horas."
+    )
+    assert issues[("max_gap_hours_invalid", "max_gap_hours")].message == (
+        "Escreva um número inteiro de horas entre 0 e 12."
+    )
+
+
+def test_teacher_presence_validation_reports_duplicate_and_unknown_emails_with_line_and_column():
+    parsed = parse_resource_file(
+        TEACHER_PRESENCE,
+        "presenca.csv",
+        encoded(
+            TEACHER_PRESENCE_ROW
+            + "Ana;ana@example.com;Sim;;\r\n"
+            + "Ana;ana@example.com;Não;;\r\n"
+            + "Zé;missing@example.com;Sim;;\r\n"
+        ),
+    )
+
+    result = validate_import({TEACHER_PRESENCE: parsed}, _teacher_presence_snapshot())
+
+    assert result.can_commit is False
+    issues = {(issue.code, issue.line, issue.field): issue for issue in result.issues}
+    assert issues[("duplicate_in_batch", 3, "email")].message == (
+        "Este email aparece em mais de uma linha."
+    )
+    assert issues[("teacher_reference_missing", 4, "email")].message == (
+        "Professor não encontrado."
+    )
+
+
+def test_teacher_presence_validation_accepts_a_teacher_created_in_the_same_batch():
+    teachers = parse_resource_file(
+        "teachers",
+        "professores.csv",
+        encoded(
+            "Nome do professor;Email do professor;Nome da disciplina\r\nNova;nova@example.com;\r\n"
+        ),
+    )
+    presence = parse_resource_file(
+        TEACHER_PRESENCE,
+        "presenca.csv",
+        encoded(TEACHER_PRESENCE_ROW + "Nova;nova@example.com;Sim;3;1\r\n"),
+    )
+
+    result = validate_import(
+        {"teachers": teachers, TEACHER_PRESENCE: presence},
+        ImportSnapshot(),
+    )
+
+    assert result.can_commit is True
+    assert len(result.teacher_presence) == 1
+    assert result.teacher_presence[0].minimum_hours == 3
+
+
+def test_teacher_presence_r10_only_the_named_teachers_are_changed():
+    parsed = parse_resource_file(
+        TEACHER_PRESENCE,
+        "presenca.csv",
+        encoded(
+            TEACHER_PRESENCE_ROW
+            + "Ana;ana@example.com;Sim;3;1\r\n"
+            + "Bruno;bruno@example.com;Não;;\r\n"
+        ),
+    )
+
+    result = validate_import({TEACHER_PRESENCE: parsed}, _teacher_presence_snapshot())
+
+    assert result.can_commit is True
+    assert {item.email for item in result.teacher_presence} == {
+        "ana@example.com",
+        "bruno@example.com",
+    }
+    assert result.counts[TEACHER_PRESENCE] == 2

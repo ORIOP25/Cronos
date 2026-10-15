@@ -19,6 +19,16 @@ MAX_TOTAL_BYTES = 5 * 1024 * 1024
 MAX_LINES = 5_000
 CLASS_AVAILABILITY = "class_availability"
 TEACHER_AVAILABILITY = "teacher_availability"
+TEACHER_PRESENCE = "teacher_presence"
+TEACHER_PRESENCE_FILENAME = "Cronos_PresencaProfessores_Template.csv"
+TEACHER_PRESENCE_HEADERS = (
+    "Nome do professor",
+    "Email do professor",
+    "Hora de almoço",
+    "Mínimo de horas por presença",
+    "Furo máximo (horas)",
+)
+TEACHER_PRESENCE_FIELDS = ("name", "email", "lunch", "minimum_hours", "max_gap_hours")
 IMPORT_RESOURCES = (
     "rooms",
     "subjects",
@@ -27,6 +37,7 @@ IMPORT_RESOURCES = (
     "assignments",
     CLASS_AVAILABILITY,
     TEACHER_AVAILABILITY,
+    TEACHER_PRESENCE,
 )
 IssueSeverity = Literal["error", "warning"]
 
@@ -108,6 +119,12 @@ RESOURCE_MISMATCH_MESSAGE = (
 ROOM_TYPE_ERROR_MESSAGE = "Escreva Normal, Laboratório, Ginásio ou Artes."
 AVAILABILITY_DAY_ERROR_MESSAGE = "Escreva um dia com blocos na grelha, por exemplo Segunda."
 AVAILABILITY_LEVEL_ERROR_MESSAGE = "Escreva Impossível, Evitar, Neutro ou Preferencial."
+TEACHER_PRESENCE_LUNCH_ERROR_MESSAGE = "Escreva Sim ou Não."
+TEACHER_PRESENCE_MINIMUM_ERROR_MESSAGE = "Escreva um número inteiro de horas entre 1 e 12."
+TEACHER_PRESENCE_GAP_ERROR_MESSAGE = "Escreva um número inteiro de horas entre 0 e 12."
+TEACHER_PRESENCE_GAP_WITHOUT_MINIMUM_MESSAGE = "O furo máximo só se aplica com um mínimo de horas."
+TEACHER_PRESENCE_UNKNOWN_TEACHER_MESSAGE = "Professor não encontrado."
+TEACHER_PRESENCE_DUPLICATE_EMAIL_MESSAGE = "Este email aparece em mais de uma linha."
 
 NEUTRAL_SCORE = 1
 _HOUR_PATTERN = re.compile(r"^(\d{1,2}):([0-5]\d)(?::[0-5]\d)?$")
@@ -251,6 +268,9 @@ class ExistingTeacher:
     email: str
     name: str
     is_active: bool = False
+    lunch_required: bool = True
+    minimum_hours: int | None = None
+    max_gap_hours: int | None = None
 
 
 @dataclass(frozen=True)
@@ -285,6 +305,15 @@ class TeacherAvailabilityImport:
     changed_blocks: int = 0
 
 
+@dataclass(frozen=True)
+class TeacherPresenceImport:
+    email: str
+    lunch_required: bool
+    minimum_hours: int | None
+    max_gap_hours: int | None
+    line: int
+
+
 @dataclass
 class ImportSnapshot:
     rooms: list[ExistingRoom] = field(default_factory=list)
@@ -312,6 +341,7 @@ class ValidationResult:
     counts: dict[str, int] = field(default_factory=dict)
     preview: tuple[dict, ...] = ()
     inferred_competencies: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    teacher_presence: tuple[TeacherPresenceImport, ...] = ()
 
     @property
     def can_commit(self) -> bool:
@@ -378,6 +408,18 @@ def normalize_level(value: str) -> int | None:
     return _LEVEL_SCORES.get(_fold(value))
 
 
+def normalize_yes_no(value: str) -> bool | None:
+    """Accept ``Sim``/``Não`` without case or accents; an empty cell means Sim."""
+    folded = _fold(value)
+    if not folded:
+        return True
+    if folded == "sim":
+        return True
+    if folded == "nao":
+        return False
+    return None
+
+
 def _email(value: str) -> str:
     return _clean(value).lower()
 
@@ -438,6 +480,8 @@ def render_template(resource: str) -> bytes:
 def template_filename(resource: str) -> str:
     if resource in AVAILABILITY_RESOURCES:
         return AVAILABILITY_RESOURCES[resource].filename
+    if resource == TEACHER_PRESENCE:
+        return TEACHER_PRESENCE_FILENAME
     return TEMPLATE_DEFINITIONS[resource].filename
 
 
@@ -473,8 +517,32 @@ def render_availability_template(
     return b"\xef\xbb\xbf" + output.getvalue().encode("utf-8")
 
 
+def render_teacher_presence_template(
+    teachers: list[ExistingTeacher] | tuple[ExistingTeacher, ...],
+) -> bytes:
+    """Render the teacher-presence model from the active teachers and their current rule."""
+    output = io.StringIO(newline="")
+    writer = csv.writer(output, delimiter=";", lineterminator="\r\n")
+    writer.writerow(TEACHER_PRESENCE_HEADERS)
+    for item in sorted(teachers, key=lambda teacher: (_key(teacher.name), teacher.id)):
+        writer.writerow(
+            [
+                item.name,
+                item.email,
+                "Sim" if item.lunch_required else "Não",
+                "" if item.minimum_hours is None else str(item.minimum_hours),
+                "" if item.max_gap_hours is None else str(item.max_gap_hours),
+            ]
+        )
+    return b"\xef\xbb\xbf" + output.getvalue().encode("utf-8")
+
+
 def parse_resource_file(resource: str, filename: str, content_base64: str) -> ParsedResourceFile:
-    if resource not in TEMPLATE_DEFINITIONS and resource not in AVAILABILITY_RESOURCES:
+    if (
+        resource not in TEMPLATE_DEFINITIONS
+        and resource not in AVAILABILITY_RESOURCES
+        and resource != TEACHER_PRESENCE
+    ):
         return ParsedResourceFile(
             resource,
             filename,
@@ -528,6 +596,8 @@ def parse_resource_file(resource: str, filename: str, content_base64: str) -> Pa
         return _parse_availability_file(
             resource, AVAILABILITY_RESOURCES[resource], filename, text, len(raw)
         )
+    if resource == TEACHER_PRESENCE:
+        return _parse_teacher_presence_file(resource, filename, text, len(raw))
 
     definition = TEMPLATE_DEFINITIONS[resource]
     delimiter = None
@@ -692,6 +762,64 @@ def _parse_availability_file(
         tuple(hours),
         tuple(hour_titles),
     )
+
+
+def _parse_teacher_presence_file(
+    resource: str, filename: str, text: str, decoded_bytes: int
+) -> ParsedResourceFile:
+    """Parse the teacher-presence model: five fixed columns, no example row."""
+    delimiter = None
+    resource_mismatch = False
+    for candidate in (",", ";"):
+        reader = csv.reader(io.StringIO(text, newline=""), delimiter=candidate)
+        try:
+            headers = next(reader)
+        except StopIteration:
+            headers = []
+        if tuple(headers) == TEACHER_PRESENCE_HEADERS:
+            delimiter = candidate
+            break
+        if any(headers == list(definition.headers) for definition in TEMPLATE_DEFINITIONS.values()):
+            resource_mismatch = True
+    if delimiter is None:
+        return ParsedResourceFile(
+            resource,
+            filename,
+            issues=(
+                _issue(
+                    resource,
+                    "resource_mismatch" if resource_mismatch else "header_invalid",
+                    RESOURCE_MISMATCH_MESSAGE if resource_mismatch else FILE_READ_ERROR_MESSAGE,
+                    line=1,
+                ),
+            ),
+            decoded_bytes=decoded_bytes,
+        )
+
+    reader = csv.reader(io.StringIO(text, newline=""), delimiter=delimiter)
+    next(reader, None)
+    rows: list[dict[str, str | int]] = []
+    issues: list[BulkImportIssue] = []
+    for values in reader:
+        line = reader.line_num
+        if not any(_clean(value) for value in values):
+            continue
+        if len(values) != len(TEACHER_PRESENCE_FIELDS):
+            issues.append(
+                _issue(resource, "column_count_invalid", FILE_READ_ERROR_MESSAGE, line=line)
+            )
+            continue
+        row = {
+            field: _clean(value)
+            for field, value in zip(TEACHER_PRESENCE_FIELDS, values, strict=True)
+        }
+        row["line"] = line
+        rows.append(row)
+    if not rows:
+        issues.append(
+            _issue(resource, "no_data", "Selecione um ficheiro com pelo menos uma linha real.")
+        )
+    return ParsedResourceFile(resource, filename, tuple(rows), tuple(issues), decoded_bytes)
 
 
 def _value(row: dict, field: str) -> str:
@@ -1449,6 +1577,109 @@ def _validate_teacher_availability(
     )
 
 
+def _strict_hour(value: str) -> int | None:
+    try:
+        return int(value)
+    except ValueError:
+        return None
+
+
+def _teacher_presence_hours(
+    row: dict, issues: list[BulkImportIssue]
+) -> tuple[int | None, int | None]:
+    """Return ``(minimum, max_gap)``; no minimum means no rule, gap defaults to 1."""
+    line = int(row["line"])
+    raw_minimum = _value(row, "minimum_hours")
+    raw_gap = _value(row, "max_gap_hours")
+    minimum = _strict_hour(raw_minimum) if raw_minimum else None
+    if raw_minimum and (minimum is None or not 1 <= minimum <= 12):
+        issues.append(
+            _issue(
+                TEACHER_PRESENCE,
+                "minimum_hours_invalid",
+                TEACHER_PRESENCE_MINIMUM_ERROR_MESSAGE,
+                line=line,
+                field="minimum_hours",
+            )
+        )
+        minimum = None
+    if raw_gap and not raw_minimum:
+        issues.append(
+            _issue(
+                TEACHER_PRESENCE,
+                "max_gap_hours_without_minimum",
+                TEACHER_PRESENCE_GAP_WITHOUT_MINIMUM_MESSAGE,
+                line=line,
+                field="max_gap_hours",
+            )
+        )
+        return None, None
+    max_gap = _strict_hour(raw_gap) if raw_gap else None
+    if raw_gap and (max_gap is None or not 0 <= max_gap <= 12):
+        issues.append(
+            _issue(
+                TEACHER_PRESENCE,
+                "max_gap_hours_invalid",
+                TEACHER_PRESENCE_GAP_ERROR_MESSAGE,
+                line=line,
+                field="max_gap_hours",
+            )
+        )
+        max_gap = None
+    if raw_minimum and not raw_gap and minimum is not None:
+        max_gap = 1
+    return minimum, max_gap
+
+
+def _validate_teacher_presence(
+    parsed: ParsedResourceFile,
+    known_teacher_emails: set[str],
+    issues: list[BulkImportIssue],
+) -> tuple[TeacherPresenceImport, ...]:
+    result = []
+    seen: set[str] = set()
+    for row in parsed.rows:
+        line = int(row["line"])
+        before = len(issues)
+        email = _email(_value(row, "email"))
+        lunch = normalize_yes_no(_value(row, "lunch"))
+        if lunch is None:
+            issues.append(
+                _issue(
+                    TEACHER_PRESENCE,
+                    "lunch_invalid",
+                    TEACHER_PRESENCE_LUNCH_ERROR_MESSAGE,
+                    line=line,
+                    field="lunch",
+                )
+            )
+        minimum, max_gap = _teacher_presence_hours(row, issues)
+        if email in seen:
+            issues.append(
+                _issue(
+                    TEACHER_PRESENCE,
+                    "duplicate_in_batch",
+                    TEACHER_PRESENCE_DUPLICATE_EMAIL_MESSAGE,
+                    line=line,
+                    field="email",
+                )
+            )
+        elif email not in known_teacher_emails:
+            issues.append(
+                _issue(
+                    TEACHER_PRESENCE,
+                    "teacher_reference_missing",
+                    TEACHER_PRESENCE_UNKNOWN_TEACHER_MESSAGE,
+                    line=line,
+                    field="email",
+                )
+            )
+        seen.add(email)
+        if len(issues) == before:
+            result.append(TeacherPresenceImport(email, lunch, minimum, max_gap, line))
+    return tuple(result)
+
+
 def validate_import(
     files: dict[str, ParsedResourceFile], snapshot: ImportSnapshot
 ) -> ValidationResult:
@@ -1565,6 +1796,13 @@ def validate_import(
             else:
                 inferred[assignment.teacher_email].add(assignment.subject_name)
 
+    known_teacher_emails = teacher_emails | existing_teacher_emails
+    teacher_presence = (
+        _validate_teacher_presence(files[TEACHER_PRESENCE], known_teacher_emails, issues)
+        if TEACHER_PRESENCE in files
+        else ()
+    )
+
     counts = {
         "rooms": len(rooms),
         "subjects": len(subjects),
@@ -1576,6 +1814,7 @@ def validate_import(
         "assignments": len(assignments),
         CLASS_AVAILABILITY: len(class_availability),
         TEACHER_AVAILABILITY: len(teacher_availability),
+        TEACHER_PRESENCE: len(teacher_presence),
     }
     # Availability rows sit outside the generic 100-item cut (D15); the interface
     # tables show every class and teacher row they receive.
@@ -1653,4 +1892,5 @@ def validate_import(
         counts,
         preview,
         {email: tuple(sorted(values, key=_key)) for email, values in inferred.items()},
+        teacher_presence,
     )

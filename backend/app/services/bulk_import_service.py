@@ -26,6 +26,7 @@ from app.services.bulk_import_policy import (
     IMPORT_RESOURCES,
     MAX_TOTAL_BYTES,
     TEACHER_AVAILABILITY,
+    TEACHER_PRESENCE,
     BulkImportIssue,
     ExistingAssignment,
     ExistingClass,
@@ -40,6 +41,7 @@ from app.services.bulk_import_policy import (
     _email,
     parse_resource_file,
     render_availability_template,
+    render_teacher_presence_template,
     render_template,
     validate_import,
 )
@@ -155,11 +157,45 @@ async def _teacher_availability_template(db: AsyncSession, organization_id: int)
     )
 
 
+async def _teacher_presence_template(db: AsyncSession, organization_id: int) -> bytes:
+    """Render the presence model from the active teachers and their current rule."""
+    rows = (
+        await db.execute(
+            select(models.Teacher, models.User.email)
+            .join(
+                models.OrganizationMembership,
+                models.OrganizationMembership.id == models.Teacher.organization_membership_id,
+            )
+            .join(models.User, models.User.id == models.OrganizationMembership.account_id)
+            .where(
+                models.Teacher.organization_id == organization_id,
+                models.OrganizationMembership.lifecycle_status
+                == models.MembershipLifecycleStatus.active,
+            )
+        )
+    ).all()
+    return render_teacher_presence_template(
+        [
+            ExistingTeacher(
+                id=item.id,
+                email=user_email,
+                name=item.name,
+                lunch_required=item.lunch_required,
+                minimum_hours=item.minimum_presence_hours,
+                max_gap_hours=item.maximum_presence_gap_hours,
+            )
+            for item, user_email in rows
+        ]
+    )
+
+
 async def template_bytes(db: AsyncSession, organization_id: int, resource: str) -> bytes:
     if resource == CLASS_AVAILABILITY:
         return await _class_availability_template(db, organization_id)
     if resource == TEACHER_AVAILABILITY:
         return await _teacher_availability_template(db, organization_id)
+    if resource == TEACHER_PRESENCE:
+        return await _teacher_presence_template(db, organization_id)
     try:
         return render_template(resource)
     except KeyError as exc:
@@ -283,10 +319,13 @@ async def load_snapshot(
         ],
         teachers=[
             ExistingTeacher(
-                item.id,
-                item.organization_membership.account.email,
-                item.name,
+                id=item.id,
+                email=item.organization_membership.account.email,
+                name=item.name,
                 is_active=_teacher_is_active(item.organization_membership),
+                lunch_required=item.lunch_required,
+                minimum_hours=item.minimum_presence_hours,
+                max_gap_hours=item.maximum_presence_gap_hours,
             )
             for item in teachers
         ],
@@ -517,6 +556,29 @@ async def commit_import(
             changed_by_membership_id=current_admin.membership_id,
         )
         created_counts[TEACHER_AVAILABILITY] += 1
+
+    presence_teacher_ids = {item.email.lower(): item.id for item in snapshot.teachers}
+    presence_teacher_ids.update(teacher_ids)
+    existing_presence = {
+        item.email.lower(): (item.lunch_required, item.minimum_hours, item.max_gap_hours)
+        for item in snapshot.teachers
+    }
+    for item in result.teacher_presence:
+        before = existing_presence.get(item.email, (True, None, None))
+        after = (item.lunch_required, item.minimum_hours, item.max_gap_hours)
+        await teacher_service.set_teacher_presence(
+            db,
+            presence_teacher_ids[item.email],
+            schemas.TeacherPresence(
+                lunch_required=item.lunch_required,
+                minimum_hours=item.minimum_hours,
+                max_gap_hours=item.max_gap_hours,
+            ),
+            organization_id,
+            changed_by_membership_id=current_admin.membership_id,
+        )
+        if before != after:
+            created_counts[TEACHER_PRESENCE] += 1
 
     await db.flush()
     return schemas.BulkImportCommitResponse(

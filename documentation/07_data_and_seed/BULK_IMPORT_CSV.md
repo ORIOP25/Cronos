@@ -29,6 +29,7 @@ Use-o para testar a importação num ambiente descartável.
 | Atribuições | `Cronos_Atribuicoes_Template.csv` | `Sigla do curso;Nome da turma;Nome da disciplina;Email do professor` |
 | Disponibilidade das turmas | `Cronos_DisponibilidadeTurmas_Template.csv` | `Sigla do curso;Nome da turma;Dia` e uma coluna por hora de início |
 | Disponibilidade dos professores | `Cronos_DisponibilidadeProfessores_Template.csv` | `Nome do professor;Email do professor;Dia` e uma coluna por hora de início |
+| Presença dos professores | `Cronos_PresencaProfessores_Template.csv` | `Nome do professor;Email do professor;Hora de almoço;Mínimo de horas por presença;Furo máximo (horas)` |
 
 Os cabeçalhos devem manter nomes, ordem e quantidade.
 Os modelos antigos, com cabeçalhos em inglês, deixam de ser aceites.
@@ -95,6 +96,31 @@ Um professor novo pode vir no mesmo lote, no ficheiro de Professores e competên
 Cada professor do ficheiro fica com a grelha inteira do ficheiro. Os professores ausentes ficam iguais.
 O `commit` aplica as grelhas dos professores depois das grelhas das turmas, pela função `teacher_service.set_teacher_availability`.
 `created_counts["teacher_availability"]` conta os professores atualizados.
+
+## Presença dos professores
+
+A secção `Presença dos professores` atualiza a regra de presença opcional de cada professor.
+O modelo é dinâmico: a função pura `render_teacher_presence_template` monta-o a partir dos professores ativos e da regra atual.
+
+- Os cabeçalhos são `Nome do professor`, `Email do professor`, `Hora de almoço`, `Mínimo de horas por presença` e `Furo máximo (horas)`.
+- Há uma linha por professor ativo, por ordem de nome, com a regra guardada.
+- Nomes e emails dos professores são só de leitura.
+
+O email identifica o professor, com a mesma procura da secção Professores.
+Pode já existir ou vir no mesmo lote, no ficheiro de Professores.
+Um email desconhecido ou de outra organização é recusado com a linha e a coluna.
+
+`Hora de almoço` aceita `Sim` ou `Não`, sem distinguir maiúsculas ou acentos. Uma célula vazia vale `Sim`.
+O mínimo vazio quer dizer sem regra. O furo vazio com um mínimo vale 1 hora.
+O mínimo aceita inteiros de 1 a 12; o furo aceita inteiros de 0 a 12. Um furo sem mínimo é recusado.
+Cada linha substitui os três valores desse professor. Os professores ausentes ficam iguais.
+
+As mensagens exatas estão em `backend/app/services/bulk_import_policy.py` (`_validate_teacher_presence`).
+O campo do erro é `email`, `lunch`, `minimum_hours` ou `max_gap_hours`.
+
+O `commit` aplica a presença depois de criar os professores.
+Cada professor alterado regista uma alteração do motor.
+`created_counts["teacher_presence"]` conta os professores alterados.
 
 ## Comparação e pré-visualização
 
