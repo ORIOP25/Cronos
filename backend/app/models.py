@@ -242,10 +242,10 @@ class ConstraintType(enum.StrEnum):
 
 
 class PreferenceLevel(int, enum.Enum):
-    PREFERRED = 2  # Verde: "Quero muito" (Bónus no score)
-    NEUTRAL = 1  # Amarelo: "Tanto faz" (Padrão)
+    PREFERRED = 2  # Verde: "Preferencial" (Bónus no score)
+    NEUTRAL = 1  # Amarelo: "Neutro" (Padrão)
     AVOID = 0  # Laranja: "Evitar" (Penalização no score)
-    IMPOSSIBLE = -1  # Vermelho: "Proibido" (Hard Constraint)
+    IMPOSSIBLE = -1  # Vermelho: "Impossível" (Hard Constraint)
 
 
 # Tabela Relacional entre Cursos e Disciplinas

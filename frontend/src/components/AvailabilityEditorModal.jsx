@@ -102,7 +102,7 @@ export default function AvailabilityEditorModal({
             <StatePanel
               state="empty"
               title="A escola ainda não configurou blocos"
-              description="A disponibilidade fica disponível depois de a grelha horária ser configurada."
+              description="A disponibilidade aparece depois de configurar a grelha horária."
               compact
             />
           ) : (

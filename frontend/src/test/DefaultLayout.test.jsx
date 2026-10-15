@@ -76,4 +76,22 @@ describe('DefaultLayout', () => {
     expect(queryByRole('group', { name: 'Selecionar escola' })).not.toBeInTheDocument()
     expect(queryByTestId('organization-switcher')).not.toBeInTheDocument()
   })
+
+  it('shows the teacher availability link as Minha Disponibilidade', () => {
+    roleState.isAdmin = false
+    roleState.isTeacher = true
+    setClerkState({ role: 'org:member', orgId: 1, orgName: 'Escola Teste', isSignedIn: true })
+    const { getByRole } = renderWithProviders(
+      <MemoryRouter initialEntries={['/my-availability']}>
+        <Routes>
+          <Route element={<DefaultLayout />}>
+            <Route path="/my-availability" element={<span>Content</span>} />
+          </Route>
+        </Routes>
+      </MemoryRouter>
+    )
+
+    const link = within(getByRole('navigation')).getByRole('link', { name: 'Minha Disponibilidade' })
+    expect(link).toHaveAttribute('href', '/my-availability')
+  })
 })

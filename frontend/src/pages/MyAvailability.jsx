@@ -12,10 +12,10 @@ import { useAvailabilityDraft } from '../hooks/useAvailabilityDraft'
 
 const mapAvailabilityApiMessage = (err, context) => {
   const status = err?.response?.status
-  if (status === 403) return context === 'load' ? 'Sem permissões para consultar preferências de disponibilidade.' : 'Sem permissões para gravar disponibilidade desta conta.'
+  if (status === 403) return context === 'load' ? 'Sem permissões para consultar a disponibilidade.' : 'Sem permissões para gravar disponibilidade desta conta.'
   if (status === 404) return 'Perfil de professor não encontrado na organização autenticada.'
   if (status === 400) return 'Dados de disponibilidade inválidos. Atualize a página e tente novamente.'
-  return context === 'load' ? 'Falha ao carregar preferências de disponibilidade. Tente novamente.' : 'Erro ao gravar disponibilidade. Tente novamente.'
+  return context === 'load' ? 'Falha ao carregar a disponibilidade. Tente novamente.' : 'Erro ao gravar disponibilidade. Tente novamente.'
 }
 
 export default function MyAvailability({ readOnly = false, allowedActions, warnOnUnsavedChanges = true }) {
@@ -53,7 +53,7 @@ export default function MyAvailability({ readOnly = false, allowedActions, warnO
       await saveMutation.mutateAsync({ teacherId, payload })
       if (!attemptScope.isCurrent(attempt)) return
       draft.reset()
-      toast.success('Preferências guardadas.')
+      toast.success('Disponibilidade guardada.')
     } catch (error) {
       if (!attemptScope.isCurrent(attempt)) return
       toast.error(mapAvailabilityApiMessage(error, 'save'))
@@ -61,13 +61,13 @@ export default function MyAvailability({ readOnly = false, allowedActions, warnO
   }
 
   const queryError = timeslotsQuery.error || availabilityQuery.error
-  if (timeslotsQuery.isLoading || availabilityQuery.isLoading) return <><PageHeader preTitle="Professor" title="Minhas Preferências" /><StatePanel state="loading" title="A carregar preferências" description="Estamos a preparar a grelha de disponibilidade." /></>
-  if (queryError) return <><PageHeader preTitle="Professor" title="Minhas Preferências" /><StatePanel state="error" title="Não foi possível carregar a grelha" description={mapAvailabilityApiMessage(queryError, 'load')} action={<button type="button" className="btn btn-outline-primary" onClick={() => { void timeslotsQuery.refetch(); void availabilityQuery.refetch() }}>Tentar novamente</button>} /></>
-  if (!timeslots.length) return <><PageHeader preTitle="Professor" title="Minhas Preferências" /><StatePanel state="empty" title="A escola ainda não configurou blocos" description="As preferências ficam disponíveis depois de a grelha horária ser configurada." /></>
+  if (timeslotsQuery.isLoading || availabilityQuery.isLoading) return <><PageHeader preTitle="Professor" title="Minha Disponibilidade" /><StatePanel state="loading" title="A carregar disponibilidade" description="Estamos a preparar a grelha de disponibilidade." /></>
+  if (queryError) return <><PageHeader preTitle="Professor" title="Minha Disponibilidade" /><StatePanel state="error" title="Não foi possível carregar a grelha" description={mapAvailabilityApiMessage(queryError, 'load')} action={<button type="button" className="btn btn-outline-primary" onClick={() => { void timeslotsQuery.refetch(); void availabilityQuery.refetch() }}>Tentar novamente</button>} /></>
+  if (!timeslots.length) return <><PageHeader preTitle="Professor" title="Minha Disponibilidade" /><StatePanel state="empty" title="A escola ainda não configurou blocos" description="A disponibilidade aparece depois de configurar a grelha horária." /></>
 
   return (
     <div data-tutorial-target="availability-workspace">
-      <PageHeader preTitle="Professor" title="Minhas Preferências" description="Escolha uma ferramenta e pinte os blocos. Pode usar rato, toque ou teclado." />
+      <PageHeader preTitle="Professor" title="Minha Disponibilidade" description="Escolha uma ferramenta e pinte os blocos. Pode usar rato, toque ou teclado." />
       <AvailabilityToolbar
         selectedScore={draft.selectedScore}
         onSelect={draft.setSelectedScore}
@@ -79,7 +79,7 @@ export default function MyAvailability({ readOnly = false, allowedActions, warnO
       <AvailabilityGrid timeslots={timeslots} availabilityMap={draft.draftMap} onChange={draft.handleGridChange} selectedMode={draft.selectedScore} />
       <div className="d-flex justify-content-end mt-4">
         <button type="button" className="btn btn-primary" onClick={() => { void handleSave() }} disabled={!canSave || !isDirty || saveMutation.isPending}>
-          {saveMutation.isPending ? 'A guardar' : 'Guardar preferências'}
+          {saveMutation.isPending ? 'A guardar' : 'Guardar disponibilidade'}
         </button>
       </div>
     </div>

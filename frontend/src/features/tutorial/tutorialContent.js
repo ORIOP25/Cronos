@@ -124,7 +124,7 @@ const STEP_DEFINITIONS = [
     page: 'MyAvailability',
     activeNavItem: '/my-availability',
     title: 'Disponibilidade docente',
-    description: 'Antes de distribuir as aulas, conhecemos a disponibilidade dos professores. A grelha distingue preferências e períodos impossíveis.',
+    description: 'Antes de distribuir as aulas, conhecemos a disponibilidade dos professores. Cada bloco fica Preferencial, Neutro, Evitar ou Impossível.',
     instruction: 'Experimente marcar um período na grelha.',
     allowedActions: [TUTORIAL_ACTIONS.UPDATE_AVAILABILITY],
     target: 'availability-workspace',

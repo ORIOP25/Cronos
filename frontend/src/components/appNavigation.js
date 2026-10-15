@@ -28,7 +28,7 @@ export const ADMIN_NAVIGATION = Object.freeze([
 ])
 
 export const TEACHER_NAVIGATION = Object.freeze([
-  { path: '/my-availability', label: 'Preferências', icon: cilUser },
+  { path: '/my-availability', label: 'Minha Disponibilidade', icon: cilUser },
   { path: ROUTE_MY_SCHEDULES, label: 'Meus Horários', icon: cilCalendar },
   { path: '/my-progress', label: 'Meu Progresso', icon: cilChartPie },
 ])

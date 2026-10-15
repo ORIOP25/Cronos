@@ -536,6 +536,11 @@ async def test_readiness_mixed_and_fully_impossible_availability(db_session):
     assert blocked_report.depth == 5
     assert blocked_report.complete is False
     assert blocked_report.percentage == 83
+    assert blocked_report.issues[0].code == "TEACHER_AVAILABILITY_REQUIRED"
+    assert blocked_report.issues[0].message == (
+        "Marque pelo menos um bloco como Neutro, Evitar ou Preferencial "
+        "na disponibilidade dos professores atribuídos."
+    )
 
 
 @pytest.mark.asyncio

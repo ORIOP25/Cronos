@@ -42,6 +42,10 @@ describe('tutorial v3 domain', () => {
     ])
     expect(TUTORIAL_CHAPTERS).toHaveLength(2)
     expect(TUTORIAL_STEPS.every((step) => step.page && step.target && step.allowedActions)).toBe(true)
+    expect(TUTORIAL_STEPS.find((step) => step.id === 'availability').description).toBe(
+      'Antes de distribuir as aulas, conhecemos a disponibilidade dos professores. '
+      + 'Cada bloco fica Preferencial, Neutro, Evitar ou Impossível.',
+    )
   })
 
   it('keeps the guide copy and persistence key tenant-specific', () => {

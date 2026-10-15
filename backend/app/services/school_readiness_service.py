@@ -29,7 +29,10 @@ READINESS_ISSUE_MESSAGES = {
     "TEACHERS": "Registe pelo menos um professor ativo.",
     "TEACHER_ASSIGNMENT": "Atribua um professor ativo e competente à disciplina da turma.",
     "COMPATIBLE_ROOM": "Registe uma sala compatível com a tipologia e lotação.",
-    "TEACHER_AVAILABILITY": "Registe disponibilidade docente não impossível.",
+    "TEACHER_AVAILABILITY": (
+        "Marque pelo menos um bloco como Neutro, Evitar ou Preferencial "
+        "na disponibilidade dos professores atribuídos."
+    ),
 }
 
 

@@ -178,7 +178,7 @@ function readyMarker(page, path) {
     ['/schedules', /Horarios escolares|Horários escolares/i],
     ['/absences', /Faltas e\s+Ocorrencias|Faltas e\s+Ocorrências/i],
     ['/timesheets', /Fecho\s+Semanal/i],
-    ['/my-availability', /Minhas\s+Preferencias|Minhas\s+Preferências/i],
+    ['/my-availability', /Minha\s+Disponibilidade/i],
     ['/my-schedules', /Meus\s+Horarios|Meus\s+Horários/i],
     ['/my-progress', /Meu\s+Progresso/i],
   ])

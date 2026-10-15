@@ -121,9 +121,10 @@ async def _validate_teacher_availabilities(
     )
     missing_names = [row[0] for row in teacher_name_rows.all()]
     return (
-        "Professores sem disponibilidade configurada: "
+        "Professores com todos os blocos marcados como Impossível: "
         f"{', '.join(missing_names)}. "
-        "Configure em Professores > Disponibilidade."
+        "Marque pelo menos um bloco como Neutro, Evitar ou Preferencial em "
+        "Equipa > Editar disponibilidade."
     )
 
 
