@@ -186,16 +186,6 @@ async function ensureClassSubject(page, classId, subjectId, teacherId) {
   await apiRequest(page, 'PATCH', `/classes/${classId}/subjects/${subjectId}`, { teacher_id: teacherId })
 }
 
-const JOINT_FIXTURE = {
-  subjectName: 'E2E Joint Subject',
-  moduleNames: ['E2E Joint M1', 'E2E Joint M2'],
-  moduleCodes: ['E2E-J1', 'E2E-J2'],
-  courseName: 'E2E Joint Course',
-  courseAbbreviation: 'E2EJOINT',
-  classNames: ['E2E Joint A', 'E2E Joint B'],
-  roomName: 'E2E Joint Room',
-}
-
 async function ensureSubjectWithModules(page, fixture) {
   const subjects = await apiRequest(page, 'GET', '/subjects/')
   const existing = subjects.find((subject) => subject.name === fixture.subjectName)
@@ -291,27 +281,59 @@ async function attachClassSubjectWithModules(page, classId, subjectId, teacherId
   })
 }
 
-export async function seedJointLessonInputs(page) {
+const JOINT_ACCEPTANCE_FIXTURE = {
+  subjectName: 'E2E Joint Subject',
+  moduleNames: [
+    'E2E Joint M1',
+    'E2E Joint M2',
+    'E2E Joint M3',
+    'E2E Joint M4',
+    'E2E Joint M5',
+    'E2E Joint M6',
+  ],
+  moduleCodes: ['E2E-J1', 'E2E-J2', 'E2E-J3', 'E2E-J4', 'E2E-J5', 'E2E-J6'],
+  courseName: 'E2E Joint Course',
+  courseAbbreviation: 'E2EJOINT',
+  classNames: ['E2E Joint A', 'E2E Joint B'],
+  roomName: 'E2E Joint Room',
+}
+
+/**
+ * Two classes with four shared modules (M1..M4) and one separate module each
+ * (M5 in A, M6 in B), ready for the joint acceptance journey. The joint group
+ * is created later through the UI.
+ */
+export async function seedJointAcceptanceInputs(page) {
   const dates = fixtureDates()
   await resetSchedulerState(page)
-  const subject = await ensureSubjectWithModules(page, JOINT_FIXTURE)
+  const subject = await ensureSubjectWithModules(page, JOINT_ACCEPTANCE_FIXTURE)
   const teacher = await prepareFixtureTeacher(page, subject.id)
   await configureFixtureSchool(page, dates)
-  await ensureNamedRoom(page, JOINT_FIXTURE.roomName, 60)
-  const course = await ensureNamedCourse(page, subject.id, JOINT_FIXTURE)
+  await ensureNamedRoom(page, JOINT_ACCEPTANCE_FIXTURE.roomName, 60)
+  const course = await ensureNamedCourse(page, subject.id, JOINT_ACCEPTANCE_FIXTURE)
   const classes = []
-  for (const name of JOINT_FIXTURE.classNames) {
+  for (const name of JOINT_ACCEPTANCE_FIXTURE.classNames) {
     classes.push(await ensureNamedClass(page, course.id, name, dates))
   }
-  const moduleIds = subject.modules.map((module) => module.id)
-  for (const classroom of classes) {
-    await attachClassSubjectWithModules(page, classroom.id, subject.id, teacher.teacher_id, moduleIds)
+  const moduleIdByName = new Map(subject.modules.map((module) => [module.name, module.id]))
+  const names = JOINT_ACCEPTANCE_FIXTURE.moduleNames
+  const sharedModuleIds = names.slice(0, 4).map((name) => moduleIdByName.get(name))
+  const separateModuleIds = {
+    a: moduleIdByName.get(names[4]),
+    b: moduleIdByName.get(names[5]),
   }
+  await attachClassSubjectWithModules(
+    page, classes[0].id, subject.id, teacher.teacher_id, [...sharedModuleIds, separateModuleIds.a],
+  )
+  await attachClassSubjectWithModules(
+    page, classes[1].id, subject.id, teacher.teacher_id, [...sharedModuleIds, separateModuleIds.b],
+  )
   return {
     courseId: course.id,
     subjectId: subject.id,
-    moduleIds,
     classes: classes.map((classroom) => ({ id: classroom.id, name: classroom.name })),
+    sharedModuleIds,
+    separateModuleIds,
   }
 }
 
