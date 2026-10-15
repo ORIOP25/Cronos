@@ -553,9 +553,10 @@ async def finish_job(
     """Terminal write under the state and job locks.
 
     Cancellation and stale data win over the calculated result, so an old
-    ``INFEASIBLE`` never describes freshness it no longer has. Per-class
-    diagnostics are stored only when the effective terminal state is a genuine
-    ``INFEASIBLE``; a cancelled or stale attempt keeps the column empty.
+    ``INFEASIBLE`` never describes freshness it no longer has. Diagnostics are
+    stored for every genuine no-schedule terminal state (``INFEASIBLE``,
+    ``FAILED`` and ``INCONCLUSIVE``); a cancelled or stale attempt keeps the
+    column empty.
     Returns the status actually written; ``LOST`` means this attempt no longer
     owns the job.
     """
@@ -606,7 +607,7 @@ async def finish_job(
     job.status = status
     job.result_code = result_code
     job.stop_reason = stop_reason
-    if status == "INFEASIBLE" and diagnostics is not None:
+    if status in ("INFEASIBLE", "FAILED", "INCONCLUSIVE") and diagnostics is not None:
         job.diagnostics_json = list(diagnostics)
     job.finished_at = now_utc
     if status != "SUCCEEDED":

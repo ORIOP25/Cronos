@@ -9,7 +9,7 @@ Construction failure is inconclusive; every returned plan is independently valid
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import datetime
 from fractions import Fraction
 from time import monotonic
@@ -21,6 +21,7 @@ from app.scheduler.domain.calendar import Period
 from app.scheduler.domain.candidate import (
     Assignment,
     CandidateSchedule,
+    GridSlot,
     PlanningSnapshot,
     ScheduledLesson,
     allocate_lesson_identity,
@@ -40,6 +41,64 @@ def _local_interval(period: Period) -> tuple[int, int]:
     return (
         period.start_local.hour * 60 + period.start_local.minute,
         period.end_local.hour * 60 + period.end_local.minute,
+    )
+
+
+def _minimum_presence_teachers(snapshot: PlanningSnapshot) -> dict[int, int]:
+    """Teachers with a presence minimum, keyed by teacher id."""
+    return {
+        row.teacher_id: row.minimum_minutes
+        for row in snapshot.teacher_presence
+        if row.minimum_minutes is not None
+    }
+
+
+def _slots_by_day(snapshot: PlanningSnapshot) -> dict[int, tuple[GridSlot, ...]]:
+    by_day: dict[int, list[GridSlot]] = defaultdict(list)
+    for slot in snapshot.grid_slots:
+        by_day[slot.day_of_week].append(slot)
+    return {
+        day: tuple(sorted(rows, key=lambda slot: (slot.start_local, slot.end_local)))
+        for day, rows in by_day.items()
+    }
+
+
+def _slot_position_for_interval(slots: Sequence[GridSlot], interval: tuple[int, int]) -> int | None:
+    start, end = interval
+    for position, slot in enumerate(slots):
+        if (
+            slot.start_local.hour * 60 + slot.start_local.minute == start
+            and slot.end_local.hour * 60 + slot.end_local.minute == end
+        ):
+            return position
+    return None
+
+
+def _continues_open_presence(
+    slots_by_day: dict[int, tuple[GridSlot, ...]],
+    occupancy: dict,
+    teacher_id: int,
+    period: Period,
+    minimum_teachers: dict[int, int],
+) -> bool:
+    """True when the period extends an open presence of a minimum teacher.
+
+    Adjacency is by grid position, not by wall-clock minutes, so the default
+    grid's short inter-block break still counts as continuing. The exact
+    minimum/gap semantics live in ``domain/teacher_presence.py`` and the
+    validator; this only prefers extending an open run so a presence reaches the
+    minimum instead of fragmenting the day.
+    """
+    if teacher_id not in minimum_teachers:
+        return False
+    slots = slots_by_day.get(period.school_date.weekday(), ())
+    position = _slot_position_for_interval(slots, _local_interval(period))
+    if position is None:
+        return False
+    return any(
+        (other := _slot_position_for_interval(slots, row)) is not None
+        and abs(other - position) == 1
+        for row in occupancy[("teacher", teacher_id, period.school_date)]
     )
 
 
@@ -328,6 +387,9 @@ def construct_schedule(
 
     ranks: dict[int, int] = defaultdict(int)
     lessons: list[ScheduledLesson] = []
+    dispensed_teachers = snapshot.lunch_dispensed_teacher_ids
+    minimum_teachers = _minimum_presence_teachers(snapshot)
+    slots_by_day = _slots_by_day(snapshot)
     for period in canonical:
         if (should_cancel is not None and should_cancel()) or (
             deadline is not None and monotonic() >= deadline
@@ -361,6 +423,9 @@ def construct_schedule(
             identity = assignment.assignment_id
             preferred = weekly_preferred(assignment, current_signature)
             repeats = preferred is not None and preferred[0] == identity
+            continues = _continues_open_presence(
+                slots_by_day, occupancy, assignment.teacher_id, current_period, minimum_teachers
+            )
             adjacent = sum(
                 any(
                     end == previous_end
@@ -380,6 +445,7 @@ def construct_schedule(
                     - (min(remaining[identity], current_period.duration_minutes) if repeats else 0),
                     required[identity],
                 ),
+                not continues,
                 -adjacent,
                 preferred is None,
                 not repeats,
@@ -408,6 +474,7 @@ def construct_schedule(
                 )
                 < snapshot.lunch_rule.minimum_minutes
                 for key in keys
+                if not (key[0] == "teacher" and key[1] in dispensed_teachers)
             ):
                 continue
             rooms = tuple(

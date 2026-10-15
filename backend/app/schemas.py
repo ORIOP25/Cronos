@@ -2177,7 +2177,7 @@ class SchedulerV1EligibilityRead(BaseModel):
 
 
 class SchedulerV1JobDiagnosticRead(BaseModel):
-    """One proven per-class diagnostic of a scheduler job that found no schedule."""
+    """One proven per-class or per-teacher diagnostic of a scheduler job."""
 
     code: str
     minimum_missing_minutes: int | None = None
@@ -2185,6 +2185,8 @@ class SchedulerV1JobDiagnosticRead(BaseModel):
     class_name: str | None = None
     course_id: int | None = None
     subject_name: str | None = None
+    teacher_id: int | None = None
+    teacher_name: str | None = None
 
 
 class SchedulerV1JobRead(BaseModel):

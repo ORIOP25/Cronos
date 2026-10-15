@@ -4,12 +4,15 @@ from dataclasses import replace
 
 import pytest
 
+from app.scheduler.application.recovery import repair_schedule
 from app.scheduler.domain.calendar import Period
 from app.scheduler.domain.candidate import (
     CandidateSchedule,
     ScheduledLesson,
     SchedulingStrategy,
+    TeacherPresenceRule,
 )
+from app.scheduler.domain.diagnostics import DiagnosisCode
 from app.scheduler.domain.projection import ModuleSlice
 from app.scheduler.domain.recovery import (
     BaselineIssueKind,
@@ -18,6 +21,11 @@ from app.scheduler.domain.recovery import (
     assess_baseline,
     measure_disruption,
     recovery_vector,
+)
+from app.scheduler.domain.results import (
+    OUTCOME_INCONCLUSIVE,
+    OUTCOME_INFEASIBLE,
+    SearchOutcome,
 )
 from tests.unit.test_scheduler_w04_w05_regressions_v1 import ORIGIN, period, snapshot
 
@@ -264,3 +272,43 @@ def test_policy_coefficients_are_explicit_and_validated():
         replace(POLICY, urgency_slope=-1)
     with pytest.raises(ValueError):
         replace(POLICY, disruption_weight=0)
+
+
+def _fake_outcome(status, candidate=None, message="stopped"):
+    return SearchOutcome(status, candidate, None, None, message, 0.0, {})
+
+
+def test_repair_inconclusive_with_minimum_teachers_reports_the_presence_hint():
+    periods = (period(0), period(1))
+    target = replace(
+        _recovery_snapshot(periods, minutes=60),
+        teacher_presence=(TeacherPresenceRule(1, True, 180, 60),),
+    )
+
+    def search(*args, **kwargs):
+        return _fake_outcome(OUTCOME_INCONCLUSIVE)
+
+    result = repair_schedule(target, periods, CandidateSchedule(()), search=search, policy=POLICY)
+
+    assert result.outcome == OUTCOME_INCONCLUSIVE
+    hint = [row for row in result.diagnoses if row.code is DiagnosisCode.TEACHER_PRESENCE_RULES]
+    assert len(hint) == 1
+    assert hint[0].affected_teacher_ids == (1,)
+
+
+def test_repair_infeasible_without_a_minimum_teacher_has_no_presence_hint():
+    periods = (period(0), period(1))
+    target = replace(
+        _recovery_snapshot(periods, minutes=60),
+        teacher_presence=(TeacherPresenceRule(1, False),),
+    )
+
+    def search(*args, **kwargs):
+        return _fake_outcome(OUTCOME_INFEASIBLE)
+
+    result = repair_schedule(target, periods, CandidateSchedule(()), search=search, policy=POLICY)
+
+    assert result.outcome == OUTCOME_INFEASIBLE
+    assert [
+        row for row in result.diagnoses if row.code is DiagnosisCode.TEACHER_PRESENCE_RULES
+    ] == []

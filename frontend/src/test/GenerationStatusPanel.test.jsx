@@ -368,4 +368,146 @@ describe('GenerationStatusPanel', () => {
 
     expect(screen.getByRole('link', { name: /abrir salas/i })).toHaveAttribute('href', '/rooms')
   })
+
+  it('lists the teachers with a minimum when the presence rules block the generation', () => {
+    useScheduleTaskStatus.mockReturnValue({
+      data: {
+        status: 'INFEASIBLE',
+        diagnostics: [
+          { code: 'TEACHER_PRESENCE_RULES', teacher_id: 4, teacher_name: 'Ana Silva' },
+          { code: 'TEACHER_PRESENCE_RULES', teacher_id: 9, teacher_name: 'Bruno Costa' },
+        ],
+      },
+      isLoading: false,
+    })
+
+    render(
+      <MemoryRouter>
+        <GenerationStatusPanel jobId={50} />
+      </MemoryRouter>,
+    )
+
+    expect(
+      screen.getByText(/Professores com mínimo de horas: Ana Silva, Bruno Costa\./),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(/baixar o mínimo, aumentar o furo máximo ou alargar a disponibilidade/),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /abrir equipa/i })).toHaveAttribute('href', '/members')
+  })
+
+  it.each(['FAILED', 'INCONCLUSIVE'])('shows the presence hint in %s too', (status) => {
+    useScheduleTaskStatus.mockReturnValue({
+      data: {
+        status,
+        diagnostics: [{ code: 'TEACHER_PRESENCE_RULES', teacher_id: 4, teacher_name: 'Ana Silva' }],
+      },
+      isLoading: false,
+    })
+
+    render(
+      <MemoryRouter>
+        <GenerationStatusPanel jobId={51} />
+      </MemoryRouter>,
+    )
+
+    expect(screen.getByText(/Professores com mínimo de horas: Ana Silva\./)).toBeInTheDocument()
+  })
+
+  it.each(['CANCELLED', 'STALE'])('never shows the presence hint in %s', (status) => {
+    useScheduleTaskStatus.mockReturnValue({
+      data: {
+        status,
+        diagnostics: [{ code: 'TEACHER_PRESENCE_RULES', teacher_id: 4, teacher_name: 'Ana Silva' }],
+      },
+      isLoading: false,
+    })
+
+    render(
+      <MemoryRouter>
+        <GenerationStatusPanel jobId={52} />
+      </MemoryRouter>,
+    )
+
+    expect(screen.queryByText(/Professores com mínimo de horas/)).toBeNull()
+  })
+
+  it('keeps the proven class deficit and adds the presence advisory', () => {
+    useScheduleTaskStatus.mockReturnValue({
+      data: {
+        status: 'INFEASIBLE',
+        diagnostics: [
+          {
+            code: 'INSUFFICIENT_CLASS_TIME',
+            minimum_missing_minutes: 60,
+            class_id: 5,
+            class_name: 'TGEI 25/28',
+            course_id: 7,
+            subject_name: null,
+          },
+          { code: 'TEACHER_PRESENCE_RULES', teacher_id: 4, teacher_name: 'Ana Silva' },
+        ],
+      },
+      isLoading: false,
+    })
+
+    render(
+      <MemoryRouter>
+        <GenerationStatusPanel jobId={60} />
+      </MemoryRouter>,
+    )
+
+    expect(screen.getByText(/Turmas sem tempo suficiente/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'TGEI 25/28' })).toHaveAttribute('href', '/courses/7/classes/5')
+    expect(screen.getByText(/Professores com mínimo de horas: Ana Silva\./)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /abrir equipa/i })).toHaveAttribute('href', '/members')
+  })
+
+  it('keeps the joint diagnosis and adds the presence advisory', () => {
+    useScheduleTaskStatus.mockReturnValue({
+      data: {
+        status: 'INFEASIBLE',
+        result_code: 'JOINT_NO_COMMON_TIME',
+        diagnostics: [
+          { code: 'JOINT_NO_COMMON_TIME', minimum_missing_minutes: null, class_id: 5, class_name: 'TGEI 25/28', course_id: 7, subject_name: 'Matemática' },
+          { code: 'JOINT_NO_COMMON_TIME', minimum_missing_minutes: null, class_id: 6, class_name: 'TM 24/27', course_id: 8, subject_name: 'Matemática' },
+          { code: 'TEACHER_PRESENCE_RULES', teacher_id: 4, teacher_name: 'Ana Silva' },
+        ],
+      },
+      isLoading: false,
+    })
+
+    render(
+      <MemoryRouter>
+        <GenerationStatusPanel jobId={61} />
+      </MemoryRouter>,
+    )
+
+    expect(
+      screen.getByText('As turmas TGEI 25/28, TM 24/27 não têm horas livres em comum para Matemática.'),
+    ).toBeInTheDocument()
+    expect(screen.getByText(/Professores com mínimo de horas: Ana Silva\./)).toBeInTheDocument()
+  })
+
+  it('keeps the protected-availability message and adds the presence advisory', () => {
+    useScheduleTaskStatus.mockReturnValue({
+      data: {
+        status: 'INFEASIBLE',
+        diagnostics: [
+          { code: 'PROTECTED_AVAILABILITY_CONFLICT' },
+          { code: 'TEACHER_PRESENCE_RULES', teacher_id: 4, teacher_name: 'Ana Silva' },
+        ],
+      },
+      isLoading: false,
+    })
+
+    render(
+      <MemoryRouter>
+        <GenerationStatusPanel jobId={62} />
+      </MemoryRouter>,
+    )
+
+    expect(screen.getByText(/aulas protegidas.*Impossível/)).toBeInTheDocument()
+    expect(screen.getByText(/Professores com mínimo de horas: Ana Silva\./)).toBeInTheDocument()
+  })
 })

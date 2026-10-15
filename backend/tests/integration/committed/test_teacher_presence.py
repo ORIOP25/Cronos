@@ -513,6 +513,115 @@ async def test_member_read_carries_teacher_presence(
     assert admin_member.json()["teacher_presence"] is None
 
 
+# --- R09 digest and pending proposal staleness (S3) --------------------------
+
+
+async def test_r09_presence_rule_changes_the_snapshot_digest_and_stales_the_proposal(
+    db_session, monkeypatch
+):
+    from app import scheduler_v1_worker as worker
+    from app import schemas
+    from app.scheduler.domain.candidate import SchedulingStrategy
+    from app.scheduler.infrastructure.jobs import enqueue_generation
+    from app.scheduler.infrastructure.queries import scheduler_status
+    from app.scheduler.infrastructure.snapshot import load_snapshot
+    from app.services import teacher_service
+    from tests._support.db_fixtures import TestingSessionLocal, test_engine
+    from tests._support.scheduler_v1 import MOMENT, seed_generatable_school
+
+    seed = await seed_generatable_school(db_session, clerk_org_id="presence_stale_org")
+    await db_session.commit()
+    before = await load_snapshot(
+        db_session,
+        seed.organization.id,
+        strategy=SchedulingStrategy.COMPLETE_GENERATION,
+        now_utc=MOMENT,
+        school_year_id=seed.year.id,
+    )
+
+    await enqueue_generation(
+        db_session,
+        seed.organization.id,
+        idempotency_key="presence-stale",
+        requested_by_membership_id=seed.membership.id,
+        now_utc=MOMENT,
+    )
+    await db_session.commit()
+    monkeypatch.setattr(worker, "SessionLocal", TestingSessionLocal)
+    monkeypatch.setattr(worker, "engine_async", test_engine)
+    monkeypatch.setattr(worker, "_now", lambda: MOMENT)
+    monkeypatch.setattr(worker, "RECOVERY_ASSESSMENT_SECONDS", 0.0)
+    await worker.process_next_jobs()
+    await db_session.refresh(seed.state)
+
+    pending = (await scheduler_status(db_session, seed.organization.id, now_utc=MOMENT))[
+        "pending_proposal"
+    ]
+    assert pending is not None
+    assert pending["is_stale"] is False
+
+    await teacher_service.set_teacher_presence(
+        db_session,
+        seed.assignment.teacher_id,
+        schemas.TeacherPresence(lunch_required=False, minimum_hours=3, max_gap_hours=1),
+        organization_id=seed.organization.id,
+    )
+    await db_session.commit()
+
+    after = await load_snapshot(
+        db_session,
+        seed.organization.id,
+        strategy=SchedulingStrategy.COMPLETE_GENERATION,
+        now_utc=MOMENT,
+        school_year_id=seed.year.id,
+    )
+    assert after.digest != before.digest
+
+    stale = (await scheduler_status(db_session, seed.organization.id, now_utc=MOMENT))[
+        "pending_proposal"
+    ]
+    assert stale["is_stale"] is True
+    assert stale["stale_reason"] == "REVISIONS_CHANGED"
+
+
+async def test_r25_unassigned_teacher_rule_does_not_change_the_snapshot_digest(db_session):
+    from app import schemas
+    from app.scheduler.domain.candidate import SchedulingStrategy
+    from app.scheduler.infrastructure.snapshot import load_snapshot
+    from app.services import teacher_service
+    from tests._support.scheduler_v1 import MOMENT, seed_generatable_school
+
+    seed = await seed_generatable_school(db_session, clerk_org_id="presence_unassigned_org")
+    extra = await create_teacher_profile(
+        db_session, organization_id=seed.organization.id, name="Unassigned"
+    )
+    await db_session.commit()
+    before = await load_snapshot(
+        db_session,
+        seed.organization.id,
+        strategy=SchedulingStrategy.COMPLETE_GENERATION,
+        now_utc=MOMENT,
+        school_year_id=seed.year.id,
+    )
+
+    await teacher_service.set_teacher_presence(
+        db_session,
+        extra.id,
+        schemas.TeacherPresence(lunch_required=False, minimum_hours=3, max_gap_hours=1),
+        organization_id=seed.organization.id,
+    )
+    await db_session.commit()
+
+    after = await load_snapshot(
+        db_session,
+        seed.organization.id,
+        strategy=SchedulingStrategy.COMPLETE_GENERATION,
+        now_utc=MOMENT,
+        school_year_id=seed.year.id,
+    )
+    assert after.digest == before.digest
+
+
 # --- R17: migration round trip and check constraints -------------------------
 
 

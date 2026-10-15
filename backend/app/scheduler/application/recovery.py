@@ -34,6 +34,7 @@ from app.scheduler.domain.diagnostics import (
     diagnose_invalid_input,
     diagnose_protected_availability,
     diagnose_scope_proof,
+    diagnose_teacher_presence_rules,
 )
 from app.scheduler.domain.quality import SearchEvidence
 from app.scheduler.domain.recovery import (
@@ -78,6 +79,14 @@ class RepairResult:
     @property
     def within_budget(self) -> bool:
         return self.budget is None or self.budget.within_budget
+
+
+def _with_presence_hint(
+    snapshot: PlanningSnapshot, diagnoses: tuple[Diagnosis, ...]
+) -> tuple[Diagnosis, ...]:
+    """Append the teacher-presence hint to a no-schedule terminal outcome (D09)."""
+    hint = diagnose_teacher_presence_rules(snapshot)
+    return diagnoses if hint is None else (*diagnoses, hint)
 
 
 def _summary(snapshot: PlanningSnapshot, quality: RecoveryQualityMetrics) -> RepairSummary:
@@ -155,7 +164,7 @@ def repair_schedule(
             None,
             message="Hard availability conflicts with protected published lessons.",
             baseline=baseline_assessment,
-            diagnoses=protected_conflicts,
+            diagnoses=_with_presence_hint(snapshot, protected_conflicts),
             budget=budget,
             wall_time_seconds=monotonic() - started,
         )
@@ -167,7 +176,7 @@ def repair_schedule(
             None,
             message="A repair cannot cover the demand with the current capacity.",
             baseline=baseline_assessment,
-            diagnoses=diagnose_capacity(snapshot, capacity, periods),
+            diagnoses=_with_presence_hint(snapshot, diagnose_capacity(snapshot, capacity, periods)),
             budget=budget,
             wall_time_seconds=monotonic() - started,
         )
@@ -178,7 +187,9 @@ def repair_schedule(
             None,
             message="The time limit was consumed before the search.",
             baseline=baseline_assessment,
-            diagnoses=(diagnose_inconclusive("The time limit was consumed before the search."),),
+            diagnoses=_with_presence_hint(
+                snapshot, (diagnose_inconclusive("The time limit was consumed before the search."),)
+            ),
             budget=budget,
             wall_time_seconds=monotonic() - started,
         )
@@ -232,7 +243,9 @@ def repair_schedule(
                 message="The solver produced a candidate rejected by the validator.",
                 baseline=baseline_assessment,
                 evidence=outcome.evidence,
-                diagnoses=(diagnose_failure("The repair candidate failed validation."),),
+                diagnoses=_with_presence_hint(
+                    snapshot, (diagnose_failure("The repair candidate failed validation."),)
+                ),
                 budget=budget,
                 wall_time_seconds=monotonic() - started,
                 search_seconds=search_seconds,
@@ -298,7 +311,7 @@ def repair_schedule(
             message=outcome.message,
             baseline=baseline_assessment,
             evidence=outcome.evidence,
-            diagnoses=diagnoses,
+            diagnoses=_with_presence_hint(snapshot, diagnoses),
             budget=budget,
             wall_time_seconds=monotonic() - started,
             search_seconds=search_seconds,
@@ -316,7 +329,7 @@ def repair_schedule(
         message=message,
         baseline=baseline_assessment,
         evidence=outcome.evidence,
-        diagnoses=diagnoses,
+        diagnoses=_with_presence_hint(snapshot, diagnoses),
         budget=budget,
         wall_time_seconds=monotonic() - started,
         search_seconds=search_seconds,

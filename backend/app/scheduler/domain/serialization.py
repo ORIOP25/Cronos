@@ -25,6 +25,7 @@ from app.scheduler.domain.candidate import (
     PlanningSnapshot,
     ScheduledLesson,
     SchedulingStrategy,
+    TeacherPresenceRule,
     Unavailability,
     UnavailableResource,
 )
@@ -254,6 +255,11 @@ def snapshot_to_dict(snapshot: PlanningSnapshot) -> dict[str, Any]:
         payload["claim_classes"] = sorted(
             [claim_id, class_id] for claim_id, class_id in snapshot.claim_classes.items()
         )
+    if snapshot.teacher_presence:
+        payload["teacher_presence"] = [
+            [row.teacher_id, row.lunch_required, row.minimum_minutes, row.max_gap_minutes]
+            for row in snapshot.teacher_presence
+        ]
     return payload
 
 
@@ -296,6 +302,10 @@ def snapshot_from_dict(data: Mapping[str, Any]) -> PlanningSnapshot:
         claim_classes={claim_id: class_id for claim_id, class_id in data.get("claim_classes", ())},
         active_version_id=data.get("active_version_id"),
         reserved_lesson_ids=frozenset(data.get("reserved_lesson_ids", ())),
+        teacher_presence=tuple(
+            TeacherPresenceRule(row[0], row[1], row[2], row[3])
+            for row in data.get("teacher_presence", ())
+        ),
         lunch_rule=(
             None
             if data.get("lunch_rule") is None

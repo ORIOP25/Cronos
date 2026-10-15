@@ -1,7 +1,8 @@
+from collections import defaultdict
 from dataclasses import replace
 from datetime import date, time, timedelta
 
-from app.scheduler.domain.candidate import SchedulingStrategy
+from app.scheduler.domain.candidate import GridSlot, SchedulingStrategy, TeacherPresenceRule
 from app.scheduler.infrastructure.annual_model import (
     STATUS_FEASIBLE,
     STATUS_INFEASIBLE,
@@ -168,3 +169,62 @@ def test_a_successor_gets_no_quota_before_its_predecessor_week():
 
     assert plan.status == STATUS_FEASIBLE
     assert all(owner != 2 or week == 1 for owner, week, _duration in plan.distribution.counts)
+
+
+def test_teacher_minimum_concentrates_the_editable_weekly_load():
+    """R14/T05: a teacher's editable weekly load is 0 or at least the minimum."""
+    week0 = (ORIGIN, time(9), time(10))
+    week1 = (NEXT_WEEK, time(9), time(10))
+    week1_b = (NEXT_WEEK, time(10), time(11))
+    week1_c = (NEXT_WEEK, time(11), time(12))
+    periods = (week0, week1, week1_b, week1_c)
+    grid = (
+        GridSlot(0, time(9), time(10)),
+        GridSlot(0, time(10), time(11)),
+        GridSlot(0, time(11), time(12)),
+    )
+    snapshot = replace(
+        _snapshot(module_minutes=(180,), periods=periods),
+        grid_slots=grid,
+        teacher_presence=(
+            TeacherPresenceRule(
+                teacher_id=7,
+                lunch_required=False,
+                minimum_minutes=180,
+                max_gap_minutes=10_000,
+            ),
+        ),
+    )
+
+    plan = plan_annual_quotas(snapshot, _periods(*periods), time_limit_seconds=5)
+
+    assert plan.status == STATUS_FEASIBLE
+    loads: dict[int, int] = defaultdict(int)
+    for (_assignment_id, week, duration), count in plan.distribution.counts.items():
+        loads[week] += duration * count
+    assert all(load == 0 or load >= 180 for load in loads.values())
+    assert loads.get(1, 0) == 180
+
+
+def test_teacher_minimum_makes_a_two_hour_week_infeasible():
+    """Every distribution of a 2-hour capacity week falls inside (0, minimum)."""
+    periods = (
+        (ORIGIN, time(9), time(10)),
+        (ORIGIN, time(10), time(11)),
+        (NEXT_WEEK, time(9), time(10)),
+        (NEXT_WEEK, time(10), time(11)),
+    )
+    grid = (GridSlot(0, time(9), time(10)), GridSlot(0, time(10), time(11)))
+    base = replace(_snapshot(module_minutes=(120,), periods=periods), grid_slots=grid)
+    rule = TeacherPresenceRule(
+        teacher_id=7, lunch_required=False, minimum_minutes=180, max_gap_minutes=10_000
+    )
+
+    without_rule = plan_annual_quotas(base, _periods(*periods), time_limit_seconds=5)
+    assert without_rule.status == STATUS_FEASIBLE
+
+    with_rule = plan_annual_quotas(
+        replace(base, teacher_presence=(rule,)), _periods(*periods), time_limit_seconds=5
+    )
+    assert with_rule.status == STATUS_INFEASIBLE
+    assert with_rule.distribution is None

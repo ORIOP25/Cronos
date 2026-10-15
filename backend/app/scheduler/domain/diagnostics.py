@@ -33,6 +33,7 @@ class DiagnosisCode(StrEnum):
     EXECUTION_FAILURE = "EXECUTION_FAILURE"
     JOINT_NO_COMMON_TIME = "JOINT_NO_COMMON_TIME"
     PROTECTED_AVAILABILITY_CONFLICT = "PROTECTED_AVAILABILITY_CONFLICT"
+    TEACHER_PRESENCE_RULES = "TEACHER_PRESENCE_RULES"
 
 
 class EvidenceKind(StrEnum):
@@ -59,6 +60,7 @@ class Diagnosis:
     minimum_missing_minutes: int | None = None
     affected_class_ids: tuple[int, ...] = ()
     affected_subject_id: int | None = None
+    affected_teacher_ids: tuple[int, ...] = ()
     suggestions: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
@@ -269,4 +271,29 @@ def diagnose_failure(message: str) -> Diagnosis:
         message=message,
         scope="GLOBAL",
         suggestions=(REVIEW_SAFETY_LIMIT,),
+    )
+
+
+def diagnose_teacher_presence_rules(snapshot: PlanningSnapshot) -> Diagnosis | None:
+    """The teachers with a presence minimum, as a hint, never a proof (D09).
+
+    A generation or repair that ends without a schedule may have been blocked by
+    a teacher presence rule, but that is not demonstrated. The list names the
+    teachers to review and is labelled ``ESTIMATE``.
+    """
+    teacher_ids = tuple(
+        rule.teacher_id for rule in snapshot.teacher_presence if rule.minimum_minutes is not None
+    )
+    if not teacher_ids:
+        return None
+    return Diagnosis(
+        code=DiagnosisCode.TEACHER_PRESENCE_RULES,
+        evidence_kind=EvidenceKind.ESTIMATE,
+        message=(
+            "The schedule did not fit the teachers with a minimum presence rule; "
+            "review their minimum, maximum gap or availability."
+        ),
+        scope="GLOBAL",
+        affected_teacher_ids=teacher_ids,
+        suggestions=(REVIEW_AVAILABILITY,),
     )

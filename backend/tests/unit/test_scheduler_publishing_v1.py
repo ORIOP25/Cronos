@@ -144,6 +144,7 @@ def test_diagnostics_summary_keeps_the_affected_subject():
             "minimum_missing_minutes": 30,
             "affected_class_ids": [2],
             "affected_subject_id": 3,
+            "affected_teacher_ids": [],
         }
     ]
 

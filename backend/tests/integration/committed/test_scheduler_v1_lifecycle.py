@@ -38,7 +38,7 @@ from app.scheduler.infrastructure.proposals import (
 from app.scheduler.infrastructure.queries import current_proposal, get_job, scheduler_status
 from app.services.dashboard_service import get_dashboard_summary
 from app.services.scheduler_state_service import SchedulerStateService
-from tests._support.db_fixtures import TestingSessionLocal, test_engine
+from tests._support.db_fixtures import TestingSessionLocal, create_teacher_profile, test_engine
 from tests._support.scheduler_v1 import V1Seed, seed_generatable_school
 
 pytestmark = pytest.mark.postgresql
@@ -414,6 +414,53 @@ async def test_job_diagnostics_resolve_only_the_current_organization(db_session)
             "class_name": None,
             "course_id": None,
             "subject_name": None,
+        }
+    ]
+
+
+async def test_job_diagnostics_return_one_row_per_presence_teacher(db_session):
+    seed = await _minimal_school(db_session)
+    teacher = await create_teacher_profile(
+        db_session, organization_id=seed.organization.id, name="Presença Docente"
+    )
+    await db_session.commit()
+    queued = await _enqueue(db_session, seed)
+    await db_session.commit()
+    claim = await claim_next_job(db_session, now_utc=MOMENT)
+    assert claim is not None
+    await finish_job(
+        db_session,
+        organization_id=seed.organization.id,
+        job_id=queued.job.id,
+        attempt_token=claim.attempt_token,
+        status="FAILED",
+        result_code="FAILED",
+        diagnostics=[
+            {
+                "code": "TEACHER_PRESENCE_RULES",
+                "minimum_missing_minutes": None,
+                "affected_class_ids": [],
+                "affected_subject_id": None,
+                "affected_teacher_ids": [teacher.id],
+            }
+        ],
+        now_utc=MOMENT,
+    )
+    await db_session.commit()
+
+    job = await db_session.scalar(select(SchedulerJobV1).where(SchedulerJobV1.id == queued.job.id))
+    await db_session.refresh(job)
+    assert job.status == "FAILED"
+    assert job.diagnostics_json
+
+    payload = await get_job(db_session, seed.organization.id, queued.job.id)
+
+    assert payload["diagnostics"] == [
+        {
+            "code": "TEACHER_PRESENCE_RULES",
+            "minimum_missing_minutes": None,
+            "teacher_id": teacher.id,
+            "teacher_name": "Presença Docente",
         }
     ]
 

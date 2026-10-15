@@ -231,6 +231,45 @@ def test_the_search_never_returns_worse_than_the_constructor(monkeypatch):
     )
 
 
+def test_presence_rule_exact_search_completes_when_construction_returns_none(monkeypatch):
+    """The constructor guard passes, then the real exact solver closes the gap."""
+    from app.scheduler.domain.candidate import TeacherPresenceRule
+    from app.scheduler.infrastructure.constructive import construct_schedule
+    from tests.unit.test_scheduler_resource_exclusivity_v1 import assignment, plan
+    from tests.unit.test_scheduler_w04_w05_regressions_v1 import period
+
+    periods = (period(0, start=9, end=10), period(0, start=10, end=11))
+    snapshot = plan(
+        periods,
+        [assignment(1, 1, 1, {1}, 120)],
+        teacher_presence=(
+            TeacherPresenceRule(
+                teacher_id=1, lunch_required=False, minimum_minutes=120, max_gap_minutes=10_000
+            ),
+        ),
+    )
+
+    constructed = construct_schedule(snapshot, periods)
+    assert constructed is None or validate_candidate(snapshot, constructed).valid
+
+    calls = []
+
+    def no_construction(*_args, **_kwargs):
+        calls.append(True)
+        return None
+
+    monkeypatch.setattr(search_module, "construct_schedule", no_construction)
+
+    outcome = search_module.search_complete_schedule(
+        snapshot, periods, time_limit_seconds=30.0, num_workers=1, random_seed=1
+    )
+
+    assert calls
+    assert outcome.status == "COMPLETE"
+    assert outcome.candidate is not None
+    assert validate_candidate(snapshot, outcome.candidate).valid
+
+
 @pytest.mark.parametrize("interruption", ["deadline", "cancellation"])
 def test_recovery_never_starts_fallback_placement_after_interruption(monkeypatch, interruption):
     fixture = build_scale_fixture(6, seed=1)

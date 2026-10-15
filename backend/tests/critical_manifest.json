@@ -9,6 +9,7 @@
         "tests/unit/test_scheduler_candidate_validation.py",
         "tests/unit/test_scheduler_candidate_contracts.py",
         "tests/unit/test_scheduler_lunch_break_v1.py",
+        "tests/unit/test_scheduler_teacher_presence_v1.py",
         "tests/unit/test_scheduler_resource_exclusivity_v1.py",
         "tests/unit/test_scheduler_progress_domain.py",
         "tests/unit/test_scheduler_debt_domain.py",

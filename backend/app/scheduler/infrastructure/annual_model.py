@@ -320,7 +320,7 @@ def _quota_demands(snapshot, periods, deadline, start):
     return demands
 
 
-def _add_quota_variables(model, demands, deadline, start):
+def _add_quota_variables(model, demands, deadline, start, snapshot: PlanningSnapshot | None = None):
     q: dict[QuotaKey, Any] = {}
     final: dict[QuotaKey, Any] = {}
     waste: dict[QuotaKey, Any] = {}
@@ -368,6 +368,8 @@ def _add_quota_variables(model, demands, deadline, start):
             key = (assignment.assignment_id, week, duration)
             model.Add(q[key] + capacity * after <= capacity)
 
+    _add_teacher_minimum_load(model, snapshot, load_terms)
+
     return (
         q,
         final,
@@ -378,6 +380,43 @@ def _add_quota_variables(model, demands, deadline, start):
         room_set_terms,
         max_week,
     )
+
+
+def _add_teacher_minimum_load(model, snapshot, load_terms) -> None:
+    """T05: a teacher's editable weekly load is 0 or at least the minimum.
+
+    Only weeks without a protected lesson of that teacher are constrained: a
+    protected presence is a fact, so its week may carry any editable remainder.
+    """
+    if snapshot is None:
+        return
+    minimums = {
+        row.teacher_id: row.minimum_minutes
+        for row in snapshot.teacher_presence
+        if row.minimum_minutes is not None
+    }
+    if not minimums:
+        return
+    protected_weeks = _protected_teacher_weeks(snapshot)
+    for (kind, resource_id, week), terms in sorted(load_terms.items()):
+        if kind != "teacher" or resource_id not in minimums:
+            continue
+        if (resource_id, week) in protected_weeks:
+            continue
+        has_load = model.NewBoolVar(f"tmin_{resource_id}_{week}")
+        model.Add(sum(terms) >= minimums[resource_id]).OnlyEnforceIf(has_load)
+        model.Add(sum(terms) == 0).OnlyEnforceIf(has_load.Not())
+
+
+def _protected_teacher_weeks(snapshot: PlanningSnapshot) -> set[tuple[int, int]]:
+    weeks: set[tuple[int, int]] = set()
+    for lesson in snapshot.protected_lessons:
+        assignment = snapshot.assignment_for(lesson.assignment_id)
+        if assignment is None:
+            continue
+        teacher_id = lesson.teacher_id or assignment.teacher_id
+        weeks.add((teacher_id, week_index(snapshot.origin, lesson.period)))
+    return weeks
 
 
 def _add_quota_hints(
@@ -470,7 +509,7 @@ def plan_annual_quotas(
     build_start = monotonic()
     diagnostics.phase_started("ANNUAL")
     model = cp_model.CpModel()
-    variables = _add_quota_variables(model, demands, deadline, start)
+    variables = _add_quota_variables(model, demands, deadline, start, snapshot)
     if isinstance(variables, AnnualPlan):
         return variables
     (

@@ -20,6 +20,59 @@ def construct(target, periods):
     return candidate
 
 
+def test_presence_continuation_prefers_the_next_grid_slot_across_a_break():
+    """The default grid has a short break; continuation is by grid position."""
+    from app.scheduler.domain.calendar import normalize_period
+    from app.scheduler.domain.candidate import GridSlot, TeacherPresenceRule
+    from app.scheduler.infrastructure.constructive import (
+        _continues_open_presence,
+        _slots_by_day,
+    )
+
+    day = period(0).school_date
+    target = replace(
+        snapshot((period(0),)),
+        grid_slots=(
+            GridSlot(0, time(9, 0), time(10, 0)),
+            GridSlot(0, time(10, 5), time(11, 5)),
+        ),
+        teacher_presence=(
+            TeacherPresenceRule(
+                teacher_id=1, lunch_required=False, minimum_minutes=120, max_gap_minutes=0
+            ),
+        ),
+    )
+    next_slot = normalize_period(day, time(10, 5), time(11, 5), "Europe/Lisbon")
+    occupancy = {("teacher", 1, day): [(9 * 60, 10 * 60)]}
+
+    assert _continues_open_presence(_slots_by_day(target), occupancy, 1, next_slot, {1: 120})
+
+
+def test_default_grid_break_keeps_a_teacher_presence_constructible():
+    from app.scheduler.domain.candidate import GridSlot, TeacherPresenceRule
+
+    periods = (period(0, start=9, end=10), period(0, start=10, end=11, start_min=5, end_min=5))
+    target = replace(
+        snapshot(periods),
+        assignments=(assignment(1, 1, 1, {1}, 120),),
+        grid_slots=(
+            GridSlot(0, time(9, 0), time(10, 0)),
+            GridSlot(0, time(10, 5), time(11, 5)),
+        ),
+        teacher_presence=(
+            TeacherPresenceRule(
+                teacher_id=1, lunch_required=False, minimum_minutes=120, max_gap_minutes=0
+            ),
+        ),
+    )
+
+    candidate = construct_schedule(target, periods)
+
+    assert candidate is not None
+    assert validate_candidate(target, candidate).valid
+    assert len(candidate.lessons) == 2
+
+
 def test_a_long_calendar_does_not_delay_subjects_when_earlier_capacity_exists():
     periods = tuple(
         period(day, start=hour, end=hour + 1) for day in range(8) for hour in range(9, 15)

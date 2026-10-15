@@ -47,6 +47,7 @@ from app.scheduler.domain.quality import (
     StageEvidence,
     measure_initial_quality,
 )
+from app.scheduler.domain.teacher_presence import lunch_options
 from app.scheduler.infrastructure import diagnostics
 from app.scheduler.infrastructure.annual_model import (
     QuotaDistribution,
@@ -185,14 +186,24 @@ def _scope_cache_key(scope: _WindowScope, salt: str = "") -> tuple:
 
 
 def _lunch_cache_salt(snapshot: PlanningSnapshot, salt: str) -> str:
-    """Bind cached windows to the lunch rule, which constrains the same windows."""
+    """Bind cached windows to the lunch rule and every presence rule.
+
+    Both constrain the same windows, so a changed rule must change the key.
+    """
+    result = salt
     lunch = snapshot.lunch_rule
-    if lunch is None:
-        return salt
-    return (
-        f"{salt}|lunch:{lunch.window_start_minutes}-{lunch.window_end_minutes}"
-        f":{lunch.minimum_minutes}"
-    )
+    if lunch is not None:
+        result = (
+            f"{result}|lunch:{lunch.window_start_minutes}-{lunch.window_end_minutes}"
+            f":{lunch.minimum_minutes}"
+        )
+    if snapshot.teacher_presence:
+        rules = ",".join(
+            f"{row.teacher_id}:{int(row.lunch_required)}:{row.minimum_minutes}:{row.max_gap_minutes}"
+            for row in snapshot.teacher_presence
+        )
+        result = f"{result}|presence:{rules}"
+    return result
 
 
 def _module_completed(snapshot: PlanningSnapshot, assignment_id: int) -> dict[int, int]:
@@ -352,6 +363,14 @@ def _slot_duration_minutes(slot: GridSlot) -> int:
     start = slot.start_local.hour * 60 + slot.start_local.minute
     end = slot.end_local.hour * 60 + slot.end_local.minute
     return end - start
+
+
+def _slot_start_minutes(slot: GridSlot) -> int:
+    return slot.start_local.hour * 60 + slot.start_local.minute
+
+
+def _slot_end_minutes(slot: GridSlot) -> int:
+    return slot.end_local.hour * 60 + slot.end_local.minute
 
 
 def _or_expressions(model: cp_model.CpModel, name: str, values: list[Any]) -> Any:
@@ -600,7 +619,8 @@ def _build_scope_state(snapshot: PlanningSnapshot, scope: _WindowScope) -> _Scop
         _add_assignment_options(state, assignment_id, row)
         _add_assignment_credit(state, assignment_id, row)
     _add_conflicts(state)
-    _add_lunch(state)
+    lunch_options_by_resource = _add_lunch(state)
+    _add_teacher_presence(state, lunch_options_by_resource)
     _add_completion_measure(state)
     _add_precedence_constraints(state)
     return state
@@ -718,22 +738,6 @@ def _period_minutes(period: Period) -> tuple[int, int]:
     )
 
 
-def _lunch_options(boundaries: list[int], window_end: int, minimum: int) -> list[tuple[int, int]]:
-    """Minimal windows of at least the minimum length, anchored at a boundary.
-
-    A maximal free run always starts at a boundary. Its first boundary at or
-    after ``origin + minimum`` lies inside the run, so requiring one of these
-    minimal anchors to stay free is exact and keeps the option count linear.
-    """
-    options = []
-    for origin in boundaries:
-        if origin + minimum > window_end:
-            continue
-        closing = next(value for value in boundaries if value >= origin + minimum)
-        options.append((origin, closing))
-    return options
-
-
 def _lunch_resource_rows(state):
     by_resource: dict[tuple[str, int, date], list[tuple[Period, Any]]] = defaultdict(list)
     for (assignment_id, period), variable in state.x.items():
@@ -772,7 +776,12 @@ def _lunch_overlap_terms(rows, option_start, option_end):
     return terms, blocked
 
 
-def _add_resource_lunch(state, resource, rows):
+def _add_resource_lunch(state, resource, rows) -> list[tuple[Any, int, int]]:
+    """Add one free-option per resource and return ``(flag, start, end)`` options.
+
+    The presence minimum reuses these options to designate one free lunch choice
+    that splits the day; a resource with no free option is infeasible.
+    """
     model = state.model
     rule = state.snapshot.lunch_rule
     window_start = rule.window_start_minutes
@@ -785,8 +794,8 @@ def _add_resource_lunch(state, resource, rows):
             boundaries.add(period_start)
         if window_start < period_end < window_end:
             boundaries.add(period_end)
-    options = []
-    for option_start, option_end in _lunch_options(
+    options: list[tuple[Any, int, int]] = []
+    for option_start, option_end in lunch_options(
         sorted(boundaries), window_end, rule.minimum_minutes
     ):
         terms, blocked = _lunch_overlap_terms(rows, option_start, option_end)
@@ -797,27 +806,209 @@ def _add_resource_lunch(state, resource, rows):
         )
         for term in terms:
             model.Add(flag + term <= 1)
-        options.append(flag)
+        options.append((flag, option_start, option_end))
     if options:
-        model.Add(sum(options) >= 1)
+        model.Add(sum(flag for flag, _start, _end in options) >= 1)
     else:
         model.AddBoolOr([])
+    return options
 
 
-def _add_lunch(state: _ScopeState) -> None:
+def _add_lunch(state: _ScopeState) -> dict[tuple[str, int, date], list[tuple[Any, int, int]]]:
     """Require one continuous lunch window per class and teacher on active days.
 
     Each option is a boolean "this interval is free". It is forced off whenever
     a lesson overlapping it is placed, so at least one option must remain free.
     Protected lessons can block an option permanently; a resource with no free
     option makes the window infeasible instead of silently ignoring the rule.
+    A teacher dispensed from lunch is skipped; classes always keep the rule.
     """
     rule = state.snapshot.lunch_rule
     if rule is None:
-        return
+        return {}
+    dispensed = state.snapshot.lunch_dispensed_teacher_ids
     by_resource = _lunch_resource_rows(state)
+    lunch_options_by_resource: dict[tuple[str, int, date], list[tuple[Any, int, int]]] = {}
     for (kind, resource_id, school_date), rows in sorted(by_resource.items()):
-        _add_resource_lunch(state, (kind, resource_id, school_date), rows)
+        if kind == "teacher" and resource_id in dispensed:
+            continue
+        lunch_options_by_resource[(kind, resource_id, school_date)] = _add_resource_lunch(
+            state, (kind, resource_id, school_date), rows
+        )
+    return lunch_options_by_resource
+
+
+def _teacher_presence_occupancy(state: _ScopeState):
+    """Split a teacher's day into editable variables and protected positions.
+
+    Protected lessons stay constants, so a presence made only of protected
+    lessons is exempt from the minimum; a presence with any editable lesson
+    counts both. A substitute lesson uses its own teacher id, never the unit's.
+    """
+    editable: dict[tuple[int, date], dict[int, list[Any]]] = defaultdict(lambda: defaultdict(list))
+    protected: dict[tuple[int, date], set[int]] = defaultdict(set)
+    for (assignment_id, period), variable in state.x.items():
+        assignment = state.assignment_by_id[assignment_id]
+        position = state.position_of.get(period)
+        if position is not None:
+            editable[(assignment.teacher_id, period.school_date)][position].append(variable)
+    for lesson in state.snapshot.protected_lessons:
+        assignment = state.assignment_by_id.get(lesson.assignment_id)
+        if assignment is None:
+            continue
+        if (
+            state.scope.week is not None
+            and week_index(state.snapshot.origin, lesson.period) != state.scope.week
+        ):
+            continue
+        position = _slot_position(state.slots_by_day, lesson.period)
+        if position is not None:
+            protected[(lesson.teacher_id or assignment.teacher_id, lesson.period.school_date)].add(
+                position
+            )
+    return editable, protected
+
+
+def _add_presence_segment(
+    state: _ScopeState,
+    rule: Any,
+    slots: Sequence[GridSlot],
+    positions: Sequence[int],
+    editable: Mapping[int, list[Any]],
+    protected: set[int],
+    *,
+    tag: str,
+    enforce: Any | None,
+) -> None:
+    """Enforce the minimum minutes and grid-block gap of one presence segment.
+
+    The segment is a contiguous slot range. ``enforce`` is the designated lunch
+    choice when the day is split, or ``None`` for the whole day. A segment with
+    no editable lesson is a protected-only (or empty) presence and is exempt.
+    """
+    model = state.model
+    protected_minutes = 0
+    editable_minutes: list[Any] = []
+    editable_literals: list[Any] = []
+    occupied: list[Any] = []
+    for position in positions:
+        variables = editable.get(position, ())
+        is_protected = position in protected
+        occupied.append(
+            _or_expressions(
+                model, f"occ_{tag}_{position}", [*variables, *([1] if is_protected else [])]
+            )
+        )
+        if variables:
+            editable_literals.extend(variables)
+            editable_minutes.append(
+                _slot_duration_minutes(slots[position])
+                * _or_expressions(model, f"edt_{tag}_{position}", list(variables))
+            )
+        if is_protected:
+            protected_minutes += _slot_duration_minutes(slots[position])
+    if not editable_literals and protected_minutes == 0:
+        return
+    has_editable = model.NewBoolVar(f"has_{tag}")
+    if editable_literals:
+        model.AddMaxEquality(has_editable, editable_literals)
+    else:
+        model.Add(has_editable == 0)
+    active = [enforce, has_editable] if enforce is not None else [has_editable]
+    model.Add(protected_minutes + sum(editable_minutes) >= rule.minimum_minutes).OnlyEnforceIf(
+        active
+    )
+    gap_terms: list[Any] = []
+    for index in range(1, len(positions) - 1):
+        before = _or_expressions(model, f"before_{tag}_{positions[index]}", occupied[:index])
+        after = _or_expressions(model, f"after_{tag}_{positions[index]}", occupied[index + 1 :])
+        if (type(before) is int and before == 0) or (type(after) is int and after == 0):
+            continue
+        current = occupied[index]
+        gap = model.NewBoolVar(f"gap_{tag}_{positions[index]}")
+        model.Add(gap <= before)
+        model.Add(gap <= after)
+        model.Add(gap + current <= 1)
+        model.Add(gap >= before + after - 1 - current)
+        gap_terms.append(_slot_duration_minutes(slots[positions[index]]) * gap)
+    if gap_terms:
+        model.Add(sum(gap_terms) <= rule.max_gap_minutes).OnlyEnforceIf(active)
+
+
+def _add_teacher_presence(
+    state: _ScopeState,
+    lunch_options_by_resource: Mapping[tuple[str, int, date], list[tuple[Any, int, int]]],
+) -> None:
+    """Apply the minimum hours and maximum gap per presence to the exact model.
+
+    A required lunch designates exactly one free option per teacher and day; the
+    designated choice splits the day into a morning and an afternoon presence.
+    Without a lunch rule (or when dispensed) the whole day is one presence.
+    """
+    rules = {
+        row.teacher_id: row
+        for row in state.snapshot.teacher_presence
+        if row.minimum_minutes is not None
+    }
+    if not rules:
+        return
+    editable, protected = _teacher_presence_occupancy(state)
+    for teacher_id, school_date in sorted(set(editable) | set(protected)):
+        rule = rules.get(teacher_id)
+        if rule is None:
+            continue
+        slots = state.slots_by_day.get(school_date.weekday(), ())
+        if not slots:
+            continue
+        by_position = dict(editable.get((teacher_id, school_date), {}))
+        protected_positions = protected.get((teacher_id, school_date), set())
+        tag = f"tp_{teacher_id}_{school_date.isoformat()}"
+        if not rule.lunch_required or state.snapshot.lunch_rule is None:
+            _add_presence_segment(
+                state,
+                rule,
+                slots,
+                range(len(slots)),
+                by_position,
+                protected_positions,
+                tag=f"{tag}_day",
+                enforce=None,
+            )
+            continue
+        options = lunch_options_by_resource.get(("teacher", teacher_id, school_date), [])
+        if not options:
+            continue
+        chosen = []
+        for index, (flag, _start, _end) in enumerate(options):
+            choice = state.model.NewBoolVar(f"choice_{tag}_{index}")
+            state.model.Add(choice <= flag)
+            chosen.append(choice)
+        state.model.Add(sum(chosen) == 1)
+        starts = [_slot_start_minutes(slot) for slot in slots]
+        ends = [_slot_end_minutes(slot) for slot in slots]
+        for choice, (_flag, option_start, option_end) in zip(chosen, options, strict=True):
+            morning = [position for position, end in enumerate(ends) if end <= option_start]
+            afternoon = [position for position, start in enumerate(starts) if start >= option_end]
+            _add_presence_segment(
+                state,
+                rule,
+                slots,
+                morning,
+                by_position,
+                protected_positions,
+                tag=f"{tag}_{option_start}_am",
+                enforce=choice,
+            )
+            _add_presence_segment(
+                state,
+                rule,
+                slots,
+                afternoon,
+                by_position,
+                protected_positions,
+                tag=f"{tag}_{option_start}_pm",
+                enforce=choice,
+            )
 
 
 def _add_completion_measure(state: _ScopeState) -> None:

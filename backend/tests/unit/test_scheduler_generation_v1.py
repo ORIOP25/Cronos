@@ -4,10 +4,22 @@ from datetime import date, time, timedelta
 from app.scheduler.application.generation import generate_complete
 from app.scheduler.composition import generate_schedule
 from app.scheduler.domain.calendar import normalize_period
-from app.scheduler.domain.candidate import ScheduledLesson, SchedulingStrategy
+from app.scheduler.domain.candidate import (
+    CandidateSchedule,
+    ScheduledLesson,
+    SchedulingStrategy,
+    TeacherPresenceRule,
+)
 from app.scheduler.domain.capacity import aggregate_capacity_check
-from app.scheduler.domain.diagnostics import DiagnosisCode
+from app.scheduler.domain.diagnostics import DiagnosisCode, EvidenceKind
 from app.scheduler.domain.projection import ModuleSlice
+from app.scheduler.domain.results import (
+    OUTCOME_COMPLETE,
+    OUTCOME_FAILED,
+    OUTCOME_INCONCLUSIVE,
+    OUTCOME_INFEASIBLE,
+    SearchOutcome,
+)
 from app.scheduler.infrastructure.placement_model import solve_placement
 from app.scheduler.lab.fixtures import (
     AssignmentSpec,
@@ -16,6 +28,7 @@ from app.scheduler.lab.fixtures import (
     build_fixture,
 )
 from app.scheduler.lab.scale import build_scale_fixture
+from tests.unit.test_scheduler_w04_w05_regressions_v1 import period, snapshot
 
 TZ = "Europe/Lisbon"
 ORIGIN = date(2026, 9, 21)
@@ -382,3 +395,79 @@ def test_a_protected_lesson_reserves_its_room():
     result = generate_schedule(snapshot, fixture.periods, time_limit_seconds=10)
 
     assert result.outcome == "INFEASIBLE"
+
+
+def _presence_hint(result):
+    return [row for row in result.diagnoses if row.code is DiagnosisCode.TEACHER_PRESENCE_RULES]
+
+
+def _fake_outcome(status, candidate=None, message="stopped"):
+    return SearchOutcome(status, candidate, None, None, message, 0.0, {})
+
+
+def test_generation_infeasible_with_minimum_teachers_reports_the_presence_hint():
+    periods = (period(0),)
+    target = replace(
+        snapshot(periods, minutes=120),
+        teacher_presence=(TeacherPresenceRule(1, True, 180, 60),),
+    )
+
+    result = generate_complete(
+        target, periods, search=lambda *args, **kwargs: None, time_limit_seconds=10
+    )
+
+    assert result.outcome == OUTCOME_INFEASIBLE
+    hint = _presence_hint(result)
+    assert len(hint) == 1
+    assert hint[0].evidence_kind is EvidenceKind.ESTIMATE
+    assert hint[0].minimum_missing_minutes is None
+    assert hint[0].affected_teacher_ids == (1,)
+
+
+def test_generation_inconclusive_with_minimum_teachers_reports_the_presence_hint():
+    periods = (period(0), period(1))
+    target = replace(
+        snapshot(periods, minutes=60),
+        teacher_presence=(TeacherPresenceRule(1, True, 180, 60),),
+    )
+
+    def search(*args, **kwargs):
+        return _fake_outcome(OUTCOME_INCONCLUSIVE)
+
+    result = generate_complete(target, periods, search=search, time_limit_seconds=10)
+
+    assert result.outcome == OUTCOME_INCONCLUSIVE
+    hint = _presence_hint(result)
+    assert len(hint) == 1
+    assert hint[0].affected_teacher_ids == (1,)
+
+
+def test_generation_failed_with_minimum_teachers_reports_the_presence_hint():
+    periods = (period(0), period(1))
+    target = replace(
+        snapshot(periods, minutes=60),
+        teacher_presence=(TeacherPresenceRule(1, True, 180, 60),),
+    )
+
+    def search(*args, **kwargs):
+        return _fake_outcome(OUTCOME_COMPLETE, CandidateSchedule(()))
+
+    result = generate_complete(target, periods, search=search, time_limit_seconds=10)
+
+    assert result.outcome == OUTCOME_FAILED
+    assert len(_presence_hint(result)) == 1
+
+
+def test_generation_without_a_minimum_teacher_has_no_presence_hint():
+    periods = (period(0),)
+    target = replace(
+        snapshot(periods, minutes=120),
+        teacher_presence=(TeacherPresenceRule(1, False),),
+    )
+
+    result = generate_complete(
+        target, periods, search=lambda *args, **kwargs: None, time_limit_seconds=10
+    )
+
+    assert result.outcome == OUTCOME_INFEASIBLE
+    assert _presence_hint(result) == []

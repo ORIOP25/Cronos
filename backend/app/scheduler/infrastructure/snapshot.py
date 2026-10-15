@@ -38,6 +38,7 @@ from app.scheduler.domain.candidate import (
     PlanningSnapshot,
     ScheduledLesson,
     SchedulingStrategy,
+    TeacherPresenceRule,
     Unavailability,
     UnavailableResource,
     split_consumed_lessons,
@@ -278,6 +279,9 @@ async def load_snapshot(
     )
     school_today = now_utc.astimezone(zone).date()
     lunch_rule = await _load_lunch_rule(db, organization_id)
+    teacher_presence = await _load_teacher_presence(
+        db, organization_id, {row.teacher_id for row in domain_assignments}
+    )
     # The stability window protects only a schedule that is already published.
     # A first generation has no published lessons to preserve, so it must not
     # lose future days to a window that protects nothing.
@@ -336,6 +340,7 @@ async def load_snapshot(
             precedences=unit_plan.precedences,
             active_version_id=active_version.id if active_version is not None else None,
             lunch_rule=lunch_rule,
+            teacher_presence=teacher_presence,
             reserved_lesson_ids=frozenset(base_lesson_ids).difference(
                 lesson.lesson_id for lesson in baseline_lessons
             ),
@@ -515,6 +520,63 @@ async def _load_lunch_rule(db: AsyncSession, organization_id: int) -> LunchRule 
         raise SnapshotConfigurationError(
             "INVALID_LUNCH_RULE", "A configuração de almoço da escola é inválida."
         ) from exc
+
+
+async def _load_teacher_presence(
+    db: AsyncSession,
+    organization_id: int,
+    teacher_ids: Set[int],
+) -> tuple[TeacherPresenceRule, ...]:
+    """Read the non-default presence rules of the assignment teachers.
+
+    Uses the same filter as the readiness fingerprint (I05): an active member
+    with teaching capability, present in the assignments. Only rules that differ
+    from the default travel in the snapshot, ordered by teacher id (I04).
+    """
+    if not teacher_ids:
+        return ()
+    rows = (
+        await db.execute(
+            select(
+                models.Teacher.id,
+                models.Teacher.lunch_required,
+                models.Teacher.minimum_presence_hours,
+                models.Teacher.maximum_presence_gap_hours,
+            )
+            .join(
+                models.OrganizationMembership,
+                models.OrganizationMembership.id == models.Teacher.organization_membership_id,
+            )
+            .where(
+                models.Teacher.organization_id == organization_id,
+                models.OrganizationMembership.organization_id == organization_id,
+                models.OrganizationMembership.lifecycle_status
+                == models.MembershipLifecycleStatus.active,
+                models.OrganizationMembership.can_teach.is_(True),
+                models.Teacher.id.in_(teacher_ids),
+                or_(
+                    models.Teacher.lunch_required.is_(False),
+                    models.Teacher.minimum_presence_hours.is_not(None),
+                ),
+            )
+            .order_by(models.Teacher.id)
+        )
+    ).all()
+    return tuple(
+        TeacherPresenceRule(
+            teacher_id=row.id,
+            lunch_required=row.lunch_required,
+            minimum_minutes=(
+                None if row.minimum_presence_hours is None else row.minimum_presence_hours * 60
+            ),
+            max_gap_minutes=(
+                None
+                if row.maximum_presence_gap_hours is None
+                else row.maximum_presence_gap_hours * 60
+            ),
+        )
+        for row in rows
+    )
 
 
 async def _stability_window(db: AsyncSession, organization_id: int) -> int:

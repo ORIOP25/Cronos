@@ -135,6 +135,7 @@ A regra é explícita e configurada pela escola. Por isso não contradiz a inten
 | `backend/app/scheduler/application/recovery.py` | resultados sem candidato | S7 |
 | `backend/app/scheduler/application/publishing.py` | serialização do diagnóstico | S7 |
 | `backend/app/scheduler/infrastructure/queries.py` | `_job_diagnostics`: hoje descarta diagnósticos sem `affected_class_ids`; passa a devolver uma linha por professor de `TEACHER_PRESENCE_RULES` | S7 |
+| `backend/app/scheduler/infrastructure/jobs.py` | `finish_job` guarda `diagnostics_json` também em `FAILED` e `INCONCLUSIVE` (nunca em `CANCELLED`/`STALE`) | S7 |
 | `frontend/src/components/schedules/GenerationStatusPanel.jsx` | mensagem de falha | S7 |
 | `frontend/src/components/AvailabilityEditorModal.jsx` | ranhura para a secção e gravação combinada | S8 |
 | `frontend/src/components/TeacherAvailabilityModal.jsx` | secção "Presença na escola" | S8 |

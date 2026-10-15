@@ -11,6 +11,7 @@ from app.scheduler.domain.candidate import (
     PlanningSnapshot,
     ScheduledLesson,
     SchedulingStrategy,
+    TeacherPresenceRule,
     continuous_break_minutes,
 )
 from app.scheduler.domain.candidate_validation import (
@@ -170,6 +171,21 @@ def test_validator_accepts_when_a_continuous_break_exists():
 
 def test_validator_ignores_lunch_when_no_rule_is_configured():
     assert validate_candidate(_snapshot(), _ten_minute_gap_candidate()).valid
+
+
+def test_validator_exempts_a_teacher_who_does_not_require_lunch():
+    snapshot = _snapshot(
+        lunch_rule=LUNCH,
+        teacher_presence=(TeacherPresenceRule(teacher_id=100, lunch_required=False),),
+    )
+    report = validate_candidate(snapshot, _ten_minute_gap_candidate())
+    kinds = {
+        (violation.resource_type, violation.resource_id)
+        for violation in report.violations
+        if violation.code is ValidationViolationCode.LUNCH_BREAK_VIOLATION
+    }
+
+    assert kinds == {("class", 1)}
 
 
 def test_lunch_rule_survives_serialization_and_changes_the_digest():
