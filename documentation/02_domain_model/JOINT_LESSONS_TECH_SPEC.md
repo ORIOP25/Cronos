@@ -5,7 +5,7 @@
 Este documento especifica as aulas conjuntas: turmas diferentes que têm alguns módulos de uma disciplina juntas, com o mesmo professor, na mesma sala e à mesma hora.
 Define as decisões de produto, o modelo de dados, as regras do motor de horários, a operação diária, o plano TDD e os critérios de aceitação.
 
-**Estado:** em implementação. A implementação local e a verificação de app estão concluídas; a aceitação completa e a entrega estão pendentes.
+**Estado:** implementação e aceitação funcional concluídas. Entrega rastreada no [PR 136](https://github.com/ORIOP25/Cronos/pull/136).
 **Data:** 14 de outubro de 2026.
 **Base observada:** branch `main` no commit `4773d76`.
 **Origem:** item 2 dos pedidos da escola piloto, reunião de 13 de outubro de 2026.
@@ -759,7 +759,7 @@ Cada passo começa com um teste que falha. Cada PR mantém o comportamento das e
 
 | PR | Conteúdo | O utilizador vê |
 | :--- | :--- | :--- |
-| 1 — Base de dados e domínio | Migração `0003`, modelos, privacidade, `teaching_units.py`, `class_ids`, precedências, validador `v5`, oráculo e serialização. | Nada. Todas as aulas ficam `A:{a}`. |
+| 1 — Base de dados e domínio | Migração `0004`, modelos, privacidade, `teaching_units.py`, `class_ids`, precedências, validador `v5`, oráculo e serialização. | Nada. Todas as aulas ficam `A:{a}`. |
 | 2 — Motor | Snapshot com unidades, construção, recuperação, modelos anual e de colocação, salas, qualidade, propostas, diferença e aprovação. Família de laboratório com junções. | Nada. Só os testes criam junções. |
 | 3 — Configuração | Regras puras, serviço, rotas novas, bloqueios nas rotas existentes, pré-validação, prontidão e fingerprint. | Nada no ecrã. A API aceita junções. |
 | 4 — Operação | Sumário com presenças, ocorrências, substitutos, folha semanal, estágio, vista semanal e totais do professor. | Nada no ecrã. |
@@ -768,6 +768,8 @@ Cada passo começa com um teste que falha. Cada PR mantém o comportamento das e
 Os PR 2 e 3 podem ser desenvolvidos em paralelo. O PR 3 só é integrado depois do PR 2.
 Sem o motor novo, uma junção criada pela API seria planeada como turmas separadas, sem aviso.
 Depois de cada merge, siga o `Deploy check` em `main`, como manda o `AGENTS.md`.
+
+Nota de execução: os cinco PRs planeados foram consolidados no PR 136 depois de os pré-requisitos do item 1 estarem em `main`. A consolidação evita uma API de junções sem motor e operação completos. O plano, as declarações e as decisões J01–J22 mantêm-se.
 
 O [WBS — Aulas Conjuntas](JOINT_LESSONS_WBS.md) é dono da decomposição do trabalho.
 Define os pacotes, as dependências, o caminho crítico e os critérios de conclusão.
@@ -857,6 +859,8 @@ Verificação manual depois do PR 5:
 4. Gere e aprove o horário. Confirme o bloco único na vista do professor e o texto na vista da turma.
 5. Registe um sumário com uma turma ausente. Decida `GAP` em Faltas e Ocorrências.
 6. Repare o horário. Confirme a aula de reposição só dessa turma, antes do módulo separado seguinte.
+
+Os seis passos são comprovados de forma automatizada no percurso de navegador `frontend/e2e/readiness/joint-lessons.spec.js`, no projeto `app`.
 
 ## Riscos e limitações
 

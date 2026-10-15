@@ -5,7 +5,7 @@
 Este documento decompõe a implementação do [Tech Spec — Aulas Conjuntas](JOINT_LESSONS_TECH_SPEC.md) em pacotes de trabalho.
 Define entregáveis, testes iniciais, dependências, critérios de conclusão e a ordem de execução.
 
-**Estado:** em implementação. A implementação local e a verificação de app estão concluídas; a aceitação completa e a entrega estão pendentes.
+**Estado:** implementação e aceitação funcional concluídas. Entrega rastreada no [PR 136](https://github.com/ORIOP25/Cronos/pull/136).
 **Data:** 14 de outubro de 2026.
 
 O tech spec é dono das decisões, dos contratos e dos cenários de teste.
@@ -14,7 +14,7 @@ Este documento não repete essas regras. Cada pacote indica a secção do spec q
 ## Estado de execução
 
 Verificação contra a árvore de trabalho, em 15 de outubro de 2026.
-O código local e os testes não dispensam a verificação independente final.
+A aceitação funcional foi concluída no percurso de navegador contra uma stack isolada.
 
 | Categoria | Estado local |
 | :--- | :--- |
@@ -23,12 +23,12 @@ O código local e os testes não dispensam a verificação independente final.
 | 4 — Configuração | Implementação local e testes. Ver [joint_lesson_policy.py](../../backend/app/services/joint_lesson_policy.py), [joint_lesson_service.py](../../backend/app/services/joint_lesson_service.py) e [test_joint_lesson_groups.py](../../backend/tests/integration/committed/test_joint_lesson_groups.py). |
 | 5 — Operação | Implementação local e testes. Ver `backend/tests/integration/committed/test_joint_lesson_operations.py`, `test_joint_lesson_occurrences.py`, `test_joint_lesson_timesheets.py` e `test_joint_lesson_internship.py`. |
 | 6 — Ecrãs | Implementação local e testes. Ver `frontend/src/` e os testes em `frontend/src/test/`. |
-| 3.9 e 3.10 — Diagnóstico e laboratório | Implementação e prova local com resultado do job persistido; verificação final pendente. Ver [diagnostics.py](../../backend/app/scheduler/domain/diagnostics.py), [typology.py](../../backend/app/scheduler/lab/typology.py), [test_joint_lesson_diagnostics.py](../../backend/tests/unit/test_joint_lesson_diagnostics.py), [test_joint_lesson_lab.py](../../backend/tests/unit/test_joint_lesson_lab.py) e [test_joint_lesson_diagnostic_job.py](../../backend/tests/integration/committed/test_joint_lesson_diagnostic_job.py). |
-| Verificação independente final | Verificação local e verificação do projeto app concluídas; as restantes verificações de navegador e a CI não correram agora. Ver [Command Reference](../00_getting_started/COMMAND_REFERENCE.md) e [scripts/test.mjs](../../scripts/test.mjs). |
-| Percurso e2e (project app) | Verificado com `node scripts/test.mjs e2e --project app`, incluindo os percursos de seleção de módulos e de aulas conjuntas e as regressões de operação, geração e QA; registo `e2e-app.xml` em `.test-artifacts/`. Os restantes projetos e a CI não correram agora. |
-| Aceitação manual | Pendente. Os seis passos manuais da secção de verificação, incluindo a checklist conjunta, a vista da turma, o sumário com turma ausente e a aula de reposição, não estão todos executados na interface. Ver [Verification Procedure](JOINT_LESSONS_TECH_SPEC.md#verification-procedure). |
-| Mensagem de diagnóstico | Lacuna de texto: a interface de `JOINT_NO_COMMON_TIME` mostra uma mensagem genérica, sem nomes das turmas e da disciplina. Ver [GenerationStatusPanel.jsx](../../frontend/src/components/schedules/GenerationStatusPanel.jsx) e [diagnostics.py](../../backend/app/scheduler/domain/diagnostics.py). |
-| Entrega (PR, CI e publicação) | Não realizada. |
+| 3.9 e 3.10 — Diagnóstico e laboratório | Implementação e prova local concluídas, com resultado do job persistido. Ver [diagnostics.py](../../backend/app/scheduler/domain/diagnostics.py), [typology.py](../../backend/app/scheduler/lab/typology.py), [test_joint_lesson_diagnostics.py](../../backend/tests/unit/test_joint_lesson_diagnostics.py), [test_joint_lesson_lab.py](../../backend/tests/unit/test_joint_lesson_lab.py) e [test_joint_lesson_diagnostic_job.py](../../backend/tests/integration/committed/test_joint_lesson_diagnostic_job.py). |
+| Verificação independente final | Verificação local e aceitação funcional de navegador do projeto app concluídas; a CI final e a entrega são acompanhadas no [PR 136](https://github.com/ORIOP25/Cronos/pull/136). Ver [Command Reference](../00_getting_started/COMMAND_REFERENCE.md). |
+| Aceitação (7.1) | Os seis passos da secção de verificação são comprovados de forma automatizada no percurso de navegador contra uma stack isolada. Ver [joint-lessons.spec.js](../../frontend/e2e/readiness/joint-lessons.spec.js). |
+| Percurso e2e (project app) | `node scripts/test.mjs e2e --project app` cobre a aceitação conjunta e o percurso completo da seleção de módulos. Ver [joint-lessons.spec.js](../../frontend/e2e/readiness/joint-lessons.spec.js) e [class-module-selection.spec.js](../../frontend/e2e/readiness/class-module-selection.spec.js). |
+| Mensagem de diagnóstico | Resolvida: a interface mostra os nomes das turmas e da disciplina a partir do diagnóstico tipado e mantém a mensagem genérica só quando um nome já não existe. Ver [GenerationStatusPanel.jsx](../../frontend/src/components/schedules/GenerationStatusPanel.jsx) e [diagnostics.py](../../backend/app/scheduler/domain/diagnostics.py). |
+| Entrega e verificações de CI/produção | Acompanhadas no [PR 136](https://github.com/ORIOP25/Cronos/pull/136) e no Deploy check workflow. |
 
 ## Intended Reader
 
@@ -66,6 +66,8 @@ Um pacote sem alteração de comportamento, como documentação, não precisa de
 
 O PR 3 nunca entra antes do PR 2.
 Sem o motor novo, uma junção criada pela API seria planeada como turmas separadas, sem aviso.
+
+Nota de execução: os cinco PRs planeados foram consolidados no PR 136 depois de os pré-requisitos do item 1 estarem em `main`. A consolidação evita uma API de junções sem motor e operação completos. O plano e as decisões J01–J22 mantêm-se.
 
 ## Árvore de trabalho
 
@@ -188,7 +190,7 @@ Sem o motor novo, uma junção criada pela API seria planeada como turmas separa
 - **Concluído quando:**
   1. O PR de servidor e motor do item 1 está integrado em `main`. Os ecrãs do item 1 só são precisos antes de 6.2.1.
   2. Existem a tabela `class_subject_module`, a coluna `curricular_requirement.planned`, o carregador da visão de planeamento e `module_ids` no `PATCH` da disciplina da turma.
-  3. O nome da migração do item 1 está registado como `down_revision` da `0003`.
+  3. A `0004` segue a `0003_class_availability`, que segue a migração do item 1.
   4. Qualquer diferença atualiza o tech spec antes de começar o PR 1.
 - **Depende de:** —
 
