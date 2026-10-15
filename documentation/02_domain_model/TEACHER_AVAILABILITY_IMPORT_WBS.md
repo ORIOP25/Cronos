@@ -13,7 +13,7 @@ Agentes que executam o plano com o skill `cronos-plan-execution`.
 
 | PR | Slices | Estado | Ligação |
 | :--- | :--- | :--- | :--- |
-| PR 1 | S1, S7 | implementado; verificações locais concluídas; CI pendente | — |
+| PR 1 | S1, S7 | implementado | [#144](https://github.com/ORIOP25/Cronos/pull/144) |
 | PR 2 | S2–S6 | por iniciar | — |
 
 ## Slices
