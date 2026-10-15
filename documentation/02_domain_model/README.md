@@ -13,3 +13,5 @@ This section documents Portuguese Professional Education domain rules, team memb
 - [CLASS_MODULE_SELECTION_WBS.md](CLASS_MODULE_SELECTION_WBS.md): Work breakdown, dependencies, and done criteria for per-class module selection.
 - [JOINT_LESSONS_TECH_SPEC.md](JOINT_LESSONS_TECH_SPEC.md): Joint lessons; decisions and contracts.
 - [JOINT_LESSONS_WBS.md](JOINT_LESSONS_WBS.md): Work breakdown, dependencies, and done criteria for joint lessons.
+- [TEACHER_PRESENCE_TECH_SPEC.md](TEACHER_PRESENCE_TECH_SPEC.md): Teacher presence rules (minimum hours per presence, maximum gap, optional lunch); decisions and contracts.
+- [TEACHER_PRESENCE_WBS.md](TEACHER_PRESENCE_WBS.md): Work breakdown, lanes, and proof per slice for teacher presence rules.
