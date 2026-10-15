@@ -235,3 +235,39 @@ def test_joint_availability_repair_moves_other_lessons_to_free_the_only_shared_p
         (1, periods[3], 1),
     }
     assert result.evidence.stop_reason == "FALLBACK_UNRESTRICTED"
+
+
+@pytest.mark.parametrize(
+    "resource, identity",
+    [
+        (UnavailableResource.CLASS, 1),
+        (UnavailableResource.CLASS, 2),
+        (UnavailableResource.TEACHER, 2),
+        (UnavailableResource.ROOM, 2),
+    ],
+)
+def test_protected_joint_availability_conflict_is_proven_before_search(resource, identity):
+    periods = (period(0), period(1))
+    joint = replace(assignment(2, 1, 2, {2}, 60), class_ids=(1, 2))
+    frozen = lesson(10, 2, periods[0], 2)
+    target = replace(
+        plan(periods, [joint], protected_lessons=(frozen,)),
+        strategy=SchedulingStrategy.ADAPTIVE_RECOVERY,
+        protected_dates=frozenset({periods[0].school_date}),
+        unavailable=(Unavailability(resource, identity, periods[0]),),
+    )
+
+    result = repair_published_schedule(
+        target,
+        periods,
+        CandidateSchedule((frozen,)),
+        replace(POLICY, daily_slopes=tuple(range(1, 21))),
+        stop_at_first_complete=True,
+        time_limit_seconds=5,
+    )
+
+    assert result.outcome == "INFEASIBLE"
+    assert result.candidate is None
+    assert result.search_seconds == 0
+    assert result.diagnoses[0].code == "PROTECTED_AVAILABILITY_CONFLICT"
+    assert result.diagnoses[0].affected_class_ids == (1, 2)

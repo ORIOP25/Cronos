@@ -920,7 +920,7 @@ def search_adaptive_schedule(
         raise ValueError("Adaptive search needs a published baseline and a recovery policy.")
     if time_limit_seconds <= 0:
         raise ValueError("The time limit must be positive.")
-    profile = _SearchProfile(baseline, policy, prior_changes)
+    profile: _SearchProfile = _SearchProfile(baseline, policy, prior_changes)
     profile = replace(profile, cache_salt=_profile_cache_salt(profile, snapshot))
     if stop_at_first_complete:
         start = monotonic()
@@ -958,7 +958,7 @@ def search_adaptive_schedule(
             return _cancelled(start, "The request was cancelled during repair.")
         candidates = [row for row in (local, rebuilt) if row is not None]
         if not candidates:
-            fallback = _unrestricted_fallback(
+            return _unrestricted_fallback(
                 planning,
                 periods,
                 profile,
@@ -974,10 +974,7 @@ def search_adaptive_schedule(
                 excluded=[],
                 rounds=0,
                 stop_at_first_complete=True,
-            )
-            if fallback is not None:
-                return fallback
-            return SearchOutcome(
+            ) or SearchOutcome(
                 OUTCOME_INCONCLUSIVE,
                 None,
                 None,

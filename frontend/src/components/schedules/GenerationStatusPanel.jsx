@@ -133,6 +133,9 @@ const GenerationStatusPanel = ({ jobId }) => {
     const isStaleLike = status === 'CANCELLED' || status === 'STALE'
     const jobCodes = [job.result_code, job.stop_reason]
     const roomBlocked = jobCodes.includes('NO_ELIGIBLE_ROOM') || jobCodes.includes('JOINT_ROOM_CAPACITY')
+    const protectedConflict = status === 'INFEASIBLE' && job.diagnostics?.some(
+      (item) => item.code === 'PROTECTED_AVAILABILITY_CONFLICT',
+    )
     const jointDiagnostics = status === 'INFEASIBLE'
       ? (Array.isArray(job.diagnostics) ? job.diagnostics : [])
           .filter((item) => item.code === JOINT_NO_COMMON_TIME)
@@ -152,6 +155,12 @@ const GenerationStatusPanel = ({ jobId }) => {
             <>
               Existem turmas sem sala compatível com o tipo e a lotação.{' '}
               <Link to="/rooms">Abrir Salas</Link> para corrigir e voltar a gerar.
+            </>
+          ) : protectedConflict ? (
+            <>
+              Há aulas protegidas que coincidem com blocos marcados como Impossível.{' '}
+              Reveja a disponibilidade ou a janela de proteção antes de voltar a gerar.{' '}
+              <Link to="/config">Abrir Configuração</Link>.
             </>
           ) : jointNoCommonTime && !isStaleLike ? (
             <>

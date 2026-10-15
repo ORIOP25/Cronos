@@ -19,6 +19,22 @@ describe('GenerationStatusPanel', () => {
     expect(screen.getByText(/não significa que o horário seja impossível/i)).toBeInTheDocument()
   })
 
+  it('explains an availability conflict with protected lessons and links to configuration', () => {
+    useScheduleTaskStatus.mockReturnValue({
+      data: {
+        status: 'INFEASIBLE',
+        diagnostics: [{ code: 'PROTECTED_AVAILABILITY_CONFLICT' }],
+      },
+    })
+
+    render(<MemoryRouter><GenerationStatusPanel jobId={40} /></MemoryRouter>)
+
+    expect(screen.getByText(/aulas protegidas.*Impossível/)).toBeInTheDocument()
+    expect(screen.getByText(/disponibilidade ou a janela de proteção/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /abrir configuração/i })).toHaveAttribute('href', '/config')
+    expect(screen.queryByText(/não significa que o horário seja impossível/i)).toBeNull()
+  })
+
   it('shows an honest queue position without fake progress', () => {
     useScheduleTaskStatus.mockReturnValue({
       data: { status: 'QUEUED', queue_position: 3, queued_at: new Date().toISOString() },

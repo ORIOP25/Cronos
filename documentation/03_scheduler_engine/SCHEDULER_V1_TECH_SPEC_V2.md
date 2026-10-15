@@ -425,6 +425,8 @@ With the setting false, master/detail recovery remains available.
 
 Recovery respects calendars, lunch, availability, room eligibility, preferences, and corrected execution.
 Preserve physical protected positions while recalculating future module slices.
+Hard availability that overlaps a protected position produces a proven conflict before search.
+The administrator reviews availability or the protection window; recovery never relaxes either rule automatically.
 `COMPLETED` and `OCCURRENCE` logs remain operational history between versions.
 An unperformed lesson leaves uncovered demand and never contributes protected planned credit.
 Manual corrections do not classify unlogged future lessons as executed history.
