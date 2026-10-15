@@ -117,6 +117,25 @@ export const IMPORT_RESOURCES = Object.freeze([
       day: 'Dia',
     },
   },
+  {
+    key: 'teacher_availability',
+    label: 'Disponibilidade dos professores',
+    filename: 'Cronos_DisponibilidadeProfessores_Template.csv',
+    origin: '/members',
+    instructions: [
+      'O modelo já traz os professores ativos, as horas da grelha e a disponibilidade atual.',
+      'Cada linha é um professor num dia. Cada coluna de hora é um bloco.',
+      'O email identifica o professor. O nome serve só para ler o ficheiro.',
+      'Escreva Impossível, Evitar, Neutro ou Preferencial. Uma célula vazia conta como Neutro.',
+      'Cada professor do ficheiro fica com a grelha do ficheiro. Os professores que não aparecem ficam iguais.',
+      'Não apague colunas de hora. Se a grelha mudar, descarregue um modelo novo.',
+    ],
+    fields: {
+      teacher_name: 'Nome do professor',
+      teacher_email: 'Email do professor',
+      day: 'Dia',
+    },
+  },
 ])
 
 const IMPORT_COUNT_LABELS = Object.freeze({
@@ -129,6 +148,7 @@ const IMPORT_COUNT_LABELS = Object.freeze({
   competencies: 'Competências',
   assignments: 'Atribuições',
   class_availability: 'Disponibilidade das turmas',
+  teacher_availability: 'Disponibilidade dos professores',
 })
 
 function getImportResource(resource) {
@@ -157,6 +177,8 @@ export function formatImportIssue(issue) {
 const IMPORT_INVALIDATIONS = [
   'members', 'teachers', 'eligible-teachers', 'rooms', 'subjects', 'courses',
   'classes', 'class-subjects', 'available-subjects', 'class-availability',
+  'teacher-availability', 'substitute-recommendations', 'substitute-diagnostics',
+  'occurrences', 'teacher-progress', 'my-availability', 'heatmap',
   'dashboard', 'readiness', 'scheduler-status',
 ]
 

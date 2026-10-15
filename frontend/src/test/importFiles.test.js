@@ -57,6 +57,7 @@ describe('bulk import file utilities', () => {
       'Cronos_ProfessoresECompetencias_Template.csv',
       'Cronos_Atribuicoes_Template.csv',
       'Cronos_DisponibilidadeTurmas_Template.csv',
+      'Cronos_DisponibilidadeProfessores_Template.csv',
     ])
     expect(IMPORT_RESOURCES.every((item) => item.instructions.length > 0)).toBe(true)
     expect(IMPORT_RESOURCES[0].instructions.join(' ')).toContain('Normal')
@@ -64,6 +65,31 @@ describe('bulk import file utilities', () => {
     expect(getImportCountLabel('rooms')).toBe('Salas')
     expect(getImportCountLabel('assignments')).toBe('Atribuições')
     expect(getImportCountLabel('class_availability')).toBe('Disponibilidade das turmas')
+    expect(getImportCountLabel('teacher_availability')).toBe('Disponibilidade dos professores')
+  })
+
+  it('defines the teacher availability resource right after the class availability resource', () => {
+    const keys = IMPORT_RESOURCES.map((item) => item.key)
+    const classIndex = keys.indexOf('class_availability')
+    expect(keys[classIndex + 1]).toBe('teacher_availability')
+
+    const resource = IMPORT_RESOURCES[classIndex + 1]
+    expect(resource.label).toBe('Disponibilidade dos professores')
+    expect(resource.filename).toBe('Cronos_DisponibilidadeProfessores_Template.csv')
+    expect(resource.origin).toBe('/members')
+    expect(resource.fields).toEqual({
+      teacher_name: 'Nome do professor',
+      teacher_email: 'Email do professor',
+      day: 'Dia',
+    })
+    expect(resource.instructions).toEqual([
+      'O modelo já traz os professores ativos, as horas da grelha e a disponibilidade atual.',
+      'Cada linha é um professor num dia. Cada coluna de hora é um bloco.',
+      'O email identifica o professor. O nome serve só para ler o ficheiro.',
+      'Escreva Impossível, Evitar, Neutro ou Preferencial. Uma célula vazia conta como Neutro.',
+      'Cada professor do ficheiro fica com a grelha do ficheiro. Os professores que não aparecem ficam iguais.',
+      'Não apague colunas de hora. Se a grelha mudar, descarregue um modelo novo.',
+    ])
   })
 
   it('formats issues with Portuguese section and field names', () => {
@@ -77,6 +103,14 @@ describe('bulk import file utilities', () => {
       resource: 'class_availability', line: 3, field: '08:30', message: 'Este dia não tem bloco às 08:30. Deixe a célula vazia.',
     })).toBe(
       'Disponibilidade das turmas, linha 3, 08:30: Este dia não tem bloco às 08:30. Deixe a célula vazia.',
+    )
+  })
+
+  it('formats a teacher availability email issue with the Portuguese field name', () => {
+    expect(formatImportIssue({
+      resource: 'teacher_availability', line: 5, field: 'teacher_email', message: 'Não existe nenhum professor com este email.',
+    })).toBe(
+      'Disponibilidade dos professores, linha 5, Email do professor: Não existe nenhum professor com este email.',
     )
   })
 

@@ -150,7 +150,7 @@ Invariants: Foundation writes use optimistic `expected_version` and row locks; n
 | Tests | `integration/committed/test_teacher_role_regression.py`, `test_grid_version_readers.py`; `frontend/src/test/MyAvailability.test.jsx`; `frontend/e2e/foundation/teacher-self-service-availability.spec.js` |
 | Guide | [API Reference](../05_backend_api/API_REFERENCE.md) |
 
-Invariants: `PUT` replaces the whole set for the resolved grid; `/me/...` routes stay above `/{teacher_id}/...`; a write for a scheduled teacher bumps scheduler revisions.
+Invariants: `PUT` replaces the whole set for the resolved grid; `/me/...` routes stay above `/{teacher_id}/...`; a write for a scheduled teacher bumps scheduler revisions; an administrator also imports the grid through `pages/BulkImport.jsx`.
 
 ### Class availability
 
@@ -230,8 +230,8 @@ Invariants: removal returns `409 resource_in_use`, archives with history, or del
 | Page | `pages/BulkImport.jsx` (`/imports`) |
 | Hooks | `features/imports/data.js` |
 | Endpoints | `api/v1/endpoints/imports.py` (`/imports/templates/{resource}`, `/validate`, `/commit`; 8 MiB body limit in `main.py`) |
-| Services | Pure policy `services/bulk_import_policy.py`; orchestration `services/bulk_import_service.py`, which reuses the catalog and member services |
-| Persistence | No own tables; writes catalog and member rows in one transaction |
+| Services | Pure policy `services/bulk_import_policy.py`; orchestration `services/bulk_import_service.py`, which reuses the catalog, member, and availability services |
+| Persistence | No own tables; writes catalog, member, class availability, and teacher availability rows in one transaction |
 | Tests | `unit/test_bulk_import_policy.py`; `integration/committed/test_bulk_import.py`; `frontend/src/test/BulkImport.test.jsx` |
 | Guide | [Bulk Import CSV](../07_data_and_seed/BULK_IMPORT_CSV.md); samples in `documentation/07_data_and_seed/sample_import_48_classes/` |
 
