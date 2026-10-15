@@ -231,6 +231,7 @@ def _to_read(
         clerk_invitation_status=invitation_status.value if invitation_status else None,
         invitation_expires_at=member.invitation_expires_at,
         teacher_id=teacher.id if teacher else None,
+        teacher_presence=schemas.TeacherPresence.from_teacher(teacher) if teacher else None,
         subject_ids=teacher.subject_ids if teacher else [],
         access_error_category=member.access_error_category,
         access_error_safe_message=member.access_error_safe_message,

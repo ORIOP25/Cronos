@@ -135,6 +135,39 @@ class TeacherRead(TeacherBase):
     model_config = ConfigDict(from_attributes=True)
 
 
+PRESENCE_MIN_HOURS_MESSAGE = "O mínimo tem de estar entre 1 e 12 horas."
+PRESENCE_GAP_HOURS_MESSAGE = "O furo máximo tem de estar entre 0 e 12 horas."
+PRESENCE_PAIR_MESSAGE = "Indique o mínimo e o furo máximo, ou deixe os dois vazios."
+
+
+class TeacherPresence(BaseModel):
+    """Optional, school-defined presence rule of one teacher (D01, D02, D05, D06)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    lunch_required: bool = True
+    minimum_hours: int | None = Field(default=None, description="Mínimo de horas por presença")
+    max_gap_hours: int | None = Field(default=None, description="Furo máximo dentro da presença")
+
+    @model_validator(mode="after")
+    def validate_presence(self):
+        if self.minimum_hours is not None and not 1 <= self.minimum_hours <= 12:
+            raise ValueError(PRESENCE_MIN_HOURS_MESSAGE)
+        if self.max_gap_hours is not None and not 0 <= self.max_gap_hours <= 12:
+            raise ValueError(PRESENCE_GAP_HOURS_MESSAGE)
+        if (self.minimum_hours is None) != (self.max_gap_hours is None):
+            raise ValueError(PRESENCE_PAIR_MESSAGE)
+        return self
+
+    @classmethod
+    def from_teacher(cls, teacher: Any) -> TeacherPresence:
+        return cls(
+            lunch_required=teacher.lunch_required,
+            minimum_hours=teacher.minimum_presence_hours,
+            max_gap_hours=teacher.maximum_presence_gap_hours,
+        )
+
+
 # --- EQuipa / Members ---
 
 MemberCapabilityLiteral = Literal["teacher", "admin"]
@@ -248,6 +281,7 @@ class MemberRead(BaseModel):
     clerk_invitation_status: Literal["pending", "accepted", "revoked", "expired"] | None = None
     invitation_expires_at: datetime | None = None
     teacher_id: int | None = None
+    teacher_presence: TeacherPresence | None = None
     subject_ids: list[int] = Field(default_factory=list)
     access_error_category: str | None = None
     access_error_safe_message: str | None = None

@@ -148,6 +148,31 @@ A block with the same signature keeps the class level.
 A changed block requires an administrator decision.
 See the [Class Availability Tech Spec](CLASS_AVAILABILITY_TECH_SPEC.md) and the [Scheduler Engine](../03_scheduler_engine/README.md).
 
+## Presença dos professores
+
+The administrator sets an optional presence rule on each teacher.
+The rule has three parts: whether the teacher must have a lunch break, a minimum
+of whole hours per presence, and a maximum gap inside a presence.
+A presence is the morning or the afternoon, split by the lunch break the engine
+chooses for that teacher on that day; without lunch the whole day is one presence.
+`lunch_required` defaults to `true` and is independent of the minimum.
+`minimum_hours` and `max_gap_hours` are either both empty or both set.
+The minimum is between 1 and 12 hours and the maximum gap is between 0 and 12
+hours; the 12-hour ceiling is technical, not a product limit.
+The rule is optional and a new teacher starts without a minimum (D01, D05, D06).
+
+The rule belongs to the teacher and stays across school years and grid versions.
+Only an administrator changes it, with `PUT /api/v1/teachers/{teacher_id}/presence`.
+The value lives on the `teacher` table (`lunch_required`,
+`minimum_presence_hours`, `maximum_presence_gap_hours`) with the paired and
+range checks.
+A real change counts as an availability change: if the teacher has an assignment,
+it bumps the input revision and the readiness fingerprint, so a pending proposal
+becomes stale.
+Changing the rule of a teacher without assignments does not stale a proposal
+(D15).
+Write the rule through the API; the columns are the source of truth.
+
 ## Related Documents
 
 - [Professional Education](PROFESSIONAL_EDUCATION.md)

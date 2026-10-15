@@ -35,6 +35,24 @@ def _constraint_payload(row) -> dict:
     return {key: value for key, value in values.items() if value is not None}
 
 
+def _teacher_snapshot(row) -> dict:
+    """Serialize one eligible teacher, adding the presence rule only when it differs.
+
+    The default rule (lunch required, no minimum) keeps the legacy ``{"id": ...}``
+    shape, so a schedule input without presence rules has the same digest as before.
+    """
+    entry: dict = {"id": row.id}
+    if not row.lunch_required or row.minimum_presence_hours is not None:
+        entry.update(
+            {
+                "lunch_required": row.lunch_required,
+                "minimum_presence_hours": row.minimum_presence_hours,
+                "maximum_presence_gap_hours": row.maximum_presence_gap_hours,
+            }
+        )
+    return entry
+
+
 @dataclass(frozen=True)
 class SchedulerFingerprint:
     value: str
@@ -194,7 +212,12 @@ class SchedulerFingerprintService:
         teacher_rows = (
             (
                 await self._db.execute(
-                    select(models.Teacher.id)
+                    select(
+                        models.Teacher.id,
+                        models.Teacher.lunch_required,
+                        models.Teacher.minimum_presence_hours,
+                        models.Teacher.maximum_presence_gap_hours,
+                    )
                     .join(
                         models.OrganizationMembership,
                         models.OrganizationMembership.id
@@ -634,7 +657,9 @@ class SchedulerFingerprintService:
                 {"id": row.id, "required_room_type": row.required_room_type}
                 for row in sorted(subject_rows, key=lambda row: row.id)
             ],
-            "teachers": [{"id": row.id} for row in sorted(teacher_rows, key=lambda row: row.id)],
+            "teachers": [
+                _teacher_snapshot(row) for row in sorted(teacher_rows, key=lambda row: row.id)
+            ],
             "teacher_subject_eligibility": [
                 {
                     "teacher_id": row.teacher_id,

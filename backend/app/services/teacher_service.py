@@ -5,7 +5,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app import models
+from app import models, schemas
 from app.core.exceptions import AppError
 from app.models import Availability
 from app.scheduler.infrastructure.operations import class_progress_map
@@ -34,6 +34,24 @@ async def _teacher_is_scheduled(db: AsyncSession, organization_id: int, teacher_
         .limit(1)
     )
     return assignment_id is not None
+
+
+async def _get_teacher_or_404(
+    db: AsyncSession, teacher_id: int, organization_id: int
+) -> models.Teacher:
+    teacher = await db.scalar(
+        select(models.Teacher).where(
+            models.Teacher.id == teacher_id,
+            models.Teacher.organization_id == organization_id,
+        )
+    )
+    if teacher is None:
+        raise AppError(
+            kind="not_found",
+            code="resource_not_found",
+            detail=f"Teacher {teacher_id} was not found in organization {organization_id}.",
+        )
+    return teacher
 
 
 # ==========================================
@@ -230,6 +248,52 @@ async def set_teacher_availability(
     )
     await db.flush()
     return {"status": "success", "count": len(new_records)}
+
+
+# ==========================================
+#  PRESENÇA DO PROFESSOR (regra da direção)
+# ==========================================
+
+
+async def get_teacher_presence(
+    db: AsyncSession, teacher_id: int, organization_id: int
+) -> schemas.TeacherPresence:
+    """Lê a regra de presença de um professor dentro da organização autenticada."""
+    teacher = await _get_teacher_or_404(db, teacher_id, organization_id)
+    return schemas.TeacherPresence.from_teacher(teacher)
+
+
+async def set_teacher_presence(
+    db: AsyncSession,
+    teacher_id: int,
+    presence: schemas.TeacherPresence,
+    organization_id: int,
+    changed_by_membership_id: int | None = None,
+) -> schemas.TeacherPresence:
+    """Define a regra de presença e registra o impacto no motor (D15)."""
+    teacher = await _get_teacher_or_404(db, teacher_id, organization_id)
+    before = schemas.TeacherPresence.from_teacher(teacher).model_dump()
+    teacher.lunch_required = presence.lunch_required
+    teacher.minimum_presence_hours = presence.minimum_hours
+    teacher.maximum_presence_gap_hours = presence.max_gap_hours
+    after = schemas.TeacherPresence.from_teacher(teacher).model_dump()
+    if before == after:
+        # record_scheduler_change would log a NO_OP event even without a change.
+        return schemas.TeacherPresence.from_teacher(teacher)
+    active_resource = await _teacher_is_scheduled(db, organization_id, teacher_id)
+    await record_scheduler_change(
+        db,
+        organization_id,
+        entity_type="TEACHER_PRESENCE",
+        entity_id=teacher_id,
+        operation=models.SchedulerStateChangeOperation.UPDATE,
+        before=before,
+        after=after,
+        changed_by_membership_id=changed_by_membership_id,
+        active_resource=active_resource,
+    )
+    await db.flush()
+    return schemas.TeacherPresence.from_teacher(teacher)
 
 
 # ==========================================
