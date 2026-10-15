@@ -104,6 +104,60 @@ function expectEveryGridScore(grid, score) {
   for (const item of grid) expect(item.score).toBe(score)
 }
 
+const TEACHER_AVAILABILITY_LABEL = 'Disponibilidade dos professores'
+const TEACHER_AVAILABILITY_CAPTION = 'Disponibilidade dos professores por professor'
+const NEUTRAL_SCORE = 1
+const IMPOSSIBLE_SCORE = -1
+
+function uniqueSuffix() {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`
+}
+
+// A scheduler-only teacher never receives a Clerk invitation, so this fixture
+// stays inside the disposable organization the journey already owns.
+async function createSchedulerOnlyTeacher(page, name, email) {
+  const member = await apiRequest(page, 'POST', '/members', {
+    organization_display_name: name,
+    email,
+    capabilities: ['teacher'],
+    teacher_access_mode: 'scheduler_only',
+    subject_ids: [],
+  })
+  if (!member.teacher_id) throw new Error(`Scheduler-only teacher ${email} has no teacher_id.`)
+  return member.teacher_id
+}
+
+// The downloaded teacher model is a plain CSV: BOM, semicolon delimiter, CRLF.
+// Edit the first day of the target teacher so the preview reports one change.
+// Native parsing only; the fixture values are simple.
+function editTeacherBlock(csvText, email, level) {
+  const lines = csvText.replace(/^\ufeff/, '').split('\r\n').filter((line) => line.length > 0)
+  if (lines.length < 2) throw new Error('The downloaded teacher model has no teacher rows.')
+  let edited = false
+  const updated = lines.map((line, index) => {
+    if (index === 0) return line
+    const cells = line.split(';')
+    if (!edited && cells[1]?.toLowerCase() === email.toLowerCase()) {
+      if (cells.length < 4) throw new Error('The downloaded teacher row has no hour columns.')
+      cells[3] = level
+      edited = true
+    }
+    return cells.join(';')
+  })
+  if (!edited) throw new Error(`Teacher ${email} was not found in the downloaded model.`)
+  return `\ufeff${updated.join('\r\n')}\r\n`
+}
+
+// Reads one teacher grid through the real API and proves the imported levels:
+// exactly one blocked block and every other visible block neutral.
+function expectOneImpossibleBlock(grid) {
+  expect(grid.length).toBeGreaterThan(0)
+  expect(grid.filter((item) => item.score === IMPOSSIBLE_SCORE)).toHaveLength(1)
+  for (const item of grid) {
+    expect([NEUTRAL_SCORE, IMPOSSIBLE_SCORE]).toContain(item.score)
+  }
+}
+
 test.describe.configure({ mode: 'serial' })
 
 test('an all-impossible class blocks generation until a neutral grid is copied onto it', async ({ page }) => {
@@ -170,6 +224,70 @@ test('an all-impossible class blocks generation until a neutral grid is copied o
       await goTo(page, '/schedules')
       await expectRouteReady(page, '/schedules')
       await expect(blockerLink(page, firstClass.name)).toHaveCount(0)
+    })
+
+    await test.step('imports an edited teacher availability model through the real screens', async () => {
+      const suffix = uniqueSuffix()
+      const targets = [
+        { name: 'E2E Availability A', email: `e2e-avail-a-${suffix}@example.com` },
+        { name: 'E2E Availability B', email: `e2e-avail-b-${suffix}@example.com` },
+      ]
+      for (const target of targets) {
+        target.teacherId = await createSchedulerOnlyTeacher(page, target.name, target.email)
+      }
+
+      await goTo(page, '/imports')
+      await expect(page.getByRole('heading', { name: 'Importar dados' })).toBeVisible({ timeout: 30_000 })
+
+      const downloadPromise = page.waitForEvent('download')
+      await page
+        .locator('.card')
+        .filter({ hasText: TEACHER_AVAILABILITY_LABEL })
+        .getByRole('button', { name: 'Descarregar modelo' })
+        .click()
+      const download = await downloadPromise
+      const chunks = []
+      for await (const chunk of await download.createReadStream()) chunks.push(chunk)
+      let model = Buffer.concat(chunks).toString('utf8')
+      for (const target of targets) model = editTeacherBlock(model, target.email, 'Impossível')
+
+      await page.locator('#import-teacher_availability').setInputFiles({
+        name: 'Cronos_DisponibilidadeProfessores_Template.csv',
+        mimeType: 'text/csv',
+        buffer: Buffer.from(model, 'utf8'),
+      })
+
+      const validateResponse = page.waitForResponse((response) => (
+        response.url().includes('/api/v1/imports/validate')
+        && response.request().method() === 'POST'
+      ))
+      await page.getByRole('button', { name: 'Verificar ficheiros' }).click()
+      const validation = await validateResponse
+      expect(validation.ok(), `import validation failed: ${validation.status()}`).toBeTruthy()
+
+      const teacherTable = page.locator('table').filter({ hasText: TEACHER_AVAILABILITY_CAPTION })
+      await expect(teacherTable).toBeVisible({ timeout: 30_000 })
+      for (const target of targets) {
+        const row = teacherTable.locator('tbody tr').filter({ hasText: target.email })
+        await expect(row).toHaveCount(1)
+        await expect(row.locator('td').nth(0)).toHaveText(target.name)
+        await expect(row.locator('td').nth(1)).toHaveText(target.email)
+        await expect(row.locator('td').nth(2)).toHaveText('1')
+      }
+
+      const commitResponse = page.waitForResponse((response) => (
+        response.url().includes('/api/v1/imports/commit')
+        && response.request().method() === 'POST'
+      ))
+      await page.getByRole('button', { name: 'Confirmar importação' }).click()
+      const commit = await commitResponse
+      expect(commit.ok(), `import commit failed: ${commit.status()}`).toBeTruthy()
+      await expect(page.getByText('Importação concluída.')).toBeVisible({ timeout: 30_000 })
+
+      for (const target of targets) {
+        const grid = await apiRequest(page, 'GET', `/teachers/${target.teacherId}/availability`)
+        expectOneImpossibleBlock(grid)
+      }
     })
   } catch (error) {
     primaryError = error

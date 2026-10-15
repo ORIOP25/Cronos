@@ -31,6 +31,22 @@ function formatMegabytes(bytes) {
   return `${(bytes / 1_000_000).toFixed(2)} MB`
 }
 
+function changedBlocksLabel(changedBlocks) {
+  return changedBlocks || 'Sem alterações'
+}
+
+const CLASS_AVAILABILITY_COLUMNS = [
+  { header: 'Sigla do curso', value: (item) => item.course_abbreviation },
+  { header: 'Nome da turma', value: (item) => item.class_name },
+  { header: 'Blocos que mudam', value: (item) => changedBlocksLabel(item.changed_blocks) },
+]
+
+const TEACHER_AVAILABILITY_COLUMNS = [
+  { header: 'Nome do professor', value: (item) => item.teacher_name },
+  { header: 'Email do professor', value: (item) => item.teacher_email },
+  { header: 'Blocos que mudam', value: (item) => changedBlocksLabel(item.changed_blocks) },
+]
+
 function errorContext(error) {
   return error?.response?.data?.detail?.context || {}
 }
@@ -121,13 +137,16 @@ const BulkImport = () => {
   const classAvailabilityPreview = (validation?.preview?.items || []).filter(
     (item) => item.resource === 'class_availability',
   )
+  const teacherAvailabilityPreview = (validation?.preview?.items || []).filter(
+    (item) => item.resource === 'teacher_availability',
+  )
 
   return (
     <div className="p-4">
       <PageHeader
         preTitle="Administração"
         title="Importar dados"
-        description="Adicione várias salas, disciplinas, cursos, turmas e professores e atualize a disponibilidade das turmas de uma só vez."
+        description="Adicione várias salas, disciplinas, cursos, turmas e professores e atualize a disponibilidade das turmas e dos professores de uma só vez."
       />
 
       <section className="mb-4" aria-labelledby="import-steps-title">
@@ -241,30 +260,45 @@ const BulkImport = () => {
             </CAlert>
           )}
           {classAvailabilityPreview.length > 0 && (
-            <div className="table-responsive mt-3">
-              <table className="table table-sm mb-0">
-                <caption className="small text-muted">Disponibilidade das turmas por turma</caption>
-                <thead>
-                  <tr>
-                    <th scope="col">Sigla do curso</th>
-                    <th scope="col">Nome da turma</th>
-                    <th scope="col">Blocos diferentes de Neutro</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {classAvailabilityPreview.map((item) => (
-                    <tr key={`${item.course_abbreviation}-${item.class_name}`}>
-                      <td>{item.course_abbreviation}</td>
-                      <td>{item.class_name}</td>
-                      <td>{item.non_neutral_blocks}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <AvailabilityPreviewTable
+              caption="Disponibilidade das turmas por turma"
+              columns={CLASS_AVAILABILITY_COLUMNS}
+              items={classAvailabilityPreview}
+              rowKey={(item) => `${item.course_abbreviation}-${item.class_name}`}
+            />
+          )}
+          {teacherAvailabilityPreview.length > 0 && (
+            <AvailabilityPreviewTable
+              caption="Disponibilidade dos professores por professor"
+              columns={TEACHER_AVAILABILITY_COLUMNS}
+              items={teacherAvailabilityPreview}
+              rowKey={(item) => item.teacher_email}
+            />
           )}
         </section>
       )}
+    </div>
+  )
+}
+
+function AvailabilityPreviewTable({ caption, columns, items, rowKey }) {
+  return (
+    <div className="table-responsive mt-3">
+      <table className="table table-sm mb-0">
+        <caption className="small text-muted">{caption}</caption>
+        <thead>
+          <tr>
+            {columns.map((column) => <th scope="col" key={column.header}>{column.header}</th>)}
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((item) => (
+            <tr key={rowKey(item)}>
+              {columns.map((column) => <td key={column.header}>{column.value(item)}</td>)}
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   )
 }

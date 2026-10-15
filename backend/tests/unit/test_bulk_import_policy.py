@@ -3,8 +3,8 @@ from datetime import time
 
 from app.services.bulk_import_policy import (
     CLASS_AVAILABILITY,
-    CLASS_AVAILABILITY_FILENAME,
     IMPORT_RESOURCES,
+    TEACHER_AVAILABILITY,
     TEMPLATE_DEFINITIONS,
     ExistingClass,
     ExistingCourse,
@@ -14,8 +14,9 @@ from app.services.bulk_import_policy import (
     ExistingTimeslot,
     ImportSnapshot,
     parse_resource_file,
-    render_class_availability_template,
+    render_availability_template,
     render_template,
+    template_filename,
     validate_import,
 )
 
@@ -288,9 +289,13 @@ def _class_availability_snapshot(**kwargs) -> ImportSnapshot:
     )
 
 
-def test_import_resources_include_the_class_availability_section():
+def test_import_resources_include_both_availability_sections_and_filenames():
     assert CLASS_AVAILABILITY in IMPORT_RESOURCES
-    assert CLASS_AVAILABILITY_FILENAME == "Cronos_DisponibilidadeTurmas_Template.csv"
+    assert TEACHER_AVAILABILITY in IMPORT_RESOURCES
+    assert template_filename(CLASS_AVAILABILITY) == "Cronos_DisponibilidadeTurmas_Template.csv"
+    assert (
+        template_filename(TEACHER_AVAILABILITY) == "Cronos_DisponibilidadeProfessores_Template.csv"
+    )
 
 
 def test_class_availability_template_lists_sorted_hours_and_saved_levels():
@@ -300,13 +305,16 @@ def test_class_availability_template_lists_sorted_hours_and_saved_levels():
         ExistingTimeslot(id=12, day_of_week=4, start_time=time(8, 30)),
     )
     classes = (ExistingClass(id=1, course_id=1, course_abbreviation="TGEI", name="TGEI 25/28"),)
-    rendered = render_class_availability_template(timeslots, classes, {1: {10: -1, 12: 0}})
+    rendered = render_availability_template(
+        CLASS_AVAILABILITY, timeslots, classes, {1: {10: -1, 12: 0}}
+    )
 
     assert rendered.startswith(b"\xef\xbb\xbf")
     lines = rendered.decode("utf-8-sig").splitlines()
     assert lines[0] == "Sigla do curso;Nome da turma;Dia;08:30;09:20"
     assert lines[1] == "TGEI;TGEI 25/28;Segunda;Impossível;Neutro"
     assert lines[2] == "TGEI;TGEI 25/28;Sexta;Evitar;"
+    assert rendered.count(b"\r\n") == 3
 
 
 def test_class_availability_template_without_classes_is_header_only():
@@ -315,9 +323,91 @@ def test_class_availability_template_without_classes_is_header_only():
         ExistingTimeslot(id=11, day_of_week=4, start_time=time(9, 20)),
     )
 
-    rendered = render_class_availability_template(timeslots, (), {})
+    rendered = render_availability_template(CLASS_AVAILABILITY, timeslots, (), {})
 
     assert rendered.decode("utf-8-sig") == "Sigla do curso;Nome da turma;Dia;08:30;09:20\r\n"
+
+
+def test_teacher_availability_template_orders_active_teachers_by_name_email_and_day():
+    timeslots = (
+        ExistingTimeslot(id=10, day_of_week=0, start_time=time(8, 30)),
+        ExistingTimeslot(id=11, day_of_week=0, start_time=time(9, 20)),
+        ExistingTimeslot(id=12, day_of_week=4, start_time=time(8, 30)),
+    )
+    teachers = (
+        ExistingTeacher(id=2, email="bea@escola.pt", name="Bea Costa"),
+        ExistingTeacher(id=1, email="ana.silva@escola.pt", name="ana silva"),
+    )
+    rendered = render_availability_template(
+        TEACHER_AVAILABILITY, timeslots, teachers, {1: {10: -1, 11: 0, 12: 2}}
+    )
+
+    assert rendered.startswith(b"\xef\xbb\xbf")
+    lines = rendered.decode("utf-8-sig").splitlines()
+    assert lines[0] == "Nome do professor;Email do professor;Dia;08:30;09:20"
+    assert lines[1] == "ana silva;ana.silva@escola.pt;Segunda;Impossível;Evitar"
+    assert lines[2] == "ana silva;ana.silva@escola.pt;Sexta;Preferencial;"
+    assert lines[3] == "Bea Costa;bea@escola.pt;Segunda;Neutro;Neutro"
+    assert lines[4] == "Bea Costa;bea@escola.pt;Sexta;Neutro;"
+
+
+def test_teacher_availability_template_without_teachers_is_header_only():
+    timeslots = (
+        ExistingTimeslot(id=10, day_of_week=0, start_time=time(8, 30)),
+        ExistingTimeslot(id=11, day_of_week=4, start_time=time(9, 20)),
+    )
+
+    rendered = render_availability_template(TEACHER_AVAILABILITY, timeslots, (), {})
+
+    assert (
+        rendered.decode("utf-8-sig") == "Nome do professor;Email do professor;Dia;08:30;09:20\r\n"
+    )
+
+
+def test_teacher_availability_parser_reads_dynamic_hour_headers():
+    parsed = parse_resource_file(
+        TEACHER_AVAILABILITY,
+        "disponibilidade_professores.csv",
+        encoded(
+            "Nome do professor;Email do professor;Dia;8:30;09:20:00\r\n"
+            "Ana Silva;Ana.Silva@Escola.PT;segunda-feira;Impossivel;Evitar\r\n"
+        ),
+    )
+
+    assert parsed.issues == ()
+    assert parsed.hours == ("08:30", "09:20")
+    assert parsed.hour_titles == ("8:30", "09:20:00")
+    assert parsed.rows[0]["teacher_name"] == "Ana Silva"
+    assert parsed.rows[0]["teacher_email"] == "Ana.Silva@Escola.PT"
+    assert parsed.rows[0]["8:30"] == "Impossivel"
+
+
+def test_availability_grid_parser_rejects_the_other_grid_and_fixed_files():
+    teacher_grid = (
+        "Nome do professor;Email do professor;Dia;08:30\r\nAna;ana@escola.pt;Segunda;Neutro\r\n"
+    )
+    class_grid = "Sigla do curso;Nome da turma;Dia;08:30\r\nTGEI;TGEI 25/28;Segunda;Neutro\r\n"
+    teachers_fixed = (
+        "Nome do professor;Email do professor;Nome da disciplina\r\n"
+        "Ana;ana@escola.pt;Programação\r\n"
+    )
+    cases = (
+        (CLASS_AVAILABILITY, "professores.csv", teacher_grid),
+        (TEACHER_AVAILABILITY, "turmas.csv", class_grid),
+        (CLASS_AVAILABILITY, "professores.csv", teachers_fixed),
+        (TEACHER_AVAILABILITY, "professores.csv", teachers_fixed),
+        ("teachers", "professores.csv", teacher_grid),
+        ("teachers", "turmas.csv", class_grid),
+        ("assignments", "turmas.csv", class_grid),
+    )
+
+    for resource, filename, content in cases:
+        parsed = parse_resource_file(resource, filename, encoded(content))
+        assert parsed.issues, (resource, filename)
+        assert parsed.issues[0].code == "resource_mismatch"
+        assert parsed.issues[0].message == (
+            "Este ficheiro não corresponde à secção escolhida. Selecione o modelo correspondente."
+        )
 
 
 def test_class_availability_parser_reads_dynamic_hour_headers():
@@ -372,11 +462,10 @@ def test_class_availability_validation_merges_every_day_into_one_row_per_class()
     assert result.can_commit is True
     assert len(result.class_availability) == 1
     assert result.class_availability[0].scores == {10: -1, 11: 0, 12: 2}
+    assert result.class_availability[0].changed_blocks == 3
     assert result.counts["class_availability"] == 1
     assert [
-        item["non_neutral_blocks"]
-        for item in result.preview
-        if item["resource"] == CLASS_AVAILABILITY
+        item["changed_blocks"] for item in result.preview if item["resource"] == CLASS_AVAILABILITY
     ] == [3]
 
 
@@ -483,3 +572,472 @@ def test_class_availability_accepts_a_class_created_in_the_same_batch():
 
     assert result.can_commit is True
     assert result.class_availability[0].scores == {10: -1}
+
+
+def _teacher(email: str = "ana@escola.pt", name: str = "Ana", *, active: bool = True):
+    return ExistingTeacher(id=1, email=email, name=name, is_active=active)
+
+
+def test_teacher_email_matches_case_insensitively_on_both_sides():
+    timeslots = [ExistingTimeslot(id=10, day_of_week=0, start_time=time(8, 30))]
+    file_with_upper = parse_resource_file(
+        TEACHER_AVAILABILITY,
+        "disponibilidade.csv",
+        encoded(
+            "Nome do professor;Email do professor;Dia;08:30\r\n"
+            "Ana;Ana@Escola.PT;Segunda;Impossível\r\n"
+        ),
+    )
+    file_with_lower = parse_resource_file(
+        TEACHER_AVAILABILITY,
+        "disponibilidade.csv",
+        encoded(
+            "Nome do professor;Email do professor;Dia;08:30\r\n"
+            "Ana;ana@escola.pt;Segunda;Impossível\r\n"
+        ),
+    )
+
+    lower_stored = validate_import(
+        {TEACHER_AVAILABILITY: file_with_upper},
+        ImportSnapshot(
+            teachers=[ExistingTeacher(id=1, email="ana@escola.pt", name="Ana", is_active=True)],
+            timeslots=timeslots,
+        ),
+    )
+    upper_stored = validate_import(
+        {TEACHER_AVAILABILITY: file_with_lower},
+        ImportSnapshot(
+            teachers=[ExistingTeacher(id=2, email="ANA@ESCOLA.PT", name="Ana", is_active=True)],
+            timeslots=timeslots,
+        ),
+    )
+
+    assert lower_stored.can_commit is True
+    assert upper_stored.can_commit is True
+    assert lower_stored.teacher_availability[0].teacher_email == "ana@escola.pt"
+    assert upper_stored.teacher_availability[0].teacher_email == "ana@escola.pt"
+
+
+def test_teacher_availability_merges_every_day_into_one_grid():
+    timeslots = [
+        ExistingTimeslot(id=10 + day, day_of_week=day, start_time=time(8, 30)) for day in range(5)
+    ]
+    parsed = parse_resource_file(
+        TEACHER_AVAILABILITY,
+        "disponibilidade.csv",
+        encoded(
+            "Nome do professor;Email do professor;Dia;08:30\r\n"
+            "Ana;ana@escola.pt;Segunda;Impossível\r\n"
+            "Ana;ana@escola.pt;Terça;Evitar\r\n"
+            "Ana;ana@escola.pt;Quarta;Preferencial\r\n"
+            "Ana;ana@escola.pt;Quinta;Neutro\r\n"
+            "Ana;ana@escola.pt;Sexta;Evitar\r\n"
+        ),
+    )
+
+    result = validate_import(
+        {TEACHER_AVAILABILITY: parsed},
+        ImportSnapshot(teachers=[_teacher()], timeslots=timeslots),
+    )
+
+    assert result.can_commit is True
+    assert len(result.teacher_availability) == 1
+    assert result.teacher_availability[0].scores == {10: -1, 11: 0, 12: 2, 14: 0}
+    assert result.teacher_availability[0].changed_blocks == 4
+    assert result.counts[TEACHER_AVAILABILITY] == 1
+
+
+def test_teacher_availability_resolution_rejects_missing_and_inactive():
+    parsed = parse_resource_file(
+        TEACHER_AVAILABILITY,
+        "disponibilidade.csv",
+        encoded(
+            "Nome do professor;Email do professor;Dia;08:30\r\n"
+            "Sem email;;Segunda;Neutro\r\n"
+            "Arquivado;arch@escola.pt;Segunda;Neutro\r\n"
+            "Inexistente;missing@escola.pt;Segunda;Neutro\r\n"
+        ),
+    )
+
+    result = validate_import(
+        {TEACHER_AVAILABILITY: parsed},
+        ImportSnapshot(
+            teachers=[ExistingTeacher(id=1, email="arch@escola.pt", name="Arquivado")],
+            timeslots=[ExistingTimeslot(id=10, day_of_week=0, start_time=time(8, 30))],
+        ),
+    )
+
+    messages = {(issue.code, issue.field): issue.message for issue in result.issues}
+    assert result.can_commit is False
+    assert messages[("teacher_reference_missing", "teacher_email")] == (
+        "Não existe nenhum professor com este email."
+    )
+    assert messages[("teacher_inactive", "teacher_email")] == (
+        "Este professor está arquivado ou já não leciona. Retire a linha ou reative-o na Equipa."
+    )
+    assert sum(1 for issue in result.issues if issue.code == "teacher_reference_missing") == 2
+    assert result.teacher_availability == ()
+
+
+def test_teacher_changed_blocks_compare_all_visible_slots_including_missing_days():
+    parsed = parse_resource_file(
+        TEACHER_AVAILABILITY,
+        "disponibilidade.csv",
+        encoded(
+            "Nome do professor;Email do professor;Dia;08:30;09:20\r\n"
+            "Ana;ana@escola.pt;Segunda;Impossível;\r\n"
+        ),
+    )
+
+    result = validate_import(
+        {TEACHER_AVAILABILITY: parsed},
+        ImportSnapshot(
+            teachers=[_teacher()],
+            timeslots=[
+                ExistingTimeslot(id=10, day_of_week=0, start_time=time(8, 30)),
+                ExistingTimeslot(id=11, day_of_week=0, start_time=time(9, 20)),
+                ExistingTimeslot(id=12, day_of_week=4, start_time=time(8, 30)),
+            ],
+            teacher_availability={1: {10: -1, 11: 0, 12: 2}},
+        ),
+    )
+
+    assert result.can_commit is True
+    item = result.teacher_availability[0]
+    assert item.scores == {10: -1}
+    assert item.changed_blocks == 2
+
+
+def test_availability_levels_accept_only_the_four_names():
+    accepted = parse_resource_file(
+        TEACHER_AVAILABILITY,
+        "disponibilidade.csv",
+        encoded(
+            "Nome do professor;Email do professor;Dia;08:30\r\n"
+            "Ana;ana@escola.pt;Segunda;impossível\r\n"
+            "Bea;bea@escola.pt;Segunda;NEUTRO\r\n"
+        ),
+    )
+    rejected = parse_resource_file(
+        TEACHER_AVAILABILITY,
+        "disponibilidade.csv",
+        encoded(
+            "Nome do professor;Email do professor;Dia;08:30\r\n"
+            "Ana;ana@escola.pt;Segunda;Proibido\r\n"
+            "Bea;bea@escola.pt;Segunda;Prefere\r\n"
+        ),
+    )
+    snapshot = ImportSnapshot(
+        teachers=[
+            ExistingTeacher(id=1, email="ana@escola.pt", name="Ana", is_active=True),
+            ExistingTeacher(id=2, email="bea@escola.pt", name="Bea", is_active=True),
+        ],
+        timeslots=[ExistingTimeslot(id=10, day_of_week=0, start_time=time(8, 30))],
+    )
+
+    accepted_result = validate_import({TEACHER_AVAILABILITY: accepted}, snapshot)
+    rejected_result = validate_import({TEACHER_AVAILABILITY: rejected}, snapshot)
+
+    assert accepted_result.can_commit is True
+    assert rejected_result.can_commit is False
+    level_issues = [issue for issue in rejected_result.issues if issue.code == "level_invalid"]
+    assert len(level_issues) == 2
+    assert all(
+        issue.message == "Escreva Impossível, Evitar, Neutro ou Preferencial."
+        for issue in level_issues
+    )
+
+
+def test_teacher_grid_ignores_the_name_column():
+    parsed = parse_resource_file(
+        TEACHER_AVAILABILITY,
+        "disponibilidade.csv",
+        encoded(
+            "Nome do professor;Email do professor;Dia;08:30\r\n"
+            ";ana@escola.pt;Segunda;Impossível\r\n"
+        ),
+    )
+
+    result = validate_import(
+        {TEACHER_AVAILABILITY: parsed},
+        ImportSnapshot(
+            teachers=[
+                ExistingTeacher(id=1, email="ana@escola.pt", name="Ana Guardada", is_active=True)
+            ],
+            timeslots=[ExistingTimeslot(id=10, day_of_week=0, start_time=time(8, 30))],
+        ),
+    )
+
+    assert result.can_commit is True
+    assert result.teacher_availability[0].teacher_name == "Ana Guardada"
+
+
+def test_teacher_availability_accepts_a_teacher_created_in_the_same_batch():
+    teachers_file = parse_resource_file(
+        "teachers",
+        "professores.csv",
+        encoded(
+            "Nome do professor;Email do professor;Nome da disciplina\r\n"
+            "Nova Professora;nova@escola.pt;Programação\r\n"
+        ),
+    )
+    availability = parse_resource_file(
+        TEACHER_AVAILABILITY,
+        "disponibilidade.csv",
+        encoded(
+            "Nome do professor;Email do professor;Dia;08:30\r\n"
+            "Nome do ficheiro;nova@escola.pt;Segunda;Impossível\r\n"
+        ),
+    )
+
+    result = validate_import(
+        {"teachers": teachers_file, TEACHER_AVAILABILITY: availability},
+        ImportSnapshot(
+            subjects=[ExistingSubject(id=5, name="Programação")],
+            timeslots=[ExistingTimeslot(id=10, day_of_week=0, start_time=time(8, 30))],
+        ),
+    )
+
+    assert result.can_commit is True
+    item = result.teacher_availability[0]
+    assert item.teacher_email == "nova@escola.pt"
+    assert item.teacher_name == "Nova Professora"
+    assert item.changed_blocks == 1
+
+
+def test_teacher_availability_rejects_duplicate_day_lines():
+    parsed = parse_resource_file(
+        TEACHER_AVAILABILITY,
+        "disponibilidade.csv",
+        encoded(
+            "Nome do professor;Email do professor;Dia;08:30\r\n"
+            "Ana;ana@escola.pt;Segunda;Neutro\r\n"
+            "Outro nome;ANA@escola.pt;segunda-feira;Evitar\r\n"
+        ),
+    )
+
+    result = validate_import(
+        {TEACHER_AVAILABILITY: parsed},
+        ImportSnapshot(
+            teachers=[_teacher()],
+            timeslots=[ExistingTimeslot(id=10, day_of_week=0, start_time=time(8, 30))],
+        ),
+    )
+
+    assert result.can_commit is False
+    issue = next(issue for issue in result.issues if issue.code == "duplicate_teacher_day")
+    assert issue.message == "Este professor já tem uma linha para este dia."
+    assert issue.field is None
+
+
+def test_availability_preview_sorts_by_changed_blocks_then_teacher_identity():
+    parsed = parse_resource_file(
+        TEACHER_AVAILABILITY,
+        "disponibilidade.csv",
+        encoded(
+            "Nome do professor;Email do professor;Dia;08:30;09:20\r\n"
+            "zeta;zeta@escola.pt;Segunda;Impossível;Evitar\r\n"
+            "ana;ana@escola.pt;Segunda;Impossível;\r\n"
+            "Bea;bea@escola.pt;Segunda;Impossível;\r\n"
+        ),
+    )
+
+    result = validate_import(
+        {TEACHER_AVAILABILITY: parsed},
+        ImportSnapshot(
+            teachers=[
+                ExistingTeacher(id=1, email="zeta@escola.pt", name="zeta", is_active=True),
+                ExistingTeacher(id=2, email="ana@escola.pt", name="ana", is_active=True),
+                ExistingTeacher(id=3, email="bea@escola.pt", name="Bea", is_active=True),
+            ],
+            timeslots=[
+                ExistingTimeslot(id=10, day_of_week=0, start_time=time(8, 30)),
+                ExistingTimeslot(id=11, day_of_week=0, start_time=time(9, 20)),
+            ],
+        ),
+    )
+
+    items = [item for item in result.preview if item["resource"] == TEACHER_AVAILABILITY]
+    assert [item["teacher_email"] for item in items] == [
+        "zeta@escola.pt",
+        "ana@escola.pt",
+        "bea@escola.pt",
+    ]
+
+
+def test_class_availability_preview_sorts_by_changed_blocks_then_course_and_class():
+    parsed = parse_resource_file(
+        CLASS_AVAILABILITY,
+        "disponibilidade.csv",
+        encoded(
+            "Sigla do curso;Nome da turma;Dia;08:30;09:20\r\n"
+            "TGEI;B;Segunda;Impossível;\r\n"
+            "TGEI;A;Segunda;Impossível;\r\n"
+        ),
+    )
+
+    result = validate_import(
+        {CLASS_AVAILABILITY: parsed},
+        ImportSnapshot(
+            classes=[
+                ExistingClass(id=1, course_id=1, course_abbreviation="TGEI", name="B"),
+                ExistingClass(id=2, course_id=1, course_abbreviation="TGEI", name="A"),
+            ],
+            timeslots=[
+                ExistingTimeslot(id=10, day_of_week=0, start_time=time(8, 30)),
+                ExistingTimeslot(id=11, day_of_week=0, start_time=time(9, 20)),
+            ],
+        ),
+    )
+
+    items = [item for item in result.preview if item["resource"] == CLASS_AVAILABILITY]
+    assert [item["class_name"] for item in items] == ["A", "B"]
+
+
+def test_all_impossible_availability_is_a_warning_for_teachers_and_classes():
+    timeslots = [
+        ExistingTimeslot(id=10, day_of_week=0, start_time=time(8, 30)),
+        ExistingTimeslot(id=12, day_of_week=4, start_time=time(8, 30)),
+    ]
+    teacher_file = parse_resource_file(
+        TEACHER_AVAILABILITY,
+        "disponibilidade.csv",
+        encoded(
+            "Nome do professor;Email do professor;Dia;08:30\r\n"
+            "Ana;ana@escola.pt;Segunda;Impossível\r\n"
+            "Ana;ana@escola.pt;Sexta;Impossível\r\n"
+        ),
+    )
+    class_file = parse_resource_file(
+        CLASS_AVAILABILITY,
+        "disponibilidade.csv",
+        encoded(
+            "Sigla do curso;Nome da turma;Dia;08:30\r\n"
+            "TGEI;TGEI 25/28;Segunda;Impossível\r\n"
+            "TGEI;TGEI 25/28;Sexta;Impossível\r\n"
+        ),
+    )
+
+    teacher_result = validate_import(
+        {TEACHER_AVAILABILITY: teacher_file},
+        ImportSnapshot(teachers=[_teacher()], timeslots=timeslots),
+    )
+    class_result = validate_import(
+        {CLASS_AVAILABILITY: class_file},
+        ImportSnapshot(
+            classes=[
+                ExistingClass(id=1, course_id=1, course_abbreviation="TGEI", name="TGEI 25/28")
+            ],
+            timeslots=timeslots,
+        ),
+    )
+
+    assert teacher_result.can_commit is True
+    assert class_result.can_commit is True
+    teacher_message = (
+        "O professor fica com todos os blocos em Impossível. "
+        "Se tiver aulas, a geração do horário fica bloqueada."
+    )
+    class_message = (
+        "A turma fica com todos os blocos em Impossível. "
+        "Se tiver aulas, a geração do horário fica bloqueada."
+    )
+    assert any(
+        issue.code == "all_blocks_impossible"
+        and issue.severity == "warning"
+        and issue.message == teacher_message
+        for issue in teacher_result.issues
+    )
+    assert any(
+        issue.code == "all_blocks_impossible"
+        and issue.severity == "warning"
+        and issue.message == class_message
+        for issue in class_result.issues
+    )
+
+
+def test_availability_preview_keeps_every_row_beyond_the_generic_cap():
+    room_rows = "".join(f"Sala {index};Normal;20\r\n" for index in range(1, 121))
+    rooms_file = parse_resource_file(
+        "rooms",
+        "salas.csv",
+        encoded("Nome da sala;Tipo de sala;Capacidade\r\n" + room_rows),
+    )
+    teacher_rows = "".join(
+        f"Professor {index};teacher{index}@escola.pt;Segunda;Neutro\r\n" for index in range(1, 121)
+    )
+    teachers_file = parse_resource_file(
+        TEACHER_AVAILABILITY,
+        "disponibilidade.csv",
+        encoded("Nome do professor;Email do professor;Dia;08:30\r\n" + teacher_rows),
+    )
+
+    result = validate_import(
+        {"rooms": rooms_file, TEACHER_AVAILABILITY: teachers_file},
+        ImportSnapshot(
+            teachers=[
+                ExistingTeacher(
+                    id=index,
+                    email=f"teacher{index}@escola.pt",
+                    name=f"Professor {index}",
+                    is_active=True,
+                )
+                for index in range(1, 121)
+            ],
+            timeslots=[ExistingTimeslot(id=10, day_of_week=0, start_time=time(8, 30))],
+        ),
+    )
+
+    assert result.can_commit is True
+    assert len(result.teacher_availability) == 120
+    room_items = [item for item in result.preview if item["resource"] == "rooms"]
+    teacher_items = [item for item in result.preview if item["resource"] == TEACHER_AVAILABILITY]
+    assert len(room_items) == 100
+    assert len(teacher_items) == 120
+
+
+def test_changed_blocks_is_zero_when_the_stored_grid_already_matches():
+    timeslots = [
+        ExistingTimeslot(id=10, day_of_week=0, start_time=time(8, 30)),
+        ExistingTimeslot(id=11, day_of_week=0, start_time=time(9, 20)),
+    ]
+    teacher_file = parse_resource_file(
+        TEACHER_AVAILABILITY,
+        "disponibilidade.csv",
+        encoded(
+            "Nome do professor;Email do professor;Dia;08:30;09:20\r\n"
+            "Ana;ana@escola.pt;Segunda;Impossível;Evitar\r\n"
+        ),
+    )
+    class_file = parse_resource_file(
+        CLASS_AVAILABILITY,
+        "disponibilidade.csv",
+        encoded(
+            "Sigla do curso;Nome da turma;Dia;08:30;09:20\r\n"
+            "TGEI;TGEI 25/28;Segunda;Impossível;Evitar\r\n"
+        ),
+    )
+
+    teacher_result = validate_import(
+        {TEACHER_AVAILABILITY: teacher_file},
+        ImportSnapshot(
+            teachers=[_teacher()],
+            timeslots=timeslots,
+            teacher_availability={1: {10: -1, 11: 0}},
+        ),
+    )
+    class_result = validate_import(
+        {CLASS_AVAILABILITY: class_file},
+        ImportSnapshot(
+            classes=[
+                ExistingClass(id=1, course_id=1, course_abbreviation="TGEI", name="TGEI 25/28")
+            ],
+            timeslots=timeslots,
+            class_availability={1: {10: -1, 11: 0}},
+        ),
+    )
+
+    assert teacher_result.can_commit is True
+    assert class_result.can_commit is True
+    assert teacher_result.teacher_availability[0].changed_blocks == 0
+    assert class_result.class_availability[0].changed_blocks == 0

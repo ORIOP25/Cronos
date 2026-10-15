@@ -8,6 +8,7 @@ import io
 import re
 import unicodedata
 from collections import defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import time
 from email.utils import parseaddr
@@ -17,18 +18,16 @@ MAX_FILE_BYTES = 1024 * 1024
 MAX_TOTAL_BYTES = 5 * 1024 * 1024
 MAX_LINES = 5_000
 CLASS_AVAILABILITY = "class_availability"
-CLASS_AVAILABILITY_FILENAME = "Cronos_DisponibilidadeTurmas_Template.csv"
-CLASS_AVAILABILITY_FIXED_HEADERS = ("Sigla do curso", "Nome da turma", "Dia")
-CLASS_AVAILABILITY_DAY_LABELS = (
-    "Segunda",
-    "Terça",
-    "Quarta",
-    "Quinta",
-    "Sexta",
-    "Sábado",
-    "Domingo",
+TEACHER_AVAILABILITY = "teacher_availability"
+IMPORT_RESOURCES = (
+    "rooms",
+    "subjects",
+    "courses",
+    "teachers",
+    "assignments",
+    CLASS_AVAILABILITY,
+    TEACHER_AVAILABILITY,
 )
-IMPORT_RESOURCES = ("rooms", "subjects", "courses", "teachers", "assignments", CLASS_AVAILABILITY)
 IssueSeverity = Literal["error", "warning"]
 
 
@@ -107,8 +106,8 @@ RESOURCE_MISMATCH_MESSAGE = (
     "Este ficheiro não corresponde à secção escolhida. Selecione o modelo correspondente."
 )
 ROOM_TYPE_ERROR_MESSAGE = "Escreva Normal, Laboratório, Ginásio ou Artes."
-CLASS_AVAILABILITY_DAY_ERROR_MESSAGE = "Escreva um dia com blocos na grelha, por exemplo Segunda."
-CLASS_AVAILABILITY_LEVEL_ERROR_MESSAGE = "Escreva Impossível, Evitar, Neutro ou Preferencial."
+AVAILABILITY_DAY_ERROR_MESSAGE = "Escreva um dia com blocos na grelha, por exemplo Segunda."
+AVAILABILITY_LEVEL_ERROR_MESSAGE = "Escreva Impossível, Evitar, Neutro ou Preferencial."
 
 NEUTRAL_SCORE = 1
 _HOUR_PATTERN = re.compile(r"^(\d{1,2}):([0-5]\d)(?::[0-5]\d)?$")
@@ -123,6 +122,7 @@ _DAY_VALUES = {
     "sabado": 5,
     "domingo": 6,
 }
+_DAY_LABELS = ("Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo")
 
 
 @dataclass(frozen=True)
@@ -152,7 +152,7 @@ class ParsedResourceFile:
     rows: tuple[dict[str, str | int], ...] = ()
     issues: tuple[BulkImportIssue, ...] = ()
     decoded_bytes: int = 0
-    # class_availability dynamic header: normalized ``HH:MM`` hours and their
+    # weekly availability grid dynamic header: normalized ``HH:MM`` hours and their
     # original column titles, in header order.
     hours: tuple[str, ...] = ()
     hour_titles: tuple[str, ...] = ()
@@ -250,6 +250,7 @@ class ExistingTeacher:
     id: int
     email: str
     name: str
+    is_active: bool = False
 
 
 @dataclass(frozen=True)
@@ -272,6 +273,16 @@ class ClassAvailabilityImport:
     class_name: str
     line: int
     scores: dict[int, int]
+    changed_blocks: int = 0
+
+
+@dataclass(frozen=True)
+class TeacherAvailabilityImport:
+    teacher_name: str
+    teacher_email: str
+    line: int
+    scores: dict[int, int]
+    changed_blocks: int = 0
 
 
 @dataclass
@@ -283,6 +294,9 @@ class ImportSnapshot:
     teachers: list[ExistingTeacher] = field(default_factory=list)
     assignments: list[ExistingAssignment] = field(default_factory=list)
     timeslots: list[ExistingTimeslot] = field(default_factory=list)
+    # Current stored levels per class and teacher, loaded only for availability files.
+    class_availability: dict[int, dict[int, int]] = field(default_factory=dict)
+    teacher_availability: dict[int, dict[int, int]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -294,6 +308,7 @@ class ValidationResult:
     teachers: tuple[TeacherImport, ...] = ()
     assignments: tuple[AssignmentImport, ...] = ()
     class_availability: tuple[ClassAvailabilityImport, ...] = ()
+    teacher_availability: tuple[TeacherAvailabilityImport, ...] = ()
     counts: dict[str, int] = field(default_factory=dict)
     preview: tuple[dict, ...] = ()
     inferred_competencies: dict[str, tuple[str, ...]] = field(default_factory=dict)
@@ -372,6 +387,43 @@ def _valid_email(value: str) -> bool:
     return parsed == value and "@" in value and not value.endswith("@") and " " not in value
 
 
+@dataclass(frozen=True)
+class AvailabilityResource:
+    """A weekly availability grid resource: headers, fields, filename and row accessors."""
+
+    filename: str
+    fixed_headers: tuple[str, ...]
+    fields: tuple[str, ...]
+    values: Callable[[object], tuple[str, str]]
+    sort_key: Callable[[object], tuple]
+
+
+AVAILABILITY_RESOURCES: dict[str, AvailabilityResource] = {
+    CLASS_AVAILABILITY: AvailabilityResource(
+        filename="Cronos_DisponibilidadeTurmas_Template.csv",
+        fixed_headers=("Sigla do curso", "Nome da turma", "Dia"),
+        fields=("course_abbreviation", "class_name", "day"),
+        values=lambda item: (item.course_abbreviation, item.name),
+        sort_key=lambda item: (item.course_abbreviation, item.name),
+    ),
+    TEACHER_AVAILABILITY: AvailabilityResource(
+        filename="Cronos_DisponibilidadeProfessores_Template.csv",
+        fixed_headers=("Nome do professor", "Email do professor", "Dia"),
+        fields=("teacher_name", "teacher_email", "day"),
+        values=lambda item: (item.name, item.email),
+        sort_key=lambda item: (item.name.casefold(), _email(item.email)),
+    ),
+}
+
+
+def _matches_availability_grid(headers: list[str], *, except_resource: str | None = None) -> bool:
+    return any(
+        resource != except_resource
+        and tuple(headers[: len(definition.fixed_headers)]) == definition.fixed_headers
+        for resource, definition in AVAILABILITY_RESOURCES.items()
+    )
+
+
 def render_template(resource: str) -> bytes:
     definition = TEMPLATE_DEFINITIONS.get(resource)
     if definition is None:
@@ -384,17 +436,19 @@ def render_template(resource: str) -> bytes:
 
 
 def template_filename(resource: str) -> str:
-    if resource == CLASS_AVAILABILITY:
-        return CLASS_AVAILABILITY_FILENAME
+    if resource in AVAILABILITY_RESOURCES:
+        return AVAILABILITY_RESOURCES[resource].filename
     return TEMPLATE_DEFINITIONS[resource].filename
 
 
-def render_class_availability_template(
+def render_availability_template(
+    resource: str,
     timeslots: list[ExistingTimeslot] | tuple[ExistingTimeslot, ...],
-    classes: list[ExistingClass] | tuple[ExistingClass, ...],
+    entities: list[ExistingClass | ExistingTeacher] | tuple[ExistingClass | ExistingTeacher, ...],
     scores: dict[int, dict[int, int]],
 ) -> bytes:
-    """Render the class-availability model from the visible grid, its classes and levels."""
+    """Render a weekly availability model from the visible grid, its entities and levels."""
+    definition = AVAILABILITY_RESOURCES[resource]
     hours = sorted({block.start_time.strftime("%H:%M") for block in timeslots})
     timeslot_by_day_hour = {
         (block.day_of_week, block.start_time.strftime("%H:%M")): block.id for block in timeslots
@@ -402,11 +456,9 @@ def render_class_availability_template(
     days = sorted({block.day_of_week for block in timeslots})
     output = io.StringIO(newline="")
     writer = csv.writer(output, delimiter=";", lineterminator="\r\n")
-    writer.writerow([*CLASS_AVAILABILITY_FIXED_HEADERS, *hours])
-    for item in sorted(
-        classes, key=lambda candidate: (candidate.course_abbreviation, candidate.name)
-    ):
-        class_scores = scores.get(item.id, {})
+    writer.writerow([*definition.fixed_headers, *hours])
+    for item in sorted(entities, key=definition.sort_key):
+        item_scores = scores.get(item.id, {})
         for day in days:
             cells = []
             for hour in hours:
@@ -415,16 +467,14 @@ def render_class_availability_template(
                     cells.append("")
                 else:
                     cells.append(
-                        _LEVEL_LABELS.get(class_scores.get(timeslot_id, NEUTRAL_SCORE), "Neutro")
+                        _LEVEL_LABELS.get(item_scores.get(timeslot_id, NEUTRAL_SCORE), "Neutro")
                     )
-            writer.writerow(
-                [item.course_abbreviation, item.name, CLASS_AVAILABILITY_DAY_LABELS[day], *cells]
-            )
+            writer.writerow([*definition.values(item), _DAY_LABELS[day], *cells])
     return b"\xef\xbb\xbf" + output.getvalue().encode("utf-8")
 
 
 def parse_resource_file(resource: str, filename: str, content_base64: str) -> ParsedResourceFile:
-    if resource not in TEMPLATE_DEFINITIONS and resource != CLASS_AVAILABILITY:
+    if resource not in TEMPLATE_DEFINITIONS and resource not in AVAILABILITY_RESOURCES:
         return ParsedResourceFile(
             resource,
             filename,
@@ -474,8 +524,10 @@ def parse_resource_file(resource: str, filename: str, content_base64: str) -> Pa
             decoded_bytes=len(raw),
         )
 
-    if resource == CLASS_AVAILABILITY:
-        return _parse_class_availability_file(resource, filename, text, len(raw))
+    if resource in AVAILABILITY_RESOURCES:
+        return _parse_availability_file(
+            resource, AVAILABILITY_RESOURCES[resource], filename, text, len(raw)
+        )
 
     definition = TEMPLATE_DEFINITIONS[resource]
     delimiter = None
@@ -493,6 +545,8 @@ def parse_resource_file(resource: str, filename: str, content_base64: str) -> Pa
             other_resource != resource and headers == list(other_definition.headers)
             for other_resource, other_definition in TEMPLATE_DEFINITIONS.items()
         ):
+            resource_mismatch = True
+        if _matches_availability_grid(headers):
             resource_mismatch = True
     if delimiter is None:
         return ParsedResourceFile(
@@ -546,8 +600,12 @@ def parse_resource_file(resource: str, filename: str, content_base64: str) -> Pa
     return ParsedResourceFile(resource, filename, tuple(rows), tuple(issues), len(raw))
 
 
-def _parse_class_availability_file(
-    resource: str, filename: str, text: str, decoded_bytes: int
+def _parse_availability_file(
+    resource: str,
+    definition: AvailabilityResource,
+    filename: str,
+    text: str,
+    decoded_bytes: int,
 ) -> ParsedResourceFile:
     """Parse the dynamic header: three fixed columns then sorted distinct hour columns."""
     delimiter = None
@@ -558,13 +616,12 @@ def _parse_class_availability_file(
             headers = next(reader)
         except StopIteration:
             headers = []
-        if (
-            tuple(headers[: len(CLASS_AVAILABILITY_FIXED_HEADERS)])
-            == CLASS_AVAILABILITY_FIXED_HEADERS
-        ):
+        if tuple(headers[: len(definition.fixed_headers)]) == definition.fixed_headers:
             delimiter = candidate
             break
-        if any(headers == list(definition.headers) for definition in TEMPLATE_DEFINITIONS.values()):
+        if any(headers == list(other.headers) for other in TEMPLATE_DEFINITIONS.values()):
+            resource_mismatch = True
+        if _matches_availability_grid(headers, except_resource=resource):
             resource_mismatch = True
     if delimiter is None:
         return ParsedResourceFile(
@@ -583,7 +640,7 @@ def _parse_class_availability_file(
 
     hours: list[str] = []
     hour_titles: list[str] = []
-    for title in headers[len(CLASS_AVAILABILITY_FIXED_HEADERS) :]:
+    for title in headers[len(definition.fixed_headers) :]:
         cleaned = _clean(title)
         hour = normalize_hour(cleaned)
         if hour is None or hour in hours:
@@ -600,7 +657,7 @@ def _parse_class_availability_file(
     next(reader, None)
     rows: list[dict[str, str | int]] = []
     issues: list[BulkImportIssue] = []
-    field_names = ("course_abbreviation", "class_name", "day")
+    field_names = definition.fields
     for values in reader:
         line = reader.line_num
         if not any(_clean(value) for value in values):
@@ -1124,12 +1181,41 @@ def _validate_assignments(
     return tuple(result)
 
 
-def _validate_class_availability(
+@dataclass(frozen=True)
+class _AvailabilityTarget:
+    """Where an availability row points: current-scores key, grouping key and identity."""
+
+    current_key: int | None
+    duplicate_key: object
+    identity: tuple[str, str]
+
+
+@dataclass
+class _MergedAvailability:
+    target: _AvailabilityTarget
+    line: int
+    scores: dict[int, int]
+    changed_blocks: int = 0
+
+
+def _validate_availability(
+    resource: str,
     parsed: ParsedResourceFile,
     snapshot: ImportSnapshot,
-    class_names: set[tuple[str, str]],
+    current_scores: dict[int, dict[int, int]],
+    resolve: Callable[[dict, list[BulkImportIssue]], _AvailabilityTarget | None],
     issues: list[BulkImportIssue],
-) -> tuple[ClassAvailabilityImport, ...]:
+    *,
+    duplicate_code: str,
+    duplicate_message: str,
+    all_impossible_message: str,
+) -> list[_MergedAvailability]:
+    """Validate a weekly grid shared by classes and teachers.
+
+    ``resolve`` maps a row to its entity and records the resource-specific
+    reference errors. Hours, days, cells, duplicates, the merged grid, changed
+    blocks and the all-impossible warning are shared by both resources.
+    """
     grid_hours = sorted({block.start_time.strftime("%H:%M") for block in snapshot.timeslots})
     days_with_blocks = {block.day_of_week for block in snapshot.timeslots}
     timeslot_by_day_hour = {
@@ -1141,7 +1227,7 @@ def _validate_class_availability(
         if hour not in grid_hours:
             issues.append(
                 _issue(
-                    CLASS_AVAILABILITY,
+                    resource,
                     "unknown_hour",
                     f"A grelha não tem blocos que comecem às {hour}. Descarregue um modelo novo.",
                     line=1,
@@ -1152,62 +1238,45 @@ def _validate_class_availability(
         if hour not in header_hours:
             issues.append(
                 _issue(
-                    CLASS_AVAILABILITY,
+                    resource,
                     "missing_hour",
                     f"Falta a coluna {hour}. Descarregue um modelo novo.",
                     line=1,
                 )
             )
 
-    # One class grid per class (D14): every day line of a class merges into a single
-    # aggregate, so the commit replaces the whole grid exactly once per class.
-    scores_by_class: dict[tuple[str, str], dict[int, int]] = {}
-    first_row_by_class: dict[tuple[str, str], tuple[str, str, int]] = {}
-    seen: set[tuple[str, str, int]] = set()
+    # Every day line of an entity merges into one aggregate, so the commit
+    # replaces the whole grid exactly once per entity (D05, D14).
+    entries: dict[object, _MergedAvailability] = {}
+    seen: set[tuple[object, int]] = set()
     for row in parsed.rows:
         line = int(row["line"])
-        course = _value(row, "course_abbreviation").upper()
-        class_name = _value(row, "class_name")
+        target = resolve(row, issues)
         day = normalize_day(_value(row, "day"))
-        key = (course, _key(class_name))
         day_valid = day is not None and day in days_with_blocks
         if not day_valid:
             issues.append(
                 _issue(
-                    CLASS_AVAILABILITY,
+                    resource,
                     "day_invalid",
-                    CLASS_AVAILABILITY_DAY_ERROR_MESSAGE,
+                    AVAILABILITY_DAY_ERROR_MESSAGE,
                     line=line,
                     field="day",
                 )
             )
-        row_key = (*key, day if day is not None else -1)
-        if row_key in seen:
-            issues.append(
-                _issue(
-                    CLASS_AVAILABILITY,
-                    "duplicate_class_day",
-                    "Esta turma já tem uma linha para este dia.",
-                    line=line,
-                )
-            )
-        seen.add(row_key)
-        if key not in class_names:
-            issues.append(
-                _issue(
-                    CLASS_AVAILABILITY,
-                    "class_reference_missing",
-                    "A turma referenciada não existe nesse curso.",
-                    line=line,
-                    field="class_name",
-                )
-            )
-        # A line without a valid day or class cannot map cells to blocks. Its own
+        if target is not None:
+            row_key = (target.duplicate_key, day if day is not None else -1)
+            if row_key in seen:
+                issues.append(_issue(resource, duplicate_code, duplicate_message, line=line))
+            seen.add(row_key)
+        # A line without a valid day or entity cannot map cells to blocks. Its own
         # errors are already recorded, so skip cell lookups to avoid block noise.
-        if key not in class_names or not day_valid:
+        if target is None or not day_valid:
             continue
-        first_row_by_class.setdefault(key, (course, class_name, line))
-        scores = scores_by_class.setdefault(key, {})
+        entry = entries.get(target.duplicate_key)
+        if entry is None:
+            entry = _MergedAvailability(target, line, {})
+            entries[target.duplicate_key] = entry
         for title, hour in zip(parsed.hour_titles, parsed.hours, strict=True):
             cell = _value(row, title)
             if not cell:
@@ -1216,9 +1285,9 @@ def _validate_class_availability(
             if level is None:
                 issues.append(
                     _issue(
-                        CLASS_AVAILABILITY,
+                        resource,
                         "level_invalid",
-                        CLASS_AVAILABILITY_LEVEL_ERROR_MESSAGE,
+                        AVAILABILITY_LEVEL_ERROR_MESSAGE,
                         line=line,
                         field=title,
                     )
@@ -1228,7 +1297,7 @@ def _validate_class_availability(
             if timeslot_id is None:
                 issues.append(
                     _issue(
-                        CLASS_AVAILABILITY,
+                        resource,
                         "hour_without_block",
                         f"Este dia não tem bloco às {hour}. Deixe a célula vazia.",
                         line=line,
@@ -1237,10 +1306,146 @@ def _validate_class_availability(
                 )
                 continue
             if level != NEUTRAL_SCORE:
-                scores[timeslot_id] = level
+                entry.scores[timeslot_id] = level
+
+    visible_blocks = snapshot.timeslots
+    for entry in entries.values():
+        current = (
+            current_scores.get(entry.target.current_key, {})
+            if entry.target.current_key is not None
+            else {}
+        )
+        entry.changed_blocks = sum(
+            1
+            for block in visible_blocks
+            if entry.scores.get(block.id, NEUTRAL_SCORE) != current.get(block.id, NEUTRAL_SCORE)
+        )
+        if visible_blocks and all(
+            entry.scores.get(block.id, NEUTRAL_SCORE) == -1 for block in visible_blocks
+        ):
+            issues.append(
+                _issue(
+                    resource, "all_blocks_impossible", all_impossible_message, severity="warning"
+                )
+            )
+    return list(entries.values())
+
+
+def _validate_class_availability(
+    parsed: ParsedResourceFile,
+    snapshot: ImportSnapshot,
+    class_names: set[tuple[str, str]],
+    class_ids: dict[tuple[str, str], int],
+    issues: list[BulkImportIssue],
+) -> tuple[ClassAvailabilityImport, ...]:
+    def resolve(row: dict, issues: list[BulkImportIssue]) -> _AvailabilityTarget | None:
+        course = _value(row, "course_abbreviation").upper()
+        class_name = _value(row, "class_name")
+        key = (course, _key(class_name))
+        if key not in class_names:
+            issues.append(
+                _issue(
+                    CLASS_AVAILABILITY,
+                    "class_reference_missing",
+                    "A turma referenciada não existe nesse curso.",
+                    line=int(row["line"]),
+                    field="class_name",
+                )
+            )
+            return None
+        return _AvailabilityTarget(class_ids.get(key), key, (course, class_name))
+
+    merged = _validate_availability(
+        CLASS_AVAILABILITY,
+        parsed,
+        snapshot,
+        snapshot.class_availability,
+        resolve,
+        issues,
+        duplicate_code="duplicate_class_day",
+        duplicate_message="Esta turma já tem uma linha para este dia.",
+        all_impossible_message=(
+            "A turma fica com todos os blocos em Impossível. "
+            "Se tiver aulas, a geração do horário fica bloqueada."
+        ),
+    )
     return tuple(
-        ClassAvailabilityImport(*first_row_by_class[key], scores_by_class[key])
-        for key in scores_by_class
+        ClassAvailabilityImport(
+            entry.target.identity[0],
+            entry.target.identity[1],
+            entry.line,
+            entry.scores,
+            entry.changed_blocks,
+        )
+        for entry in merged
+    )
+
+
+def _validate_teacher_availability(
+    parsed: ParsedResourceFile,
+    snapshot: ImportSnapshot,
+    batch_teachers: tuple[TeacherImport, ...],
+    issues: list[BulkImportIssue],
+) -> tuple[TeacherAvailabilityImport, ...]:
+    existing = {_email(teacher.email): teacher for teacher in snapshot.teachers}
+    batch_names = {_email(teacher.email): teacher.name for teacher in batch_teachers}
+
+    def resolve(row: dict, issues: list[BulkImportIssue]) -> _AvailabilityTarget | None:
+        email = _email(_value(row, "teacher_email"))
+        line = int(row["line"])
+        # Resolution order (D04, D07, D08): missing email, then inactive, then active.
+        if not email or (email not in existing and email not in batch_names):
+            issues.append(
+                _issue(
+                    TEACHER_AVAILABILITY,
+                    "teacher_reference_missing",
+                    "Não existe nenhum professor com este email.",
+                    line=line,
+                    field="teacher_email",
+                )
+            )
+            return None
+        if email in batch_names:
+            # A teacher created in the same batch starts from an all-neutral grid (D08).
+            return _AvailabilityTarget(None, email, (batch_names[email], email))
+        teacher = existing[email]
+        if not teacher.is_active:
+            issues.append(
+                _issue(
+                    TEACHER_AVAILABILITY,
+                    "teacher_inactive",
+                    "Este professor está arquivado ou já não leciona. Retire a linha ou "
+                    "reative-o na Equipa.",
+                    line=line,
+                    field="teacher_email",
+                )
+            )
+            return None
+        return _AvailabilityTarget(teacher.id, email, (teacher.name, email))
+
+    merged = _validate_availability(
+        TEACHER_AVAILABILITY,
+        parsed,
+        snapshot,
+        snapshot.teacher_availability,
+        resolve,
+        issues,
+        duplicate_code="duplicate_teacher_day",
+        duplicate_message="Este professor já tem uma linha para este dia.",
+        all_impossible_message=(
+            "O professor fica com todos os blocos em Impossível. "
+            "Se tiver aulas, a geração do horário fica bloqueada."
+        ),
+    )
+    return tuple(
+        TeacherAvailabilityImport(
+            entry.target.identity[0],
+            entry.target.identity[1],
+            entry.line,
+            entry.scores,
+            entry.changed_blocks,
+        )
+        for entry in merged
     )
 
 
@@ -1269,14 +1474,24 @@ def validate_import(
         item.abbreviation.upper() for item in snapshot.courses
     }
     class_names = {(item.course_abbreviation.upper(), _key(item.name)) for item in snapshot.classes}
+    class_ids = {
+        (item.course_abbreviation.upper(), _key(item.name)): item.id for item in snapshot.classes
+    }
     class_names.update(
         (course.abbreviation.upper(), _key(cls.name))
         for course in courses
         for cls in course.classes
     )
     class_availability = (
-        _validate_class_availability(files[CLASS_AVAILABILITY], snapshot, class_names, issues)
+        _validate_class_availability(
+            files[CLASS_AVAILABILITY], snapshot, class_names, class_ids, issues
+        )
         if CLASS_AVAILABILITY in files
+        else ()
+    )
+    teacher_availability = (
+        _validate_teacher_availability(files[TEACHER_AVAILABILITY], snapshot, teachers, issues)
+        if TEACHER_AVAILABILITY in files
         else ()
     )
     teacher_emails = {_email(item.email) for item in teachers}
@@ -1360,8 +1575,11 @@ def validate_import(
         "competencies": sum(len(values) for values in inferred.values()),
         "assignments": len(assignments),
         CLASS_AVAILABILITY: len(class_availability),
+        TEACHER_AVAILABILITY: len(teacher_availability),
     }
-    preview = tuple(
+    # Availability rows sit outside the generic 100-item cut (D15); the interface
+    # tables show every class and teacher row they receive.
+    generic_preview = (
         [{"resource": "rooms", "name": item.name, "line": item.line} for item in rooms]
         + [
             {
@@ -1392,17 +1610,37 @@ def validate_import(
             }
             for item in assignments
         ]
-        + [
-            {
-                "resource": CLASS_AVAILABILITY,
-                "course_abbreviation": item.course_abbreviation,
-                "class_name": item.class_name,
-                "non_neutral_blocks": len(item.scores),
-                "line": item.line,
-            }
-            for item in class_availability
-        ]
-    )[:100]
+    )
+    availability_preview = [
+        {
+            "resource": CLASS_AVAILABILITY,
+            "course_abbreviation": item.course_abbreviation,
+            "class_name": item.class_name,
+            "changed_blocks": item.changed_blocks,
+            "line": item.line,
+        }
+        for item in sorted(
+            class_availability,
+            key=lambda item: (-item.changed_blocks, item.course_abbreviation, item.class_name),
+        )
+    ] + [
+        {
+            "resource": TEACHER_AVAILABILITY,
+            "teacher_name": item.teacher_name,
+            "teacher_email": item.teacher_email,
+            "changed_blocks": item.changed_blocks,
+            "line": item.line,
+        }
+        for item in sorted(
+            teacher_availability,
+            key=lambda item: (
+                -item.changed_blocks,
+                item.teacher_name.casefold(),
+                item.teacher_email,
+            ),
+        )
+    ]
+    preview = tuple(generic_preview[:100] + availability_preview)
     return ValidationResult(
         tuple(issues),
         rooms,
@@ -1411,6 +1649,7 @@ def validate_import(
         teachers,
         assignments,
         class_availability,
+        teacher_availability,
         counts,
         preview,
         {email: tuple(sorted(values, key=_key)) for email, values in inferred.items()},

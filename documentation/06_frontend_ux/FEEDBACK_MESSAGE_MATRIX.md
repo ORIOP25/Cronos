@@ -92,6 +92,7 @@ Other client responses stay in context.
 | Validate or commit an import | Transient failure | Network, 429, 5xx | Toast, 6 s | `BulkImport` | Retry |
 | Import issues | Structured list | — | List panel | `BulkImport` | Consult each issue |
 | Class availability import issue | Cell error | `level_invalid` and others | List panel; the field is the hour column title | `BulkImport` | Fix the cell |
+| Teacher availability import issue | Row or cell error | `level_invalid`, `teacher_reference_missing`, `teacher_inactive`, `duplicate_teacher_day` | List panel; the field is the teacher email or the hour column title | `BulkImport` | Fix the row or cell |
 | Invite, sync, or restore a member | Success | — | Toast, 4 s | `Members` | — |
 | Member action | Transient failure | Network, 429, 5xx | Toast, 6 s | `Members` | Retry |
 | Member action | Access block | `member_sync_error` and others | Banner in context | `Members` | Resolve the sync |

@@ -47,4 +47,30 @@ describe('bulk import invalidations', () => {
       expect.arrayContaining([['class-availability', 'org-a']]),
     )
   })
+
+  it('invalidates every teacher availability reader after a commit', async () => {
+    const { queryClient, wrapper } = createHarness()
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
+    const mutation = renderHook(() => useCommitBulkImport(), { wrapper })
+    const file = new File(
+      ['x'],
+      'Cronos_DisponibilidadeProfessores_Template.csv',
+      { type: 'text/csv' },
+    )
+
+    await act(() => mutation.result.current.mutateAsync({ teacher_availability: file }))
+
+    await waitFor(() => expect(invalidate).toHaveBeenCalled())
+    expect(invalidate.mock.calls.map(([options]) => options.queryKey)).toEqual(
+      expect.arrayContaining([
+        ['teacher-availability', 'org-a'],
+        ['substitute-recommendations', 'org-a'],
+        ['substitute-diagnostics', 'org-a'],
+        ['occurrences', 'org-a'],
+        ['teacher-progress', 'org-a'],
+        ['my-availability', 'org-a'],
+        ['heatmap', 'org-a'],
+      ]),
+    )
+  })
 })
