@@ -202,6 +202,98 @@ describe('GenerationStatusPanel', () => {
     expect(screen.getByRole('link', { name: /abrir configuração/i })).toHaveAttribute('href', '/config')
   })
 
+  it('names the joint classes and the subject from the typed diagnostics', () => {
+    useScheduleTaskStatus.mockReturnValue({
+      data: {
+        status: 'INFEASIBLE',
+        result_code: 'JOINT_NO_COMMON_TIME',
+        diagnostics: [
+          { code: 'JOINT_NO_COMMON_TIME', minimum_missing_minutes: null, class_id: 5, class_name: 'TGEI 25/28', course_id: 7, subject_name: 'Matemática' },
+          { code: 'JOINT_NO_COMMON_TIME', minimum_missing_minutes: null, class_id: 6, class_name: 'TM 24/27', course_id: 8, subject_name: 'Matemática' },
+        ],
+      },
+      isLoading: false,
+    })
+
+    render(
+      <MemoryRouter>
+        <GenerationStatusPanel jobId={40} />
+      </MemoryRouter>,
+    )
+
+    expect(
+      screen.getByText('As turmas TGEI 25/28, TM 24/27 não têm horas livres em comum para Matemática.'),
+    ).toBeInTheDocument()
+  })
+
+  it('falls back to the generic joint message when a member class name is unresolved', () => {
+    useScheduleTaskStatus.mockReturnValue({
+      data: {
+        status: 'INFEASIBLE',
+        result_code: 'JOINT_NO_COMMON_TIME',
+        diagnostics: [
+          { code: 'JOINT_NO_COMMON_TIME', minimum_missing_minutes: null, class_id: 5, class_name: 'TGEI 25/28', course_id: 7, subject_name: 'Matemática' },
+          { code: 'JOINT_NO_COMMON_TIME', minimum_missing_minutes: null, class_id: 6, class_name: null, course_id: null, subject_name: 'Matemática' },
+        ],
+      },
+      isLoading: false,
+    })
+
+    render(
+      <MemoryRouter>
+        <GenerationStatusPanel jobId={41} />
+      </MemoryRouter>,
+    )
+
+    expect(screen.getByText(/As turmas da aula conjunta não têm horas livres em comum\./)).toBeInTheDocument()
+    expect(screen.queryByText(/TGEI 25\/28/)).toBeNull()
+  })
+
+  it('falls back to the generic joint message when the subject name is unresolved', () => {
+    useScheduleTaskStatus.mockReturnValue({
+      data: {
+        status: 'INFEASIBLE',
+        result_code: 'JOINT_NO_COMMON_TIME',
+        diagnostics: [
+          { code: 'JOINT_NO_COMMON_TIME', minimum_missing_minutes: null, class_id: 5, class_name: 'TGEI 25/28', course_id: 7, subject_name: null },
+          { code: 'JOINT_NO_COMMON_TIME', minimum_missing_minutes: null, class_id: 6, class_name: 'TM 24/27', course_id: 8, subject_name: null },
+        ],
+      },
+      isLoading: false,
+    })
+
+    render(
+      <MemoryRouter>
+        <GenerationStatusPanel jobId={42} />
+      </MemoryRouter>,
+    )
+
+    expect(screen.getByText(/As turmas da aula conjunta não têm horas livres em comum\./)).toBeInTheDocument()
+  })
+
+  it('renders a hostile class name as text, never as markup', () => {
+    useScheduleTaskStatus.mockReturnValue({
+      data: {
+        status: 'INFEASIBLE',
+        result_code: 'JOINT_NO_COMMON_TIME',
+        diagnostics: [
+          { code: 'JOINT_NO_COMMON_TIME', minimum_missing_minutes: null, class_id: 5, class_name: '<img src=x onerror=alert(1)>', course_id: 7, subject_name: 'Matemática' },
+          { code: 'JOINT_NO_COMMON_TIME', minimum_missing_minutes: null, class_id: 6, class_name: 'TM 24/27', course_id: 8, subject_name: 'Matemática' },
+        ],
+      },
+      isLoading: false,
+    })
+
+    const { container } = render(
+      <MemoryRouter>
+        <GenerationStatusPanel jobId={43} />
+      </MemoryRouter>,
+    )
+
+    expect(container.querySelector('img')).toBeNull()
+    expect(screen.getByText(/<img src=x onerror=alert\(1\)>/)).toBeInTheDocument()
+  })
+
   it('explains a joint lesson with no common free time from stop_reason', () => {
     useScheduleTaskStatus.mockReturnValue({
       data: { status: 'FAILED', stop_reason: 'JOINT_NO_COMMON_TIME' },

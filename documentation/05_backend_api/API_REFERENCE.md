@@ -179,7 +179,7 @@ Each `affected_availabilities` entry of `POST /school/grid-changes/preview` incl
 | `PUT` | `/api/v1/schedule/lessons/{lesson_id}/log` | Active; assigned teacher or admin |
 
 Scheduler status exposes `active_proposal_id` for the approved proposal linked to the active version, or `null` when absent.
-`GET /scheduler/jobs/{job_id}` returns a `diagnostics` list with one proven entry per affected class.
+`GET /scheduler/jobs/{job_id}` returns a `diagnostics` list with one proven entry per affected class. A proven joint isolation (`JOINT_NO_COMMON_TIME`) returns one entry per member class, each with the current class name and subject name, so the client can name every class and the subject. A class or subject deleted before the read keeps a null name and the client shows the generic message.
 Weekly schedule reads return published lesson intervals, resource identifiers, module projections, and operational log state.
 There is no separate proposal-lesson listing route.
 The API has no observability summary routes, no `POST /api/v1/occurrences/` create route, and no `GET /api/v1/scheduler/drafts/{id}/lessons` route.

@@ -151,13 +151,15 @@ def joint_diagnosis(unit: Assignment) -> Diagnosis:
     """``JOINT_NO_COMMON_TIME`` for an isolated joint unit, with its classes.
 
     The snapshot carries no names, so the message uses ids and the structured
-    ``affected_class_ids`` and ``scope`` carry the unit context (WBS 3.9).
+    ``affected_class_ids``, ``affected_subject_id`` and ``scope`` carry the unit
+    context (WBS 3.9).
     """
     return replace(
         diagnose_joint_no_common_time(
             str(unit.subject_id), tuple(str(class_id) for class_id in unit.class_ids)
         ),
         affected_class_ids=tuple(unit.class_ids),
+        affected_subject_id=unit.subject_id,
         scope=f"JOINT_UNIT:{unit.subject_id}",
     )
 

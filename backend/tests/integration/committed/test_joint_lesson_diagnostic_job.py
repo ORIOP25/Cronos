@@ -19,6 +19,7 @@ from app.scheduler.infrastructure.jobs import (
     request_cancellation,
 )
 from app.scheduler.infrastructure.models import SchedulerJobV1
+from app.scheduler.infrastructure.queries import get_job
 from app.services.scheduler_state_service import SchedulerStateService
 from tests._support.scheduler_v1 import MOMENT, seed_generatable_school, seed_joint_school
 
@@ -85,6 +86,33 @@ async def test_an_isolated_joint_unit_persists_the_joint_diagnosis_code(db_sessi
     assert job.finished_at is not None
 
 
+async def test_an_isolated_joint_unit_persists_class_and_subject_ids(db_session, monkeypatch):
+    seed = await seed_joint_school(db_session)
+    await _isolate_first_class(db_session, seed)
+    queued = await _enqueue(db_session, seed.base, key="joint-structured")
+
+    await _run_worker(monkeypatch)
+
+    job = await db_session.get(SchedulerJobV1, queued.job.id)
+    await db_session.refresh(job)
+    assert job.status == "INFEASIBLE"
+    joint = [row for row in (job.diagnostics_json or []) if row["code"] == JOINT_CODE]
+    assert len(joint) == 1
+    assert set(joint[0]["affected_class_ids"]) == {seed.base.class_.id, seed.second_class.id}
+    assert joint[0]["affected_subject_id"] == seed.base.subject.id
+
+    payload = await get_job(db_session, seed.base.organization.id, queued.job.id)
+
+    diagnostics = payload["diagnostics"]
+    assert {row["code"] for row in diagnostics} == {JOINT_CODE}
+    assert {row["class_name"] for row in diagnostics} == {"A", "B"}
+    assert {row["class_id"] for row in diagnostics} == {
+        seed.base.class_.id,
+        seed.second_class.id,
+    }
+    assert all(row["subject_name"] == seed.base.subject.name for row in diagnostics)
+
+
 async def test_a_generic_deficit_keeps_the_generic_job_code(db_session, monkeypatch):
     seed = await seed_generatable_school(db_session, module_minutes=100000)
     queued = await _enqueue(db_session, seed, key="generic-deficit")
@@ -103,6 +131,48 @@ async def _claim(db_session, queued):
     assert claim is not None
     assert claim.job_id == queued.job.id
     return claim
+
+
+async def test_joint_diagnostics_never_resolve_a_foreign_organization(db_session):
+    seed = await seed_joint_school(db_session)
+    foreign = await seed_generatable_school(
+        db_session, clerk_user_id="foreign_joint", clerk_org_id="foreign_joint_org"
+    )
+    queued = await _enqueue(db_session, seed.base, key="joint-foreign")
+    claim = await _claim(db_session, queued)
+
+    await finish_job(
+        db_session,
+        organization_id=seed.base.organization.id,
+        job_id=queued.job.id,
+        attempt_token=claim.attempt_token,
+        status="INFEASIBLE",
+        result_code=JOINT_CODE,
+        stop_reason=JOINT_CODE,
+        diagnostics=[
+            {
+                "code": JOINT_CODE,
+                "minimum_missing_minutes": None,
+                "affected_class_ids": [foreign.class_.id],
+                "affected_subject_id": foreign.subject.id,
+            }
+        ],
+        now_utc=MOMENT,
+    )
+    await db_session.commit()
+
+    payload = await get_job(db_session, seed.base.organization.id, queued.job.id)
+
+    assert payload["diagnostics"] == [
+        {
+            "code": JOINT_CODE,
+            "minimum_missing_minutes": None,
+            "class_id": foreign.class_.id,
+            "class_name": None,
+            "course_id": None,
+            "subject_name": None,
+        }
+    ]
 
 
 async def test_finish_job_still_prefers_cancellation_over_the_joint_code(db_session):
@@ -157,3 +227,24 @@ async def test_finish_job_still_prefers_staleness_over_the_joint_code(db_session
     job = await db_session.get(SchedulerJobV1, queued.job.id)
     await db_session.refresh(job)
     assert job.result_code == "STALE"
+
+
+async def test_http_poll_reads_the_joint_class_names_and_subject(
+    async_client, db_session, monkeypatch
+):
+    seed = await seed_joint_school(db_session)
+    await _isolate_first_class(db_session, seed)
+    queued = await _enqueue(db_session, seed.base, key="joint-http")
+
+    await _run_worker(monkeypatch)
+
+    response = await async_client.get(
+        f"/api/v1/scheduler/jobs/{queued.job.id}",
+        headers={"Authorization": "Bearer v1_admin"},
+    )
+
+    assert response.status_code == 200
+    diagnostics = response.json()["diagnostics"]
+    assert {row["code"] for row in diagnostics} == {JOINT_CODE}
+    assert {row["class_name"] for row in diagnostics} == {"A", "B"}
+    assert all(row["subject_name"] == seed.base.subject.name for row in diagnostics)

@@ -13,9 +13,10 @@ from dataclasses import replace
 from time import monotonic
 
 from app.scheduler.application.generation import GenerationResult, generate_complete
-from app.scheduler.application.recovery import RepairResult
+from app.scheduler.application.recovery import RepairResult, repair_schedule
 from app.scheduler.domain.candidate import (
     Assignment,
+    CandidateSchedule,
     PlanningSnapshot,
     SchedulingStrategy,
     Unavailability,
@@ -32,6 +33,7 @@ from app.scheduler.domain.diagnostics import (
 )
 from app.scheduler.domain.projection import ModuleRequirement
 from app.scheduler.domain.quality import SearchEvidence
+from app.scheduler.domain.recovery import RecoveryPolicy
 from app.scheduler.domain.results import OUTCOME_CANCELLED, OUTCOME_INFEASIBLE
 from app.scheduler.infrastructure.recovery_construction import construct_recovery
 from app.scheduler.infrastructure.search import search_complete_schedule
@@ -79,6 +81,24 @@ def test_isolated_joint_unit_is_diagnosed_as_no_common_time():
     assert "1" in diagnoses[0].message and "2" in diagnoses[0].message
 
 
+def test_isolated_joint_diagnosis_keeps_the_affected_subject_id():
+    periods = (period(0, start=9, end=10), period(0, start=10, end=11))
+    target = joint_unit(
+        periods,
+        unavailable=(
+            Unavailability(UnavailableResource.CLASS, 1, periods[0]),
+            Unavailability(UnavailableResource.CLASS, 2, periods[1]),
+        ),
+    )
+
+    diagnoses = diagnose_capacity(target, periods)
+
+    joint = next(row for row in diagnoses if row.code is DiagnosisCode.JOINT_NO_COMMON_TIME)
+    # The unit's subject (1) travels with the diagnosis so the read model can
+    # resolve its current name (WBS 3.9).
+    assert joint.affected_subject_id == 1
+
+
 def test_search_returns_infeasible_with_the_joint_message():
     periods = (period(0, start=9, end=10), period(0, start=10, end=11))
     target = joint_unit(
@@ -115,6 +135,55 @@ def test_generate_complete_reports_an_isolated_joint_unit_with_code_and_message(
     assert result.message == expected.message
     assert result.evidence is not None
     assert result.evidence.stop_reason == "JOINT_NO_COMMON_TIME"
+
+
+def test_generate_complete_hands_the_joint_diagnosis_to_the_worker():
+    periods = (period(0, start=9, end=10), period(0, start=10, end=11))
+    target = joint_unit(
+        periods,
+        unavailable=(
+            Unavailability(UnavailableResource.CLASS, 1, periods[0]),
+            Unavailability(UnavailableResource.CLASS, 2, periods[1]),
+        ),
+    )
+
+    result = generate_complete(
+        target, periods, search=search_complete_schedule, time_limit_seconds=10
+    )
+
+    joint = [row for row in result.diagnoses if row.code is DiagnosisCode.JOINT_NO_COMMON_TIME]
+    assert len(joint) == 1
+    assert joint[0].affected_class_ids == (1, 2)
+    assert joint[0].affected_subject_id == 1
+
+
+def test_repair_schedule_reports_the_joint_diagnosis_with_the_subject_id():
+    periods = (period(0, start=9, end=10), period(0, start=10, end=11))
+    target = replace(
+        joint_unit(
+            periods,
+            unavailable=(
+                Unavailability(UnavailableResource.CLASS, 1, periods[0]),
+                Unavailability(UnavailableResource.CLASS, 2, periods[1]),
+            ),
+        ),
+        strategy=SchedulingStrategy.ADAPTIVE_RECOVERY,
+    )
+    policy = RecoveryPolicy("test", (1, 2), 1, 1, 1, 1, 0, 0, 0, 0)
+
+    result = repair_schedule(
+        target,
+        periods,
+        CandidateSchedule(()),
+        search=lambda *args, **kwargs: None,
+        policy=policy,
+    )
+
+    assert result.outcome == OUTCOME_INFEASIBLE
+    joint = [row for row in result.diagnoses if row.code is DiagnosisCode.JOINT_NO_COMMON_TIME]
+    assert len(joint) == 1
+    assert joint[0].affected_class_ids == (1, 2)
+    assert joint[0].affected_subject_id == 1
 
 
 def test_generate_complete_keeps_a_general_deficit_generic():

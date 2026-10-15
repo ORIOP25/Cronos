@@ -84,7 +84,7 @@ Other client responses stay in context.
 | Approve or reject a proposal | Success | — | Toast, 4 s | `Schedules` | — |
 | Approve a proposal | Stale proposal | `proposal_stale` | Persistent banner | `Schedules` | Generate a new proposal |
 | Generation failure | Known failure | `NO_ELIGIBLE_ROOM` and others | `FailureState` in context | `Schedules` | Retry or open rooms |
-| Generation failure | Joint classes share no free time | `JOINT_NO_COMMON_TIME` | Banner in context | `Schedules` | Review class and teacher availability |
+| Generation failure | Joint classes share no free time | `JOINT_NO_COMMON_TIME` | Banner in context: "As turmas {turmas} não têm horas livres em comum para {disciplina}." The generic message replaces it when a class or subject name is unresolved | `Schedules` | Review class and teacher availability |
 | Generation failure | Joint room too small for the sum of classes | `JOINT_ROOM_CAPACITY` | Banner in context | `Schedules` | Adjust rooms |
 | Generation failure | Proven per-class deficit | `INSUFFICIENT_CLASS_TIME`, `INSUFFICIENT_INTERSECTION` | `FailureState` in context | `Schedules` | Review class availability |
 | Validate or commit an import | Success | — | Toast, 4 s | `BulkImport` | — |

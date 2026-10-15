@@ -184,6 +184,7 @@ def generate_complete(
                     certified_stages=0,
                     stop_reason=isolation.code.value,
                 ),
+                diagnoses=(isolation,),
                 wall_time_seconds=monotonic() - started,
             )
         details = ", ".join(
