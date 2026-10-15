@@ -629,3 +629,204 @@ async def test_bulk_import_commit_applies_the_grid_to_a_class_created_in_the_sam
     assert klass is not None
     rows = await _class_availability_rows(db_session, klass.id)
     assert rows and set(rows.values()) == {-1}
+
+
+def _teacher_availability_header(hours: list[str]) -> str:
+    return "Nome do professor;Email do professor;Dia;" + ";".join(hours)
+
+
+async def _seed_teacher(
+    db_session: AsyncSession,
+    *,
+    name: str,
+    email: str,
+    can_teach: bool = True,
+    can_admin: bool = False,
+    archived: bool = False,
+) -> models.Teacher:
+    account = models.User(email=email, name=name)
+    db_session.add(account)
+    await db_session.flush()
+    membership = models.OrganizationMembership(
+        organization_id=1,
+        account_id=account.id,
+        organization_display_name=name,
+        lifecycle_status=(
+            models.MembershipLifecycleStatus.archived
+            if archived
+            else models.MembershipLifecycleStatus.active
+        ),
+        access_status=models.MembershipAccessStatus.none,
+        teacher_access_mode=(None if can_admin else models.TeacherAccessMode.scheduler_only),
+        can_admin=can_admin,
+        can_teach=can_teach,
+    )
+    db_session.add(membership)
+    await db_session.flush()
+    teacher = models.Teacher(organization_id=1, organization_membership_id=membership.id)
+    db_session.add(teacher)
+    await db_session.commit()
+    return teacher
+
+
+async def test_teacher_availability_template_lists_active_teachers_and_current_levels(
+    async_client: AsyncClient, clerk_admin_headers: dict, db_session: AsyncSession
+):
+    blocks = await _prepare_class_grid(async_client, clerk_admin_headers)
+    hours = _grid_hours(blocks)
+    teacher = await _seed_teacher(db_session, name="Ana Silva", email="ana.silva@import.test")
+    await _seed_teacher(db_session, name="Arquivada", email="arch@import.test", archived=True)
+    await _seed_teacher(
+        db_session,
+        name="Sem Capacidade",
+        email="lost@import.test",
+        can_teach=False,
+        can_admin=True,
+    )
+    monday_first = next(
+        block
+        for block in blocks
+        if block["day_of_week"] == 0 and block["start_time"].startswith(hours[0])
+    )
+    db_session.add(
+        models.Availability(
+            organization_id=1, teacher_id=teacher.id, timeslot_id=monday_first["id"], score=-1
+        )
+    )
+    await db_session.commit()
+
+    response = await async_client.get(
+        f"{API}/imports/templates/teacher_availability", headers=clerk_admin_headers
+    )
+
+    assert response.status_code == 200
+    assert response.content.startswith(b"\xef\xbb\xbf")
+    assert (
+        'filename="Cronos_DisponibilidadeProfessores_Template.csv"'
+        in response.headers["content-disposition"]
+    )
+    text = response.content.decode("utf-8-sig")
+    lines = text.splitlines()
+    assert lines[0] == _teacher_availability_header(hours)
+    assert "ana.silva@import.test" in text
+    assert "arch@import.test" not in text
+    assert "lost@import.test" not in text
+    monday = next(line for line in lines[1:] if line.split(";")[2] == "Segunda")
+    assert monday.startswith("Ana Silva;ana.silva@import.test;Segunda;")
+    assert "Impossível" in monday
+
+
+async def test_teacher_availability_template_uses_the_visible_grid_with_a_pending_version(
+    async_client: AsyncClient, clerk_admin_headers: dict, db_session: AsyncSession
+):
+    blocks = await _prepare_class_grid(async_client, clerk_admin_headers)
+    hours = _grid_hours(blocks)
+    await _seed_teacher(db_session, name="Ana Silva", email="ana.silva@import.test")
+    pending = models.GridVersion(
+        organization_id=1,
+        effective_date=date(2030, 1, 1),
+        state=models.GridVersionState.PENDING,
+    )
+    db_session.add(pending)
+    await db_session.flush()
+    db_session.add(
+        models.Timeslot(
+            organization_id=1,
+            grid_version_id=pending.id,
+            day_of_week=0,
+            start_time=time(14, 0),
+            end_time=time(14, 50),
+        )
+    )
+    await db_session.commit()
+
+    response = await async_client.get(
+        f"{API}/imports/templates/teacher_availability", headers=clerk_admin_headers
+    )
+
+    assert response.status_code == 200
+    header = response.content.decode("utf-8-sig").splitlines()[0]
+    assert header == _teacher_availability_header(hours)
+    assert "14:00" not in header
+
+
+async def test_teacher_availability_template_without_blocks_returns_the_exact_message(
+    async_client: AsyncClient, clerk_admin_headers: dict
+):
+    response = await async_client.get(
+        f"{API}/imports/templates/teacher_availability", headers=clerk_admin_headers
+    )
+
+    assert response.status_code == 400
+    detail = response.json()["detail"]
+    assert detail["code"] == "bad_request"
+    # The client maps this whitelisted reason to the exact Portuguese message.
+    assert detail["context"]["reason"] == "no_grid_blocks"
+
+
+async def test_teacher_availability_template_without_active_teachers_is_header_only(
+    async_client: AsyncClient, clerk_admin_headers: dict, db_session: AsyncSession
+):
+    blocks = await _prepare_class_grid(async_client, clerk_admin_headers)
+    hours = _grid_hours(blocks)
+    await _seed_teacher(db_session, name="Arquivada", email="arch@import.test", archived=True)
+    await _seed_teacher(
+        db_session,
+        name="Sem Capacidade",
+        email="lost@import.test",
+        can_teach=False,
+        can_admin=True,
+    )
+
+    response = await async_client.get(
+        f"{API}/imports/templates/teacher_availability", headers=clerk_admin_headers
+    )
+
+    assert response.status_code == 200
+    assert response.content.decode("utf-8-sig").splitlines() == [
+        _teacher_availability_header(hours)
+    ]
+
+
+async def test_teacher_availability_validation_rejects_archived_and_capability_lost_teachers(
+    async_client: AsyncClient, clerk_admin_headers: dict, db_session: AsyncSession
+):
+    blocks = await _prepare_class_grid(async_client, clerk_admin_headers)
+    hours = _grid_hours(blocks)
+    await _seed_teacher(db_session, name="Ana Silva", email="ana.silva@import.test")
+    await _seed_teacher(db_session, name="Arquivada", email="arch@import.test", archived=True)
+    await _seed_teacher(
+        db_session,
+        name="Sem Capacidade",
+        email="lost@import.test",
+        can_teach=False,
+        can_admin=True,
+    )
+    cells = ";".join(["Neutro"] + ["" for _ in hours[1:]])
+    content = (
+        _teacher_availability_header(hours)
+        + "\r\n"
+        + f"Ana Silva;ana.silva@import.test;Segunda;{cells}\r\n"
+        + f"Arquivada;arch@import.test;Segunda;{cells}\r\n"
+        + f"Sem Capacidade;lost@import.test;Segunda;{cells}\r\n"
+    )
+
+    response = await async_client.post(
+        f"{API}/imports/validate",
+        json={
+            "files": {
+                "teacher_availability": csv_payload(
+                    "Cronos_DisponibilidadeProfessores_Template.csv", content
+                )
+            }
+        },
+        headers=clerk_admin_headers,
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["can_commit"] is False
+    assert payload["preview"]["counts"]["teacher_availability"] == 1
+    inactive = [issue for issue in payload["issues"] if issue["code"] == "teacher_inactive"]
+    assert len(inactive) == 2
+    assert all(issue["field"] == "teacher_email" for issue in inactive)

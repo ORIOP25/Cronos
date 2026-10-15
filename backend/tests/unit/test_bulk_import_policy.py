@@ -994,3 +994,50 @@ def test_availability_preview_keeps_every_row_beyond_the_generic_cap():
     teacher_items = [item for item in result.preview if item["resource"] == TEACHER_AVAILABILITY]
     assert len(room_items) == 100
     assert len(teacher_items) == 120
+
+
+def test_changed_blocks_is_zero_when_the_stored_grid_already_matches():
+    timeslots = [
+        ExistingTimeslot(id=10, day_of_week=0, start_time=time(8, 30)),
+        ExistingTimeslot(id=11, day_of_week=0, start_time=time(9, 20)),
+    ]
+    teacher_file = parse_resource_file(
+        TEACHER_AVAILABILITY,
+        "disponibilidade.csv",
+        encoded(
+            "Nome do professor;Email do professor;Dia;08:30;09:20\r\n"
+            "Ana;ana@escola.pt;Segunda;Impossível;Evitar\r\n"
+        ),
+    )
+    class_file = parse_resource_file(
+        CLASS_AVAILABILITY,
+        "disponibilidade.csv",
+        encoded(
+            "Sigla do curso;Nome da turma;Dia;08:30;09:20\r\n"
+            "TGEI;TGEI 25/28;Segunda;Impossível;Evitar\r\n"
+        ),
+    )
+
+    teacher_result = validate_import(
+        {TEACHER_AVAILABILITY: teacher_file},
+        ImportSnapshot(
+            teachers=[_teacher()],
+            timeslots=timeslots,
+            teacher_availability={1: {10: -1, 11: 0}},
+        ),
+    )
+    class_result = validate_import(
+        {CLASS_AVAILABILITY: class_file},
+        ImportSnapshot(
+            classes=[
+                ExistingClass(id=1, course_id=1, course_abbreviation="TGEI", name="TGEI 25/28")
+            ],
+            timeslots=timeslots,
+            class_availability={1: {10: -1, 11: 0}},
+        ),
+    )
+
+    assert teacher_result.can_commit is True
+    assert class_result.can_commit is True
+    assert teacher_result.teacher_availability[0].changed_blocks == 0
+    assert class_result.class_availability[0].changed_blocks == 0

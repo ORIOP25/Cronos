@@ -24,6 +24,7 @@ from app.services.bulk_import_policy import (
     CLASS_AVAILABILITY,
     IMPORT_RESOURCES,
     MAX_TOTAL_BYTES,
+    TEACHER_AVAILABILITY,
     BulkImportIssue,
     ExistingAssignment,
     ExistingClass,
@@ -42,6 +43,15 @@ from app.services.bulk_import_policy import (
 )
 
 NO_GRID_BLOCKS_MESSAGE = "A escola ainda não configurou blocos."
+WEEKLY_AVAILABILITY_RESOURCES = (CLASS_AVAILABILITY, TEACHER_AVAILABILITY)
+
+
+def _teacher_is_active(membership: models.OrganizationMembership) -> bool:
+    """A teacher is active with an active membership and the teacher capability."""
+    return (
+        membership.lifecycle_status == models.MembershipLifecycleStatus.active
+        and membership.can_teach
+    )
 
 
 async def _visible_timeslots(db: AsyncSession, organization_id: int) -> list[models.Timeslot]:
@@ -52,7 +62,9 @@ async def _visible_timeslots(db: AsyncSession, organization_id: int) -> list[mod
     )
 
 
-async def _class_availability_template(db: AsyncSession, organization_id: int) -> bytes:
+async def _require_visible_timeslots(
+    db: AsyncSession, organization_id: int
+) -> list[models.Timeslot]:
     timeslots = await _visible_timeslots(db, organization_id)
     if not timeslots:
         raise AppError(
@@ -63,6 +75,32 @@ async def _class_availability_template(db: AsyncSession, organization_id: int) -
             # never echoes raw server text.
             public_context={"reason": "no_grid_blocks"},
         )
+    return timeslots
+
+
+async def _availability_scores(
+    db: AsyncSession, organization_id: int, entity_column, model
+) -> dict[int, dict[int, int]]:
+    """Load stored levels per entity from a weekly availability table."""
+    rows = (
+        await db.execute(
+            select(entity_column, model.timeslot_id, model.score).where(
+                model.organization_id == organization_id
+            )
+        )
+    ).all()
+    scores: dict[int, dict[int, int]] = {}
+    for entity_id, timeslot_id, score in rows:
+        scores.setdefault(int(entity_id), {})[int(timeslot_id)] = int(score)
+    return scores
+
+
+def _existing_timeslots(timeslots: list[models.Timeslot]) -> list[ExistingTimeslot]:
+    return [ExistingTimeslot(block.id, block.day_of_week, block.start_time) for block in timeslots]
+
+
+async def _class_availability_template(db: AsyncSession, organization_id: int) -> bytes:
+    timeslots = await _require_visible_timeslots(db, organization_id)
     class_rows = (
         await db.execute(
             select(models.Class, models.Course.abbreviation)
@@ -73,21 +111,12 @@ async def _class_availability_template(db: AsyncSession, organization_id: int) -
             )
         )
     ).all()
-    score_rows = (
-        await db.execute(
-            select(
-                models.ClassAvailability.class_id,
-                models.ClassAvailability.timeslot_id,
-                models.ClassAvailability.score,
-            ).where(models.ClassAvailability.organization_id == organization_id)
-        )
-    ).all()
-    scores: dict[int, dict[int, int]] = {}
-    for class_id, timeslot_id, score in score_rows:
-        scores.setdefault(int(class_id), {})[int(timeslot_id)] = int(score)
+    scores = await _availability_scores(
+        db, organization_id, models.ClassAvailability.class_id, models.ClassAvailability
+    )
     return render_availability_template(
         CLASS_AVAILABILITY,
-        [ExistingTimeslot(block.id, block.day_of_week, block.start_time) for block in timeslots],
+        _existing_timeslots(timeslots),
         [
             ExistingClass(item.id, item.course_id, abbreviation, item.name)
             for item, abbreviation in class_rows
@@ -96,9 +125,39 @@ async def _class_availability_template(db: AsyncSession, organization_id: int) -
     )
 
 
+async def _teacher_availability_template(db: AsyncSession, organization_id: int) -> bytes:
+    timeslots = await _require_visible_timeslots(db, organization_id)
+    teacher_rows = (
+        await db.scalars(
+            select(models.Teacher)
+            .where(models.Teacher.organization_id == organization_id)
+            .options(
+                selectinload(models.Teacher.organization_membership).selectinload(
+                    models.OrganizationMembership.account
+                )
+            )
+        )
+    ).all()
+    scores = await _availability_scores(
+        db, organization_id, models.Availability.teacher_id, models.Availability
+    )
+    return render_availability_template(
+        TEACHER_AVAILABILITY,
+        _existing_timeslots(timeslots),
+        [
+            ExistingTeacher(item.id, item.organization_membership.account.email, item.name)
+            for item in teacher_rows
+            if _teacher_is_active(item.organization_membership)
+        ],
+        scores,
+    )
+
+
 async def template_bytes(db: AsyncSession, organization_id: int, resource: str) -> bytes:
     if resource == CLASS_AVAILABILITY:
         return await _class_availability_template(db, organization_id)
+    if resource == TEACHER_AVAILABILITY:
+        return await _teacher_availability_template(db, organization_id)
     try:
         return render_template(resource)
     except KeyError as exc:
@@ -139,7 +198,9 @@ def _parsed_files(request: schemas.BulkImportFilesRequest) -> dict[str, ParsedRe
     return parsed
 
 
-async def load_snapshot(db: AsyncSession, organization_id: int) -> ImportSnapshot:
+async def load_snapshot(
+    db: AsyncSession, organization_id: int, *, include_availability: bool = False
+) -> ImportSnapshot:
     rooms = (
         await db.scalars(
             select(models.Room).where(
@@ -201,6 +262,15 @@ async def load_snapshot(db: AsyncSession, organization_id: int) -> ImportSnapsho
         )
     ).all()
     timeslots = await _visible_timeslots(db, organization_id)
+    class_availability: dict[int, dict[int, int]] = {}
+    teacher_availability: dict[int, dict[int, int]] = {}
+    if include_availability:
+        class_availability = await _availability_scores(
+            db, organization_id, models.ClassAvailability.class_id, models.ClassAvailability
+        )
+        teacher_availability = await _availability_scores(
+            db, organization_id, models.Availability.teacher_id, models.Availability
+        )
     return ImportSnapshot(
         rooms=[ExistingRoom(item.id, item.name) for item in rooms],
         subjects=[ExistingSubject(item.id, item.name) for item in subjects],
@@ -210,7 +280,12 @@ async def load_snapshot(db: AsyncSession, organization_id: int) -> ImportSnapsho
             for item, abbreviation in class_rows
         ],
         teachers=[
-            ExistingTeacher(item.id, item.organization_membership.account.email, item.name)
+            ExistingTeacher(
+                item.id,
+                item.organization_membership.account.email,
+                item.name,
+                is_active=_teacher_is_active(item.organization_membership),
+            )
             for item in teachers
         ],
         assignments=[
@@ -220,6 +295,8 @@ async def load_snapshot(db: AsyncSession, organization_id: int) -> ImportSnapsho
         timeslots=[
             ExistingTimeslot(block.id, block.day_of_week, block.start_time) for block in timeslots
         ],
+        class_availability=class_availability,
+        teacher_availability=teacher_availability,
     )
 
 
@@ -243,7 +320,11 @@ async def validate(
     organization_id: int,
 ) -> schemas.BulkImportValidationResponse:
     files = _parsed_files(request)
-    snapshot = await load_snapshot(db, organization_id)
+    snapshot = await load_snapshot(
+        db,
+        organization_id,
+        include_availability=any(resource in files for resource in WEEKLY_AVAILABILITY_RESOURCES),
+    )
     return _response(validate_import(files, snapshot))
 
 
@@ -264,7 +345,11 @@ async def commit_import(
     current_admin: Actor,
 ) -> schemas.BulkImportCommitResponse:
     files = _parsed_files(request)
-    snapshot = await load_snapshot(db, organization_id)
+    snapshot = await load_snapshot(
+        db,
+        organization_id,
+        include_availability=any(resource in files for resource in WEEKLY_AVAILABILITY_RESOURCES),
+    )
     result = validate_import(files, snapshot)
     if not result.can_commit:
         _raise_validation(result)
