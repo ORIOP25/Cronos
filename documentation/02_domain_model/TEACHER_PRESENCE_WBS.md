@@ -19,15 +19,15 @@ O spec aprovado pelo responsável de produto. Base `main` em `e787aa5`, Alembic 
 
 | PR | Slices | Estado | Ligação |
 | :--- | :--- | :--- | :--- |
-| PR 0 | spec e WBS | proposto | — |
-| PR 1 | S1 | por iniciar | — |
-| PR 2 | S2–S7 | implementado e provado localmente; por abrir e mergear | — |
+| PR 0 | spec e WBS | incluído no PR 2 | — |
+| PR 1 | S1 | merged | [#146](https://github.com/ORIOP25/Cronos/pull/146) |
+| PR 2 | S2–S7 | localmente verificado; CI pendente | — |
 | PR 3 | S8–S9 | por iniciar | — |
 | PR 4 | S10 | por iniciar | — |
 
 Provas e limitações do PR 2, medidas na árvore de trabalho `teacher-presence-impl`:
 
-- S2–S7 estão implementados e provados localmente; o PR 2 ainda não foi aberto nem mergeado. O estado de S1 (PR 1), de PR 3 e de PR 4 não muda.
+- S2–S7 estão implementados e provados localmente; o PR 2 está aberto e aguarda a CI. O PR 1 (S1) já entrou em `main` no [#146](https://github.com/ORIOP25/Cronos/pull/146); o estado de PR 3 e de PR 4 não muda.
 - Fixture de 48 turmas com regras de presença (professor 1001, mínimo 3 h, furo 2 h): a construção rápida devolve `None` em 6,2 s e o caminho exato devolve `COMPLETE` com um candidato válido em **848,4 s**. É uma limitação de desempenho perto do orçamento de 900 s, não um bloqueio; a regra e o validador não foram enfraquecidos.
 - Desvio de TDD no S6: a heurística de continuação de presença foi implementada antes do teste de falha na primeira passagem. Na correção, o teste de falha (grelha 60 min + intervalo de 5 min) foi escrito primeiro e a heurística passou a usar posições de bloco. Não há "red" retroativo.
 
