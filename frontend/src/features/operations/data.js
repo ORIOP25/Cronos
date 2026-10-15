@@ -265,6 +265,22 @@ export const useMyAvailability = ({ enabled = true } = {}) => {
 }
 
 /**
+ * Regra de presença do professor autenticado, só de leitura (D13).
+ */
+export const useMyPresence = ({ enabled = true } = {}) => {
+  const apiClient = useApiClient()
+  const orgId = useOrganization().organization?.id
+  const { isLoaded } = useAuth()
+  return useQuery({
+    queryKey: orgQueryKey('my-presence', orgId),
+    queryFn: async () => {
+      return apiClient.get('/teachers/me/presence')
+    },
+    enabled: Boolean(orgId) && isLoaded && enabled,
+  })
+}
+
+/**
  * Guardar disponibilidade do professor.
  */
 export const useSaveAvailability = () => {
@@ -315,6 +331,51 @@ export const useSaveTeacherAvailability = () => {
     onSuccess: (_, { teacherId, payload, onDate }) => {
       queryClient.setQueryData(orgQueryKey('teacher-availability', orgId, teacherId, onDate ?? null), payload)
       void invalidateOrgQueries(queryClient, orgId, [
+        'teacher-availability',
+        'substitute-recommendations',
+        'substitute-diagnostics',
+        'occurrences',
+        'dashboard',
+        'teacher-progress',
+      ])
+      void invalidatePreparationQueries(queryClient, orgId)
+    },
+  })
+}
+
+/**
+ * Regra de presença de um professor, ligada ao `teacher.id` (T02).
+ */
+export const useTeacherPresence = ({ teacherId } = {}) => {
+  const apiClient = useApiClient()
+  const orgId = useOrganization().organization?.id
+  return useQuery({
+    queryKey: orgQueryKey('teacher-presence', orgId, teacherId),
+    queryFn: async () => apiClient.get(`/teachers/${teacherId}/presence`),
+    enabled: Boolean(orgId) && Boolean(teacherId),
+    ...DYNAMIC_OPTS,
+  })
+}
+
+/**
+ * Direção define a regra de presença. Conta como alteração de disponibilidade:
+ * invalida a Equipa, a vista do próprio professor e as consultas de preparação,
+ * como a gravação da grelha.
+ */
+export const useSaveTeacherPresence = () => {
+  const apiClient = useApiClient()
+  const queryClient = useQueryClient()
+  const orgId = useOrganization().organization?.id
+  return useMutation({
+    mutationFn: async ({ teacherId, payload }) => (
+      apiClient.put(`/teachers/${teacherId}/presence`, payload)
+    ),
+    onSuccess: (data, { teacherId }) => {
+      queryClient.setQueryData(orgQueryKey('teacher-presence', orgId, teacherId), data)
+      void invalidateOrgQueries(queryClient, orgId, [
+        'teacher-presence',
+        'my-presence',
+        'members',
         'teacher-availability',
         'substitute-recommendations',
         'substitute-diagnostics',

@@ -144,4 +144,63 @@ describe('Members', () => {
     expect(screen.queryByText('Clerk role does not match the expected local access.')).toBeNull()
     expect(screen.queryByText('Fornecedor por confirmar')).toBeNull()
   })
+
+  it('shows the rule badges next to the teaching label', () => {
+    useMembersMock.mockReturnValue({
+      data: {
+        items: [{
+          id: 9,
+          teacher_id: 7,
+          organization_display_name: 'Ana Silva',
+          email: 'ana@example.test',
+          capabilities: ['teacher'],
+          teacher_access_mode: 'platform',
+          subject_ids: [],
+          access_status: 'active',
+          lifecycle_status: 'active',
+          lock_version: 1,
+          teacher_presence: { lunch_required: false, minimum_hours: 3, max_gap_hours: 1 },
+        }],
+      },
+      error: null,
+      isError: false,
+      isLoading: false,
+      refetch: vi.fn(),
+    })
+
+    renderWithRouter(<Members />)
+
+    expect(screen.getByText('Professor')).toBeInTheDocument()
+    expect(screen.getByText('Sem almoço')).toBeInTheDocument()
+    expect(screen.getByText('Mín. 3h · furo 1h')).toBeInTheDocument()
+  })
+
+  it('hides the rule badges for the default rule', () => {
+    useMembersMock.mockReturnValue({
+      data: {
+        items: [{
+          id: 10,
+          teacher_id: 8,
+          organization_display_name: 'Bruno Costa',
+          email: 'bruno@example.test',
+          capabilities: ['teacher'],
+          teacher_access_mode: 'platform',
+          subject_ids: [],
+          access_status: 'active',
+          lifecycle_status: 'active',
+          lock_version: 1,
+          teacher_presence: { lunch_required: true, minimum_hours: null, max_gap_hours: null },
+        }],
+      },
+      error: null,
+      isError: false,
+      isLoading: false,
+      refetch: vi.fn(),
+    })
+
+    renderWithRouter(<Members />)
+
+    expect(screen.queryByText('Sem almoço')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Mín\./)).not.toBeInTheDocument()
+  })
 })

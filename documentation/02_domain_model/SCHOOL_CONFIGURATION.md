@@ -173,6 +173,16 @@ Changing the rule of a teacher without assignments does not stale a proposal
 (D15).
 Write the rule through the API; the columns are the source of truth.
 
+The "Presença na escola" section of the Equipa "Editar disponibilidade" modal
+edits the rule, above the availability grid. It reads
+`GET /api/v1/teachers/{teacher_id}/presence` by the `teacher.id`, not the
+membership id. The section stays disabled until that read finishes, so a default
+value never overwrites the stored rule (T08). "Guardar disponibilidade" saves
+each changed part in its own request, the presence rule and the grid. A part
+that succeeds stops being pending even when the other fails, and the message
+names the part that was not saved. The Equipa list shows "Sem almoço" and
+"Mín. {N}h · furo {M}h" when they apply.
+
 ## Related Documents
 
 - [Professional Education](PROFESSIONAL_EDUCATION.md)
