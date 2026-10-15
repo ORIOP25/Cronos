@@ -1,8 +1,26 @@
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
 
 from scripts import seed_e2e_joint_history as seed
+
+
+def test_history_shift_keeps_the_default_when_it_already_ends_the_block():
+    now = datetime(2026, 9, 14, 8, 0, tzinfo=UTC)
+
+    assert seed.history_shift_until_ended(
+        datetime(2026, 9, 15, 10, 0, tzinfo=UTC), now=now
+    ) == timedelta(days=14)
+
+
+def test_history_shift_grows_by_whole_weeks_until_the_block_ended():
+    now = datetime(2026, 9, 14, 8, 0, tzinfo=UTC)
+
+    # 14 days leaves 09-14 10:00 after `now`, so one whole week is added.
+    assert seed.history_shift_until_ended(
+        datetime(2026, 9, 28, 10, 0, tzinfo=UTC), now=now
+    ) == timedelta(days=21)
 
 
 @pytest.mark.parametrize(
