@@ -56,8 +56,8 @@ export function removeBreakOverride(raw, afterSlot) {
 export function buildDailyTimeline(values) {
   const openMin = timeOfDayToMinutes(values.opening_time)
   const closeMin = timeOfDayToMinutes(values.closing_time)
-  const slotDur = values.slot_duration_minutes == null ? 50 : Number(values.slot_duration_minutes)
-  const breakDur = values.break_duration_minutes == null ? 10 : Number(values.break_duration_minutes)
+  const slotDur = values.slot_duration_minutes == null ? 60 : Number(values.slot_duration_minutes)
+  const breakDur = values.break_duration_minutes == null ? 5 : Number(values.break_duration_minutes)
 
   if (
     Number.isNaN(openMin) ||
