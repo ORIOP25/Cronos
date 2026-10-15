@@ -118,6 +118,16 @@ export function isOwnedResource(resourceId, ownedResourceIds) {
   return Boolean(resourceId) && ownedResourceIds.has(resourceId)
 }
 
+/**
+ * Non-secret Compose target identity that browser specs need to reach the
+ * stack that owns the test data: the generated project for an owned stack, or
+ * the project name an external (CI) run already exports. Nothing else is added.
+ */
+export function e2eStackTargetIdentity({ externalStack, composeProjectName, stackProject }) {
+  const project = externalStack ? composeProjectName : stackProject
+  return project ? { E2E_COMPOSE_PROJECT_NAME: project } : {}
+}
+
 export function childSpec(executable, args) {
   return { executable, args: [...args] }
 }
@@ -996,10 +1006,16 @@ async function runE2e(project, context, extraEnv = {}) {
         CAPACITY_REPORT_PATH: join(context.artifactDir, 'capacity.json'),
       }
     : {}
+  const stackIdentity = e2eStackTargetIdentity({
+    externalStack,
+    composeProjectName: process.env.COMPOSE_PROJECT_NAME,
+    stackProject: context.stack?.project,
+  })
   const e2eEnv = externalStack
     ? {
         ...process.env,
         E2E_COMPOSE_FILE: join(ROOT, 'docker-compose.ci.yml'),
+        ...stackIdentity,
         BASE_URL: resolveE2eBaseUrl({ externalStack: true, baseUrl: process.env.BASE_URL }),
         PLAYWRIGHT_SKIP_WEB_SERVER: '1',
         PLAYWRIGHT_WORKERS: String(e2eWorkers),
@@ -1009,6 +1025,7 @@ async function runE2e(project, context, extraEnv = {}) {
     : {
         ...context.stack.env,
         E2E_COMPOSE_FILE: COMPOSE_FILE,
+        ...stackIdentity,
         PLAYWRIGHT_WORKERS: String(e2eWorkers),
         ...capacityEnv,
         ...extraEnv,
