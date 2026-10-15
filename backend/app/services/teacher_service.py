@@ -249,7 +249,7 @@ async def get_teacher_progress(
     Fonte de verdade: ClassSubjectLink (disciplinas atribuídas à turma
     com professor assignado).
     """
-    from app.services.class_service import _build_subject_with_progress
+    from app.services.class_service import _build_subject_with_progress, _selected_module_map
 
     teacher_query = select(models.Teacher.id).where(
         models.Teacher.id == teacher_id,
@@ -278,20 +278,6 @@ async def get_teacher_progress(
 
     if not links:
         return []
-
-    # 1b. Seleção de módulos das ligações, numa única consulta adicional.
-    selection_rows = await db.execute(
-        select(
-            models.class_subject_module.c.class_subject_link_id,
-            models.class_subject_module.c.module_id,
-        ).where(
-            models.class_subject_module.c.organization_id == organization_id,
-            models.class_subject_module.c.class_subject_link_id.in_([link.id for link in links]),
-        )
-    )
-    selected_by_link: dict[int, set[int]] = {}
-    for link_id, module_id in selection_rows.all():
-        selected_by_link.setdefault(link_id, set()).add(module_id)
 
     # 2. Agrupar links por turma
     classes_map: dict[int, dict] = {}
@@ -342,16 +328,17 @@ async def get_teacher_progress(
                 )
 
     # 4. Construir dados de disciplinas com progresso por turma
+    selected_map = await _selected_module_map(db, organization_id, [link.id for link in links])
     for link in links:
         if not link.class_ or not link.subject:
             continue
         progress_map_for_class = {
             module_id: p for (c_id, module_id), p in progress_map.items() if c_id == link.class_id
         }
-        selected = selected_by_link.get(link.id, set())
-        selected_modules = [module for module in link.subject.modules if module.id in selected]
+        selected_ids = selected_map.get(link.id, set())
+        selected_modules = [module for module in link.subject.modules if module.id in selected_ids]
         subject_data = _build_subject_with_progress(
-            link.subject, progress_map_for_class, selected_modules
+            link.subject, selected_modules, progress_map_for_class
         )
         classes_map[link.class_id]["subjects"].append(subject_data)
 

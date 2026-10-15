@@ -1,10 +1,9 @@
-"""Per-class module selection and retired-module flag.
+"""Per-class module selection and the retired-module flag.
 
-Adds ``class_subject_module``: one row per module selected on a
-class/subject link. Existing links keep every module of their subject, so the
-projection behaviour is unchanged until an administrator deselects a module.
-Adds ``curricular_requirement.planned`` to mark a retired module that keeps
-executed history.
+Adds ``class_subject_module`` (one row per selected module on a
+class/subject link) and ``curricular_requirement.planned``. Existing links
+keep every module of their subject, so projection behaviour is unchanged
+until an administrator deselects a module.
 
 Revision ID: 0002_class_subject_modules
 Revises: 0001_scheduler_v1_baseline
@@ -69,7 +68,7 @@ def upgrade() -> None:
         "WITH CHECK ((organization_id = app_security.current_organization_id()))"
     )
     op.execute("GRANT SELECT,INSERT,DELETE ON TABLE public.class_subject_module TO cronos_app")
-    # D04: every existing link keeps all its subject modules. Runs as
+    # D04: every existing link keeps all its subject modules. This runs as
     # cronos_migrator, which bypasses the forced row-level security.
     op.execute(
         """

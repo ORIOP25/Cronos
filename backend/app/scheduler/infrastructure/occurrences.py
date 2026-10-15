@@ -22,6 +22,7 @@ from app.core.exceptions import AppError
 from app.scheduler.domain.debt import DebtOrigin
 from app.scheduler.domain.demand import ExecutionEntry, ModuleCredit, frontier_credit
 from app.scheduler.domain.lesson_time import execution_allowed
+from app.scheduler.domain.projection import ModuleRequirement
 from app.scheduler.infrastructure.models import (
     CurricularAssignment,
     CurricularDebt,
@@ -981,6 +982,13 @@ async def _year_id_for_assignment(
     if year_id is None:
         raise _error(422, "Disciplina sem ano letivo válido.")
     return year_id
+
+
+async def _requirements(
+    db: AsyncSession, organization_id: int, assignment_id: int
+) -> tuple[ModuleRequirement, ...]:
+    planning, _ = await load_planning_requirements(db, organization_id, [assignment_id])
+    return planning.get(assignment_id, ())
 
 
 def _substitution_exclusion(code: str, message: str, setup: str) -> dict:

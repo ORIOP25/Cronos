@@ -225,7 +225,7 @@ Approval recalculates the boundary. A proposal can become invalid while awaiting
 
 ### Persistence and revisions
 
-The single Alembic baseline `0001_scheduler_v1_baseline` in `backend/alembic/versions/` is a PostgreSQL 18 SQL schema dump. New migrations stack on it.
+The Alembic migration chain starts at the frozen baseline `0001_scheduler_v1_baseline`, a PostgreSQL 18 SQL schema dump. The `backend/alembic/versions/` directory owns the current revisions, and new migrations stack linearly on the baseline.
 The [Data Model](../01_system_architecture/DATA_MODEL.md) maps retained lifecycle, operational, and v1 tables.
 Tenant foreign keys include organization identifiers where required.
 Force RLS on school tables and use an explicit organization context with a role that cannot bypass RLS.

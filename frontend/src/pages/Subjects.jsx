@@ -21,6 +21,8 @@ import {
   useDeleteSubject,
 } from '../features/catalog/data'
 
+const NEW_MODULE_WARNING = 'Disciplina atualizada. Os módulos novos não foram marcados nas turmas. Marque-os nas turmas que os vão ter.'
+
 const Subjects = ({ readOnly = false, allowedActions }) => {
   const navigate = useNavigate()
   const [modalVisible, setModalVisible] = useState(false)
@@ -69,10 +71,8 @@ const Subjects = ({ readOnly = false, allowedActions }) => {
       if (selectedItem) {
         await updateMutation.mutateAsync({ id: selectedItem.id, ...formData })
         if (!attemptScope.isCurrent(attempt)) return
-        const hasNewModule = (formData.modules || []).some((module) => module.id == null)
-        toast.success(hasNewModule
-          ? 'Disciplina atualizada. Os módulos novos não foram marcados nas turmas. Marque-os nas turmas que os vão ter.'
-          : 'Disciplina atualizada.')
+        const addsModule = (formData.modules || []).some((module) => module.id == null)
+        toast.success(addsModule ? NEW_MODULE_WARNING : 'Disciplina atualizada.')
       } else {
         await createMutation.mutateAsync(formData)
         if (!attemptScope.isCurrent(attempt)) return

@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models
@@ -262,7 +262,8 @@ class SchedulerFingerprintService:
             else []
         )
         module_ids = {row.id for row in module_rows}
-        selected_module_rows = (
+        link_ids = {row.id for row in assignment_rows}
+        selection_rows = (
             (
                 await self._db.execute(
                     select(
@@ -274,17 +275,20 @@ class SchedulerFingerprintService:
                     .select_from(models.class_subject_module)
                     .join(
                         models.ClassSubjectLink,
-                        models.ClassSubjectLink.id
-                        == models.class_subject_module.c.class_subject_link_id,
+                        and_(
+                            models.ClassSubjectLink.organization_id
+                            == models.class_subject_module.c.organization_id,
+                            models.ClassSubjectLink.id
+                            == models.class_subject_module.c.class_subject_link_id,
+                        ),
                     )
                     .where(
                         models.class_subject_module.c.organization_id == organization_id,
-                        models.ClassSubjectLink.organization_id == organization_id,
-                        models.ClassSubjectLink.class_id.in_(class_ids),
+                        models.class_subject_module.c.class_subject_link_id.in_(link_ids),
                     )
                 )
             ).all()
-            if class_ids
+            if link_ids
             else []
         )
         progress_rows = (
@@ -454,6 +458,22 @@ class SchedulerFingerprintService:
                 )
             ).all()
             if eligible_teacher_ids
+            else []
+        )
+        class_availability_rows = (
+            (
+                await self._db.execute(
+                    select(
+                        models.ClassAvailability.class_id,
+                        models.ClassAvailability.timeslot_id,
+                        models.ClassAvailability.score,
+                    ).where(
+                        models.ClassAvailability.organization_id == organization_id,
+                        models.ClassAvailability.class_id.in_(class_ids),
+                    )
+                )
+            ).all()
+            if class_ids
             else []
         )
         room_rows = (
@@ -650,7 +670,7 @@ class SchedulerFingerprintService:
                     "module_id": row.module_id,
                 }
                 for row in sorted(
-                    selected_module_rows,
+                    selection_rows,
                     key=lambda row: (
                         row.class_id,
                         row.subject_id,
@@ -668,6 +688,17 @@ class SchedulerFingerprintService:
                 for row in sorted(
                     availability_rows,
                     key=lambda row: (row.teacher_id, row.timeslot_id),
+                )
+            ],
+            "class_availability": [
+                {
+                    "class_id": row.class_id,
+                    "timeslot_id": row.timeslot_id,
+                    "score": row.score,
+                }
+                for row in sorted(
+                    class_availability_rows,
+                    key=lambda row: (row.class_id, row.timeslot_id),
                 )
             ],
             "rooms": [

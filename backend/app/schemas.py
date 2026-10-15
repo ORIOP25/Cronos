@@ -792,9 +792,20 @@ class AvailabilitySelfCreate(BaseModel):
     score: PreferenceLevel = PreferenceLevel.NEUTRAL
 
 
-TeacherAvailabilityPayload = Annotated[
+WeeklyAvailabilityPayload = Annotated[
     list[AvailabilitySelfCreate], Field(max_length=MAX_WEEKLY_TIMETABLE_SLOTS)
 ]
+
+MAX_CLASS_AVAILABILITY_COPY_TARGETS = 500
+
+
+class ClassAvailabilityCopyRequest(BaseModel):
+    """Targets of a class-availability copy. Between 1 and 500 class ids."""
+
+    target_class_ids: Annotated[
+        list[StrictPositiveInt],
+        Field(min_length=1, max_length=MAX_CLASS_AVAILABILITY_COPY_TARGETS),
+    ]
 
 
 class AvailabilitySelfRead(BaseModel):
@@ -869,12 +880,20 @@ class BulkImportFiles(BaseModel):
     courses: BulkImportFilePayload | None = None
     teachers: BulkImportFilePayload | None = None
     assignments: BulkImportFilePayload | None = None
+    class_availability: BulkImportFilePayload | None = None
 
     @model_validator(mode="after")
     def require_a_file(self):
         if not any(
             getattr(self, resource) is not None
-            for resource in ("rooms", "subjects", "courses", "teachers", "assignments")
+            for resource in (
+                "rooms",
+                "subjects",
+                "courses",
+                "teachers",
+                "assignments",
+                "class_availability",
+            )
         ):
             raise ValueError("Selecione pelo menos um ficheiro de importação.")
         return self
@@ -1335,6 +1354,7 @@ class GridChangeAffectedAvailability(BaseModel):
     ambiguous: bool = False
     requires_decision: bool
     teachers: list[dict]
+    classes: list[dict] = Field(default_factory=list)
 
 
 class GridChangeAffectedConstraint(BaseModel):
@@ -1498,18 +1518,18 @@ class ClassSubjectCreate(BaseModel):
 
 
 class ClassSubjectUpdate(BaseModel):
-    """Atribuir professor e/ou substituir a seleção de módulos da disciplina"""
+    """Atribuir professor e/ou selecionar módulos de uma disciplina da turma"""
 
     teacher_id: int | None = Field(
         None, description="ID do professor (null para remover atribuição)"
     )
     module_ids: list[int] | None = Field(
-        None, description="Lista completa de módulos marcados (substitui a seleção)"
+        None, description="IDs dos módulos selecionados (lista vazia para limpar)"
     )
 
 
 class ClassSubjectModuleRead(BaseModel):
-    """Módulo de uma disciplina da turma, com o estado de seleção"""
+    """Módulo de uma disciplina da turma, com a marcação de seleção"""
 
     id: int
     name: str
@@ -1520,7 +1540,7 @@ class ClassSubjectModuleRead(BaseModel):
 
 
 class ClassSubjectRead(BaseModel):
-    """Disciplina da turma com professor atribuído e módulos selecionados"""
+    """Disciplina da turma com professor atribuído e módulos"""
 
     id: int
     subject_id: int
@@ -2116,6 +2136,17 @@ class SchedulerV1EligibilityRead(BaseModel):
     blocker: str | None = None
 
 
+class SchedulerV1JobDiagnosticRead(BaseModel):
+    """One proven per-class diagnostic of a scheduler job that found no schedule."""
+
+    code: str
+    minimum_missing_minutes: int | None = None
+    class_id: int | None = None
+    class_name: str | None = None
+    course_id: int | None = None
+    subject_name: str | None = None
+
+
 class SchedulerV1JobRead(BaseModel):
     id: int
     strategy: str
@@ -2130,6 +2161,7 @@ class SchedulerV1JobRead(BaseModel):
     cancellation_requested: bool = False
     proposal_id: int | None = None
     summary: dict | None = None
+    diagnostics: list[SchedulerV1JobDiagnosticRead] = Field(default_factory=list)
 
 
 class SchedulerV1ProposalRead(BaseModel):

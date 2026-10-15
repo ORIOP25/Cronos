@@ -9,6 +9,7 @@ const hooks = vi.hoisted(() => ({
   classSubjects: vi.fn(),
   updateClass: vi.fn(),
   updateProgress: vi.fn(),
+  classAvailability: vi.fn(),
 }))
 
 vi.mock('../features/catalog/data', () => ({
@@ -16,6 +17,12 @@ vi.mock('../features/catalog/data', () => ({
   useClassSubjects: (classId) => hooks.classSubjects(classId),
   useUpdateCourseClass: () => hooks.updateClass(),
   useUpdateClassProgress: () => hooks.updateProgress(),
+  useClassAvailability: () => hooks.classAvailability(),
+  useTimeslots: () => ({ data: [], isLoading: false, error: null }),
+  useSaveClassAvailability: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useCopyClassAvailability: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useClasses: () => ({ data: [], isLoading: false, error: null }),
+  useCourses: () => ({ data: [], isLoading: false, error: null }),
 }))
 
 const createMutationState = () => ({
@@ -80,13 +87,14 @@ describe('ClassDetails composition', () => {
     hooks.classSubjects.mockReset().mockReturnValue({
       data: {
         subjects: [
-          { id: 1, subject_name: 'Algoritmos', teacher_id: null, teacher_name: null },
-          { id: 2, subject_name: 'Zeta', teacher_id: 5, teacher_name: 'Ana Silva' },
+          { id: 1, subject_name: 'Algoritmos', teacher_id: null, teacher_name: null, modules: [{ id: 11, selected: true }, { id: 12, selected: false }] },
+          { id: 2, subject_name: 'Zeta', teacher_id: 5, teacher_name: 'Ana Silva', modules: [{ id: 21, selected: true }] },
         ],
       },
     })
     hooks.updateClass.mockReset().mockReturnValue(createMutationState())
     hooks.updateProgress.mockReset().mockReturnValue(createMutationState())
+    hooks.classAvailability.mockReset().mockReturnValue({ data: [], isLoading: false, error: null })
   })
 
   it('orders the page and keeps global progress inside the discipline section', () => {
@@ -186,6 +194,101 @@ describe('ClassDetails composition', () => {
     expect(screen.getByText('Nenhuma disciplina associada ao curso desta turma.')).toBeInTheDocument()
     expect(progressCard).not.toHaveTextContent('Progresso Global')
     expect(within(progressCard).queryByRole('progressbar', { name: 'Progresso global da turma' })).not.toBeInTheDocument()
+  })
+
+  it('shows the selected module count per discipline in the subjects table', () => {
+    renderClassDetails()
+
+    const table = screen.getByText('Disciplinas & Professores').closest('.card')
+    expect(within(table).getByRole('columnheader', { name: 'Módulos' })).toBeInTheDocument()
+    const rows = within(table).getAllByRole('row')
+    expect(within(rows[1]).getByText('1/2')).toBeInTheDocument()
+    expect(within(rows[2]).getByText('1/1')).toBeInTheDocument()
+  })
+
+  it('shows the empty message when a discipline has no selected modules', () => {
+    hooks.classDetails.mockReturnValue({
+      data: createClassData({
+        subjects: [{
+          id: 9,
+          name: 'Sem módulos',
+          required_room_type: 'normal',
+          total_hours: 0,
+          completed_hours: 0,
+          overall_percentage: 0,
+          modules: [],
+        }],
+      }),
+      isLoading: false,
+      error: null,
+    })
+
+    renderClassDetails()
+
+    const progressCard = screen.getByText('Progresso por Disciplina').closest('.card')
+    expect(within(progressCard).getByText('Nenhum módulo selecionado para esta turma.')).toBeInTheDocument()
+  })
+
+  it('places the availability card after the header and summarizes neutral blocks', () => {
+    renderClassDetails()
+
+    const header = screen.getByRole('heading', { name: '10.º A' }).closest('.card')
+    const availabilityTitle = screen.getByText('Disponibilidade')
+    const subjectsTitle = screen.getByText('Disciplinas & Professores')
+
+    expect(header.compareDocumentPosition(availabilityTitle) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(availabilityTitle.compareDocumentPosition(subjectsTitle) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.getByText('Sem restrições. Todos os blocos estão em Neutro.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /editar disponibilidade/i })).toBeInTheDocument()
+  })
+
+  it('summarizes the levels above zero and omits the zero counts', () => {
+    hooks.classAvailability.mockReturnValue({
+      data: [
+        { timeslot_id: 1, score: -1 },
+        { timeslot_id: 2, score: -1 },
+        { timeslot_id: 3, score: 0 },
+        { timeslot_id: 4, score: 1 },
+      ],
+      isLoading: false,
+      error: null,
+    })
+
+    renderClassDetails()
+
+    expect(screen.getByText('2 impossíveis · 1 a evitar')).toBeInTheDocument()
+    expect(screen.queryByText(/preferenciais/)).toBeNull()
+  })
+
+  it('reports a failed availability read instead of a neutral summary', () => {
+    hooks.classAvailability.mockReturnValue({ data: undefined, isLoading: false, error: { message: 'offline' } })
+
+    renderClassDetails()
+
+    expect(screen.getByText('Não foi possível carregar a disponibilidade.')).toBeInTheDocument()
+    expect(screen.queryByText('Sem restrições. Todos os blocos estão em Neutro.')).toBeNull()
+  })
+
+  it('keeps the archived class read-only without the edit button', () => {
+    hooks.classDetails.mockReturnValue({
+      data: { ...createClassData(), is_archived: true },
+      isLoading: false,
+      error: null,
+    })
+
+    renderClassDetails()
+
+    expect(screen.getByText('Sem restrições. Todos os blocos estão em Neutro.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /editar disponibilidade/i })).toBeNull()
+  })
+
+  it('opens the class availability window from the card', () => {
+    renderClassDetails()
+
+    fireEvent.click(screen.getByRole('button', { name: /editar disponibilidade/i }))
+
+    expect(screen.getByText('Disponibilidade — 10.º A')).toBeInTheDocument()
+    expect(screen.getByText(/Os alunos não usam a aplicação/)).toBeInTheDocument()
   })
 
   it('shows the selected module count per discipline in the subjects table', () => {

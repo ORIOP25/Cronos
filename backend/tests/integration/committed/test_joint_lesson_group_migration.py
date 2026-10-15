@@ -1,4 +1,4 @@
-"""Focused contract for the 0003_joint_lesson_groups migration.
+"""Focused contract for the 0004_joint_lesson_groups migration.
 
 Each test returns the schema to ``head`` in a ``finally`` block so a failure
 never leaves the shared test database on an intermediate revision.
@@ -13,7 +13,7 @@ from tests._support.db_fixtures import _alembic_config, sync_test_engine, test_e
 
 pytestmark = pytest.mark.postgresql
 
-PREVIOUS_REVISION = "0002_class_subject_modules"
+PREVIOUS_REVISION = "0003_class_availability"
 TABLES = ("joint_lesson_group", "joint_lesson_group_member", "joint_lesson_group_module")
 
 

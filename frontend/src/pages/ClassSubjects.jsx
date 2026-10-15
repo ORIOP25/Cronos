@@ -48,11 +48,14 @@ const jointOtherClassNames = (subject, classId) => (
     .join(', ')
 )
 
+/** Mostra horas decimais sem ruído de vírgula flutuante (ex.: 25, 12.5). */
+const formatHours = (hours) => Number((Number(hours) || 0).toFixed(1))
+
 // ==========================================
 //  SUB-COMPONENT: Card de disciplina com dropdown de professor
 // ==========================================
-const SubjectRow = ({ 
-  subject, 
+const SubjectRow = ({
+  subject,
   classId,
   onRemove,
   onTeacherChange,
@@ -65,18 +68,18 @@ const SubjectRow = ({
   canEditJoint = true,
   canRemove = true,
   teacherError = '',
-  moduleError = '',
+  modulesError = '',
 }) => {
   const { data: eligibleTeachers, isLoading: teachersLoading } = useEligibleTeachers(subject.subject_id)
   const [modulesOpen, setModulesOpen] = useState(false)
   const teacherSelectId = `class-subject-teacher-${subject.subject_id}`
   const teacherErrorId = `class-subject-teacher-error-${subject.subject_id}`
-  const modulesListId = `class-subject-modules-${subject.subject_id}`
-  const moduleErrorId = `class-subject-modules-error-${subject.subject_id}`
+  const modulesPanelId = `class-subject-modules-${subject.subject_id}`
+  const modulesErrorId = `class-subject-modules-error-${subject.subject_id}`
 
   const modules = subject.modules || []
-  const selectedModules = modules.filter((module) => module.selected)
-  const selectedHours = selectedModules.reduce((total, module) => total + module.hours_total, 0)
+  const selectedModules = modules.filter(module => module.selected)
+  const selectedHours = selectedModules.reduce((total, module) => total + (Number(module.hours_total) || 0), 0)
 
   const jointGroup = subject.joint_group
   const jointModuleIds = new Set(jointGroup?.module_ids ?? [])
@@ -97,11 +100,11 @@ const SubjectRow = ({
     onTeacherChange(subject.subject_id, teacherId)
   }
 
-  const handleModuleToggle = (moduleId) => {
-    const nextModuleIds = modules
-      .filter((module) => (module.id === moduleId ? !module.selected : module.selected))
-      .map((module) => module.id)
-    onModulesChange(subject.subject_id, nextModuleIds)
+  const handleModuleToggle = (moduleId, checked) => {
+    const nextIds = modules
+      .filter(module => (module.id === moduleId ? checked : module.selected))
+      .map(module => module.id)
+    onModulesChange(subject.subject_id, nextIds)
   }
 
   return (
@@ -179,58 +182,62 @@ const SubjectRow = ({
           </div>}
         </div>
 
-        {/* Checklist de módulos */}
-        <div className="mt-2 d-flex flex-wrap align-items-center gap-2">
-          <CButton
-            color="secondary"
-            variant="outline"
-            size="sm"
-            id={`class-subject-modules-summary-${subject.subject_id}`}
-            aria-expanded={modulesOpen}
-            aria-controls={modulesListId}
-            onClick={() => setModulesOpen((open) => !open)}
-            data-tutorial-target="class-subject-modules"
-          >
-            Módulos: {selectedModules.length} de {modules.length} · {selectedHours} h
-          </CButton>
-          {selectedModules.length === 0 && (
-            <span className="text-warning d-inline-flex align-items-center gap-1" style={{ fontSize: '0.85rem' }}>
-              <CIcon icon={cilWarning} size="sm" /> Sem módulos
-            </span>
+        {/* Seleção de módulos */}
+        <div className="mt-2 pt-2 border-top">
+          <div className="d-flex align-items-center gap-2">
+            <CButton
+              type="button"
+              color="link"
+              size="sm"
+              className="p-0 text-decoration-none fw-medium"
+              aria-expanded={modulesOpen}
+              aria-controls={modulesPanelId}
+              onClick={() => setModulesOpen(open => !open)}
+              data-tutorial-target="class-subject-modules"
+            >
+              Módulos: {selectedModules.length} de {modules.length} · {formatHours(selectedHours)} h
+            </CButton>
+            {selectedModules.length === 0 && (
+              <span className="d-inline-flex align-items-center gap-1 text-warning" style={{ fontSize: '0.85rem' }}>
+                <CIcon icon={cilWarning} size="sm" title="Sem módulos" />
+                Sem módulos
+              </span>
+            )}
+          </div>
+          {modulesError && (
+            <CFormFeedback id={modulesErrorId} invalid className="d-block" role="alert">{modulesError}</CFormFeedback>
+          )}
+          {modulesOpen && (
+            <div id={modulesPanelId} className="mt-2">
+              {modules.length === 0 ? (
+                <p className="text-muted mb-0" style={{ fontSize: '0.85rem' }}>
+                  Esta disciplina não tem módulos. Adicione-os em Disciplinas.
+                </p>
+              ) : modules.map(module => {
+                const isJoint = jointModuleIds.has(module.id)
+                return (
+                  <div key={module.id}>
+                    <CFormCheck
+                      type="checkbox"
+                      id={`class-subject-module-${subject.subject_id}-${module.id}`}
+                      label={`${module.code ? `${module.code} ` : ''}${module.name} · ${formatHours(module.hours_total)} h`}
+                      checked={Boolean(module.selected)}
+                      disabled={isUpdating || !canEditModules || isJoint}
+                      onChange={(e) => handleModuleToggle(module.id, e.target.checked)}
+                      data-tutorial-target="class-subject-module"
+                    />
+                    {isJoint && (
+                      <div className="text-muted ms-4" style={{ fontSize: '0.8rem' }}>
+                        <CIcon icon={cilLink} size="sm" className="me-1" />
+                        Retire primeiro este módulo da aula conjunta.
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
           )}
         </div>
-
-        <div id={modulesListId} hidden={!modulesOpen} className="mt-2">
-          {modules.length === 0 ? (
-            <p className="text-muted mb-0" style={{ fontSize: '0.85rem' }}>
-              Esta disciplina não tem módulos. Adicione-os em Disciplinas.
-            </p>
-          ) : (
-            modules.map((module) => {
-              const isJoint = jointModuleIds.has(module.id)
-              return (
-                <div key={module.id}>
-                  <CFormCheck
-                    id={`class-subject-module-${subject.subject_id}-${module.id}`}
-                    label={formatModuleLabel(module)}
-                    checked={Boolean(module.selected)}
-                    disabled={isUpdating || !canEditModules || isJoint}
-                    onChange={() => handleModuleToggle(module.id)}
-                  />
-                  {isJoint && (
-                    <div className="text-muted ms-4" style={{ fontSize: '0.8rem' }}>
-                      <CIcon icon={cilLink} size="sm" className="me-1" />
-                      Retire primeiro este módulo da aula conjunta.
-                    </div>
-                  )}
-                </div>
-              )
-            })
-          )}
-        </div>
-        {moduleError && (
-          <CFormFeedback id={moduleErrorId} invalid className="d-block" role="alert">{moduleError}</CFormFeedback>
-        )}
 
         {/* Aula conjunta */}
         <div className="mt-2">
@@ -608,9 +615,8 @@ const ClassSubjects = ({ courseIdOverride, classIdOverride, navigationDisabled =
     if (!classSubjects?.subjects) return { total: 0, assigned: 0, pending: 0, withoutModules: 0 }
     const total = classSubjects.subjects.length
     const assigned = classSubjects.subjects.filter(s => s.teacher_id).length
-    const withoutModules = classSubjects.subjects.filter(
-      s => !(s.modules || []).some(module => module.selected),
-    ).length
+    const withoutModules = classSubjects.subjects
+      .filter(s => !(s.modules || []).some(module => module.selected)).length
     return { total, assigned, pending: total - assigned, withoutModules }
   }, [classSubjects])
 
@@ -696,7 +702,7 @@ const ClassSubjects = ({ courseIdOverride, classIdOverride, navigationDisabled =
       attemptScope.guard({
         onSuccess: () => {
           setModuleBlock(null)
-          toast.success('Módulos atualizados.', { id: 'class-subject-modules' })
+          toast.success('Módulos atualizados.', { id: 'class-subject-modules-updated' })
         },
         onError: (error) => {
           const message = getApiErrorMessage(error, 'Não foi possível atualizar os módulos. Tente novamente.')
@@ -923,7 +929,7 @@ const ClassSubjects = ({ courseIdOverride, classIdOverride, navigationDisabled =
                 canEditJoint={canEditJoint}
                 canRemove={canRemove}
                 teacherError={teacherBlock?.subjectId === subject.subject_id ? teacherBlock.message : ''}
-                moduleError={moduleBlock?.subjectId === subject.subject_id ? moduleBlock.message : ''}
+                modulesError={moduleBlock?.subjectId === subject.subject_id ? moduleBlock.message : ''}
               />
             ))
           )}

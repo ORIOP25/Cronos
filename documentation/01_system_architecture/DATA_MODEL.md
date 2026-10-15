@@ -33,7 +33,7 @@ Separate scheduler v1 records preserve curricular demand, execution evidence, de
 | Legal evidence | `organization_legal_acceptance` |
 | Curriculum | `course`, `class`, `subject`, `module`, `course_subject_link`, `teacher_subject_link`, `class_subject_link`, `class_subject_module` |
 | Joint lessons | `joint_lesson_group`, `joint_lesson_group_member`, `joint_lesson_group_module` |
-| Resources | `room`, `timeslot`, `grid_version`, `availability`, `constraint` |
+| Resources | `room`, `timeslot`, `grid_version`, `availability`, `class_availability`, `constraint` |
 | School calendar | `organization_settings`, `organization_grid_settings`, `school_calendar_event`, `school_calendar_event_class` |
 | Scheduler lifecycle | `scheduler_school_year`, `scheduler_school_year_state`, `scheduler_state_version_events` |
 | Operational records | `lesson_occurrence`, `operational_schedule_block` |
@@ -44,7 +44,7 @@ Separate scheduler v1 records preserve curricular demand, execution evidence, de
 
 `class_subject_module` marks the modules selected on a class/subject link. Its primary key is `(organization_id, class_subject_link_id, module_id)`, and forced row-level security isolates the tenant. The migration `0002_class_subject_modules` fills every existing link with all its subject modules. `curricular_requirement.planned` is `false` for a retired module that keeps executed history; see [Professional Education](../02_domain_model/PROFESSIONAL_EDUCATION.md).
 
-`joint_lesson_group` is one joint lesson: a subject, its member class/subject links and its joint modules. `joint_lesson_group_member` has primary key `(organization_id, class_subject_link_id)`, so a link belongs to at most one group. `joint_lesson_group_module` has primary key `(organization_id, group_id, module_id)`. The member and module foreign keys do not cascade, so the database refuses removing a link or module that a joint lesson uses. The migration `0003_joint_lesson_groups` creates the three tables and adds `scheduler_lesson_v1.teaching_unit_key` (backfilled as `A:{assignment_id}`); the lesson identity becomes `(version_id, stable_key, assignment_id)` so sibling lessons of a joint lesson share a `stable_key`. See [Professional Education](../02_domain_model/PROFESSIONAL_EDUCATION.md).
+`joint_lesson_group` is one joint lesson: a subject, its member class/subject links and its joint modules. `joint_lesson_group_member` has primary key `(organization_id, class_subject_link_id)`, so a link belongs to at most one group. `joint_lesson_group_module` has primary key `(organization_id, group_id, module_id)`. The member and module foreign keys do not cascade, so the database refuses removing a link or module that a joint lesson uses. The migration `0004_joint_lesson_groups` creates the three tables and adds `scheduler_lesson_v1.teaching_unit_key` (backfilled as `A:{assignment_id}`); the lesson identity becomes `(version_id, stable_key, assignment_id)` so sibling lessons of a joint lesson share a `stable_key`. See [Professional Education](../02_domain_model/PROFESSIONAL_EDUCATION.md).
 
 ## Data or Request Flow
 
@@ -55,6 +55,7 @@ erDiagram
     ORGANIZATION ||--o{ COURSE : offers
     COURSE ||--o{ CLASS : groups
     CLASS ||--o{ CLASS_SUBJECT_LINK : assigns
+    CLASS_SUBJECT_LINK ||--o{ CLASS_SUBJECT_MODULE : selects
     SUBJECT ||--o{ MODULE : orders
     SCHEDULER_LESSON_LOG_V1 ||--o{ OPERATIONAL_SCHEDULE_BLOCK : creates
     OPERATIONAL_SCHEDULE_BLOCK ||--o| LESSON_LOG : logs
@@ -77,6 +78,10 @@ erDiagram
 - A database created on the removed pre-baseline chain cannot upgrade. Run `alembic downgrade base` with the previous code first; see the [Deployment Runbook](../09_ops_observability/DEPLOYMENT_RUNBOOK.md#migration-baseline-and-reset-rule).
 - Cross-tenant foreign keys use organization-scoped constraints where required.
 - Module `required_minutes` is positive.
+- `class_availability` stores only a level different from Neutral; a missing row means Neutral.
+- `scheduler_job_v1.diagnostics_json` stores the proven diagnostics of a job that found no schedule.
+- `class_subject_module` holds one row per selected module of a class-subject link.
+- `curricular_requirement.planned` is true for a planned module and false for a retired module with history.
 - Ledger entries use an idempotency key and cannot contain zero deltas.
 - Occurrence revisions preserve active history and support explicit revoke operations.
 - Application queries run under the `cronos_app` role with `NOBYPASSRLS`.
@@ -125,7 +130,7 @@ erDiagram
 - ORM models: `backend/app/models.py`
 - Scheduler v1 models: `backend/app/scheduler/infrastructure/models.py`
 - Schemas: `backend/app/schemas.py`
-- Migrations: `backend/alembic/versions/` holds the single baseline `0001_scheduler_v1_baseline`, a PostgreSQL 18 SQL schema dump. New migrations stack on it.
+- Migrations: `backend/alembic/versions/` holds the baseline `0001_scheduler_v1_baseline`, a PostgreSQL 18 SQL schema dump, and the linear chain that stacks on it, including `0002_class_subject_modules`, `0003_class_availability` and `0004_joint_lesson_groups`.
 - RLS tests: `backend/tests/contracts/test_rls_database_policies.py`
 - Integrity tests: `backend/tests/integration/committed/test_tenant_isolation_complete.py`
 

@@ -9,6 +9,8 @@ validated schedule for the 12-class and 48-class topologies.
 
 from datetime import date
 
+import pytest
+
 from app.scheduler.composition import generate_schedule
 from app.scheduler.domain.candidate_validation import validate_candidate
 from app.scheduler.lab.typology import (
@@ -40,8 +42,6 @@ def test_the_fixture_follows_the_product_typology():
 
 
 def test_classes_are_always_multiples_of_three():
-    import pytest
-
     with pytest.raises(ValueError, match="multiples of three"):
         build_typology_fixture(4)
 
@@ -78,6 +78,7 @@ def test_twelve_classes_generate_a_complete_valid_schedule():
     assert result.completion.latest_completion_date <= PREFERRED_END
 
 
+@pytest.mark.slow_solver
 def test_forty_eight_classes_generate_a_complete_valid_schedule():
     fixture = build_typology_fixture(48)
 

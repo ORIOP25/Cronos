@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import {
+  backendFastArgs,
   childSpec,
   cleanupOwnedResources,
   criticalPytestArgs,
@@ -53,6 +54,12 @@ test('selects the isolated and readonly projects and retires the faults alias', 
   assert.equal(parseArgs(['e2e', '--project', 'isolated']).project, 'isolated')
   assert.equal(parseArgs(['e2e', '--project', 'readonly']).project, 'readonly')
   assert.throws(() => parseArgs(['e2e', '--project', 'faults']), /Invalid E2E project/)
+})
+
+test('the fast backend run skips the slow solver test unless the caller selects a marker', () => {
+  assert.deepEqual(backendFastArgs(), ['-m', 'not slow_solver'])
+  assert.deepEqual(backendFastArgs(['-k', 'timesheet']), ['-m', 'not slow_solver', '-k', 'timesheet'])
+  assert.deepEqual(backendFastArgs(['-m', 'slow_solver']), ['-m', 'slow_solver'])
 })
 
 test('the fast frontend run selects every Vitest project, including dom-network data hooks', () => {
@@ -179,6 +186,30 @@ test('root CI keeps push on main while pull requests and manual dispatch run ful
     lines.slice(start + 1, end).join('\n').trimEnd(),
     ['  push:', '    branches: [main]', '  pull_request:', '  workflow_dispatch:'].join('\n'),
   )
+})
+
+test('the e2e-browser job prepares a disposable own Clerk organization and passes its id to the browser', () => {
+  const lines = readFileSync(join(ROOT, '.github/workflows/ci.yml'), 'utf8').split(/\r?\n/)
+  const start = lines.indexOf('  e2e-browser:')
+  assert.notEqual(start, -1, 'the e2e-browser job must exist')
+  const end = lines.findIndex((line, index) => index > start && /^  [a-z0-9-]+:$/.test(line))
+  const job = lines.slice(start, end === -1 ? lines.length : end).join('\n')
+
+  // Each run must own a disposable organization instead of adopting a shared
+  // one that another run can delete mid-flight: create a fresh org even though
+  // the reserved admin already belongs to organizations.
+  assert.match(job, /^\s+E2E_CLERK_AUTO_PROVISION: "true"$/m)
+  assert.match(job, /^\s+E2E_CLERK_CREATE_ORGANIZATION: "true"$/m)
+  assert.doesNotMatch(job, /E2E_CLERK_CREATE_ORGANIZATION: "false"/)
+
+  // The prepared organization id flows into the browser run.
+  assert.match(
+    job,
+    /E2E_CLERK_ORG_ID: \$\{\{ steps\.prepare-e2e-clerk-state\.outputs\.clerk_org_id \}\}/,
+  )
+
+  // Cleanup removes only the organization this run prepared.
+  assert.match(job, /E2E_CLERK_DELETE_ORG=true/)
 })
 
 test('the frontend fast macro stays narrow and e2e-runtime owns the relocated mandatory checks', () => {

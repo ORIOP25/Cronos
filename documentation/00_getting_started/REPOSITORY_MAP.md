@@ -30,7 +30,7 @@ MeuProjeto/
 │   ├── workflows/                # ci.yml and deploy-check.yml
 │   └── dependabot.yml            # Automated dependency update configuration
 ├── backend/                      # Python FastAPI application
-│   ├── alembic/                  # Linear chain from the frozen 0001_scheduler_v1_baseline
+│   ├── alembic/                  # Linear chain from the frozen 0001_scheduler_v1_baseline (currently 0004_joint_lesson_groups)
 │   ├── app/                      # Backend application source
 │   │   ├── api/                  # API routers (v1 endpoints)
 │   │   ├── contact/              # Contact service, ports, and provider gateways
@@ -152,6 +152,20 @@ Invariants: Foundation writes use optimistic `expected_version` and row locks; n
 
 Invariants: `PUT` replaces the whole set for the resolved grid; `/me/...` routes stay above `/{teacher_id}/...`; a write for a scheduled teacher bumps scheduler revisions.
 
+### Class availability
+
+| Layer | Location |
+| :--- | :--- |
+| Pages | `pages/ClassDetails.jsx` (`/courses/{course_id}/classes/{class_id}`); modal `components/ClassAvailabilityModal.jsx` |
+| Hooks | `useClassAvailability`, `useSaveClassAvailability`, `useCopyClassAvailability` in `features/catalog/data.js`; shared editor `components/AvailabilityEditorModal.jsx` |
+| Endpoints | `api/v1/endpoints/classes.py` (`/classes/{class_id}/availability`, `/availability/copy`) |
+| Services | `services/class_availability_service.py`; reads in `scheduler/infrastructure/snapshot.py` |
+| Persistence | `class_availability` (score per class and timeslot; a missing row means neutral) |
+| Tests | `integration/committed/test_class_availability.py`, `unit/test_scheduler_class_capacity_v1.py`, `unit/test_scheduler_snapshot_preferences_v1.py`; `frontend/src/test/ClassAvailabilityModal.test.jsx`; `frontend/e2e/readiness/class-availability.spec.js` |
+| Guides | [Class Availability Tech Spec](../02_domain_model/CLASS_AVAILABILITY_TECH_SPEC.md), [School Configuration](../02_domain_model/SCHOOL_CONFIGURATION.md) |
+
+Invariants: `PUT` replaces the whole set for the resolved grid; a missing row means Neutro; writing, copying or importing a class grid bumps scheduler revisions; only an administrator reads or writes it.
+
 ### Schedule generation and approval
 
 | Layer | Location |
@@ -203,11 +217,11 @@ Invariants: `OPEN` -> `SUBMITTED` -> `APPROVED`, admins reopen; history is appen
 | Hooks | `features/catalog/data.js` (generic entity hooks plus course and class-subject hooks) |
 | Endpoints | `api/v1/endpoints/rooms.py`, `subjects.py`, `courses.py` (class edits use `/courses/{course_id}/classes/{class_id}`), `classes.py` |
 | Services | `services/room_service.py`, `subject_service.py`, `course_service.py`, `class_service.py`, `resource_removal.py` |
-| Persistence | `room`, `subject`, `module`, `course`, `class`, `class_subject_link`, `course_subject_link`, `teacher_subject_link` |
+| Persistence | `room`, `subject`, `module`, `course`, `class`, `class_subject_link`, `class_subject_module`, `course_subject_link`, `teacher_subject_link` |
 | Tests | `integration/committed/test_rooms_crud.py`, `test_subjects_crud.py`, `test_courses_endpoints.py`, `test_classes_crud.py`, `test_resource_removal.py`; `frontend/src/test/RoomForm.test.jsx` |
 | Guides | [Professional Education](../02_domain_model/PROFESSIONAL_EDUCATION.md), [Resource Removal](../05_backend_api/RESOURCE_REMOVAL.md) |
 
-Invariants: removal returns `409 resource_in_use`, archives with history, or deletes; every write records a scheduler change; module order is contiguous from 0.
+Invariants: removal returns `409 resource_in_use`, archives with history, or deletes; every write records a scheduler change; module order is contiguous from 0; a class-subject link selects its modules per grade level.
 
 ### CSV bulk import
 

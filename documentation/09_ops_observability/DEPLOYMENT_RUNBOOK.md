@@ -163,8 +163,8 @@ The frontend build variables (`VITE_API_BASE_URL`, `VITE_CLERK_PUBLISHABLE_KEY`,
 
 ### Migration baseline and reset rule
 
-The migration chain has one baseline, `0001_scheduler_v1_baseline`.
-It is a PostgreSQL 18 SQL schema dump. New migrations are added on top of it.
+The migration chain starts at the frozen baseline `0001_scheduler_v1_baseline`.
+It is a PostgreSQL 18 SQL schema dump. New migrations stack linearly in `backend/alembic/versions/`.
 A database created on the old chain cannot upgrade to this baseline.
 The new tree cannot resolve the removed revision identifiers.
 Reset such a database before the new code deploys. The reset drops all application tables.

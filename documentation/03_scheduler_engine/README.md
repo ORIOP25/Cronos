@@ -21,6 +21,8 @@ The domain (`backend/app/scheduler/domain/`) is pure: no ORM, HTTP, Celery, CP-S
 
 Lunch break (mandatory). A configured lunch rule is a mandatory continuous break inside its local window, per class and per teacher on active days. Separated gaps never sum; only one uninterrupted interval satisfies the rule. The validator enforces it with `LUNCH_BREAK_VIOLATION`, and the CP-SAT placement model builds lunch options. A partially configured lunch rule fails the snapshot with `LUNCH_CONFIGURATION_INCOMPLETE`.
 
+Per-class module selection. The projection reads `class_subject_module` and plans only the selected modules of each class-subject link, with `sequence = module.order + 1`. An active link without a selected module fails the snapshot with `CLASS_SUBJECT_WITHOUT_MODULES`. A deselected module with execution credit stays as a `planned = false` requirement. The planning loaders treat the live selection as authoritative between generations, so a deselect or reselect applies before the next projection. They close a retired module at its executed minutes, so the ledger stays replayable. See `backend/app/scheduler/infrastructure/curriculum.py`, `progress.py`, and `backend/app/scheduler/domain/demand.py` `close_retired_modules`.
+
 Stability window. The stability window protects only an already-published schedule. The snapshot computes `protected_dates` only when an ACTIVE `SchedulerVersionV1` exists; a first generation has empty `protected_dates`. The window counts grid days, not calendar days, and always preserves executed and past lessons.
 
 Balanced classroom progression. Constructive priority favors subjects with less curricular progress and classes that have not started. Annual quotas are planned by `infrastructure/annual_model.py` `plan_annual_quotas`. Quality exposes `minimum_class_progress_per_mille` and `class_progress_spread_per_mille`.
@@ -52,6 +54,10 @@ Joint lessons. `domain/teaching_units.py` `build_teaching_units` splits class as
 
 Compact resource exclusivity. `infrastructure/placement_model.py` `_add_resource_exclusivity` adds at most one option per resource and period with `AddAtMostOne`, grouped by equal interval. It merges only partially overlapping groups and never groups that overlap only through transitivity, so the ends of an overlap chain stay available. It is used for class, teacher and room exclusivity and during room optimization. This replaced pairwise constraints to avoid `OOM`.
 
+Class weekly preferences. The snapshot turns a class availability grid into hard and soft unavailability with `_preference_unavailability`, the same rule as teachers. An Impossível block is hard. An Evitar block is soft. One Preferencial block makes the other blocks count as Evitar. The class grid feeds `UnavailableResource.CLASS` in capacity, candidate validation, quality and placement.
+
+Proven capacity diagnostics. `aggregate_capacity_check` in `domain/capacity.py` also returns `class_deficits`. The class deficit is the class-wide lower bound when the union of the class's eligible periods cannot hold its total residual demand. `diagnose_capacity` emits `INSUFFICIENT_CLASS_TIME` with scope `CLASS:{id}`. `generate_complete` and adaptive recovery return these diagnoses. An `INFEASIBLE` job stores them in `scheduler_job_v1.diagnostics_json`, and `GET /jobs/{id}` returns one entry per affected class.
+
 ## Queue and workers
 
 Jobs run through Celery with a single global executor. `backend/app/scheduler_v1_worker.py` registers the task `scheduler.v1.run_next_job`; `backend/app/scheduler_recovery_worker.py` registers `scheduler.v1.supervise`, scheduled every 60 seconds. The supervisor reconciles abandoned attempts and wakes the executor when work waits.
@@ -76,7 +82,7 @@ Endpoints under `/api/v1/scheduler` (`backend/app/api/v1/endpoints/scheduler.py`
 | :--- | :--- |
 | `GET /status` | State, eligibility reasons and current proposal. |
 | `POST /generate` | Manual, idempotent request; returns `202` and the job; admin only. |
-| `GET /jobs/{job_id}` | Phase, result and summary. |
+| `GET /jobs/{job_id}` | Phase, result, summary and proven per-class diagnostics. |
 | `POST /jobs/{job_id}/cancel` | Idempotent cancellation. |
 | `GET /drafts/current` | Current pending proposal. |
 | `GET /drafts/{proposal_id}/diff` | Physical changes and modular updates, separated. |
@@ -100,6 +106,7 @@ node scripts/test.mjs capacity-smoke
 
 The 48-class correctness regression lives in `backend/tests/unit/test_scheduler_typology_v1.py`.
 It uses the configured 900-second safety budget and validates the first complete candidate.
+The `fast` profile skips it; the `e2e-runtime` CI job runs it.
 
 ## Current limitations
 

@@ -16,7 +16,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models
 from app.config import settings
-from tests._support.db_fixtures import select_all_subject_modules
 
 API = settings.API_V1_STR
 
@@ -233,13 +232,14 @@ class TestClassesCRUD:
         )
         db_session.add(link)
         await db_session.flush()
-        await select_all_subject_modules(
-            db_session,
-            organization_id=org_id,
-            class_subject_link_id=link.id,
-            subject_id=subject.id,
+        # WBS 2.2.2: the dashboard progress counts only selected modules.
+        await db_session.execute(
+            models.class_subject_module.insert().values(
+                organization_id=org_id,
+                class_subject_link_id=link.id,
+                module_id=module.id,
+            )
         )
-        await db_session.flush()
 
         entry = models.ProgressLedgerEntry(
             organization_id=org_id,

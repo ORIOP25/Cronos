@@ -1,8 +1,7 @@
 """Focused contract for the 0002_class_subject_modules migration.
 
-Like the baseline roundtrip in ``test_scheduler_v1_baseline.py``, each test
-returns the schema to ``head`` in a ``finally`` block so a failure never leaves
-the shared test database on an intermediate revision.
+Each test returns the schema to ``head`` in a ``finally`` block so a failure
+never leaves the shared test database on an intermediate revision.
 """
 
 import pytest
@@ -127,13 +126,11 @@ def test_selection_table_matches_the_tenant_contract(clean_database):
     with sync_test_engine.connect() as connection:
         inspector = inspect(connection)
 
-        primary_key = inspector.get_pk_constraint(SELECTION_TABLE)
-        assert primary_key["constrained_columns"] == [
+        assert inspector.get_pk_constraint(SELECTION_TABLE)["constrained_columns"] == [
             "organization_id",
             "class_subject_link_id",
             "module_id",
         ]
-
         foreign_keys = {
             (
                 tuple(foreign_key["constrained_columns"]),
@@ -151,9 +148,9 @@ def test_selection_table_matches_the_tenant_contract(clean_database):
             ),
             (("organization_id", "module_id"), "module", ("organization_id", "id")),
         }
-
-        indexes = {tuple(index["column_names"]) for index in inspector.get_indexes(SELECTION_TABLE)}
-        assert indexes == {("organization_id",), ("organization_id", "module_id")}
+        assert {
+            tuple(index["column_names"]) for index in inspector.get_indexes(SELECTION_TABLE)
+        } == {("organization_id",), ("organization_id", "module_id")}
 
         rowsecurity = connection.execute(
             text(
@@ -164,16 +161,16 @@ def test_selection_table_matches_the_tenant_contract(clean_database):
             {"table": SELECTION_TABLE},
         ).one()
         assert rowsecurity == (True, True)
-
-        policy = connection.scalar(
-            text(
-                "SELECT count(*) FROM pg_policies "
-                "WHERE schemaname = 'public' AND tablename = :table AND policyname = 'tenant_isolation'"
-            ),
-            {"table": SELECTION_TABLE},
+        assert (
+            connection.scalar(
+                text(
+                    "SELECT count(*) FROM pg_policies WHERE schemaname = 'public' "
+                    "AND tablename = :table AND policyname = 'tenant_isolation'"
+                ),
+                {"table": SELECTION_TABLE},
+            )
+            == 1
         )
-        assert policy == 1
-
         grants = connection.execute(
             text(
                 "SELECT has_table_privilege('cronos_app', 'public.class_subject_module', 'SELECT'), "

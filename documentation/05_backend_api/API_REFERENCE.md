@@ -89,6 +89,9 @@ Stable route families keep frontend features and provider webhooks independent f
 | `DELETE` | `/api/v1/classes/{class_id}/subjects/{subject_id}` | Admin |
 | `GET` | `/api/v1/classes/{class_id}/available-subjects` | Active |
 | `GET` | `/api/v1/classes/subjects/{subject_id}/eligible-teachers` | Active |
+| `GET` | `/api/v1/classes/{class_id}/availability` | Admin |
+| `PUT` | `/api/v1/classes/{class_id}/availability` | Admin |
+| `POST` | `/api/v1/classes/{class_id}/availability/copy` | Admin |
 | `GET` / `POST` | `/api/v1/subjects/` | Active / Admin |
 | `PATCH` / `DELETE` | `/api/v1/subjects/{subject_id}` | Admin |
 | `GET` | `/api/v1/subjects/{subject_id}/joint-candidates` | Admin |
@@ -132,6 +135,7 @@ A joint lesson group joins two or more classes of one subject for a set of modul
 | `POST` | `/api/v1/imports/commit` | Admin; body limit 8 MiB; returns `201` |
 
 See [Bulk Import CSV](../07_data_and_seed/BULK_IMPORT_CSV.md) for the exact templates, limits, issues and atomicity rules.
+The `class_availability` resource accepts `files.class_availability`.
 
 ### School configuration
 
@@ -154,6 +158,7 @@ See [Bulk Import CSV](../07_data_and_seed/BULK_IMPORT_CSV.md) for the exact temp
 School settings validate the combined stored and submitted dates.
 When the calendar and `preferred_end_date` change together, the scheduler year persists all three dates before recording the calendar change.
 Valid calendar replacements do not produce a constraint conflict. Invalid date combinations return `422`.
+Each `affected_availabilities` entry of `POST /school/grid-changes/preview` includes a `classes` list.
 
 ### Scheduler and schedule operations
 
@@ -174,6 +179,7 @@ Valid calendar replacements do not produce a constraint conflict. Invalid date c
 | `PUT` | `/api/v1/schedule/lessons/{lesson_id}/log` | Active; assigned teacher or admin |
 
 Scheduler status exposes `active_proposal_id` for the approved proposal linked to the active version, or `null` when absent.
+`GET /scheduler/jobs/{job_id}` returns a `diagnostics` list with one proven entry per affected class.
 Weekly schedule reads return published lesson intervals, resource identifiers, module projections, and operational log state.
 There is no separate proposal-lesson listing route.
 The API has no observability summary routes, no `POST /api/v1/occurrences/` create route, and no `GET /api/v1/scheduler/drafts/{id}/lessons` route.
@@ -218,6 +224,10 @@ order: `ACTIVE_CLASSES`, `MODULES`, `TEACHERS`, `TEACHER_ASSIGNMENT`,
 `COMPATIBLE_ROOM`, and `TEACHER_AVAILABILITY`. `CLASS_SUBJECTS` and `TIMESLOTS`
 are not public readiness steps. Foundation owns the weekly grid and final
 prevalidation continues to report `MISSING_TIMESLOTS` when it is absent.
+Prevalidation reports `CLASS_SUBJECT_WITHOUT_MODULES` when an active class subject has no selected module.
+
+`GET /readiness/prevalidation` adds the `CLASS_WITHOUT_AVAILABILITY` blocker
+when every visible block of an eligible class is marked Impossível.
 
 `PUT /foundation/draft` accepts `expected_version`, `current_step` from 1 to 10, and a strict Foundation data object.
 The response returns the new version.
@@ -298,6 +308,25 @@ The `schedule_health` widget exposes `annual_class_average`,
 schedule version. The weekly indicators use a closed Monday-to-Sunday window.
 `classes_archived` counts archived classes still present in that approved version.
 Archiving a catalog class does not remove its approved lessons or change the annual denominator.
+
+### Class module selection
+
+A class-subject link selects the modules the class takes for its grade level.
+
+`GET /api/v1/classes/{class_id}/subjects` returns `modules`, sorted by `order`, each with a `selected` flag.
+`POST /api/v1/classes/{class_id}/subjects` selects every module of the subject.
+`PATCH /api/v1/classes/{class_id}/subjects/{subject_id}` accepts an optional `module_ids` list.
+An empty list clears the selection.
+An omitted or `null` `module_ids` leaves the selection unchanged.
+
+The `PATCH` route validates the whole list before it writes.
+Duplicate IDs and modules from another subject return `400`.
+A module from another organization returns `404`.
+An archived class returns the current archived-class error.
+
+`GET /api/v1/classes/{class_id}` and the progress reads count only the selected modules.
+`PATCH /api/v1/classes/{class_id}/progress` rejects an unselected module with the existing `400` curriculum error, on both the v1 and the legacy path.
+Prevalidation and a generation or grid-change request return `CLASS_SUBJECT_WITHOUT_MODULES` when an active link has no selected module.
 
 ### Rate limits
 

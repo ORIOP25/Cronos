@@ -99,6 +99,24 @@ export const IMPORT_RESOURCES = Object.freeze([
       teacher_email: 'Email do professor',
     },
   },
+  {
+    key: 'class_availability',
+    label: 'Disponibilidade das turmas',
+    filename: 'Cronos_DisponibilidadeTurmas_Template.csv',
+    origin: '/courses',
+    instructions: [
+      'O modelo já traz as turmas, as horas da grelha e a disponibilidade atual.',
+      'Cada linha é uma turma num dia. Cada coluna de hora é um bloco.',
+      'Escreva Impossível, Evitar, Neutro ou Preferencial. Uma célula vazia conta como Neutro.',
+      'Cada turma do ficheiro fica com a grelha do ficheiro. As turmas que não aparecem ficam iguais.',
+      'Não apague colunas de hora. Se a grelha mudar, descarregue um modelo novo.',
+    ],
+    fields: {
+      course_abbreviation: 'Sigla do curso',
+      class_name: 'Nome da turma',
+      day: 'Dia',
+    },
+  },
 ])
 
 const IMPORT_COUNT_LABELS = Object.freeze({
@@ -110,6 +128,7 @@ const IMPORT_COUNT_LABELS = Object.freeze({
   teachers: 'Professores',
   competencies: 'Competências',
   assignments: 'Atribuições',
+  class_availability: 'Disponibilidade das turmas',
 })
 
 function getImportResource(resource) {
@@ -121,7 +140,7 @@ function getImportResourceLabel(resource) {
 }
 
 function getImportFieldLabel(resource, field) {
-  return getImportResource(resource)?.fields?.[field] || 'Campo'
+  return getImportResource(resource)?.fields?.[field] || field || 'Campo'
 }
 
 export function getImportCountLabel(resource) {
@@ -137,7 +156,8 @@ export function formatImportIssue(issue) {
 
 const IMPORT_INVALIDATIONS = [
   'members', 'teachers', 'eligible-teachers', 'rooms', 'subjects', 'courses',
-  'classes', 'class-subjects', 'available-subjects', 'dashboard', 'readiness', 'scheduler-status',
+  'classes', 'class-subjects', 'available-subjects', 'class-availability',
+  'dashboard', 'readiness', 'scheduler-status',
 ]
 
 function fileError(code, message) {
@@ -195,10 +215,45 @@ export function downloadBlob(blob, filename) {
   URL.revokeObjectURL(url)
 }
 
+function errorBodyBytes(data) {
+  if (ArrayBuffer.isView(data)) {
+    return new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
+  }
+  if (data instanceof ArrayBuffer || Object.prototype.toString.call(data) === '[object ArrayBuffer]') {
+    return new Uint8Array(data)
+  }
+  return null
+}
+
+// The template request uses responseType "arraybuffer", so a structured JSON error
+// arrives as raw bytes. Decode only a JSON body with a detail object and reattach it
+// so the shared error formatter can read code/context/reference. Anything else is
+// left untouched, and no raw text is ever surfaced.
+function normalizeTemplateError(error) {
+  const bytes = errorBodyBytes(error?.response?.data)
+  if (bytes) {
+    try {
+      const payload = JSON.parse(new TextDecoder().decode(bytes))
+      if (payload && typeof payload === 'object' && !Array.isArray(payload)
+        && payload.detail && typeof payload.detail === 'object') {
+        error.response.data = payload
+      }
+    } catch {
+      // Not JSON: keep the original error untouched.
+    }
+  }
+  return error
+}
+
 export async function downloadBulkImportTemplate(apiClient, resource) {
   const definition = getImportResource(resource)
   if (!definition) throw fileError('resource_unknown', 'Secção de importação desconhecida.')
-  const bytes = await apiClient.get(`/imports/templates/${resource}`, { responseType: 'arraybuffer' })
+  let bytes
+  try {
+    bytes = await apiClient.get(`/imports/templates/${resource}`, { responseType: 'arraybuffer' })
+  } catch (error) {
+    throw normalizeTemplateError(error)
+  }
   downloadBlob(new Blob([bytes], { type: 'text/csv;charset=utf-8' }), definition.filename)
 }
 

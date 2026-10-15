@@ -5,25 +5,11 @@
 Este documento decompõe a implementação do [Tech Spec — Módulos por Turma](CLASS_MODULE_SELECTION_TECH_SPEC.md) em pacotes de trabalho.
 Define entregáveis, testes iniciais, dependências, critérios de conclusão e a ordem de execução.
 
-**Estado:** em implementação. A implementação local e a verificação de app estão concluídas; a aceitação completa e a entrega estão pendentes.
+**Estado:** implementado. O backend foi entregue no PR #131 (grupos 1 e 2); os ecrãs (3.1 a 3.7), a entrega (3.8), a verificação (4.1) e o fecho (4.2) no PR #135.
 **Data:** 14 de outubro de 2026.
 
 O tech spec é dono das decisões, dos contratos e dos cenários de teste.
 Este documento não repete essas regras. Cada pacote indica a secção do spec que aplica.
-
-## Estado de execução
-
-Verificação contra a árvore de trabalho, em 15 de outubro de 2026.
-O código local e os testes não dispensam a verificação independente final.
-
-| Categoria | Estado local |
-| :--- | :--- |
-| 2 — Servidor e motor | Implementação local e testes. Ver [class_service.py](../../backend/app/services/class_service.py), [curriculum.py](../../backend/app/scheduler/infrastructure/curriculum.py) e [0002_class_subject_modules.py](../../backend/alembic/versions/0002_class_subject_modules.py). |
-| 3 — Ecrãs | Implementação local e testes. Ver `frontend/src/pages/ClassSubjects.jsx` e os testes em `frontend/src/test/`. |
-| Verificação independente final | Verificação local e verificação do projeto app concluídas; as restantes verificações de navegador e a CI não correram agora. Ver [Command Reference](../00_getting_started/COMMAND_REFERENCE.md) e [scripts/test.mjs](../../scripts/test.mjs). |
-| Percurso e2e (project app) | Verificado com `node scripts/test.mjs e2e --project app`, incluindo os percursos de seleção de módulos e de aulas conjuntas e as regressões de operação, geração e QA; registo `e2e-app.xml` em `.test-artifacts/`. Os restantes projetos e a CI não correram agora. |
-| Aceitação manual | Pendente. Os quatro passos manuais da secção de verificação não estão todos executados como percurso completo. Ver [Verification Procedure](CLASS_MODULE_SELECTION_TECH_SPEC.md#verification-procedure). |
-| Entrega (PR, CI e publicação) | Não realizada. |
 
 ## Intended Reader
 
@@ -105,6 +91,18 @@ Um pacote sem alteração de comportamento, como documentação, não precisa de
 4.1   Verificação manual
 4.2   Estado final dos documentos
 ```
+
+## Estado dos pacotes
+
+| Pacotes | Estado |
+| :--- | :--- |
+| 1.1, 2.1 a 2.10 | Concluídos; o backend está integrado em `main` no PR #131. |
+| 3.1 a 3.7 | Concluídos; verificados localmente. |
+| 3.8 | Entrega neste PR #135; a CI e o `Deploy check` em `main` são a prova. |
+| 4.1 | Concluído por automação de browser no contentor isolado, não por um humano. |
+| 4.2 | Concluído; os documentos estão em `Estado: implementado`. |
+
+O relatório do PR #131 regista as provas de cada pacote do servidor; o PR #135 regista as dos ecrãs e do fecho. Este documento não repete esses registos.
 
 ## Pacotes de trabalho
 
@@ -249,8 +247,10 @@ Ramo: `feat/class-module-selection`. Este PR não muda o que o utilizador vê.
 
 - **Entregável:** `snapshot.py` usa o carregador antes de `_build_assignments`.
 - **Teste primeiro:** desmarcar um módulo com sumários e gerar. O horário não tem aulas desse módulo.
+- **Teste D12:** alterar a seleção com aulas futuras dentro da janela de estabilidade. As futuras excedentárias saem; as passadas e o histórico registado ficam.
 - **Concluído quando:** o cenário passa e o histórico fica intacto.
 - **Depende de:** 2.6.1
+- **Risco D12:** a remoção dentro da janela aplica-se só à atribuição cuja seleção mudou; as atribuições inalteradas mantêm a janela. Uma aula passada que não caiba no currículo selecionado falha com `PROTECTED_LESSON_EXCEEDS_CURRICULUM`.
 
 ##### 2.6.3 Crédito dos sumários — M
 
@@ -287,6 +287,7 @@ Ramo: `feat/class-module-selection`. Este PR não muda o que o utilizador vê.
 - **Concluído quando:** este cenário passa. O cenário de voltar a marcar um módulo anterior também passa.
 - **Depende de:** 2.6.2
 - **Risco:** é o pacote com mais incerteza. Se um validador falhar, corrija a causa no carregador, não no validador.
+- **D12:** a cópia da proposta preserva as aulas passadas e o histórico registado; só o excedente futuro sai.
 
 #### 2.7 Pré-validação, prontidão e fingerprint
 
@@ -408,10 +409,11 @@ Spec: [Disciplinas e Professores](CLASS_MODULE_SELECTION_TECH_SPEC.md#disciplina
 
 #### 3.7 Documentação dos ecrãs — P
 
-- **Entregável:** as linhas de frontend da secção [Documentação a atualizar](CLASS_MODULE_SELECTION_TECH_SPEC.md#documentação-a-atualizar).
+- **Entregável:** o comportamento dos ecrãs na secção [Interface](CLASS_MODULE_SELECTION_TECH_SPEC.md#interface): a checklist de módulos, a gravação ao clicar, o modo só de leitura e o aviso de módulo novo em Disciplinas. A matriz de mensagens pertence ao trabalho de UX.
 - **Teste primeiro:** não se aplica.
 - **Concluído quando:** as ligações relativas resolvem e `git diff --check` não reporta erros.
 - **Depende de:** 3.1 a 3.6
+- **Estado:** concluído; o comportamento dos ecrãs está descrito no tech spec.
 
 #### 3.8 Entrega do PR 2 — M
 
@@ -428,15 +430,17 @@ Spec: [Disciplinas e Professores](CLASS_MODULE_SELECTION_TECH_SPEC.md#disciplina
 
 #### 4.1 Verificação manual — P
 
-- **Entregável:** os quatro passos manuais da [Verification Procedure](CLASS_MODULE_SELECTION_TECH_SPEC.md#verification-procedure), feitos no contentor local.
+- **Entregável:** os quatro passos manuais da [Verification Procedure](CLASS_MODULE_SELECTION_TECH_SPEC.md#verification-procedure), executados no contentor local.
 - **Concluído quando:** os quatro passos produzem o resultado esperado.
 - **Depende de:** 3.8
+- **Estado:** os quatro passos foram executados por automação de browser (Playwright) no contentor isolado, não por um humano. O percurso está em `frontend/e2e/readiness/class-module-selection.spec.js`.
 
 #### 4.2 Estado final dos documentos — P
 
 - **Entregável:** o tech spec e este WBS passam a `Estado: implementado`.
 - **Concluído quando:** os guias descrevem o comportamento e o relatório ao responsável de produto está entregue.
 - **Depende de:** 4.1
+- **Estado:** os documentos estão em `Estado: implementado`; o relatório de entrega está no PR #135.
 
 ## Dependências e caminho crítico
 
@@ -501,6 +505,7 @@ O pacote 2.6.7 tem o maior risco. Comece-o assim que 2.6.2 terminar.
 | D09 Gravação ao clicar | 3.2.2 |
 | D10 Progresso só dos módulos marcados | 2.6.6, 2.8.1, 3.3 |
 | D11 Voltar a marcar retoma o histórico | 2.5.1, 2.6.7 |
+| D12 Ajustar/remover aulas futuras na alteração de seleção | 2.6.2, 2.6.7 |
 
 ## Definição de concluído
 

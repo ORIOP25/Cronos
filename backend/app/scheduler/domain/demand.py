@@ -112,6 +112,26 @@ def remaining_minutes(
     return sum(module.required_minutes - completed[module.module_id] for module in modules)
 
 
+def close_retired_modules(
+    modules: Sequence[ModuleRequirement],
+    retired: Set[int],
+    completed: Mapping[int, int],
+) -> tuple[tuple[ModuleRequirement, ...], dict[int, int]]:
+    """Planning view: a retired module is closed at its executed minutes."""
+    planning: list[ModuleRequirement] = []
+    executed: dict[int, int] = {}
+    for module in modules:
+        minutes = completed.get(module.module_id, 0)
+        if module.module_id in retired:
+            if minutes <= 0:
+                continue
+            planning.append(ModuleRequirement(module.module_id, module.sequence, minutes))
+        else:
+            planning.append(module)
+        executed[module.module_id] = minutes
+    return tuple(planning), executed
+
+
 def frontier_credit(
     modules: Sequence[ModuleRequirement],
     completed: Mapping[int, int],
@@ -155,30 +175,3 @@ def joint_frontier_credit(
         for module in modules
     }
     return frontier_credit(modules, progress, minutes)
-
-
-def close_retired_modules(
-    modules: Sequence[ModuleRequirement],
-    retired: Set[int],
-    completed: Mapping[int, int],
-) -> tuple[tuple[ModuleRequirement, ...], dict[int, int]]:
-    """Planning view: a retired module is closed at its executed minutes.
-
-    A planned module keeps its catalogue requirement. A retired module with
-    executed minutes is closed at those minutes, so it receives no new credit
-    and no future lesson. A retired module without executed minutes leaves the
-    planning view. The returned minutes are limited to the modules that remain.
-    """
-    planned: list[ModuleRequirement] = []
-    closed_completed: dict[int, int] = {}
-    for module in modules:
-        executed = completed.get(module.module_id, 0)
-        if module.module_id in retired:
-            if executed <= 0:
-                continue
-            planned.append(ModuleRequirement(module.module_id, module.sequence, executed))
-            closed_completed[module.module_id] = executed
-            continue
-        planned.append(module)
-        closed_completed[module.module_id] = executed
-    return tuple(planned), closed_completed

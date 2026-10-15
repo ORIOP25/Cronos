@@ -5,16 +5,16 @@ tables, and ``scheduler_lesson_v1.teaching_unit_key``. Every existing lesson is
 backfilled with ``A:{assignment_id}`` and the unique identity of a lesson gains
 ``assignment_id`` so sibling lessons of a joint lesson can share a ``stable_key``.
 
-Revision ID: 0003_joint_lesson_groups
-Revises: 0002_class_subject_modules
+Revision ID: 0004_joint_lesson_groups
+Revises: 0003_class_availability
 """
 
 import sqlalchemy as sa
 
 from alembic import op
 
-revision = "0003_joint_lesson_groups"
-down_revision = "0002_class_subject_modules"
+revision = "0004_joint_lesson_groups"
+down_revision = "0003_class_availability"
 branch_labels = None
 depends_on = None
 

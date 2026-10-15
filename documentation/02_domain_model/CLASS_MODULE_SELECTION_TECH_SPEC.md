@@ -5,7 +5,7 @@
 Este documento especifica a seleção de módulos por turma.
 Define decisões de produto, modelo de dados, contratos, regras do motor, plano TDD e critérios de aceitação.
 
-**Estado:** em implementação. A implementação local e a verificação de app estão concluídas; a aceitação completa e a entrega estão pendentes.
+**Estado:** implementado. O backend foi entregue no PR #131; os ecrãs e estes guias no PR #135.
 **Data:** 14 de outubro de 2026.
 **Base observada:** branch `main` no commit `4773d76`.
 **Origem:** item 1 dos pedidos da escola piloto, reunião de 13 de outubro de 2026.
@@ -76,6 +76,7 @@ O responsável de produto aprovou estas decisões em 14 de outubro de 2026.
 | D09 | Cada clique grava logo. | Os controlos ficam bloqueados durante a gravação. |
 | D10 | O progresso conta só os módulos marcados. | Progresso da turma, progresso do professor e painel inicial. |
 | D11 | Voltar a marcar um módulo retoma o histórico. | As horas já registadas voltam a contar. |
+| D12 | Numa alteração de seleção, ajustar ou remover aulas FUTURAS excedentárias, mesmo dentro da janela de estabilidade. | Preservar todas as aulas passadas e todo o histórico registado (sumários, faltas e créditos). A estabilidade das atribuições inalteradas mantém-se. |
 
 ### Âmbito
 
@@ -273,7 +274,9 @@ Um módulo concluído não recebe créditos novos nem aulas futuras.
 
 Crie um carregador em `progress.py` que devolve a visão de planeamento:
 
-1. Carrega todas as linhas de requisito, incluindo `planned = false`.
+1. Para uma ligação turma–disciplina viva, a seleção LIVE é autoritária: o catálogo
+   define os requisitos e uma re-marcação sobrepõe-se ao `planned` desatualizado.
+   Sem ligação viva, mantêm-se as linhas de requisito, incluindo `planned = false`.
 2. Reproduz o histórico com os minutos do catálogo, através de `completed_by_module`.
 3. Aplica `close_retired_modules`.
 
@@ -285,13 +288,20 @@ Crie um carregador em `progress.py` que devolve a visão de planeamento:
 | `occurrences.py` (capacidade da substituição) | Planeamento. |
 | `progress.py` (liquidação de dívida no reinício do ano) | Planeamento. |
 | `progress.py` (`_requirements` e `_load_assignment_requirements`) | Todas as linhas. Reproduzem o histórico. |
-| `dashboard_service.py` (progresso das turmas) | Só `planned = true`. |
+| `dashboard_service.py` (progresso das turmas) | Seleção LIVE, autoritária antes da geração. Soma o catálogo (`Module.required_minutes`), não as linhas de requisito (D10, D11). |
 | `grid_change_service.py` (procura da grelha) | Só `planned = true`. |
-| `resource_removal.py` (remoção de módulos) | Todas as linhas. Um módulo com histórico continua protegido. |
+| `subject_service.py` (remoção de módulos) | Só o histórico legado (`ProgressLedgerEntry`). O histórico v1 (`curricular_requirement`, `curricular_execution_credit`) é protegido pela chave estrangeira da base de dados, não por este serviço. |
 
 O motor reprojeta as aulas publicadas não registadas com os requisitos atuais (`_reproject_baseline`).
 As aulas registadas entram como ocupação e são copiadas para a proposta depois da pesquisa.
 Por isso, as aulas futuras de um módulo retirado passam para o módulo marcado seguinte.
+
+D12: numa alteração de seleção, o motor remove aulas FUTURAS excedentárias, mesmo dentro da janela.
+A remoção dentro da janela aplica-se só à atribuição cuja seleção mudou.
+A mudança existe quando uma slice referencia um módulo que saiu ou deixa de caber no módulo.
+Uma atribuição inalterada mantém a janela completa; o excedente fora da janela é sempre libertado.
+As aulas passadas e o histórico registado (sumários, faltas e créditos) são preservados.
+Uma aula passada que não caiba no currículo selecionado falha com `PROTECTED_LESSON_EXCEEDS_CURRICULUM`.
 
 Confirme que nenhuma validação compara os slices das aulas registadas com os requisitos fechados.
 Uma falta registada num módulo retirado pode ter slices além dos minutos executados.
@@ -427,6 +437,9 @@ Em `backend/tests/unit/test_scheduler_progress_domain.py` ou num ficheiro novo d
 | A prontidão exige um módulo marcado. | `backend/tests/contracts/test_school_readiness_service.py` |
 | A fingerprint muda quando a seleção muda. | `test_scheduler_fingerprint_service.py` |
 | O progresso da turma e do professor mostra só os módulos marcados. | `test_module_progress.py` |
+| Alterar a seleção com aulas futuras dentro da janela de estabilidade: as futuras excedentárias saem, as passadas e o histórico ficam (D12). | `test_scheduler_v1_class_module_selection.py` |
+| Uma aula passada que não caiba no currículo selecionado falha com `PROTECTED_LESSON_EXCEEDS_CURRICULUM`. | `test_scheduler_v1_class_module_selection.py` |
+| As atribuições inalteradas mantêm a janela de estabilidade. | `test_scheduler_lunch_stability_snapshot.py` |
 
 ### Frontend
 

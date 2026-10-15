@@ -30,6 +30,12 @@ Other client responses stay in context.
 | Save availability | Success | — | Toast, 4 s | `MyAvailability` | — |
 | Save availability | Transient failure | Network, 429, 5xx | Toast, 6 s | `MyAvailability` | Draft stays, retry |
 | Save availability | Context changed before the response | — | No feedback | `useAttemptScope` guard | Retry in the new context |
+| Save class availability | Success | — | Toast, 4 s | `ClassAvailabilityModal` | — |
+| Save class availability | Transient failure | Network, 429, 5xx | Toast, 6 s | `ClassAvailabilityModal` | Draft stays, retry |
+| Save class availability | Server block | `bad_request`, `duplicate_timeslot` | Banner in the modal | `ClassAvailabilityModal` | Fix the grid |
+| Apply class availability to other classes | Success | — | Toast, 4 s | `ClassAvailabilityModal` | — |
+| Apply class availability to other classes | Server block | `bad_request`, `resource_not_found` | Banner in the modal | `ClassAvailabilityModal` | Fix the selection |
+| Apply class availability to other classes | Transient failure | Network, 429, 5xx | Toast, 6 s | `ClassAvailabilityModal` | Retry |
 | Remove or archive a row | Success | — | Toast, 4 s | `SmartTable` | — |
 | Remove a row | Business block | `resource_in_use`, `course_has_classes` | Banner in context | `SmartTable` | Fix and retry |
 | Remove a row | Transient failure | Network, 429, 5xx | Toast, 6 s | `SmartTable` | Retry |
@@ -51,6 +57,7 @@ Other client responses stay in context.
 | Decide a class of a joint occurrence | Success | — | Toast, 4 s | `Occurrences` | — |
 | Decide a joint occurrence | Transient failure | Network, 429, 5xx | Toast, 6 s | `Occurrences` | Retry |
 | Edit a subject with a new module | Success | — | Toast, 4 s | `Subjects` | Mark the new modules in each class |
+| Edit a subject that gains a new module | Success with a warning | — | Toast, 4 s | `Subjects` | Mark the module in the classes that need it |
 | Save an internship flow | Success | — | Toast, 4 s | `CalendarSection` | — |
 | Save an internship flow | Stale preview | `CALENDAR_EVENT_STALE` | Persistent banner | `CalendarSection` | Repeat the preview |
 | Save an internship flow | Transient failure | Network, 429, 5xx | Toast, 6 s | `CalendarSection` | Retry |
@@ -79,9 +86,11 @@ Other client responses stay in context.
 | Generation failure | Known failure | `NO_ELIGIBLE_ROOM` and others | `FailureState` in context | `Schedules` | Retry or open rooms |
 | Generation failure | Joint classes share no free time | `JOINT_NO_COMMON_TIME` | Banner in context | `Schedules` | Review class and teacher availability |
 | Generation failure | Joint room too small for the sum of classes | `JOINT_ROOM_CAPACITY` | Banner in context | `Schedules` | Adjust rooms |
+| Generation failure | Proven per-class deficit | `INSUFFICIENT_CLASS_TIME`, `INSUFFICIENT_INTERSECTION` | `FailureState` in context | `Schedules` | Review class availability |
 | Validate or commit an import | Success | — | Toast, 4 s | `BulkImport` | — |
 | Validate or commit an import | Transient failure | Network, 429, 5xx | Toast, 6 s | `BulkImport` | Retry |
 | Import issues | Structured list | — | List panel | `BulkImport` | Consult each issue |
+| Class availability import issue | Cell error | `level_invalid` and others | List panel; the field is the hour column title | `BulkImport` | Fix the cell |
 | Invite, sync, or restore a member | Success | — | Toast, 4 s | `Members` | — |
 | Member action | Transient failure | Network, 429, 5xx | Toast, 6 s | `Members` | Retry |
 | Member action | Access block | `member_sync_error` and others | Banner in context | `Members` | Resolve the sync |

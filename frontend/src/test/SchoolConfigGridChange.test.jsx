@@ -238,6 +238,48 @@ describe('SchoolConfig grid changes', () => {
     expect(screen.getByRole('link', { name: /horários/i })).toHaveAttribute('href', '/schedules')
   })
 
+  it('counts the teachers and the classes of an affected availability block', async () => {
+    mockSchoolConfig({ publicationState: 'PUBLISHED' })
+    apiClient.post.mockImplementation((url) => {
+      if (url === '/school/grid-changes/preview') {
+        return Promise.resolve({
+          ...PREVIEW,
+          affected_constraints: [],
+          affected_availabilities: [
+            {
+              current_timeslot_id: 11,
+              current: { day_of_week: 0, start_time: '08:30', end_time: '09:20' },
+              proposed: { day_of_week: 0, start_time: '08:30', end_time: '09:20' },
+              match: 'MOVED',
+              ambiguous: false,
+              requires_decision: true,
+              teachers: [{ teacher_id: 5, score: 0 }],
+              classes: [{ class_id: 1, score: 0 }],
+            },
+            {
+              current_timeslot_id: 13,
+              current: { day_of_week: 1, start_time: '08:30', end_time: '09:20' },
+              proposed: null,
+              match: 'REMOVED',
+              ambiguous: false,
+              requires_decision: true,
+              teachers: [],
+              classes: [{ class_id: 2, score: -1 }, { class_id: 3, score: 0 }],
+            },
+          ],
+        })
+      }
+      return Promise.resolve({})
+    })
+    renderWithProviders(<SchoolConfig />)
+    await openGridTab()
+
+    fireEvent.click(screen.getByRole('button', { name: /pré-visualizar alteração/i }))
+
+    expect(await screen.findByText(/1 professor\(es\) e 1 turma\(s\) com disponibilidade neste bloco\./)).toBeInTheDocument()
+    expect(screen.getByText(/2 turma\(s\) com disponibilidade neste bloco\./)).toBeInTheDocument()
+  })
+
   it('shows the blockers and disables the proposal when the analysis cannot proceed', async () => {
     mockSchoolConfig({ publicationState: 'PUBLISHED' })
     apiClient.post.mockImplementation((url) => {

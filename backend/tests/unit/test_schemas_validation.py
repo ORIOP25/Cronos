@@ -13,6 +13,7 @@ from app.models import RoomType
 from app.schemas import (
     MAX_WEEKLY_TIMETABLE_SLOTS,
     AvailabilitySelfCreate,
+    ClassAvailabilityCopyRequest,
     ClassCreateInCourse,
     ClassUpdateInCourse,
     CourseUpdate,
@@ -23,8 +24,8 @@ from app.schemas import (
     RoomUpdate,
     SubjectCreate,
     SubjectUpdate,
-    TeacherAvailabilityPayload,
     TimeslotBulkCreate,
+    WeeklyAvailabilityPayload,
 )
 
 
@@ -107,12 +108,32 @@ class TestSchedulerBaselineContract:
 class TestAvailabilityPayload:
     def test_rejects_more_entries_than_the_weekly_timetable_can_support(self):
         with pytest.raises(ValidationError):
-            TypeAdapter(TeacherAvailabilityPayload).validate_python(
+            TypeAdapter(WeeklyAvailabilityPayload).validate_python(
                 [
                     AvailabilitySelfCreate(timeslot_id=index)
                     for index in range(MAX_WEEKLY_TIMETABLE_SLOTS + 1)
                 ]
             )
+
+
+class TestClassAvailabilityCopyRequest:
+    def test_rejects_an_empty_target_list(self):
+        with pytest.raises(ValidationError):
+            ClassAvailabilityCopyRequest(target_class_ids=[])
+
+    def test_rejects_more_than_500_targets(self):
+        with pytest.raises(ValidationError):
+            ClassAvailabilityCopyRequest(target_class_ids=list(range(1, 502)))
+
+    def test_rejects_non_positive_and_non_integer_targets(self):
+        with pytest.raises(ValidationError):
+            ClassAvailabilityCopyRequest(target_class_ids=[0])
+        with pytest.raises(ValidationError):
+            ClassAvailabilityCopyRequest(target_class_ids=[True])
+
+    def test_accepts_a_bounded_positive_target_list(self):
+        request = ClassAvailabilityCopyRequest(target_class_ids=[1, 2, 500])
+        assert request.target_class_ids == [1, 2, 500]
 
 
 class TestSubjectCreateValidation:

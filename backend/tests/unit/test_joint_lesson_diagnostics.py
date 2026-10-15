@@ -165,7 +165,7 @@ def test_general_infeasibility_is_not_labelled_as_joint():
     diagnoses = diagnose_capacity(target, periods)
 
     assert all(diagnosis.code is not DiagnosisCode.JOINT_NO_COMMON_TIME for diagnosis in diagnoses)
-    assert {diagnosis.code for diagnosis in diagnoses} == {DiagnosisCode.INSUFFICIENT_INTERSECTION}
+    assert DiagnosisCode.INSUFFICIENT_INTERSECTION in {diagnosis.code for diagnosis in diagnoses}
 
 
 def test_a_cancelled_search_is_never_labelled_as_joint():

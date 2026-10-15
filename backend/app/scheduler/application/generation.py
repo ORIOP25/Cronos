@@ -32,7 +32,11 @@ from app.scheduler.domain.candidate_validation import (
     validate_candidate,
 )
 from app.scheduler.domain.capacity import aggregate_capacity_check, residual_minutes
-from app.scheduler.domain.diagnostics import diagnose_joint_isolation
+from app.scheduler.domain.diagnostics import (
+    Diagnosis,
+    diagnose_capacity,
+    diagnose_joint_isolation,
+)
 from app.scheduler.domain.quality import (
     InitialQualityMetrics,
     SearchEvidence,
@@ -63,6 +67,7 @@ class GenerationResult:
     quality: InitialQualityMetrics | None = None
     evidence: SearchEvidence | None = None
     completion: CompletionReport | None = None
+    diagnoses: tuple[Diagnosis, ...] = ()
     statistics: Mapping[str, int] = field(default_factory=dict)
 
 
@@ -182,13 +187,20 @@ def generate_complete(
                 wall_time_seconds=monotonic() - started,
             )
         details = ", ".join(
-            f"assignment {assignment_id}: {minutes} minute(s)"
-            for assignment_id, minutes in sorted(capacity.deficits.items())
+            [
+                f"assignment {assignment_id}: {minutes} minute(s)"
+                for assignment_id, minutes in sorted(capacity.deficits.items())
+            ]
+            + [
+                f"class {class_id}: {minutes} minute(s)"
+                for class_id, minutes in sorted(capacity.class_deficits.items())
+            ]
         )
         return GenerationResult(
             OUTCOME_INFEASIBLE,
             None,
             message=f"Proven minimum deficit: {details}.",
+            diagnoses=diagnose_capacity(snapshot, capacity, periods),
         )
     remaining_seconds = time_limit_seconds - (monotonic() - started)
     if remaining_seconds <= 0:

@@ -1,88 +1,97 @@
-import { fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, screen, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import Subjects from '../pages/Subjects'
 import { renderWithRouter } from './testUtils'
 
-const hooks = vi.hoisted(() => ({
-  subjects: vi.fn(),
-  create: vi.fn(),
-  update: vi.fn(),
-  remove: vi.fn(),
+const NEW_MODULE_WARNING = 'Disciplina atualizada. Os módulos novos não foram marcados nas turmas. Marque-os nas turmas que os vão ter.'
+
+const { useSubjectsMock, createSubjectMock, updateSubjectMock } = vi.hoisted(() => ({
+  useSubjectsMock: vi.fn(),
+  createSubjectMock: vi.fn(),
+  updateSubjectMock: vi.fn(),
 }))
 
 vi.mock('../features/catalog/data', () => ({
-  useSubjects: () => hooks.subjects(),
-  useCreateSubject: () => hooks.create(),
-  useUpdateSubject: () => hooks.update(),
-  useDeleteSubject: () => hooks.remove(),
+  useSubjects: () => useSubjectsMock(),
+  useCreateSubject: () => ({ isPending: false, mutateAsync: createSubjectMock }),
+  useUpdateSubject: () => ({ isPending: false, mutateAsync: updateSubjectMock }),
+  useDeleteSubject: () => ({ isPending: false, mutateAsync: vi.fn() }),
 }))
 
-const editSubject = {
+const existingSubject = {
   id: 1,
   name: 'Programação',
-  required_room_type: 'lab',
-  modules: [{ id: 11, name: 'Módulo 1', code: 'P1', hours_total: 25 }],
+  required_room_type: 'normal',
+  modules: [{ id: 11, name: 'M1', code: 'C1', hours_total: 25, order: 0 }],
 }
 
-const mutationState = (mutateAsync) => ({
-  mutateAsync,
-  mutate: vi.fn(),
-  isPending: false,
-  isError: false,
-  error: null,
-})
+const toastRegion = () => within(document.querySelector('[data-rht-toaster]'))
 
-const renderSubjects = () => renderWithRouter(<Subjects />, { withToaster: true })
-
-const openEditAndAddModule = (moduleName) => {
-  fireEvent.click(screen.getByRole('button', { name: 'Editar Programação' }))
-  fireEvent.change(screen.getByLabelText(/nome do módulo/i), { target: { value: moduleName } })
-  fireEvent.change(screen.getByLabelText(/horas/i), { target: { value: '10' } })
+const addModule = (name, hours) => {
+  fireEvent.change(screen.getByLabelText(/nome do módulo/i), { target: { value: name } })
+  fireEvent.change(screen.getByLabelText(/horas/i), { target: { value: hours } })
   fireEvent.click(screen.getByRole('button', { name: 'Adicionar' }))
-  fireEvent.click(screen.getByRole('button', { name: /guardar disciplina/i }))
 }
 
-describe('Subjects', () => {
+describe('Subjects new-module warning', () => {
   beforeEach(() => {
-    hooks.subjects.mockReset().mockReturnValue({
-      data: [editSubject],
+    useSubjectsMock.mockReturnValue({
+      data: [existingSubject],
       isLoading: false,
       isError: false,
       error: null,
       refetch: vi.fn(),
     })
-    hooks.create.mockReset().mockReturnValue(mutationState(vi.fn().mockResolvedValue({ id: 2 })))
-    hooks.update.mockReset().mockReturnValue(mutationState(vi.fn().mockResolvedValue({ id: 1 })))
-    hooks.remove.mockReset().mockReturnValue(mutationState(vi.fn().mockResolvedValue(undefined)))
+    createSubjectMock.mockReset()
+    createSubjectMock.mockResolvedValue({})
+    updateSubjectMock.mockReset()
+    updateSubjectMock.mockResolvedValue({})
   })
 
-  it('warns that new modules stay unselected when editing an existing subject', async () => {
-    renderSubjects()
+  it('shows exactly one warning when an edit adds a module without an id', async () => {
+    renderWithRouter(<Subjects />, { withToaster: true })
 
-    openEditAndAddModule('Módulo novo')
+    fireEvent.click(screen.getByRole('button', { name: /editar programação/i }))
+    addModule('M2', '30')
+    fireEvent.click(screen.getByRole('button', { name: /guardar disciplina/i }))
 
-    const toaster = document.querySelector('[data-rht-toaster]')
-    expect(await within(toaster).findByText(/os módulos novos não foram marcados nas turmas/i)).toBeInTheDocument()
-    expect(within(toaster).queryByText(/^Disciplina atualizada\.$/)).not.toBeInTheDocument()
-    expect(hooks.update.mock.results[0].value.mutateAsync).toHaveBeenCalledWith(expect.objectContaining({
+    expect(await toastRegion().findByText(NEW_MODULE_WARNING)).toBeInTheDocument()
+    expect(toastRegion().getAllByRole('status')).toHaveLength(1)
+    expect(updateSubjectMock).toHaveBeenCalledWith({
       id: 1,
-      modules: expect.arrayContaining([expect.objectContaining({ name: 'Módulo novo', order: 1 })]),
-    }))
+      name: 'Programação',
+      required_room_type: 'normal',
+      modules: [
+        { id: 11, name: 'M1', code: 'C1', hours_total: 25, order: 0 },
+        { name: 'M2', code: '', hours_total: 30, order: 1 },
+      ],
+    })
   })
 
-  it('keeps the plain success message when creating a new subject', async () => {
-    renderSubjects()
+  it('keeps the plain toast when the edit only touches existing modules', async () => {
+    renderWithRouter(<Subjects />, { withToaster: true })
+
+    fireEvent.click(screen.getByRole('button', { name: /editar programação/i }))
+    fireEvent.click(screen.getByRole('button', { name: /editar M1/i }))
+    fireEvent.change(screen.getByLabelText(/nome do módulo/i), { target: { value: 'M1 atualizado' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar' }))
+    fireEvent.click(screen.getByRole('button', { name: /guardar disciplina/i }))
+
+    expect(await toastRegion().findByText('Disciplina atualizada.')).toBeInTheDocument()
+    expect(toastRegion().queryByText(/não foram marcados nas turmas/i)).not.toBeInTheDocument()
+    expect(toastRegion().getAllByRole('status')).toHaveLength(1)
+  })
+
+  it('does not warn when a new subject is created with a module', async () => {
+    renderWithRouter(<Subjects />, { withToaster: true })
 
     fireEvent.click(screen.getByRole('button', { name: /nova disciplina/i }))
     fireEvent.change(screen.getByLabelText(/nome da disciplina/i), { target: { value: 'Matemática' } })
-    fireEvent.change(screen.getByLabelText(/nome do módulo/i), { target: { value: 'Módulo A' } })
-    fireEvent.change(screen.getByLabelText(/horas/i), { target: { value: '30' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Adicionar' }))
+    addModule('M1', '25')
     fireEvent.click(screen.getByRole('button', { name: /guardar disciplina/i }))
 
-    const toaster = document.querySelector('[data-rht-toaster]')
-    expect(await within(toaster).findByText('Disciplina criada.')).toBeInTheDocument()
-    expect(within(toaster).queryByText(/não foram marcados nas turmas/i)).not.toBeInTheDocument()
-    await waitFor(() => expect(hooks.create.mock.results[0].value.mutateAsync).toHaveBeenCalled())
+    expect(await toastRegion().findByText('Disciplina criada.')).toBeInTheDocument()
+    expect(toastRegion().queryByText(/não foram marcados nas turmas/i)).not.toBeInTheDocument()
+    expect(toastRegion().getAllByRole('status')).toHaveLength(1)
   })
 })

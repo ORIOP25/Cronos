@@ -330,9 +330,25 @@ async def analyze_grid_change(
         if current_by_id
         else []
     )
+    class_availability_rows = (
+        (
+            await db.execute(
+                select(
+                    models.ClassAvailability.class_id,
+                    models.ClassAvailability.score,
+                    models.ClassAvailability.timeslot_id,
+                ).where(
+                    models.ClassAvailability.organization_id == organization_id,
+                    models.ClassAvailability.timeslot_id.in_(current_by_id.keys()),
+                )
+            )
+        ).all()
+        if current_by_id
+        else []
+    )
     affected_availabilities: dict[int, dict] = {}
-    for row in availability_rows:
-        block = current_by_id[row.timeslot_id]
+
+    def _entry_for(block) -> dict:
         entry = affected_availabilities.get(block.id)
         if entry is None:
             match, proposed, ambiguous = _classify(block, proposed_by_signature)
@@ -354,9 +370,19 @@ async def analyze_grid_change(
                 "ambiguous": ambiguous,
                 "requires_decision": match != "EXACT",
                 "teachers": [],
+                "classes": [],
             }
             affected_availabilities[block.id] = entry
-        entry["teachers"].append({"teacher_id": row.teacher_id, "score": row.score})
+        return entry
+
+    for row in availability_rows:
+        _entry_for(current_by_id[row.timeslot_id])["teachers"].append(
+            {"teacher_id": row.teacher_id, "score": row.score}
+        )
+    for row in class_availability_rows:
+        _entry_for(current_by_id[row.timeslot_id])["classes"].append(
+            {"class_id": row.class_id, "score": row.score}
+        )
 
     constraint_rows = (
         (
@@ -449,6 +475,14 @@ async def analyze_grid_change(
                     row.score,
                 )
                 for row in availability_rows
+            ),
+            "class_availabilities": sorted(
+                (
+                    row.timeslot_id,
+                    row.class_id,
+                    row.score,
+                )
+                for row in class_availability_rows
             ),
             "constraints": sorted(
                 (
@@ -646,6 +680,15 @@ async def propose_grid_change(
                     teacher_id=teacher["teacher_id"],
                     timeslot_id=target_id,
                     score=teacher["score"],
+                )
+            )
+        for school_class in entry["classes"]:
+            db.add(
+                models.ClassAvailability(
+                    organization_id=organization_id,
+                    class_id=school_class["class_id"],
+                    timeslot_id=target_id,
+                    score=school_class["score"],
                 )
             )
 

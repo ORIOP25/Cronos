@@ -15,6 +15,7 @@ from enum import StrEnum
 from app.scheduler.domain.calendar import Period
 from app.scheduler.domain.candidate import Assignment, PlanningSnapshot
 from app.scheduler.domain.capacity import (
+    CapacityCheck,
     aggregate_capacity_check,
     eligible_periods,
     residual_minutes,
@@ -23,6 +24,7 @@ from app.scheduler.domain.capacity import (
 
 class DiagnosisCode(StrEnum):
     INSUFFICIENT_INTERSECTION = "INSUFFICIENT_INTERSECTION"
+    INSUFFICIENT_CLASS_TIME = "INSUFFICIENT_CLASS_TIME"
     INFEASIBLE_PROVEN = "INFEASIBLE_PROVEN"
     SEARCH_INCONCLUSIVE = "SEARCH_INCONCLUSIVE"
     BASELINE_STALE = "BASELINE_STALE"
@@ -53,6 +55,7 @@ class Diagnosis:
     scope: str
     minimum_missing_minutes: int | None = None
     affected_class_ids: tuple[int, ...] = ()
+    affected_subject_id: int | None = None
     suggestions: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
@@ -66,24 +69,34 @@ class Diagnosis:
 
 
 def diagnose_capacity(
-    snapshot: PlanningSnapshot, periods: tuple[Period, ...]
+    snapshot: PlanningSnapshot,
+    check: CapacityCheck | tuple[Period, ...],
+    periods: tuple[Period, ...] | None = None,
 ) -> tuple[Diagnosis, ...]:
-    """Proven lower bounds of missing minutes for assignments that cannot fit.
+    """Proven lower bounds of missing minutes for demand that cannot fit.
 
-    When the only unit left with no eligible period is a single joint unit, its
-    isolation is the proven cause and is reported as ``JOINT_NO_COMMON_TIME``
-    (WBS 3.9). Every other proven deficit keeps its generic diagnosis, so a
-    general infeasibility is never relabelled.
+    The caller may pass the capacity check it already computed (so the eligible
+    periods are never calculated twice) or the periods, in which case the check
+    is computed here. When the only unit left with no eligible period is a single
+    joint unit, its isolation is the proven cause and is reported as
+    ``JOINT_NO_COMMON_TIME`` (WBS 3.9); every other proven deficit keeps its
+    generic diagnosis, so a general infeasibility is never relabelled.
     """
-    check = aggregate_capacity_check(snapshot, periods)
+    if isinstance(check, CapacityCheck):
+        capacity = check
+    else:
+        periods = tuple(check)
+        capacity = aggregate_capacity_check(snapshot, periods)
     classes = {row.assignment_id: tuple(row.class_ids) for row in snapshot.assignments}
-    isolated = _isolated_joint_unit(snapshot, periods)
+    subjects = {row.assignment_id: row.subject_id for row in snapshot.assignments}
+    isolated = _isolated_joint_unit(snapshot, periods) if periods is not None else None
     diagnoses: list[Diagnosis] = []
     if isolated is not None:
         diagnoses.append(joint_diagnosis(isolated))
-    for assignment_id, deficit in sorted(check.deficits.items()):
+    for assignment_id, deficit in sorted(capacity.deficits.items()):
         if deficit <= 0 or (isolated is not None and assignment_id == isolated.assignment_id):
             continue
+        subject_id = subjects[assignment_id]
         diagnoses.append(
             Diagnosis(
                 code=DiagnosisCode.INSUFFICIENT_INTERSECTION,
@@ -95,6 +108,24 @@ def diagnose_capacity(
                 scope=f"ASSIGNMENT:{assignment_id}",
                 minimum_missing_minutes=deficit,
                 affected_class_ids=classes[assignment_id],
+                affected_subject_id=subject_id,
+                suggestions=(REVIEW_AVAILABILITY, REVIEW_ROOMS, REVIEW_END_DATE),
+            )
+        )
+    for class_id, deficit in sorted(capacity.class_deficits.items()):
+        if deficit <= 0:
+            continue
+        diagnoses.append(
+            Diagnosis(
+                code=DiagnosisCode.INSUFFICIENT_CLASS_TIME,
+                evidence_kind=EvidenceKind.PROVEN_LOWER_BOUND,
+                message=(
+                    f"At least {deficit} minute(s) of class demand have no eligible "
+                    "period: a class attends one lesson at a time."
+                ),
+                scope=f"CLASS:{class_id}",
+                minimum_missing_minutes=deficit,
+                affected_class_ids=(class_id,),
                 suggestions=(REVIEW_AVAILABILITY, REVIEW_ROOMS, REVIEW_END_DATE),
             )
         )

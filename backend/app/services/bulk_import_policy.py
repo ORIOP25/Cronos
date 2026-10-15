@@ -5,16 +5,30 @@ from __future__ import annotations
 import base64
 import csv
 import io
+import re
 import unicodedata
 from collections import defaultdict
 from dataclasses import dataclass, field
+from datetime import time
 from email.utils import parseaddr
 from typing import Literal
 
 MAX_FILE_BYTES = 1024 * 1024
 MAX_TOTAL_BYTES = 5 * 1024 * 1024
 MAX_LINES = 5_000
-IMPORT_RESOURCES = ("rooms", "subjects", "courses", "teachers", "assignments")
+CLASS_AVAILABILITY = "class_availability"
+CLASS_AVAILABILITY_FILENAME = "Cronos_DisponibilidadeTurmas_Template.csv"
+CLASS_AVAILABILITY_FIXED_HEADERS = ("Sigla do curso", "Nome da turma", "Dia")
+CLASS_AVAILABILITY_DAY_LABELS = (
+    "Segunda",
+    "Terça",
+    "Quarta",
+    "Quinta",
+    "Sexta",
+    "Sábado",
+    "Domingo",
+)
+IMPORT_RESOURCES = ("rooms", "subjects", "courses", "teachers", "assignments", CLASS_AVAILABILITY)
 IssueSeverity = Literal["error", "warning"]
 
 
@@ -93,6 +107,22 @@ RESOURCE_MISMATCH_MESSAGE = (
     "Este ficheiro não corresponde à secção escolhida. Selecione o modelo correspondente."
 )
 ROOM_TYPE_ERROR_MESSAGE = "Escreva Normal, Laboratório, Ginásio ou Artes."
+CLASS_AVAILABILITY_DAY_ERROR_MESSAGE = "Escreva um dia com blocos na grelha, por exemplo Segunda."
+CLASS_AVAILABILITY_LEVEL_ERROR_MESSAGE = "Escreva Impossível, Evitar, Neutro ou Preferencial."
+
+NEUTRAL_SCORE = 1
+_HOUR_PATTERN = re.compile(r"^(\d{1,2}):([0-5]\d)(?::[0-5]\d)?$")
+_LEVEL_SCORES = {"impossivel": -1, "evitar": 0, "neutro": NEUTRAL_SCORE, "preferencial": 2}
+_LEVEL_LABELS = {-1: "Impossível", 0: "Evitar", NEUTRAL_SCORE: "Neutro", 2: "Preferencial"}
+_DAY_VALUES = {
+    "segunda": 0,
+    "terca": 1,
+    "quarta": 2,
+    "quinta": 3,
+    "sexta": 4,
+    "sabado": 5,
+    "domingo": 6,
+}
 
 
 @dataclass(frozen=True)
@@ -122,6 +152,10 @@ class ParsedResourceFile:
     rows: tuple[dict[str, str | int], ...] = ()
     issues: tuple[BulkImportIssue, ...] = ()
     decoded_bytes: int = 0
+    # class_availability dynamic header: normalized ``HH:MM`` hours and their
+    # original column titles, in header order.
+    hours: tuple[str, ...] = ()
+    hour_titles: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -225,6 +259,21 @@ class ExistingAssignment:
     subject_name: str
 
 
+@dataclass(frozen=True)
+class ExistingTimeslot:
+    id: int
+    day_of_week: int
+    start_time: time
+
+
+@dataclass(frozen=True)
+class ClassAvailabilityImport:
+    course_abbreviation: str
+    class_name: str
+    line: int
+    scores: dict[int, int]
+
+
 @dataclass
 class ImportSnapshot:
     rooms: list[ExistingRoom] = field(default_factory=list)
@@ -233,6 +282,7 @@ class ImportSnapshot:
     classes: list[ExistingClass] = field(default_factory=list)
     teachers: list[ExistingTeacher] = field(default_factory=list)
     assignments: list[ExistingAssignment] = field(default_factory=list)
+    timeslots: list[ExistingTimeslot] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -243,6 +293,7 @@ class ValidationResult:
     courses: tuple[CourseImport, ...] = ()
     teachers: tuple[TeacherImport, ...] = ()
     assignments: tuple[AssignmentImport, ...] = ()
+    class_availability: tuple[ClassAvailabilityImport, ...] = ()
     counts: dict[str, int] = field(default_factory=dict)
     preview: tuple[dict, ...] = ()
     inferred_competencies: dict[str, tuple[str, ...]] = field(default_factory=dict)
@@ -272,18 +323,44 @@ def _key(value: str) -> str:
     return _clean(value).casefold()
 
 
-def normalize_room_type(value: str) -> str | None:
-    plain = "".join(
+def _fold(value: str) -> str:
+    """Lowercase and strip accents, so users may type ``Impossível`` or ``impossivel``."""
+    return "".join(
         character
         for character in unicodedata.normalize("NFKD", _clean(value).casefold())
         if not unicodedata.combining(character)
     )
+
+
+def normalize_room_type(value: str) -> str | None:
     return {
         "normal": "normal",
         "laboratorio": "lab",
         "ginasio": "gym",
         "artes": "art",
-    }.get(plain)
+    }.get(_fold(value))
+
+
+def normalize_hour(value: str) -> str | None:
+    """Accept ``H:MM``, ``HH:MM`` and ``HH:MM:SS`` and return ``HH:MM``."""
+    match = _HOUR_PATTERN.match(_clean(value))
+    if match is None or int(match.group(1)) > 23:
+        return None
+    return f"{int(match.group(1)):02d}:{int(match.group(2)):02d}"
+
+
+def normalize_day(value: str) -> int | None:
+    """Accept a Portuguese day name with or without ``-feira``, accents or case."""
+    plain = _fold(value)
+    for suffix in ("-feira", "feira"):
+        if plain.endswith(suffix):
+            plain = plain[: -len(suffix)]
+            break
+    return _DAY_VALUES.get(plain.strip())
+
+
+def normalize_level(value: str) -> int | None:
+    return _LEVEL_SCORES.get(_fold(value))
 
 
 def _email(value: str) -> str:
@@ -306,14 +383,53 @@ def render_template(resource: str) -> bytes:
     return b"\xef\xbb\xbf" + output.getvalue().encode("utf-8")
 
 
+def template_filename(resource: str) -> str:
+    if resource == CLASS_AVAILABILITY:
+        return CLASS_AVAILABILITY_FILENAME
+    return TEMPLATE_DEFINITIONS[resource].filename
+
+
+def render_class_availability_template(
+    timeslots: list[ExistingTimeslot] | tuple[ExistingTimeslot, ...],
+    classes: list[ExistingClass] | tuple[ExistingClass, ...],
+    scores: dict[int, dict[int, int]],
+) -> bytes:
+    """Render the class-availability model from the visible grid, its classes and levels."""
+    hours = sorted({block.start_time.strftime("%H:%M") for block in timeslots})
+    timeslot_by_day_hour = {
+        (block.day_of_week, block.start_time.strftime("%H:%M")): block.id for block in timeslots
+    }
+    days = sorted({block.day_of_week for block in timeslots})
+    output = io.StringIO(newline="")
+    writer = csv.writer(output, delimiter=";", lineterminator="\r\n")
+    writer.writerow([*CLASS_AVAILABILITY_FIXED_HEADERS, *hours])
+    for item in sorted(
+        classes, key=lambda candidate: (candidate.course_abbreviation, candidate.name)
+    ):
+        class_scores = scores.get(item.id, {})
+        for day in days:
+            cells = []
+            for hour in hours:
+                timeslot_id = timeslot_by_day_hour.get((day, hour))
+                if timeslot_id is None:
+                    cells.append("")
+                else:
+                    cells.append(
+                        _LEVEL_LABELS.get(class_scores.get(timeslot_id, NEUTRAL_SCORE), "Neutro")
+                    )
+            writer.writerow(
+                [item.course_abbreviation, item.name, CLASS_AVAILABILITY_DAY_LABELS[day], *cells]
+            )
+    return b"\xef\xbb\xbf" + output.getvalue().encode("utf-8")
+
+
 def parse_resource_file(resource: str, filename: str, content_base64: str) -> ParsedResourceFile:
-    if resource not in TEMPLATE_DEFINITIONS:
+    if resource not in TEMPLATE_DEFINITIONS and resource != CLASS_AVAILABILITY:
         return ParsedResourceFile(
             resource,
             filename,
             issues=(_issue(resource, "resource_unknown", "Secção de importação desconhecida."),),
         )
-    definition = TEMPLATE_DEFINITIONS[resource]
     try:
         raw = base64.b64decode(content_base64, validate=True)
     except (ValueError, TypeError):
@@ -358,6 +474,10 @@ def parse_resource_file(resource: str, filename: str, content_base64: str) -> Pa
             decoded_bytes=len(raw),
         )
 
+    if resource == CLASS_AVAILABILITY:
+        return _parse_class_availability_file(resource, filename, text, len(raw))
+
+    definition = TEMPLATE_DEFINITIONS[resource]
     delimiter = None
     resource_mismatch = False
     for candidate in (",", ";"):
@@ -424,6 +544,97 @@ def parse_resource_file(resource: str, filename: str, content_base64: str) -> Pa
             _issue(resource, "no_data", "Selecione um ficheiro com pelo menos uma linha real.")
         )
     return ParsedResourceFile(resource, filename, tuple(rows), tuple(issues), len(raw))
+
+
+def _parse_class_availability_file(
+    resource: str, filename: str, text: str, decoded_bytes: int
+) -> ParsedResourceFile:
+    """Parse the dynamic header: three fixed columns then sorted distinct hour columns."""
+    delimiter = None
+    resource_mismatch = False
+    for candidate in (",", ";"):
+        reader = csv.reader(io.StringIO(text, newline=""), delimiter=candidate)
+        try:
+            headers = next(reader)
+        except StopIteration:
+            headers = []
+        if (
+            tuple(headers[: len(CLASS_AVAILABILITY_FIXED_HEADERS)])
+            == CLASS_AVAILABILITY_FIXED_HEADERS
+        ):
+            delimiter = candidate
+            break
+        if any(headers == list(definition.headers) for definition in TEMPLATE_DEFINITIONS.values()):
+            resource_mismatch = True
+    if delimiter is None:
+        return ParsedResourceFile(
+            resource,
+            filename,
+            issues=(
+                _issue(
+                    resource,
+                    "resource_mismatch" if resource_mismatch else "header_invalid",
+                    RESOURCE_MISMATCH_MESSAGE if resource_mismatch else FILE_READ_ERROR_MESSAGE,
+                    line=1,
+                ),
+            ),
+            decoded_bytes=decoded_bytes,
+        )
+
+    hours: list[str] = []
+    hour_titles: list[str] = []
+    for title in headers[len(CLASS_AVAILABILITY_FIXED_HEADERS) :]:
+        cleaned = _clean(title)
+        hour = normalize_hour(cleaned)
+        if hour is None or hour in hours:
+            return ParsedResourceFile(
+                resource,
+                filename,
+                issues=(_issue(resource, "header_invalid", FILE_READ_ERROR_MESSAGE, line=1),),
+                decoded_bytes=decoded_bytes,
+            )
+        hours.append(hour)
+        hour_titles.append(cleaned)
+
+    reader = csv.reader(io.StringIO(text, newline=""), delimiter=delimiter)
+    next(reader, None)
+    rows: list[dict[str, str | int]] = []
+    issues: list[BulkImportIssue] = []
+    field_names = ("course_abbreviation", "class_name", "day")
+    for values in reader:
+        line = reader.line_num
+        if not any(_clean(value) for value in values):
+            continue
+        if len(values) != len(headers):
+            issues.append(
+                _issue(resource, "column_count_invalid", FILE_READ_ERROR_MESSAGE, line=line)
+            )
+            continue
+        row: dict[str, str | int] = {
+            field_name: _clean(value)
+            for field_name, value in zip(field_names, values[: len(field_names)], strict=True)
+        }
+        row.update(
+            {
+                title: _clean(value)
+                for title, value in zip(hour_titles, values[len(field_names) :], strict=True)
+            }
+        )
+        row["line"] = line
+        rows.append(row)
+    if not rows:
+        issues.append(
+            _issue(resource, "no_data", "Selecione um ficheiro com pelo menos uma linha real.")
+        )
+    return ParsedResourceFile(
+        resource,
+        filename,
+        tuple(rows),
+        tuple(issues),
+        decoded_bytes,
+        tuple(hours),
+        tuple(hour_titles),
+    )
 
 
 def _value(row: dict, field: str) -> str:
@@ -913,6 +1124,126 @@ def _validate_assignments(
     return tuple(result)
 
 
+def _validate_class_availability(
+    parsed: ParsedResourceFile,
+    snapshot: ImportSnapshot,
+    class_names: set[tuple[str, str]],
+    issues: list[BulkImportIssue],
+) -> tuple[ClassAvailabilityImport, ...]:
+    grid_hours = sorted({block.start_time.strftime("%H:%M") for block in snapshot.timeslots})
+    days_with_blocks = {block.day_of_week for block in snapshot.timeslots}
+    timeslot_by_day_hour = {
+        (block.day_of_week, block.start_time.strftime("%H:%M")): block.id
+        for block in snapshot.timeslots
+    }
+    header_hours = set(parsed.hours)
+    for hour, title in zip(parsed.hours, parsed.hour_titles, strict=True):
+        if hour not in grid_hours:
+            issues.append(
+                _issue(
+                    CLASS_AVAILABILITY,
+                    "unknown_hour",
+                    f"A grelha não tem blocos que comecem às {hour}. Descarregue um modelo novo.",
+                    line=1,
+                    field=title,
+                )
+            )
+    for hour in grid_hours:
+        if hour not in header_hours:
+            issues.append(
+                _issue(
+                    CLASS_AVAILABILITY,
+                    "missing_hour",
+                    f"Falta a coluna {hour}. Descarregue um modelo novo.",
+                    line=1,
+                )
+            )
+
+    # One class grid per class (D14): every day line of a class merges into a single
+    # aggregate, so the commit replaces the whole grid exactly once per class.
+    scores_by_class: dict[tuple[str, str], dict[int, int]] = {}
+    first_row_by_class: dict[tuple[str, str], tuple[str, str, int]] = {}
+    seen: set[tuple[str, str, int]] = set()
+    for row in parsed.rows:
+        line = int(row["line"])
+        course = _value(row, "course_abbreviation").upper()
+        class_name = _value(row, "class_name")
+        day = normalize_day(_value(row, "day"))
+        key = (course, _key(class_name))
+        day_valid = day is not None and day in days_with_blocks
+        if not day_valid:
+            issues.append(
+                _issue(
+                    CLASS_AVAILABILITY,
+                    "day_invalid",
+                    CLASS_AVAILABILITY_DAY_ERROR_MESSAGE,
+                    line=line,
+                    field="day",
+                )
+            )
+        row_key = (*key, day if day is not None else -1)
+        if row_key in seen:
+            issues.append(
+                _issue(
+                    CLASS_AVAILABILITY,
+                    "duplicate_class_day",
+                    "Esta turma já tem uma linha para este dia.",
+                    line=line,
+                )
+            )
+        seen.add(row_key)
+        if key not in class_names:
+            issues.append(
+                _issue(
+                    CLASS_AVAILABILITY,
+                    "class_reference_missing",
+                    "A turma referenciada não existe nesse curso.",
+                    line=line,
+                    field="class_name",
+                )
+            )
+        # A line without a valid day or class cannot map cells to blocks. Its own
+        # errors are already recorded, so skip cell lookups to avoid block noise.
+        if key not in class_names or not day_valid:
+            continue
+        first_row_by_class.setdefault(key, (course, class_name, line))
+        scores = scores_by_class.setdefault(key, {})
+        for title, hour in zip(parsed.hour_titles, parsed.hours, strict=True):
+            cell = _value(row, title)
+            if not cell:
+                continue
+            level = normalize_level(cell)
+            if level is None:
+                issues.append(
+                    _issue(
+                        CLASS_AVAILABILITY,
+                        "level_invalid",
+                        CLASS_AVAILABILITY_LEVEL_ERROR_MESSAGE,
+                        line=line,
+                        field=title,
+                    )
+                )
+                continue
+            timeslot_id = timeslot_by_day_hour.get((day, hour))
+            if timeslot_id is None:
+                issues.append(
+                    _issue(
+                        CLASS_AVAILABILITY,
+                        "hour_without_block",
+                        f"Este dia não tem bloco às {hour}. Deixe a célula vazia.",
+                        line=line,
+                        field=title,
+                    )
+                )
+                continue
+            if level != NEUTRAL_SCORE:
+                scores[timeslot_id] = level
+    return tuple(
+        ClassAvailabilityImport(*first_row_by_class[key], scores_by_class[key])
+        for key in scores_by_class
+    )
+
+
 def validate_import(
     files: dict[str, ParsedResourceFile], snapshot: ImportSnapshot
 ) -> ValidationResult:
@@ -942,6 +1273,11 @@ def validate_import(
         (course.abbreviation.upper(), _key(cls.name))
         for course in courses
         for cls in course.classes
+    )
+    class_availability = (
+        _validate_class_availability(files[CLASS_AVAILABILITY], snapshot, class_names, issues)
+        if CLASS_AVAILABILITY in files
+        else ()
     )
     teacher_emails = {_email(item.email) for item in teachers}
     existing_teacher_emails = {_email(item.email) for item in snapshot.teachers}
@@ -1023,6 +1359,7 @@ def validate_import(
         "teachers": len(teachers),
         "competencies": sum(len(values) for values in inferred.values()),
         "assignments": len(assignments),
+        CLASS_AVAILABILITY: len(class_availability),
     }
     preview = tuple(
         [{"resource": "rooms", "name": item.name, "line": item.line} for item in rooms]
@@ -1055,6 +1392,16 @@ def validate_import(
             }
             for item in assignments
         ]
+        + [
+            {
+                "resource": CLASS_AVAILABILITY,
+                "course_abbreviation": item.course_abbreviation,
+                "class_name": item.class_name,
+                "non_neutral_blocks": len(item.scores),
+                "line": item.line,
+            }
+            for item in class_availability
+        ]
     )[:100]
     return ValidationResult(
         tuple(issues),
@@ -1063,6 +1410,7 @@ def validate_import(
         courses,
         teachers,
         assignments,
+        class_availability,
         counts,
         preview,
         {email: tuple(sorted(values, key=_key)) for email, values in inferred.items()},

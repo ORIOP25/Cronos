@@ -78,12 +78,13 @@ async def _two_module_school(db_session, *, suffix: str = ""):
             organization_id=seed.organization.id,
             assignment_id=seed.assignment.id,
             module_id=second.id,
-            sequence=2,
+            sequence=second.order + 1,
             required_minutes=75,
         )
     )
-    link_id = await db_session.scalar(
-        select(models.ClassSubjectLink.id).where(
+    # The projection reads the selection, so the second module must be marked.
+    link = await db_session.scalar(
+        select(models.ClassSubjectLink).where(
             models.ClassSubjectLink.organization_id == seed.organization.id,
             models.ClassSubjectLink.class_id == seed.class_.id,
             models.ClassSubjectLink.subject_id == seed.subject.id,
@@ -92,7 +93,7 @@ async def _two_module_school(db_session, *, suffix: str = ""):
     await db_session.execute(
         models.class_subject_module.insert().values(
             organization_id=seed.organization.id,
-            class_subject_link_id=link_id,
+            class_subject_link_id=link.id,
             module_id=second.id,
         )
     )
@@ -596,6 +597,29 @@ async def test_a_new_summary_credits_the_next_selected_module(db_session, monkey
             module_id=second.id,
             sequence=3,
             required_minutes=100,
+        )
+    )
+    # Deselect the scheduled module and select the new one on the live link:
+    # the read-time planning view follows the live selection, not the flag.
+    link_id = await db_session.scalar(
+        select(models.ClassSubjectLink.id).where(
+            models.ClassSubjectLink.organization_id == seed.organization.id,
+            models.ClassSubjectLink.class_id == seed.class_.id,
+            models.ClassSubjectLink.subject_id == seed.subject.id,
+        )
+    )
+    await db_session.execute(
+        models.class_subject_module.delete().where(
+            models.class_subject_module.c.organization_id == seed.organization.id,
+            models.class_subject_module.c.class_subject_link_id == link_id,
+            models.class_subject_module.c.module_id == seed.module.id,
+        )
+    )
+    await db_session.execute(
+        models.class_subject_module.insert().values(
+            organization_id=seed.organization.id,
+            class_subject_link_id=link_id,
+            module_id=second.id,
         )
     )
     await db_session.commit()

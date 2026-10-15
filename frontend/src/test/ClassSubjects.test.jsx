@@ -1,18 +1,17 @@
 import { renderWithRouter } from './testUtils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen, within } from '@testing-library/react'
-import { toast } from 'react-hot-toast'
 import ClassSubjects from '../pages/ClassSubjects'
 
 const {
   useClassSubjectsMock,
   mutationMock,
   updateClassSubjectMock,
+  eligibleTeachersMock,
   jointCandidatesMock,
   createJointMock,
   updateJointMock,
   deleteJointMock,
-  eligibleTeachersMock,
 } = vi.hoisted(() => ({
   useClassSubjectsMock: vi.fn(),
   mutationMock: () => ({
@@ -23,11 +22,11 @@ const {
     reset: vi.fn(),
   }),
   updateClassSubjectMock: vi.fn(),
+  eligibleTeachersMock: vi.fn(),
   jointCandidatesMock: vi.fn(),
   createJointMock: vi.fn(),
   updateJointMock: vi.fn(),
   deleteJointMock: vi.fn(),
-  eligibleTeachersMock: vi.fn(),
 }))
 
 vi.mock('../features/catalog/data', () => ({
@@ -49,8 +48,19 @@ const baseSubjects = {
     course_name: 'Técnico de Eletrónica',
     grade_level: 10,
     subjects: [
-      { id: 1, subject_id: 1, subject_name: 'Português', required_room_type: 'normal', teacher_id: 5, teacher_name: 'Ana Silva' },
-      { id: 2, subject_id: 2, subject_name: 'Programação', required_room_type: 'normal', teacher_id: 5, teacher_name: 'Ana Silva' },
+      {
+        id: 1, subject_id: 1, subject_name: 'Português', required_room_type: 'normal', teacher_id: 5, teacher_name: 'Ana Silva',
+        modules: [
+          { id: 11, name: 'Módulo 1', code: 'M1', hours_total: 25, order: 1, selected: true },
+          { id: 12, name: 'Módulo 2', code: null, hours_total: 30, order: 2, selected: false },
+        ],
+      },
+      {
+        id: 2, subject_id: 2, subject_name: 'Programação', required_room_type: 'normal', teacher_id: 5, teacher_name: 'Ana Silva',
+        modules: [
+          { id: 21, name: 'Módulo A', code: 'A', hours_total: 50, order: 1, selected: true },
+        ],
+      },
     ],
   },
   error: null,
@@ -136,10 +146,7 @@ describe('ClassSubjects', () => {
     updateClassSubjectMock.mockReturnValue(mutationMock())
     eligibleTeachersMock.mockReset()
     eligibleTeachersMock.mockReturnValue({
-      data: [
-        { id: 5, name: 'Ana Silva', current_classes_count: 0 },
-        { id: 7, name: 'Rui Costa', current_classes_count: 0 },
-      ],
+      data: [{ id: 5, name: 'Ana Silva', current_classes_count: 0 }],
       isLoading: false,
     })
     jointCandidatesMock.mockReset()
@@ -222,55 +229,65 @@ describe('ClassSubjects', () => {
     expect(readOnlyRender.container.querySelectorAll('.card-body > .row > .col-md-2')).toHaveLength(0)
   })
 
-  it('shows the selected module summary and expands an accessible checklist', () => {
-    useClassSubjectsMock.mockReturnValue(subjectsWithModules)
+  it('shows the module summary and expands a labelled checklist', () => {
     renderWithRouter(<ClassSubjects courseIdOverride="9" classIdOverride="11" />)
 
-    const summary = screen.getByRole('button', { name: 'Módulos: 2 de 3 · 55 h' })
-    expect(summary).toHaveAttribute('aria-expanded', 'false')
-    const listId = summary.getAttribute('aria-controls')
-    const list = document.getElementById(listId)
-    expect(list).toHaveAttribute('hidden')
+    const toggle = screen.getByRole('button', { name: 'Módulos: 1 de 2 · 25 h' })
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(toggle).toHaveAttribute('aria-controls', 'class-subject-modules-1')
 
-    fireEvent.click(summary)
+    fireEvent.click(toggle)
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
 
-    expect(summary).toHaveAttribute('aria-expanded', 'true')
-    expect(list).not.toHaveAttribute('hidden')
-    expect(within(list).getByLabelText('M1 Módulo 1 · 25 h')).toBeChecked()
-    expect(within(list).getByLabelText('M3 Módulo 3 · 20 h')).not.toBeChecked()
+    const panel = document.getElementById('class-subject-modules-1')
+    expect(panel).toBeInTheDocument()
+    expect(within(panel).getByRole('checkbox', { name: 'M1 Módulo 1 · 25 h' })).toBeChecked()
+    expect(within(panel).getByRole('checkbox', { name: 'Módulo 2 · 30 h' })).not.toBeChecked()
   })
 
-  it('sends the full module list when a module is unchecked and uses one fixed-id toast', () => {
-    useClassSubjectsMock.mockReturnValue(subjectsWithModules)
-    const successSpy = vi.spyOn(toast, 'success').mockImplementation(() => 'fixed')
-    const mutate = vi.fn((_payload, options) => options.onSuccess())
-    updateClassSubjectMock.mockReturnValue({ ...mutationMock(), mutate })
-    renderWithRouter(<ClassSubjects courseIdOverride="9" classIdOverride="11" />, { withToaster: true })
+  it('sends the full module list when a module is selected', () => {
+    const mutation = mutationMock()
+    updateClassSubjectMock.mockReturnValue(mutation)
+    renderWithRouter(<ClassSubjects courseIdOverride="9" classIdOverride="11" />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Módulos: 2 de 3 · 55 h' }))
-    fireEvent.click(screen.getByLabelText('M2 Módulo 2 · 30 h'))
+    fireEvent.click(screen.getByRole('button', { name: 'Módulos: 1 de 2 · 25 h' }))
+    const panel = document.getElementById('class-subject-modules-1')
+    fireEvent.click(within(panel).getByRole('checkbox', { name: 'Módulo 2 · 30 h' }))
 
-    expect(mutate).toHaveBeenCalledWith(
-      { classId: 11, subjectId: 1, moduleIds: [11] },
+    expect(mutation.mutate).toHaveBeenCalledWith(
+      { classId: 11, subjectId: 1, moduleIds: [11, 12] },
       expect.any(Object),
     )
-    expect(successSpy).toHaveBeenCalledWith('Módulos atualizados.', { id: 'class-subject-modules' })
-    successSpy.mockRestore()
   })
 
-  it('disables the module checklist while a mutation is pending', () => {
-    useClassSubjectsMock.mockReturnValue(subjectsWithModules)
+  it('disables the row module controls while a save is pending', () => {
     updateClassSubjectMock.mockReturnValue({ ...mutationMock(), isPending: true })
     renderWithRouter(<ClassSubjects courseIdOverride="9" classIdOverride="11" />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Módulos: 2 de 3 · 55 h' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Módulos: 1 de 2 · 25 h' }))
+    const panel = document.getElementById('class-subject-modules-1')
+    expect(within(panel).getByRole('checkbox', { name: 'M1 Módulo 1 · 25 h' })).toBeDisabled()
+    expect(within(panel).getByRole('checkbox', { name: 'Módulo 2 · 30 h' })).toBeDisabled()
+    expect(screen.getByRole('combobox', { name: 'Professor de Português' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Remover Português' })).toBeDisabled()
+  })
 
-    expect(screen.getByLabelText('M1 Módulo 1 · 25 h')).toBeDisabled()
-    expect(screen.getByLabelText('M3 Módulo 3 · 20 h')).toBeDisabled()
+  it('shows a single fixed-id success toast after saving modules', async () => {
+    const mutation = { ...mutationMock(), mutate: (_payload, options) => options.onSuccess() }
+    updateClassSubjectMock.mockReturnValue(mutation)
+    renderWithRouter(<ClassSubjects courseIdOverride="9" classIdOverride="11" />, { withToaster: true })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Módulos: 1 de 2 · 25 h' }))
+    const panel = document.getElementById('class-subject-modules-1')
+    const checkbox = within(panel).getByRole('checkbox', { name: 'Módulo 2 · 30 h' })
+    fireEvent.click(checkbox)
+    fireEvent.click(checkbox)
+
+    const toaster = document.querySelector('[data-rht-toaster]')
+    expect(await within(toaster).findAllByText('Módulos atualizados.')).toHaveLength(1)
   })
 
   it('reports a transient module failure as a toast', async () => {
-    useClassSubjectsMock.mockReturnValue(subjectsWithModules)
     const error = { response: { status: 503, data: { detail: { code: 'service_unavailable' } } } }
     updateClassSubjectMock.mockReturnValue({
       ...mutationMock(),
@@ -278,14 +295,16 @@ describe('ClassSubjects', () => {
     })
     renderWithRouter(<ClassSubjects courseIdOverride="9" classIdOverride="11" />, { withToaster: true })
 
-    fireEvent.click(screen.getByRole('button', { name: 'Módulos: 2 de 3 · 55 h' }))
-    fireEvent.click(screen.getByLabelText('M2 Módulo 2 · 30 h'))
+    fireEvent.click(screen.getByRole('button', { name: 'Módulos: 1 de 2 · 25 h' }))
+    const panel = document.getElementById('class-subject-modules-1')
+    fireEvent.click(within(panel).getByRole('checkbox', { name: 'Módulo 2 · 30 h' }))
 
-    expect(await within(document.querySelector('[data-rht-toaster]')).findByText(/tente novamente dentro de instantes/i)).toBeInTheDocument()
+    const toaster = document.querySelector('[data-rht-toaster]')
+    expect(await within(toaster).findByText(/tente novamente dentro de instantes/i)).toBeInTheDocument()
+    expect(document.getElementById('class-subject-modules-error-1')).not.toBeInTheDocument()
   })
 
-  it('keeps a module block beside the checklist without a toast', async () => {
-    useClassSubjectsMock.mockReturnValue(subjectsWithModules)
+  it('keeps a module business block beside the list without a toast', async () => {
     const error = { response: { status: 400, data: { detail: { code: 'bad_request' } } } }
     updateClassSubjectMock.mockReturnValue({
       ...mutationMock(),
@@ -293,29 +312,62 @@ describe('ClassSubjects', () => {
     })
     renderWithRouter(<ClassSubjects courseIdOverride="9" classIdOverride="11" />, { withToaster: true })
 
-    fireEvent.click(screen.getByRole('button', { name: 'Módulos: 2 de 3 · 55 h' }))
-    fireEvent.click(screen.getByLabelText('M2 Módulo 2 · 30 h'))
+    fireEvent.click(screen.getByRole('button', { name: 'Módulos: 1 de 2 · 25 h' }))
+    const panel = document.getElementById('class-subject-modules-1')
+    fireEvent.click(within(panel).getByRole('checkbox', { name: 'Módulo 2 · 30 h' }))
 
-    expect(await screen.findByText(/não foi possível concluir o pedido/i)).toBeInTheDocument()
+    expect(await screen.findByRole('alert')).toHaveTextContent(/não foi possível concluir/i)
     expect(document.querySelector('[data-rht-toaster]')).toBeEmptyDOMElement()
   })
 
-  it('marks a subject without selected modules and counts it in the header', () => {
-    useClassSubjectsMock.mockReturnValue(subjectsWithModules)
+  it('does not change the module summary after a failed save', () => {
+    const error = { response: { status: 400, data: { detail: { code: 'bad_request' } } } }
+    const mutate = vi.fn((_payload, options) => options.onError(error))
+    updateClassSubjectMock.mockReturnValue({ ...mutationMock(), mutate })
     renderWithRouter(<ClassSubjects courseIdOverride="9" classIdOverride="11" />)
 
-    expect(screen.getByText('1 sem módulos')).toBeInTheDocument()
-    expect(screen.getByText('Sem módulos')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Módulos: 1 de 2 · 25 h' }))
+    const panel = document.getElementById('class-subject-modules-1')
+    fireEvent.click(within(panel).getByRole('checkbox', { name: 'Módulo 2 · 30 h' }))
+
+    expect(mutate).toHaveBeenCalledWith(
+      { classId: 11, subjectId: 1, moduleIds: [11, 12] },
+      expect.any(Object),
+    )
+    expect(screen.getByRole('button', { name: 'Módulos: 1 de 2 · 25 h' })).toBeInTheDocument()
   })
 
-  it('shows the catalogue message when a subject has no modules', () => {
+  it('flags subjects without selected modules and counts them in the header', () => {
     useClassSubjectsMock.mockReturnValue({
       data: {
         class_name: 'TEE 26/29',
         course_name: 'Técnico de Eletrónica',
         grade_level: 10,
         subjects: [
-          { id: 1, subject_id: 1, subject_name: 'Português', required_room_type: 'normal', teacher_id: 5, teacher_name: 'Ana Silva', modules: [] },
+          {
+            id: 1, subject_id: 1, subject_name: 'Português', required_room_type: 'normal', teacher_id: 5, teacher_name: 'Ana Silva',
+            modules: [{ id: 11, name: 'M1', code: 'M1', hours_total: 25, order: 1, selected: false }],
+          },
+        ],
+      },
+      error: null,
+      isLoading: false,
+    })
+    renderWithRouter(<ClassSubjects courseIdOverride="9" classIdOverride="11" />)
+
+    expect(screen.getByText('Sem módulos', { selector: 'span.text-warning' })).toBeInTheDocument()
+    expect(screen.getByTitle('Sem módulos')).toBeInTheDocument()
+    expect(screen.getByText('1 sem módulos')).toBeInTheDocument()
+  })
+
+  it('explains when a subject has no catalogue modules', () => {
+    useClassSubjectsMock.mockReturnValue({
+      data: {
+        class_name: 'TEE 26/29',
+        course_name: 'Técnico de Eletrónica',
+        grade_level: 10,
+        subjects: [
+          { id: 1, subject_id: 1, subject_name: 'Português', required_room_type: 'normal', teacher_id: null, teacher_name: null, modules: [] },
         ],
       },
       error: null,
@@ -324,23 +376,23 @@ describe('ClassSubjects', () => {
     renderWithRouter(<ClassSubjects courseIdOverride="9" classIdOverride="11" />)
 
     fireEvent.click(screen.getByRole('button', { name: 'Módulos: 0 de 0 · 0 h' }))
-
     expect(screen.getByText('Esta disciplina não tem módulos. Adicione-os em Disciplinas.')).toBeInTheDocument()
   })
 
-  it('keeps the module checklist read-only in readOnly and tutorial modes', () => {
-    useClassSubjectsMock.mockReturnValue(subjectsWithModules)
-    const { unmount } = renderWithRouter(<ClassSubjects courseIdOverride="9" classIdOverride="11" readOnly />)
+  it('keeps the module checklist read-only when readOnly', () => {
+    renderWithRouter(<ClassSubjects courseIdOverride="9" classIdOverride="11" readOnly />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Módulos: 2 de 3 · 55 h' }))
-    expect(screen.getByLabelText('M1 Módulo 1 · 25 h')).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Módulos: 1 de 2 · 25 h' }))
+    const panel = document.getElementById('class-subject-modules-1')
+    expect(within(panel).getByRole('checkbox', { name: 'M1 Módulo 1 · 25 h' })).toBeDisabled()
+  })
 
-    unmount()
-    renderWithRouter(
-      <ClassSubjects courseIdOverride="9" classIdOverride="11" allowedActions={['UPDATE_CLASS_SUBJECT_TEACHER']} />,
-    )
-    fireEvent.click(screen.getByRole('button', { name: 'Módulos: 2 de 3 · 55 h' }))
-    expect(screen.getByLabelText('M1 Módulo 1 · 25 h')).toBeDisabled()
+  it('keeps the module checklist read-only inside the tutorial', () => {
+    renderWithRouter(<ClassSubjects courseIdOverride="9" classIdOverride="11" allowedActions={[]} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Módulos: 1 de 2 · 25 h' }))
+    const panel = document.getElementById('class-subject-modules-1')
+    expect(within(panel).getByRole('checkbox', { name: 'M1 Módulo 1 · 25 h' })).toBeDisabled()
   })
 
   it('shows the joint summary and locks joint modules in the checklist', () => {
@@ -473,6 +525,13 @@ describe('ClassSubjects', () => {
 
   it('requires a teacher choice when the member classes have different teachers', () => {
     useClassSubjectsMock.mockReturnValue(subjectsWithModules)
+    eligibleTeachersMock.mockReturnValue({
+      data: [
+        { id: 5, name: 'Ana Silva', current_classes_count: 0 },
+        { id: 7, name: 'Rui Costa', current_classes_count: 0 },
+      ],
+      isLoading: false,
+    })
     jointCandidatesMock.mockReturnValue({
       data: [{
         class_id: 12,
@@ -584,6 +643,13 @@ describe('ClassSubjects', () => {
 
   it('confirms the teacher change for a joint subject', () => {
     useClassSubjectsMock.mockReturnValue(subjectsWithJoint)
+    eligibleTeachersMock.mockReturnValue({
+      data: [
+        { id: 5, name: 'Ana Silva', current_classes_count: 0 },
+        { id: 7, name: 'Rui Costa', current_classes_count: 0 },
+      ],
+      isLoading: false,
+    })
     const mutation = mutationMock()
     updateClassSubjectMock.mockReturnValue(mutation)
     renderWithRouter(<ClassSubjects courseIdOverride="9" classIdOverride="11" />)

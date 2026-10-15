@@ -1,14 +1,16 @@
 from contextlib import contextmanager
 from datetime import UTC, date, datetime, time
 
-from sqlalchemy import event
+from sqlalchemy import delete, event, select
 
 from app import models, schemas
 from app.scheduler.domain.demand import ExecutionEntry, ModuleCredit
-from app.scheduler.infrastructure.models import SchedulerLessonLogV1
+from app.scheduler.infrastructure.curriculum import sync_curricular_projection
+from app.scheduler.infrastructure.models import CurricularRequirement, SchedulerLessonLogV1
 from app.scheduler.infrastructure.operations import week_schedule
 from app.scheduler.infrastructure.progress import record_execution
 from app.services import (
+    class_service,
     dashboard_service,
     member_service,
     timesheet_service,
@@ -240,6 +242,264 @@ async def test_dashboard_class_progress_uses_v1_execution_credits(db_session):
     assert progress[0].overall_percentage == 50.0
 
 
+async def test_dashboard_class_progress_counts_only_selected_modules(db_session):
+    seed = await seed_v1_assignment(db_session, module_minutes=120)
+    link = await db_session.scalar(
+        select(models.ClassSubjectLink).where(
+            models.ClassSubjectLink.organization_id == seed.organization.id
+        )
+    )
+    module_two = models.Module(
+        organization_id=seed.organization.id,
+        subject_id=seed.subject.id,
+        name="Module Two",
+        required_minutes=60,
+        order=2,
+    )
+    db_session.add(module_two)
+    await db_session.flush()
+    requirement_two = CurricularRequirement(
+        organization_id=seed.organization.id,
+        assignment_id=seed.assignment.id,
+        module_id=module_two.id,
+        sequence=module_two.order + 1,
+        required_minutes=60,
+    )
+    db_session.add(requirement_two)
+    # The canonical reconciliation runs with autoflush disabled, so the row must
+    # be visible before record_execution.
+    await db_session.flush()
+    await db_session.execute(
+        models.class_subject_module.insert().values(
+            organization_id=seed.organization.id,
+            class_subject_link_id=link.id,
+            module_id=module_two.id,
+        )
+    )
+    await record_execution(
+        db_session,
+        seed.organization.id,
+        seed.year.id,
+        seed.assignment.id,
+        ExecutionEntry(
+            "dashboard:first",
+            1,
+            seed.membership.id,
+            "Confirmed",
+            (ModuleCredit(seed.module.id, 60),),
+            recorded_at=datetime(2026, 9, 22, 12, tzinfo=UTC),
+        ),
+        planning_relevant=False,
+    )
+    await record_execution(
+        db_session,
+        seed.organization.id,
+        seed.year.id,
+        seed.assignment.id,
+        ExecutionEntry(
+            "dashboard:second",
+            2,
+            seed.membership.id,
+            "Confirmed",
+            (ModuleCredit(module_two.id, 30),),
+            recorded_at=datetime(2026, 9, 23, 12, tzinfo=UTC),
+        ),
+        planning_relevant=False,
+    )
+    await db_session.commit()
+
+    progress = await db_session.run_sync(
+        lambda db: dashboard_service._get_class_progress(db, seed.organization.id)
+    )
+    assert progress[0].completed_hours == 1.5
+    assert progress[0].total_hours == 3.0
+
+    # A retired module projected as planned = false leaves numerator and
+    # denominator, even though its execution credits remain in the ledger.
+    requirement_two.planned = False
+    await db_session.execute(
+        delete(models.class_subject_module).where(
+            models.class_subject_module.c.organization_id == seed.organization.id,
+            models.class_subject_module.c.class_subject_link_id == link.id,
+            models.class_subject_module.c.module_id == module_two.id,
+        )
+    )
+    await db_session.flush()
+    progress = await db_session.run_sync(
+        lambda db: dashboard_service._get_class_progress(db, seed.organization.id)
+    )
+    assert progress[0].completed_hours == 1.0
+    assert progress[0].total_hours == 2.0
+
+    # Deselecting before the next projection: the stale requirement is still
+    # planned = true, but the dashboard must already stop counting the module.
+    await db_session.execute(
+        delete(models.class_subject_module).where(
+            models.class_subject_module.c.organization_id == seed.organization.id,
+            models.class_subject_module.c.class_subject_link_id == link.id,
+            models.class_subject_module.c.module_id == seed.module.id,
+        )
+    )
+    await db_session.flush()
+    progress = await db_session.run_sync(
+        lambda db: dashboard_service._get_class_progress(db, seed.organization.id)
+    )
+    assert progress[0].completed_hours == 0.0
+    assert progress[0].total_hours == 0.0
+
+
+async def test_dashboard_counts_selected_module_without_a_projected_requirement(db_session):
+    seed = await seed_v1_assignment(db_session, module_minutes=120)
+    link = await db_session.scalar(
+        select(models.ClassSubjectLink).where(
+            models.ClassSubjectLink.organization_id == seed.organization.id
+        )
+    )
+    # A newly selected module whose requirement was never projected: the class
+    # API already counts it, so the dashboard must too (catalogue denominator).
+    module_two = models.Module(
+        organization_id=seed.organization.id,
+        subject_id=seed.subject.id,
+        name="Module Two",
+        required_minutes=60,
+        order=2,
+    )
+    db_session.add(module_two)
+    await db_session.flush()
+    await db_session.execute(
+        models.class_subject_module.insert().values(
+            organization_id=seed.organization.id,
+            class_subject_link_id=link.id,
+            module_id=module_two.id,
+        )
+    )
+    await db_session.commit()
+
+    progress = await db_session.run_sync(
+        lambda db: dashboard_service._get_class_progress(db, seed.organization.id)
+    )
+    assert progress[0].total_hours == 3.0
+    assert progress[0].completed_hours == 0.0
+
+    details = await class_service.get_class_full_details(
+        db_session, seed.class_.id, seed.organization.id
+    )
+    assert sum(subject["total_hours"] for subject in details["subjects"]) == (
+        progress[0].total_hours
+    )
+
+
+async def test_dashboard_resumes_history_when_a_retired_module_is_reselected(db_session):
+    seed = await seed_v1_assignment(db_session, module_minutes=120)
+    link = await db_session.scalar(
+        select(models.ClassSubjectLink).where(
+            models.ClassSubjectLink.organization_id == seed.organization.id
+        )
+    )
+    module_two = models.Module(
+        organization_id=seed.organization.id,
+        subject_id=seed.subject.id,
+        name="Module Two",
+        required_minutes=60,
+        order=2,
+    )
+    db_session.add(module_two)
+    await db_session.flush()
+    await db_session.execute(
+        models.class_subject_module.insert().values(
+            organization_id=seed.organization.id,
+            class_subject_link_id=link.id,
+            module_id=module_two.id,
+        )
+    )
+    # Build the real projection state: both modules selected, planned = true.
+    await sync_curricular_projection(db_session, seed.organization.id, seed.year)
+    await db_session.flush()
+    await record_execution(
+        db_session,
+        seed.organization.id,
+        seed.year.id,
+        seed.assignment.id,
+        ExecutionEntry(
+            "dashboard:first",
+            1,
+            seed.membership.id,
+            "Confirmed",
+            (ModuleCredit(seed.module.id, 60),),
+            recorded_at=datetime(2026, 9, 22, 12, tzinfo=UTC),
+        ),
+        planning_relevant=False,
+    )
+    await record_execution(
+        db_session,
+        seed.organization.id,
+        seed.year.id,
+        seed.assignment.id,
+        ExecutionEntry(
+            "dashboard:second",
+            2,
+            seed.membership.id,
+            "Confirmed",
+            (ModuleCredit(module_two.id, 30),),
+            recorded_at=datetime(2026, 9, 23, 12, tzinfo=UTC),
+        ),
+        planning_relevant=False,
+    )
+    requirement_one = await db_session.scalar(
+        select(CurricularRequirement).where(
+            CurricularRequirement.assignment_id == seed.assignment.id,
+            CurricularRequirement.module_id == seed.module.id,
+        )
+    )
+    assert requirement_one.planned is True
+
+    # Retire the credited module exactly as the projection does: its
+    # requirement stays replayable as planned = false.
+    await db_session.execute(
+        delete(models.class_subject_module).where(
+            models.class_subject_module.c.organization_id == seed.organization.id,
+            models.class_subject_module.c.class_subject_link_id == link.id,
+            models.class_subject_module.c.module_id == seed.module.id,
+        )
+    )
+    await sync_curricular_projection(db_session, seed.organization.id, seed.year)
+    await db_session.flush()
+    await db_session.refresh(requirement_one)
+    assert requirement_one.planned is False
+
+    retired = await db_session.run_sync(
+        lambda db: dashboard_service._get_class_progress(db, seed.organization.id)
+    )
+    assert retired[0].completed_hours == 0.5
+    assert retired[0].total_hours == 1.0
+
+    # Reselect before the next generation: the live selection is authoritative,
+    # so the totals and the historical numerator come back immediately.
+    await db_session.execute(
+        models.class_subject_module.insert().values(
+            organization_id=seed.organization.id,
+            class_subject_link_id=link.id,
+            module_id=seed.module.id,
+        )
+    )
+    await db_session.flush()
+    restored = await db_session.run_sync(
+        lambda db: dashboard_service._get_class_progress(db, seed.organization.id)
+    )
+    assert restored[0].completed_hours == 1.5
+    assert restored[0].total_hours == 3.0
+
+    details = await class_service.get_class_full_details(
+        db_session, seed.class_.id, seed.organization.id
+    )
+    assert sum(subject["total_hours"] for subject in details["subjects"]) == (
+        restored[0].total_hours
+    )
+    assert sum(subject["completed_hours"] for subject in details["subjects"]) == (
+        restored[0].completed_hours
+    )
+
+
 async def test_async_dashboard_summary_uses_bounded_statements(db_session):
     organization = models.Organization(
         name="Dashboard Async Budget",
@@ -330,6 +590,7 @@ async def test_populated_dashboard_skips_fingerprints_with_bounded_queries(db_se
         order=0,
     )
     db_session.add(module)
+    await db_session.flush()
 
     teachers = []
     classes = []
@@ -364,18 +625,18 @@ async def test_populated_dashboard_skips_fingerprints_with_bounded_queries(db_se
             )
         )
     db_session.add_all(links)
-    await db_session.commit()
+    await db_session.flush()
+    # Readiness and prevalidation require a selected module per link.
     await db_session.execute(
-        models.class_subject_module.insert().values(
-            [
-                {
-                    "organization_id": organization.id,
-                    "class_subject_link_id": link.id,
-                    "module_id": module.id,
-                }
-                for link in links
-            ]
-        )
+        models.class_subject_module.insert(),
+        [
+            {
+                "organization_id": organization.id,
+                "class_subject_link_id": link.id,
+                "module_id": module.id,
+            }
+            for link in links
+        ],
     )
     await db_session.commit()
 

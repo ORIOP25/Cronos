@@ -256,7 +256,7 @@ O código valida esta igualdade ao gravar e ao carregar. A base de dados não a 
 
 ### Migração
 
-Crie `0003_joint_lesson_groups` com `down_revision` igual à migração do item 1.
+Crie `0004_joint_lesson_groups` com `down_revision` igual a `0003_class_availability`.
 
 1. Crie as três tabelas, as FKs, os índices e as chaves primárias.
 2. Ative `ENABLE ROW LEVEL SECURITY` e `FORCE ROW LEVEL SECURITY` nas três tabelas.

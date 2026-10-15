@@ -127,6 +127,67 @@ async def _validate_teacher_availabilities(
     )
 
 
+async def _validate_class_availability(
+    db: AsyncSession,
+    organization_id: int,
+    timeslot_ids: set[int],
+) -> list[schemas.PreflightIssue]:
+    """One blocker per eligible class whose every visible block is IMPOSSIBLE.
+
+    A missing class-availability row means the block is possible (NEUTRAL), so the
+    class is blocked only when the count of impossible rows matches every visible
+    block. The eligibility filter mirrors the generation inputs: non-archived
+    class, class-subject link with a teacher, and a matching grade level.
+    """
+    if not timeslot_ids:
+        return []
+    impossible_blocks = (
+        sa_select(func.count())
+        .select_from(models.ClassAvailability)
+        .where(
+            models.ClassAvailability.organization_id == organization_id,
+            models.ClassAvailability.class_id == models.Class.id,
+            models.ClassAvailability.timeslot_id.in_(timeslot_ids),
+            models.ClassAvailability.score == models.PreferenceLevel.IMPOSSIBLE.value,
+        )
+        .correlate(models.Class)
+        .scalar_subquery()
+    )
+    rows = (
+        await db.execute(
+            sa_select(
+                models.Class.id,
+                models.Class.name,
+                models.Class.course_id,
+            )
+            .select_from(models.ClassSubjectLink)
+            .join(models.Class, models.Class.id == models.ClassSubjectLink.class_id)
+            .where(
+                models.Class.organization_id == organization_id,
+                models.ClassSubjectLink.organization_id == organization_id,
+                models.Class.is_archived.is_(False),
+                models.ClassSubjectLink.teacher_id.isnot(None),
+                models.ClassSubjectLink.grade_level == models.Class.grade_level,
+                impossible_blocks == len(timeslot_ids),
+            )
+            .distinct()
+            .order_by(models.Class.name, models.Class.id)
+        )
+    ).all()
+    return [
+        schemas.PreflightIssue(
+            code="CLASS_WITHOUT_AVAILABILITY",
+            severity="BLOCKER",
+            message=(
+                f"A turma {row.name} tem todos os blocos marcados como Impossível. "
+                "Marque pelo menos um bloco como Neutro, Evitar ou Preferencial."
+            ),
+            route=f"/courses/{row.course_id}/classes/{row.id}",
+        )
+        for row in rows
+    ]
+
+
 async def _validate_subject_requirements(
     db: AsyncSession,
     organization_id: int,
@@ -433,15 +494,15 @@ class PreflightService:
                 )
             )
 
-        ts_count = (
-            await self.db.scalar(
-                sa_select(func.count(models.Timeslot.id)).where(
-                    models.Timeslot.organization_id == organization_id
-                )
-            )
-            or 0
+        # Resolve the visible grid once: it answers both "is there a grid?" and
+        # the teacher/class availability checks below.
+        resolved_grid = await grid_version_service.resolve_grid(
+            self.db,
+            organization_id,
+            await grid_version_service.school_today(self.db, organization_id),
         )
-        if ts_count == 0:
+        timeslot_ids = {slot.id for slot in resolved_grid.blocks}
+        if not timeslot_ids:
             issues.append(
                 schemas.PreflightIssue(
                     code="MISSING_TIMESLOTS",
@@ -545,19 +606,19 @@ class PreflightService:
 
             issues.extend(await _validate_room_requirements(self.db, organization_id))
 
-            # One query classifies every active link: invalid teacher assignment
-            # and/or no selected module. Keeping both checks in one statement
-            # preserves the dashboard query budget.
-            valid_teacher = and_(
-                models.ClassSubjectLink.teacher_id.is_not(None),
-                models.Teacher.id.is_not(None),
-                models.OrganizationMembership.id.is_not(None),
-                models.Teacher.organization_id == organization_id,
-                models.OrganizationMembership.organization_id == organization_id,
+            # One row per live link drives both assignment blockers: an invalid
+            # teacher and a class/subject link with no selected module. Keeping
+            # both in a single statement preserves the dashboard query budget.
+            teacher_invalid = or_(
+                models.ClassSubjectLink.teacher_id.is_(None),
+                models.Teacher.id.is_(None),
+                models.OrganizationMembership.id.is_(None),
+                models.Teacher.organization_id != organization_id,
+                models.OrganizationMembership.organization_id != organization_id,
                 models.OrganizationMembership.lifecycle_status
-                == models.MembershipLifecycleStatus.active,
-                models.OrganizationMembership.can_teach.is_(True),
-                sa_select(1)
+                != models.MembershipLifecycleStatus.active,
+                models.OrganizationMembership.can_teach.is_(False),
+                ~sa_select(1)
                 .select_from(models.teacher_subject_link)
                 .where(
                     models.teacher_subject_link.c.organization_id == organization_id,
@@ -584,8 +645,8 @@ class PreflightService:
                         models.Class.name.label("class_name"),
                         models.Subject.name.label("subject_name"),
                         models.Teacher.name.label("teacher_name"),
-                        valid_teacher.label("teacher_ok"),
-                        has_selected_module.label("has_modules"),
+                        teacher_invalid.label("teacher_invalid"),
+                        has_selected_module.label("has_selected_module"),
                     )
                     .select_from(models.ClassSubjectLink)
                     .join(models.Class, models.Class.id == models.ClassSubjectLink.class_id)
@@ -611,50 +672,46 @@ class PreflightService:
                         models.Subject.organization_id == organization_id,
                         models.Class.is_archived.is_(False),
                         models.ClassSubjectLink.grade_level == models.Class.grade_level,
-                        or_(~valid_teacher, ~has_selected_module),
                     )
                     .order_by(models.Class.name, models.Subject.name)
                 )
             ).all()
 
-            for inv in assignment_rows:
-                if inv.teacher_ok:
-                    continue
-                if inv.teacher_name is None:
-                    message = (
-                        f"Atribuição inválida: a turma {inv.class_name} ({inv.subject_name}) "
-                        "não tem professor atribuído."
-                    )
-                else:
-                    message = (
-                        f"Atribuição inválida: o professor {inv.teacher_name} na turma "
-                        f"{inv.class_name} ({inv.subject_name}) não está ativo ou não tem "
-                        "qualificação na disciplina."
-                    )
-                issues.append(
-                    schemas.PreflightIssue(
-                        code="INVALID_TEACHER_ASSIGNMENT",
-                        severity="BLOCKER",
-                        message=message,
-                        route=f"/courses/{inv.course_id}/classes/{inv.class_id}/subjects",
-                    )
-                )
-
             for row in assignment_rows:
-                if row.has_modules:
-                    continue
-                issues.append(
-                    schemas.PreflightIssue(
-                        code="CLASS_SUBJECT_WITHOUT_MODULES",
-                        severity="BLOCKER",
-                        message=(
-                            f"A turma {row.class_name} tem a disciplina {row.subject_name} "
-                            "sem módulos selecionados. Remova a disciplina ou selecione "
-                            "pelo menos um módulo."
-                        ),
-                        route=f"/courses/{row.course_id}/classes/{row.class_id}/subjects",
+                route = f"/courses/{row.course_id}/classes/{row.class_id}/subjects"
+                if row.teacher_invalid:
+                    if row.teacher_name is None:
+                        message = (
+                            f"Atribuição inválida: a turma {row.class_name} "
+                            f"({row.subject_name}) não tem professor atribuído."
+                        )
+                    else:
+                        message = (
+                            f"Atribuição inválida: o professor {row.teacher_name} na turma "
+                            f"{row.class_name} ({row.subject_name}) não está ativo ou não "
+                            "tem qualificação na disciplina."
+                        )
+                    issues.append(
+                        schemas.PreflightIssue(
+                            code="INVALID_TEACHER_ASSIGNMENT",
+                            severity="BLOCKER",
+                            message=message,
+                            route=route,
+                        )
                     )
-                )
+                if not row.has_selected_module:
+                    issues.append(
+                        schemas.PreflightIssue(
+                            code="CLASS_SUBJECT_WITHOUT_MODULES",
+                            severity="BLOCKER",
+                            message=(
+                                f"A turma {row.class_name} tem a disciplina "
+                                f"{row.subject_name} sem módulos selecionados. Remova a "
+                                "disciplina ou selecione pelo menos um módulo."
+                            ),
+                            route=route,
+                        )
+                    )
 
         pending_conditions = [
             SchedulerProposalV1.organization_id == organization_id,
@@ -679,12 +736,6 @@ class PreflightService:
             )
 
         teacher_ids = await _collect_generation_teacher_ids(self.db, organization_id)
-        resolved_grid = await grid_version_service.resolve_grid(
-            self.db,
-            organization_id,
-            await grid_version_service.school_today(self.db, organization_id),
-        )
-        timeslot_ids = {slot.id for slot in resolved_grid.blocks}
         teacher_error = await _validate_teacher_availabilities(
             self.db,
             organization_id,
@@ -701,6 +752,8 @@ class PreflightService:
                 )
             )
 
+        issues.extend(await _validate_class_availability(self.db, organization_id, timeslot_ids))
+
         if (
             strategy
             in (
@@ -709,7 +762,7 @@ class PreflightService:
             )
             and org_settings is not None
             and school_year_id is not None
-            and ts_count > 0
+            and timeslot_ids
         ):
             policy = await SchedulerFingerprintService(self.db).repair_policy_snapshot(
                 organization_id,

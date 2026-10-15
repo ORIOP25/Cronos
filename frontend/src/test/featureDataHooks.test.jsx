@@ -10,8 +10,10 @@ import {
 } from '../features/members/data'
 import {
   useAvailableSubjects,
+  useClassAvailability,
   useClasses,
   useClassSubjects,
+  useCopyClassAvailability,
   useCourses,
   useCreateJointGroup,
   useCreateSubject,
@@ -19,6 +21,7 @@ import {
   useEligibleTeachers,
   useJointCandidates,
   useRooms,
+  useSaveClassAvailability,
   useSubjects,
   useTimeslots,
   useUpdateClassSubject,
@@ -243,15 +246,62 @@ describe('vertical feature data hooks', () => {
     ]))
   })
 
-  it('refreshes readiness after assigning a teacher to a class subject', async () => {
+  it('reads, saves, and copies class availability with tenant keys and invalidations', async () => {
+    const { queryClient, wrapper } = createHarness()
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
+    const read = renderHook(() => useClassAvailability({ classId: 9, onDate: '2031-01-01' }), { wrapper })
+
+    await waitFor(() => expect(read.result.current.isSuccess).toBe(true))
+    expect(apiClient.get).toHaveBeenCalledWith('/classes/9/availability', {
+      params: { on_date: '2031-01-01' },
+    })
+    expect(queryClient.getQueryCache().getAll().map(({ queryKey }) => queryKey))
+      .toContainEqual(['class-availability', 'org-a', 9, '2031-01-01'])
+    read.unmount()
+
+    const save = renderHook(() => useSaveClassAvailability(), { wrapper })
+    const payload = [{ timeslot_id: 11, score: 0 }]
+    await act(() => save.result.current.mutateAsync({
+      classId: 9, payload, onDate: '2031-01-01',
+    }))
+    expect(apiClient.put).toHaveBeenCalledWith('/classes/9/availability', payload, {
+      params: { on_date: '2031-01-01' },
+    })
+    expect(queryClient.getQueryData(['class-availability', 'org-a', 9, '2031-01-01'])).toEqual(payload)
+    expect(invalidate.mock.calls.map(([options]) => options.queryKey)).toEqual(expect.arrayContaining([
+      ['class-availability', 'org-a'],
+      ['dashboard', 'org-a'],
+      ['readiness-bases', 'org-a'],
+      ['scheduler-prevalidation', 'org-a'],
+    ]))
+
+    invalidate.mockClear()
+    const copy = renderHook(() => useCopyClassAvailability(), { wrapper })
+    await act(() => copy.result.current.mutateAsync({
+      classId: 9, targetClassIds: [3, 4], onDate: '2031-01-01',
+    }))
+    expect(apiClient.post).toHaveBeenCalledWith('/classes/9/availability/copy', {
+      target_class_ids: [3, 4],
+    }, { params: { on_date: '2031-01-01' } })
+    expect(invalidate.mock.calls.map(([options]) => options.queryKey)).toEqual(expect.arrayContaining([
+      ['class-availability', 'org-a'],
+      ['readiness-bases', 'org-a'],
+    ]))
+  })
+
+  it('sends only the provided class-subject fields and preserves teacher_id null', async () => {
     const { queryClient, wrapper } = createHarness()
     const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
     const mutation = renderHook(() => useUpdateClassSubject(), { wrapper })
 
-    await act(() => mutation.result.current.mutateAsync({ classId: 4, subjectId: 7, teacherId: 12 }))
+    await act(() => mutation.result.current.mutateAsync({ classId: 4, subjectId: 7, teacherId: null }))
+    await act(() => mutation.result.current.mutateAsync({ classId: 4, subjectId: 7, moduleIds: [3, 1] }))
 
-    expect(apiClient.patch).toHaveBeenCalledWith('/classes/4/subjects/7', { teacher_id: 12 })
+    expect(apiClient.patch).toHaveBeenCalledWith('/classes/4/subjects/7', { teacher_id: null })
+    expect(apiClient.patch).toHaveBeenCalledWith('/classes/4/subjects/7', { module_ids: [3, 1] })
     expect(invalidate.mock.calls.map(([options]) => options.queryKey)).toEqual(expect.arrayContaining([
+      ['classes', 'org-a'],
+      ['teacher-progress', 'org-a'],
       ['dashboard', 'org-a'],
       ['readiness-bases', 'org-a'],
     ]))
@@ -441,6 +491,17 @@ describe('vertical feature data hooks', () => {
       substitute_subject_id: null,
       class_ids: [4, 5],
     })
+  })
+
+  it('caches the updated class-subjects response after a module change', async () => {
+    const { queryClient, wrapper } = createHarness()
+    const payload = { class_id: 4, class_name: 'TEE', subjects: [] }
+    apiClient.patch.mockResolvedValue(payload)
+    const mutation = renderHook(() => useUpdateClassSubject(), { wrapper })
+
+    await act(() => mutation.result.current.mutateAsync({ classId: 4, subjectId: 7, moduleIds: [] }))
+
+    expect(queryClient.getQueryData(['class-subjects', 'org-a', 4])).toEqual(payload)
   })
 
   it('passes occurrence, debt, and timesheet filters as Axios params', async () => {

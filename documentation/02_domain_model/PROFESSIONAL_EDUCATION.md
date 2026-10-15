@@ -18,6 +18,7 @@ Cronos models an organization, course (*Curso*), class (*Turma*), subject (*Disc
 
 Each module stores `required_minutes` and an `order` within its subject.
 A class-subject link binds a class, subject, grade level, and optional teacher.
+A class-subject link also selects which modules of the subject the class takes.
 
 A joint lesson group (*Junção*, "Aula conjunta") joins two or more class-subject links of one subject for a set of joint modules.
 The member links share one teacher, and the scheduler plans the joint modules once for all member classes.
@@ -29,6 +30,8 @@ The interface configures it in "Disciplinas e Professores"; the glossary defines
 
 Module-level minutes represent modular execution more accurately than a fixed annual subject total.
 The scheduler uses remaining module minutes when it builds demand.
+A class follows its own module plan for the current grade level.
+The selection is stored on the class-subject link, which is keyed by grade level.
 
 ## Components and Ownership
 
@@ -38,6 +41,10 @@ The scheduler uses remaining module minutes when it builds demand.
 | Curriculum API | `backend/app/api/v1/endpoints/courses.py`, `classes.py`, `subjects.py` |
 | Progress ledger | `backend/app/models.py` (`ProgressLedgerEntry`) |
 | Progress services | `backend/app/services/class_service.py`, `teacher_service.py` |
+| Module selection storage | `backend/app/models.py` (`class_subject_module`); `backend/app/scheduler/infrastructure/models.py` (`CurricularRequirement.planned`) |
+| Module selection read and write | `backend/app/services/class_service.py` |
+| Retired-module rule | `backend/app/scheduler/domain/demand.py` (`close_retired_modules`) |
+| Curricular projection | `backend/app/scheduler/infrastructure/curriculum.py` |
 | Scheduler v1 curriculum | `backend/app/scheduler/infrastructure/models.py` (`CurricularAssignment`, `CurricularRequirement`, `CurricularExecution`, `CurricularDebt`) |
 | Curriculum UI | `frontend/src/pages/Courses.jsx`, `CourseDetails.jsx`, `ClassDetails.jsx`, `ClassSubjects.jsx` |
 
@@ -70,11 +77,20 @@ The scheduler uses remaining module minutes when it builds demand.
 - A joint module is selected on every member class. Deselecting a joint module returns `409 JOINT_MODULE_LOCKED` until it leaves the group.
 - A module or class with executed minutes cannot enter or leave a joint group (`409 JOINT_MODULE_STARTED` or `JOINT_CLASS_STARTED`).
 - A member link belongs to at most one joint group per subject. A class/subject link, a member class and a joint module in use return `409 resource_in_use`.
+- A new class subject and a CSV assignment select every module of the subject.
+- The migration selects every module for the existing links.
+- History replay uses the catalogue module minutes, so a retired module stays valid.
+- Class and teacher progress count only the selected modules.
 
 ## States and Transitions
 
 Progress moves from required minutes to completed minutes or debt minutes.
 Recovery delivery reduces outstanding debt through a linked execution record.
+A module moves between selected and unselected on the class-subject link.
+Deselecting a module without credit drops its requirement at the next projection.
+Deselecting a module with credit keeps the requirement closed at its executed minutes.
+Reselecting a module restores its catalogue minutes and counts its history again.
+Planning and progress reads use the live selection, so a change applies before the next projection.
 
 ## Failure Modes
 
@@ -82,6 +98,7 @@ Recovery delivery reduces outstanding debt through a linked execution record.
 - A class cannot update progress for a module outside its curriculum, including a deselected module.
 - A module of another subject returns `400 bad_request`. A module of another organization returns `404 resource_not_found`.
 - A class subject without a selected module blocks generation with `CLASS_SUBJECT_WITHOUT_MODULES`.
+- Deselecting a module never erases its execution history.
 - A cross-organization relationship fails scoped validation.
 
 ## Verification Procedure
@@ -97,7 +114,9 @@ Recovery delivery reduces outstanding debt through a linked execution record.
 - Scheduler v1 models: `backend/app/scheduler/infrastructure/models.py`
 - Schemas: `backend/app/schemas.py`
 - Curriculum endpoints: `backend/app/api/v1/endpoints/classes.py`, `courses.py`, `subjects.py`
-- Tests: `backend/tests/integration/committed/test_module_progress.py`, `backend/tests/integration/committed/test_class_subjects.py`
+- Curricular projection: `backend/app/scheduler/infrastructure/curriculum.py`
+- Retired-module rule: `backend/app/scheduler/domain/demand.py`
+- Tests: `backend/tests/integration/committed/test_module_progress.py`, `backend/tests/integration/committed/test_class_subjects.py`, `backend/tests/integration/committed/test_scheduler_v1_class_module_selection.py`
 
 ## Related Documents
 

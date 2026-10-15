@@ -196,16 +196,6 @@ const JOINT_FIXTURE = {
   roomName: 'E2E Joint Room',
 }
 
-const MODULE_SELECTION_FIXTURE = {
-  subjectName: 'E2E Selection Subject',
-  moduleNames: ['E2E Selection M1', 'E2E Selection M2'],
-  moduleCodes: ['E2E-SEL-1', 'E2E-SEL-2'],
-  courseName: 'E2E Selection Course',
-  courseAbbreviation: 'E2ESEL',
-  className: 'E2E Selection Class',
-  roomName: 'E2E Selection Room',
-}
-
 async function ensureSubjectWithModules(page, fixture) {
   const subjects = await apiRequest(page, 'GET', '/subjects/')
   const existing = subjects.find((subject) => subject.name === fixture.subjectName)
@@ -323,20 +313,6 @@ export async function seedJointLessonInputs(page) {
     moduleIds,
     classes: classes.map((classroom) => ({ id: classroom.id, name: classroom.name })),
   }
-}
-
-export async function seedClassModuleSelectionInputs(page) {
-  const dates = fixtureDates()
-  await resetSchedulerState(page)
-  const subject = await ensureSubjectWithModules(page, MODULE_SELECTION_FIXTURE)
-  const teacher = await prepareFixtureTeacher(page, subject.id)
-  await configureFixtureSchool(page, dates)
-  await ensureNamedRoom(page, MODULE_SELECTION_FIXTURE.roomName)
-  const course = await ensureNamedCourse(page, subject.id, MODULE_SELECTION_FIXTURE)
-  const classroom = await ensureNamedClass(page, course.id, MODULE_SELECTION_FIXTURE.className, dates)
-  const moduleIds = subject.modules.map((module) => module.id)
-  await attachClassSubjectWithModules(page, classroom.id, subject.id, teacher.teacher_id, moduleIds)
-  return { courseId: course.id, classId: classroom.id, subjectId: subject.id, moduleIds }
 }
 
 export async function waitForJobToSucceed(page, jobId) {

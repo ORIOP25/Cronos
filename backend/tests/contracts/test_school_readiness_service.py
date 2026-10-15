@@ -140,20 +140,14 @@ async def test_readiness_evaluates_teachers_before_class_subject_links(db_sessio
     assert teacher_report.issues[0].code == "TEACHER_ASSIGNMENT_REQUIRED"
     assert teacher_report.issues[0].route == "/courses"
 
-    link = models.ClassSubjectLink(
-        organization_id=organization.id,
-        class_id=school_class.id,
-        subject_id=subject.id,
-        grade_level=10,
-        teacher_id=None,
-    )
-    db_session.add(link)
-    await db_session.flush()
-    await select_all_subject_modules(
-        db_session,
-        organization_id=organization.id,
-        class_subject_link_id=link.id,
-        subject_id=subject.id,
+    db_session.add(
+        models.ClassSubjectLink(
+            organization_id=organization.id,
+            class_id=school_class.id,
+            subject_id=subject.id,
+            grade_level=10,
+            teacher_id=None,
+        )
     )
     await db_session.flush()
 
@@ -329,11 +323,12 @@ async def test_readiness_counts_scheduler_only_teacher_assignment(db_session):
     )
     db_session.add(link)
     await db_session.flush()
-    await select_all_subject_modules(
-        db_session,
-        organization_id=organization.id,
-        class_subject_link_id=link.id,
-        subject_id=subject.id,
+    await db_session.execute(
+        models.class_subject_module.insert().values(
+            organization_id=organization.id,
+            class_subject_link_id=link.id,
+            module_id=module.id,
+        )
     )
     await db_session.flush()
 
@@ -459,11 +454,12 @@ async def test_readiness_mixed_and_fully_impossible_availability(db_session):
     )
     db_session.add_all([slot1, slot2])
     await db_session.flush()
-    await select_all_subject_modules(
-        db_session,
-        organization_id=organization.id,
-        class_subject_link_id=link.id,
-        subject_id=subject.id,
+    await db_session.execute(
+        models.class_subject_module.insert().values(
+            organization_id=organization.id,
+            class_subject_link_id=link.id,
+            module_id=module.id,
+        )
     )
     await db_session.flush()
 
@@ -651,11 +647,12 @@ async def test_readiness_requires_an_active_compatible_room(db_session):
         )
     )
     await db_session.flush()
-    await select_all_subject_modules(
-        db_session,
-        organization_id=organization.id,
-        class_subject_link_id=link.id,
-        subject_id=subject.id,
+    await db_session.execute(
+        models.class_subject_module.insert().values(
+            organization_id=organization.id,
+            class_subject_link_id=link.id,
+            module_id=module.id,
+        )
     )
     await db_session.flush()
 
@@ -674,6 +671,81 @@ async def test_readiness_requires_an_active_compatible_room(db_session):
 
     assert active_report.depth == 6
     assert "COMPATIBLE_ROOM_REQUIRED" not in {issue.code for issue in active_report.issues}
+
+
+@pytest.mark.asyncio
+async def test_readiness_requires_a_selected_module(db_session):
+    organization, _ = await create_org_and_user(
+        db_session,
+        clerk_user_id="readiness-selection-user",
+        clerk_org_id="readiness-selection-org",
+    )
+    course = models.Course(
+        organization_id=organization.id,
+        name="Curso Seleção",
+        abbreviation="CS",
+    )
+    subject = models.Subject(
+        organization_id=organization.id,
+        name="Disciplina Seleção",
+    )
+    db_session.add_all([course, subject])
+    await db_session.flush()
+
+    school_class = models.Class(
+        organization_id=organization.id,
+        course_id=course.id,
+        name="Turma Seleção",
+        size=20,
+        grade_level=10,
+        start_year=2025,
+        end_year=2028,
+    )
+    module = models.Module(
+        organization_id=organization.id,
+        subject_id=subject.id,
+        name="Módulo Seleção",
+        required_minutes=60,
+        order=0,
+    )
+    db_session.add_all([school_class, module])
+    await db_session.flush()
+
+    teacher = await create_teacher_profile(
+        db_session,
+        organization_id=organization.id,
+        name="Professor Seleção",
+        subject_ids=[subject.id],
+    )
+    link = models.ClassSubjectLink(
+        organization_id=organization.id,
+        class_id=school_class.id,
+        subject_id=subject.id,
+        grade_level=school_class.grade_level,
+        teacher_id=teacher.id,
+    )
+    db_session.add(link)
+    await db_session.flush()
+
+    service = SchoolReadinessService(db_session)
+    without_selection = await service.evaluate_bases(organization.id)
+
+    # A link with no selected module does not satisfy the assignment step.
+    assert without_selection.depth == 3
+    assert without_selection.issues[0].code == "TEACHER_ASSIGNMENT_REQUIRED"
+
+    await db_session.execute(
+        models.class_subject_module.insert().values(
+            organization_id=organization.id,
+            class_subject_link_id=link.id,
+            module_id=module.id,
+        )
+    )
+    await db_session.flush()
+    with_selection = await service.evaluate_bases(organization.id)
+
+    assert with_selection.depth == 4
+    assert with_selection.issues[0].code == "COMPATIBLE_ROOM_REQUIRED"
 
 
 @pytest.mark.asyncio

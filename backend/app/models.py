@@ -278,6 +278,39 @@ teacher_subject_link = Table(
     Index("ix_teacher_subject_link_organization_id", "organization_id"),
 )
 
+# Tabela Relacional: Módulos selecionados numa ligação turma-disciplina.
+# Uma linha representa um módulo marcado na checklist de módulos da turma.
+class_subject_module = Table(
+    "class_subject_module",
+    Base.metadata,
+    Column(
+        "organization_id",
+        ForeignKey(FK_ORG_ID, ondelete="CASCADE"),
+        nullable=False,
+        primary_key=True,
+    ),
+    Column("class_subject_link_id", Integer, nullable=False, primary_key=True),
+    Column("module_id", Integer, nullable=False, primary_key=True),
+    ForeignKeyConstraint(
+        ["organization_id", "class_subject_link_id"],
+        ["class_subject_link.organization_id", "class_subject_link.id"],
+        name="fk_class_subject_module_link_org",
+        ondelete="CASCADE",
+    ),
+    ForeignKeyConstraint(
+        ["organization_id", "module_id"],
+        ["module.organization_id", "module.id"],
+        name="fk_class_subject_module_module_org",
+        ondelete="CASCADE",
+    ),
+    Index("ix_class_subject_module_organization_id", "organization_id"),
+    Index(
+        "ix_class_subject_module_organization_id_module_id",
+        "organization_id",
+        "module_id",
+    ),
+)
+
 
 # Tabela Relacional: Disciplinas de uma Turma (com professor opcional)
 # Esta tabela define que disciplinas uma turma tem num determinado grade_level
@@ -312,40 +345,6 @@ class ClassSubjectLink(Base):
             name="uq_class_subject_grade",
         ),
     )
-
-
-# Módulos selecionados numa ligação turma-disciplina (chave grade_level).
-# Uma linha representa um módulo marcado na Checklist de Módulos.
-class_subject_module = Table(
-    "class_subject_module",
-    Base.metadata,
-    Column(
-        "organization_id",
-        ForeignKey(FK_ORG_ID, ondelete="CASCADE"),
-        nullable=False,
-        primary_key=True,
-    ),
-    Column("class_subject_link_id", Integer, nullable=False, primary_key=True),
-    Column("module_id", Integer, nullable=False, primary_key=True),
-    ForeignKeyConstraint(
-        ["organization_id", "class_subject_link_id"],
-        ["class_subject_link.organization_id", "class_subject_link.id"],
-        name="fk_class_subject_module_link_org",
-        ondelete="CASCADE",
-    ),
-    ForeignKeyConstraint(
-        ["organization_id", "module_id"],
-        ["module.organization_id", "module.id"],
-        name="fk_class_subject_module_module_org",
-        ondelete="CASCADE",
-    ),
-    Index("ix_class_subject_module_organization_id", "organization_id"),
-    Index(
-        "ix_class_subject_module_organization_id_module_id",
-        "organization_id",
-        "module_id",
-    ),
-)
 
 
 # Junção de aulas conjuntas: disciplina, turmas membro e módulos conjuntos.
@@ -449,6 +448,41 @@ class Availability(Base):
         UniqueConstraint(
             "organization_id", "teacher_id", "timeslot_id", name="uq_teacher_timeslot_availability"
         ),
+    )
+
+
+class ClassAvailability(Base):
+    """Weekly preference of a class. A missing row means NEUTRAL.
+
+    The composed primary key and tenant-scoped foreign keys keep every row inside
+    one organization. The service replaces rows with explicit ``insert`` and
+    ``delete``, so no ORM relationship is declared on ``Class``.
+    """
+
+    __tablename__ = "class_availability"
+
+    organization_id: Mapped[int] = mapped_column(
+        ForeignKey(FK_ORG_ID, ondelete="CASCADE"), nullable=False, primary_key=True
+    )
+    class_id: Mapped[int] = mapped_column(Integer, nullable=False, primary_key=True)
+    timeslot_id: Mapped[int] = mapped_column(Integer, nullable=False, primary_key=True)
+    score: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id", "class_id"],
+            ["class.organization_id", "class.id"],
+            name="fk_class_availability_class_tenant_scoped",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "timeslot_id"],
+            ["timeslot.organization_id", "timeslot.id"],
+            name="fk_class_availability_timeslot_tenant_scoped",
+            ondelete="CASCADE",
+        ),
+        CheckConstraint("score IN (-1, 0, 2)", name="ck_class_availability_score"),
+        Index("ix_class_availability_org_timeslot", "organization_id", "timeslot_id"),
     )
 
 

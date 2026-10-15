@@ -11,7 +11,7 @@ from __future__ import annotations
 from datetime import date
 
 import pytest
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 
 from app import models, schemas
 from app.scheduler.domain.debt import DebtOrigin
@@ -19,6 +19,8 @@ from app.scheduler.infrastructure import occurrences as occurrences_v1
 from app.scheduler.infrastructure import operations
 from app.scheduler.infrastructure.models import (
     CurricularAssignment,
+    CurricularExecution,
+    CurricularExecutionCredit,
     CurricularRequirement,
     SchedulerLessonV1,
 )
@@ -42,6 +44,25 @@ pytestmark = pytest.mark.postgresql
 
 
 async def _retire(db_session, assignment_id: int, module_id: int) -> None:
+    # Deselect on the live class/subject link (the authoritative selection) and
+    # close the persisted requirement at its executed minutes.
+    assignment = await db_session.get(CurricularAssignment, assignment_id)
+    if assignment is not None:
+        link_id = await db_session.scalar(
+            select(models.ClassSubjectLink.id).where(
+                models.ClassSubjectLink.organization_id == assignment.organization_id,
+                models.ClassSubjectLink.class_id == assignment.class_id,
+                models.ClassSubjectLink.subject_id == assignment.subject_id,
+            )
+        )
+        if link_id is not None:
+            await db_session.execute(
+                delete(models.class_subject_module).where(
+                    models.class_subject_module.c.organization_id == assignment.organization_id,
+                    models.class_subject_module.c.class_subject_link_id == link_id,
+                    models.class_subject_module.c.module_id == module_id,
+                )
+            )
     await db_session.execute(
         update(CurricularRequirement)
         .where(
@@ -283,6 +304,29 @@ async def test_year_reset_settlement_does_not_credit_a_retired_module(db_session
             sequence=2,
             required_minutes=100,
             planned=False,
+        )
+    )
+    # A retired module keeps its history: one executed credit keeps the closed
+    # row when the live selection is reconciled.
+    execution = CurricularExecution(
+        organization_id=seed.organization.id,
+        assignment_id=seed.assignment.id,
+        origin="retired-history",
+        revision=1,
+        author_membership_id=seed.membership.id,
+        reason="Histórico do módulo retirado",
+        recorded_at=MOMENT,
+        planning_relevant=True,
+    )
+    db_session.add(execution)
+    await db_session.flush()
+    db_session.add(
+        CurricularExecutionCredit(
+            organization_id=seed.organization.id,
+            execution_id=execution.id,
+            module_id=retired.id,
+            offset_minutes=0,
+            delta_minutes=20,
         )
     )
     await db_session.commit()

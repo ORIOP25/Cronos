@@ -68,6 +68,7 @@ PRIVACY_TABLES = {
     "teacher": "delete",
     "timeslot": "delete",
     "availability": "delete",
+    "class_availability": "delete",
     "class": "delete",
     "course_subject_link": "delete",
     "member_access_operation": "delete",

@@ -1,7 +1,7 @@
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import delete, func
+from sqlalchemy import and_, delete, func
 from sqlalchemy import update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -28,9 +28,7 @@ def _class_demand_snapshot(item: models.Class) -> dict:
     }
 
 
-def _class_subject_snapshot(
-    link: models.ClassSubjectLink, module_ids: list[int] | tuple[int, ...] = ()
-) -> dict:
+def _class_subject_snapshot(link: models.ClassSubjectLink, module_ids) -> dict:
     return {
         "class_id": link.class_id,
         "subject_id": link.subject_id,
@@ -138,6 +136,74 @@ async def _get_class_by_course_and_org(
         )
     )
     return result.scalars().first()
+
+
+async def _selected_module_map(
+    db: AsyncSession, organization_id: int, link_ids: list[int]
+) -> dict[int, set[int]]:
+    """Módulos marcados por ligação turma-disciplina, numa só consulta."""
+    if not link_ids:
+        return {}
+    result = await db.execute(
+        select(
+            models.class_subject_module.c.class_subject_link_id,
+            models.class_subject_module.c.module_id,
+        ).where(
+            models.class_subject_module.c.organization_id == organization_id,
+            models.class_subject_module.c.class_subject_link_id.in_(link_ids),
+        )
+    )
+    selected: dict[int, set[int]] = {}
+    for link_id, module_id in result.all():
+        selected.setdefault(link_id, set()).add(module_id)
+    return selected
+
+
+async def _selected_module_ids(db: AsyncSession, organization_id: int, link_id: int) -> set[int]:
+    result = await db.execute(
+        select(models.class_subject_module.c.module_id).where(
+            models.class_subject_module.c.organization_id == organization_id,
+            models.class_subject_module.c.class_subject_link_id == link_id,
+        )
+    )
+    return set(result.scalars().all())
+
+
+async def _subject_catalogue_with_selection(
+    db: AsyncSession, organization_id: int, links: list[models.ClassSubjectLink]
+) -> tuple[dict[int, list[models.Module]], dict[int, set[int]]]:
+    """Módulos de cada disciplina e seleção por ligação, numa só consulta.
+
+    O ``outerjoin`` devolve o catálogo e as linhas marcadas juntos, para que a
+    contagem de consultas não cresça com o número de disciplinas.
+    """
+    if not links:
+        return {}, {}
+    subject_ids = [link.subject_id for link in links]
+    link_ids = [link.id for link in links]
+    rows = await db.execute(
+        select(models.Module, models.class_subject_module.c.class_subject_link_id)
+        .outerjoin(
+            models.class_subject_module,
+            and_(
+                models.class_subject_module.c.organization_id == models.Module.organization_id,
+                models.class_subject_module.c.module_id == models.Module.id,
+                models.class_subject_module.c.class_subject_link_id.in_(link_ids),
+            ),
+        )
+        .where(
+            models.Module.organization_id == organization_id,
+            models.Module.subject_id.in_(subject_ids),
+        )
+        .order_by(models.Module.subject_id, models.Module.order)
+    )
+    modules_by_subject: dict[int, list[models.Module]] = {}
+    selected_by_link: dict[int, set[int]] = {}
+    for module, selected_link_id in rows.all():
+        modules_by_subject.setdefault(module.subject_id, []).append(module)
+        if selected_link_id is not None:
+            selected_by_link.setdefault(selected_link_id, set()).add(module.id)
+    return modules_by_subject, selected_by_link
 
 
 # --- ASYNC (API) ---
@@ -355,17 +421,28 @@ def _build_module_data(module, progress_map: dict) -> dict:
     }
 
 
-def _build_subject_with_progress(subject, progress_map: dict, modules) -> dict:
-    """Constrói dados de uma disciplina com os módulos selecionados e progresso.
+def _subject_modules_payload(modules, selected_ids: set[int]) -> list[dict]:
+    """Lista os módulos da disciplina por ordem, marcando os selecionados."""
+    return [
+        {
+            "id": module.id,
+            "name": module.name,
+            "code": module.code,
+            "hours_total": float(module.hours_total),
+            "order": module.order,
+            "selected": module.id in selected_ids,
+        }
+        for module in sorted(modules, key=lambda m: m.order)
+    ]
 
-    Os módulos são os marcados na turma (D10). Uma disciplina sem módulos
-    marcados devolve zero horas e uma lista vazia.
-    """
+
+def _build_subject_with_progress(subject, selected_modules, progress_map: dict) -> dict:
+    """Constrói dados de uma disciplina a partir dos módulos selecionados."""
     modules_data = []
     subject_total = 0.0
     subject_completed = 0.0
 
-    for module in sorted(modules, key=lambda m: m.order):
+    for module in sorted(selected_modules, key=lambda m: m.order):
         module_data = _build_module_data(module, progress_map)
         modules_data.append(module_data)
         subject_total += module.hours_total
@@ -449,21 +526,6 @@ async def get_class_full_details(db: AsyncSession, class_id: int, organization_i
     if not links:
         return response
 
-    # 3b. Seleção de módulos das ligações, numa única consulta adicional.
-    selected_by_link: dict[int, set[int]] = {}
-    link_ids = [link.id for link in links]
-    selection_rows = await db.execute(
-        select(
-            models.class_subject_module.c.class_subject_link_id,
-            models.class_subject_module.c.module_id,
-        ).where(
-            models.class_subject_module.c.organization_id == organization_id,
-            models.class_subject_module.c.class_subject_link_id.in_(link_ids),
-        )
-    )
-    for link_id, module_id in selection_rows.all():
-        selected_by_link.setdefault(link_id, set()).add(module_id)
-
     # 4. Buscar progresso EXPLICITAMENTE por class_id (isolamento de turma).
     #    A nova contabilização v1 é a fonte de verdade quando existir.
     progress_map = await class_progress_map(db, organization_id, class_id)
@@ -483,15 +545,16 @@ async def get_class_full_details(db: AsyncSession, class_id: int, organization_i
         progress_result = await db.execute(progress_query)
         progress_map = {row[0]: (int(row[1]), int(row[2])) for row in progress_result.all()}
 
-    # 5. Construir árvore de disciplinas com progresso
+    # 5. Construir árvore de disciplinas com progresso dos módulos marcados
+    selected_map = await _selected_module_map(db, organization_id, [link.id for link in links])
     for link in sorted(links, key=lambda item: item.subject.name if item.subject else ""):
         subject = link.subject
         if not subject:
             continue
-        selected = selected_by_link.get(link.id, set())
-        selected_modules = [module for module in subject.modules if module.id in selected]
+        selected_ids = selected_map.get(link.id, set())
+        selected_modules = [module for module in subject.modules if module.id in selected_ids]
         response["subjects"].append(
-            _build_subject_with_progress(subject, progress_map, selected_modules)
+            _build_subject_with_progress(subject, selected_modules, progress_map)
         )
 
     return response
@@ -529,20 +592,8 @@ async def update_class_progress(
             detail=f"Class {class_id} was not found in organization {organization_id}.",
         )
 
-    # 2. Quando a nova contabilização existe, os acertos vão para o ledger v1.
-    if membership_id is not None:
-        handled = await adjust_class_progress(
-            db,
-            organization_id,
-            class_id,
-            progress_updates,
-            membership_id=membership_id,
-            now_utc=now_utc or datetime.now(UTC),
-        )
-        if handled:
-            return
-
-    # 3. Sem dados v1, mantém o caminho legado (removido na W12).
+    # 2. Carregar a seleção atual do ano da turma e validar os módulos pedidos
+    #    antes de qualquer escrita, no caminho v1 ou no caminho legado.
     links_query = (
         select(models.ClassSubjectLink)
         .where(
@@ -562,30 +613,16 @@ async def update_class_progress(
             detail=f"Class {class_id} has no assigned subjects.",
         )
 
-    # 3. Selecionar apenas os módulos marcados na turma (D10).
-    link_ids = [link.id for link in links]
-    selection_rows = await db.execute(
-        select(
-            models.class_subject_module.c.class_subject_link_id,
-            models.class_subject_module.c.module_id,
-        ).where(
-            models.class_subject_module.c.organization_id == organization_id,
-            models.class_subject_module.c.class_subject_link_id.in_(link_ids),
-        )
-    )
-    selected_by_link: dict[int, set[int]] = {}
-    for link_id, module_id in selection_rows.all():
-        selected_by_link.setdefault(link_id, set()).add(module_id)
-
+    # Construir mapa dos módulos marcados: {module_id: hours_total}
+    selected_map = await _selected_module_map(db, organization_id, [link.id for link in links])
     valid_modules = {
         module.id: module.hours_total
         for link in links
         if link.subject is not None
         for module in link.subject.modules
-        if module.id in selected_by_link.get(link.id, set())
+        if module.id in selected_map.get(link.id, set())
     }
 
-    # 4. Validar que todos os module_ids pertencem às disciplinas da turma
     for update in progress_updates:
         if update.module_id not in valid_modules:
             raise AppError(
@@ -594,7 +631,21 @@ async def update_class_progress(
                 detail=f"Module {update.module_id} is not assigned to class {class_id}.",
             )
 
-    # 5. Append adjustments; the ledger is the only stored progress truth.
+    # 3. Quando a nova contabilização existe, os acertos vão para o ledger v1.
+    if membership_id is not None:
+        handled = await adjust_class_progress(
+            db,
+            organization_id,
+            class_id,
+            progress_updates,
+            membership_id=membership_id,
+            now_utc=now_utc or datetime.now(UTC),
+        )
+        if handled:
+            return
+
+    # 4. Sem dados v1, mantém o caminho legado (removido na W12).
+    # Append adjustments; the ledger is the only stored progress truth.
     for update in progress_updates:
         hours_total = valid_modules[update.module_id]
         target_minutes = int(round(min(update.hours_completed, hours_total) * 60))
@@ -660,7 +711,7 @@ async def get_class_subjects(db: AsyncSession, class_id: int, organization_id: i
             models.ClassSubjectLink.grade_level == db_class.grade_level,
         )
         .options(
-            selectinload(models.ClassSubjectLink.subject).selectinload(models.Subject.modules),
+            selectinload(models.ClassSubjectLink.subject),
             selectinload(models.ClassSubjectLink.teacher),
         )
     )
@@ -668,23 +719,13 @@ async def get_class_subjects(db: AsyncSession, class_id: int, organization_id: i
     links_result = await db.execute(links_query)
     links = links_result.scalars().all()
 
-    # 3. Seleção de módulos das ligações, numa única consulta adicional.
-    selected_by_link: dict[int, set[int]] = {}
-    link_ids = [link.id for link in links]
-    if link_ids:
-        selection_rows = await db.execute(
-            select(
-                models.class_subject_module.c.class_subject_link_id,
-                models.class_subject_module.c.module_id,
-            ).where(
-                models.class_subject_module.c.organization_id == organization_id,
-                models.class_subject_module.c.class_subject_link_id.in_(link_ids),
-            )
-        )
-        for link_id, module_id in selection_rows.all():
-            selected_by_link.setdefault(link_id, set()).add(module_id)
+    # 3. Catálogo e seleção numa só consulta; construir a resposta
+    catalogue, selected_by_link = await _subject_catalogue_with_selection(
+        db, organization_id, links
+    )
 
-    # 3b. Junção de cada ligação, numa única consulta em lote.
+    # 3b. Junção de cada ligação, numa única consulta em lote (J02).
+    link_ids = [link.id for link in links]
     joint_by_link = await joint_lesson_service.load_joint_groups_by_link(
         db, organization_id, link_ids
     )
@@ -692,10 +733,6 @@ async def get_class_subjects(db: AsyncSession, class_id: int, organization_id: i
     # 4. Construir resposta
     subjects_data = []
     for link in sorted(links, key=lambda item: item.subject.name if item.subject else ""):
-        modules = (
-            sorted(link.subject.modules, key=lambda module: module.order) if link.subject else []
-        )
-        selected = selected_by_link.get(link.id, set())
         subjects_data.append(
             {
                 "id": link.id,
@@ -705,17 +742,9 @@ async def get_class_subjects(db: AsyncSession, class_id: int, organization_id: i
                 "grade_level": link.grade_level,
                 "teacher_id": link.teacher_id,
                 "teacher_name": link.teacher.name if link.teacher else None,
-                "modules": [
-                    {
-                        "id": module.id,
-                        "name": module.name,
-                        "code": module.code,
-                        "hours_total": float(module.hours_total),
-                        "order": module.order,
-                        "selected": module.id in selected,
-                    }
-                    for module in modules
-                ],
+                "modules": _subject_modules_payload(
+                    catalogue.get(link.subject_id, []), selected_by_link.get(link.id, set())
+                ),
                 "joint_group": joint_by_link.get(link.id),
             }
         )
@@ -762,13 +791,8 @@ async def add_class_subject(
         )
 
     # 2. Buscar disciplina
-    subject_query = (
-        select(models.Subject)
-        .options(selectinload(models.Subject.modules))
-        .where(
-            models.Subject.id == subject_id,
-            models.Subject.organization_id == organization_id,
-        )
+    subject_query = select(models.Subject).where(
+        models.Subject.id == subject_id, models.Subject.organization_id == organization_id
     )
     subject_result = await db.execute(subject_query)
     db_subject = subject_result.scalars().first()
@@ -828,9 +852,29 @@ async def add_class_subject(
         )
 
     await db.flush()
-    # D03: a new subject starts with every module of its subject selected.
-    module_ids = sorted(module.id for module in db_subject.modules)
-    await _replace_link_modules(db, organization_id, link.id, module_ids)
+    # D03: a new class subject starts with every module of the subject selected.
+    module_ids = (
+        await db.scalars(
+            select(models.Module.id)
+            .where(
+                models.Module.organization_id == organization_id,
+                models.Module.subject_id == subject_id,
+            )
+            .order_by(models.Module.order)
+        )
+    ).all()
+    if module_ids:
+        await db.execute(
+            models.class_subject_module.insert(),
+            [
+                {
+                    "organization_id": organization_id,
+                    "class_subject_link_id": link.id,
+                    "module_id": module_id,
+                }
+                for module_id in module_ids
+            ],
+        )
     await record_scheduler_change(
         db,
         organization_id,
@@ -857,12 +901,12 @@ async def update_class_subject(
     changed_by_membership_id: int | None = None,
 ):
     """
-    Atualiza uma associação disciplina-turma: professor e/ou módulos.
+    Atualiza uma associação disciplina-turma: professor e/ou módulos selecionados.
 
     Usa exclude_unset para distinguir entre 'não enviado' e 'enviado'.
     Uma lista vazia de module_ids é válida e substitui a seleção (D06).
 
-    Validações:
+    Validações (antes de qualquer alteração):
     - Associação existe
     - Se teacher_id não é None, professor existe e tem competência na disciplina
     - Módulos repetidos ou de outra disciplina devolvem 400
@@ -907,77 +951,79 @@ async def update_class_subject(
     joint_group_id = await _joint_group_for_link(db, organization_id, link.id)
 
     # 3. Se teacher_id foi enviado, validar
-    if "teacher_id" in update_data:
+    if update_data.get("teacher_id") is not None:
         teacher_id = update_data["teacher_id"]
-        if teacher_id is not None:
-            # Validar professor existe e pertence à org
-            teacher_query = (
-                select(models.Teacher)
-                .where(
-                    models.Teacher.id == teacher_id,
-                    models.Teacher.organization_id == organization_id,
-                )
-                .options(selectinload(models.Teacher.subjects))
+        # Validar professor existe e pertence à org
+        teacher_query = (
+            select(models.Teacher)
+            .where(
+                models.Teacher.id == teacher_id,
+                models.Teacher.organization_id == organization_id,
+            )
+            .options(selectinload(models.Teacher.subjects))
+        )
+
+        teacher_result = await db.execute(teacher_query)
+        db_teacher = teacher_result.scalars().first()
+
+        if not db_teacher:
+            raise AppError(
+                kind="not_found",
+                code="resource_not_found",
+                detail=f"Teacher {teacher_id} was not found in organization {organization_id}.",
             )
 
-            teacher_result = await db.execute(teacher_query)
-            db_teacher = teacher_result.scalars().first()
+        # Validar professor tem competência na disciplina
+        teacher_subject_ids = [s.id for s in db_teacher.subjects]
+        if subject_id not in teacher_subject_ids:
+            raise AppError(
+                kind="bad_request",
+                code="teacher_competency_missing",
+                detail=f"Teacher {teacher_id} is not qualified for subject {subject_id}.",
+            )
 
-            if not db_teacher:
-                raise AppError(
-                    kind="not_found",
-                    code="resource_not_found",
-                    detail=f"Teacher {teacher_id} was not found in organization {organization_id}.",
-                )
-
-            # Validar professor tem competência na disciplina
-            teacher_subject_ids = [s.id for s in db_teacher.subjects]
-            if subject_id not in teacher_subject_ids:
-                raise AppError(
-                    kind="bad_request",
-                    code="teacher_competency_missing",
-                    detail=f"Teacher {teacher_id} is not qualified for subject {subject_id}.",
-                )
-
-    # 4. Substituir a seleção de módulos quando enviada
-    next_module_ids = current_module_ids
-    requested_module_ids = update_data.get("module_ids")
-    if requested_module_ids is not None:
-        if len(set(requested_module_ids)) != len(requested_module_ids):
+    # 4. Se module_ids foi enviado, validar a lista antes de substituir
+    module_ids = update_data.get("module_ids")
+    replace_modules = "module_ids" in update_data and module_ids is not None
+    unique_module_ids: list[int] = []
+    if replace_modules:
+        unique_module_ids = list(dict.fromkeys(module_ids))
+        if len(unique_module_ids) != len(module_ids):
             raise AppError(
                 kind="bad_request",
                 code="bad_request",
-                detail="module_ids must not contain duplicates.",
+                detail="module_ids contains duplicate modules.",
             )
-        if requested_module_ids:
-            module_rows = await db.execute(
+        module_rows = (
+            await db.execute(
                 select(models.Module.id, models.Module.subject_id).where(
                     models.Module.organization_id == organization_id,
-                    models.Module.id.in_(requested_module_ids),
+                    models.Module.id.in_(unique_module_ids),
                 )
             )
-            subject_by_module = {row[0]: row[1] for row in module_rows.all()}
-            missing = [mid for mid in requested_module_ids if mid not in subject_by_module]
-            if missing:
+        ).all()
+        subject_by_module = {
+            module_id: module_subject_id for module_id, module_subject_id in module_rows
+        }
+        for module_id in unique_module_ids:
+            if module_id not in subject_by_module:
                 raise AppError(
                     kind="not_found",
                     code="resource_not_found",
-                    detail=(
-                        f"Module {missing[0]} was not found in organization {organization_id}."
-                    ),
+                    detail=f"Module {module_id} was not found in organization {organization_id}.",
                 )
-            wrong_subject = [
-                mid for mid in requested_module_ids if subject_by_module[mid] != link.subject_id
-            ]
-            if wrong_subject:
+            if subject_by_module[module_id] != subject_id:
                 raise AppError(
                     kind="bad_request",
                     code="bad_request",
-                    detail=(
-                        f"Module {wrong_subject[0]} does not belong to subject {link.subject_id}."
-                    ),
+                    detail=f"Module {module_id} does not belong to subject {subject_id}.",
                 )
-        next_module_ids = sorted(set(requested_module_ids))
+
+    # 5. Substituir a seleção de módulos quando enviada.
+    #    Numa junção, um módulo da aula conjunta não pode ser retirado (J05).
+    next_module_ids = current_module_ids
+    if replace_modules:
+        next_module_ids = sorted(unique_module_ids)
         if joint_group_id is not None:
             joint_module_ids = await _joint_module_ids(db, organization_id, joint_group_id)
             if set(joint_module_ids) - set(next_module_ids):
@@ -988,11 +1034,9 @@ async def update_class_subject(
                 )
         await _replace_link_modules(db, organization_id, link.id, next_module_ids)
 
-    # 5. Aplicar alterações ao professor
-    for field, value in update_data.items():
-        if field == "module_ids":
-            continue
-        setattr(link, field, value)
+    # 6. Aplicar alterações ao professor
+    if "teacher_id" in update_data:
+        link.teacher_id = update_data["teacher_id"]
 
     # 5b. Numa junção, o professor muda em todas as ligações membro (J06).
     if joint_group_id is not None and "teacher_id" in update_data:

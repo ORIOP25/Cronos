@@ -75,7 +75,7 @@ Sem o motor novo, uma junção criada pela API seria planeada como turmas separa
 1.2   Linha de base verde
 2   PR 1 — Base de dados e domínio
 2.1   Base de dados
-2.1.1   Migração 0003_joint_lesson_groups
+2.1.1   Migração 0004_joint_lesson_groups
 2.1.2   Modelos SQLAlchemy
 2.1.3   Privacidade
 2.1.4   Chave da unidade nas aulas gravadas
@@ -206,7 +206,7 @@ Todas as aulas continuam a ter uma turma e a chave `A:{assignment_id}`.
 
 #### 2.1 Base de dados
 
-##### 2.1.1 Migração 0003_joint_lesson_groups — M
+##### 2.1.1 Migração 0004_joint_lesson_groups — M
 
 - **Entregável:** as três tabelas, RLS, permissões, a coluna `teaching_unit_key` preenchida e a nova restrição única de `stable_key`.
 - **Teste primeiro:** um teste de integração cria aulas antes da migração e confirma `A:{assignment_id}` depois.

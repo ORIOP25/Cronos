@@ -5,7 +5,11 @@ from datetime import date, time
 
 import pytest
 
-from app.scheduler.application.publishing import build_diff, plan_recovery_allocations
+from app.scheduler.application.publishing import (
+    build_diff,
+    diagnostics_summary,
+    plan_recovery_allocations,
+)
 from app.scheduler.domain.calendar import normalize_period
 from app.scheduler.domain.candidate import (
     Assignment,
@@ -16,6 +20,7 @@ from app.scheduler.domain.candidate import (
     SchedulingStrategy,
 )
 from app.scheduler.domain.debt import RecoveryAllocation
+from app.scheduler.domain.diagnostics import Diagnosis, DiagnosisCode, EvidenceKind
 from app.scheduler.domain.projection import ModuleRequirement, ModuleSlice
 
 GRID = (GridSlot(0, time(9, 0), time(9, 50)), GridSlot(1, time(9, 0), time(9, 50)))
@@ -118,6 +123,29 @@ def _adaptive_snapshot(debt, claims):
         open_debt_minutes=debt,
         claim_assignments=claims,
     )
+
+
+def test_diagnostics_summary_keeps_the_affected_subject():
+    diagnosis = Diagnosis(
+        code=DiagnosisCode.INSUFFICIENT_INTERSECTION,
+        evidence_kind=EvidenceKind.PROVEN_LOWER_BOUND,
+        message="Missing minutes.",
+        scope="ASSIGNMENT:1",
+        minimum_missing_minutes=30,
+        affected_class_ids=(2,),
+        affected_subject_id=3,
+    )
+
+    assert diagnostics_summary((diagnosis,)) == [
+        {
+            "code": "INSUFFICIENT_INTERSECTION",
+            "message": "Missing minutes.",
+            "suggestions": [],
+            "minimum_missing_minutes": 30,
+            "affected_class_ids": [2],
+            "affected_subject_id": 3,
+        }
+    ]
 
 
 def test_allocations_split_a_claim_across_lessons_in_chronological_order():

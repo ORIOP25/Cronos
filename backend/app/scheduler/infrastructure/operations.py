@@ -40,6 +40,7 @@ from app.scheduler.infrastructure.progress import (
     load_execution_entries,
     load_open_debt,
     load_planning_requirements,
+    reconcile_assignment_requirements,
     record_execution,
 )
 
@@ -816,6 +817,43 @@ async def assert_week_open(
         )
 
 
+async def _planning_slice_credits(
+    db: AsyncSession,
+    organization_id: int,
+    assignment_id: int,
+    slices: Sequence[SchedulerLessonSliceV1],
+) -> tuple[ModuleCredit, ...]:
+    """Credit a completed lesson, redirecting retired or removed modules.
+
+    The lesson keeps its stored slices while every referenced module is still
+    planned with capacity. When a slice points to a retired module, closed at
+    its executed minutes, or to a module that left the selection, its minutes
+    move to the planning frontier so the next selected module earns them.
+    """
+    planning, executed = await load_planning_requirements(db, organization_id, [assignment_id])
+    modules = planning.get(assignment_id, ())
+    completed = executed.get(assignment_id, {})
+    by_module = {module.module_id: module for module in modules}
+    stored_fit = True
+    for row in slices:
+        module = by_module.get(row.module_id)
+        if (
+            module is None
+            or completed.get(row.module_id, 0) + row.minutes > module.required_minutes
+        ):
+            stored_fit = False
+            break
+    if stored_fit:
+        return tuple(ModuleCredit(row.module_id, row.minutes) for row in slices)
+    try:
+        return frontier_credit(modules, completed, sum(row.minutes for row in slices))
+    except ValueError as exc:
+        raise OperationsError(
+            "lesson_without_slices",
+            "A aula não tem minutos curriculares disponíveis para creditar.",
+        ) from exc
+
+
 async def lock_school_year_state(
     db: AsyncSession, organization_id: int, school_year_id: int
 ) -> None:
@@ -998,11 +1036,11 @@ async def _completion_credits(
             credits[row.id] = frontier_credit(
                 planning.get(context.assignment.id, ()),
                 executed.get(context.assignment.id, {}),
-                context.lesson.credit_minutes,
+                sum(slice_.minutes for slice_ in context.slices),
             )
     except ValueError as exc:
         raise OperationsError(
-            "lesson_without_capacity",
+            "lesson_without_slices",
             "A aula não tem minutos curriculares disponíveis para creditar.",
         ) from exc
     return credits
@@ -1063,7 +1101,9 @@ async def _apply_lesson_log(
         credits = (
             execution_credits
             if execution_credits is not None
-            else tuple(ModuleCredit(row.module_id, row.minutes) for row in context.slices)
+            else await _planning_slice_credits(
+                db, organization_id, context.assignment.id, context.slices
+            )
         )
         if not credits:
             raise OperationsError(
@@ -1232,6 +1272,7 @@ async def record_lesson_log(
             )
     classes_payload: list[dict] = []
     revision = 1
+    primary_credited = 0
     for row in siblings:
         class_id = class_by_lesson[row.id]
         if class_id in absent:
@@ -1252,6 +1293,8 @@ async def record_lesson_log(
             allow_decision_override=allow_decision_override,
             execution_credits=credits_by_lesson.get(row.id),
         )
+        if row.id == primary.lesson.id:
+            primary_credited = credited
         classes_payload.append(
             {
                 "class_id": class_id,
@@ -1260,17 +1303,12 @@ async def record_lesson_log(
             }
         )
     await db.flush()
-    # The lesson is one physical block: the top-level total counts it once,
-    # while ``classes`` keeps the per-class ledger detail.
-    physical_credited = (
-        primary.lesson.credit_minutes
-        if any(entry["credited_minutes"] > 0 for entry in classes_payload)
-        else 0
-    )
+    # The top-level total is the primary lesson's credited minutes; ``classes``
+    # keeps the per-class ledger detail of a joint lesson.
     return {
         "lesson_id": lesson_id,
         "status": status,
-        "credited_minutes": physical_credited,
+        "credited_minutes": primary_credited,
         "debt_minutes": 0,
         "revision": revision,
         "classes": classes_payload,
@@ -1741,20 +1779,19 @@ async def record_operational_lesson_log(
             occurrence_id=block.source_v1_lesson_log_id, teacher_id=block.teacher_id
         )
         if current == models.LessonLogStatus.COMPLETED:
-            # Planning view: a retired module is closed and cannot receive the
-            # substitute credit, so only the selected modules count.
-            requirements, executed_by_assignment = await load_planning_requirements(
+            planning, executed = await load_planning_requirements(
                 db, organization_id, [assignment_id]
             )
-            modules = requirements.get(assignment_id, ())
-            if not modules:
+            requirements = planning.get(assignment_id, ())
+            if not requirements:
                 raise OperationsError(
                     "substitute_without_requirements",
                     "A disciplina substituta não tem módulos configurados.",
                 )
-            executed = executed_by_assignment.get(assignment_id, {})
             try:
-                execution_credits = frontier_credit(modules, executed, lesson.credit_minutes)
+                execution_credits = frontier_credit(
+                    requirements, executed.get(assignment_id, {}), lesson.credit_minutes
+                )
             except ValueError as exc:
                 raise OperationsError(
                     "substitute_without_capacity",
@@ -1825,6 +1862,8 @@ async def adjust_class_progress(
     )
     if year is None:
         return False
+    for assignment in assignments:
+        await reconcile_assignment_requirements(db, organization_id, assignment.id)
     # Planning view: a retired module is closed and cannot receive manual
     # progress, so an unselected module is rejected as not assigned.
     requirements, executed = await load_planning_requirements(
