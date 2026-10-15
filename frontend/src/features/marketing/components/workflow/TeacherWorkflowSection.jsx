@@ -7,7 +7,7 @@ function MomentVisual({ momentId }) {
   if (momentId === 'prepare') {
     return (
       <div className="cronos-teacher-workflow-visual cronos-teacher-workflow-visual--prepare" aria-hidden="true">
-        <strong>Minhas preferências</strong>
+        <strong>Minha Disponibilidade</strong>
         <div className="cronos-teacher-preferences">
           {Array.from({ length: 15 }, (_, index) => <span className={index === 2 || index === 11 ? 'is-impossible' : index === 5 || index === 6 ? 'is-preferred' : ''} key={index} />)}
         </div>
@@ -63,7 +63,7 @@ export default function TeacherWorkflowSection() {
           id="cronos-teacher-workflow-title"
           eyebrow="Área do professor"
           title="O professor mantém o contexto em cada aula"
-          body="As preferências, o horário ativo, os registos e o progresso seguem a mesma rotina."
+          body="A disponibilidade, o horário ativo, os registos e o progresso seguem a mesma rotina."
           align="center"
         />
         <div className="cronos-teacher-workflow__tabs" role="tablist" aria-label="Momentos do professor">

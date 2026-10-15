@@ -32,9 +32,10 @@ In accordance with ASD-STE100, technical concepts have single approved terms. Po
 | **Horário** | Schedule / Timetable | The weekly distribution of schedule blocks across classes and teachers. |
 | **Fundação (Foundation)** | Foundation | Required ten-step organization setup that validates the calendar and generates the initial timeslot grid. |
 | **Professor competente** | Competent teacher | Active teacher assigned to a subject with the required competency. |
-| **Disponibilidade** | Availability | Teacher availability score used to determine whether a generated assignment is possible. |
+| **Disponibilidade** | Availability | Teacher availability score used to determine whether a generated assignment is possible. The teacher page is "Minha Disponibilidade". |
 | **Disponibilidade da turma** | Class availability | Weekly level per class block (Preferencial, Neutro, Evitar, Impossível) that excludes or penalizes periods in generation; a missing row means Neutro. |
 | **Nível de disponibilidade** | Availability level | One of the four levels per weekly block: Preferencial, Neutro, Evitar, Impossível. A missing row means Neutro. |
+| **Tipo de sala** | Room type | Required type of room for a subject in schedule generation. Shown in the subject form and list. |
 
 ## Technical Terms and Abbreviations
 

@@ -20,7 +20,7 @@ describe('SubjectForm', () => {
     expect(screen.getByRole('group', { name: 'Dados gerais' })).toBeInTheDocument()
     expect(screen.getByRole('group', { name: 'Módulos' })).toBeInTheDocument()
     expect(screen.getByLabelText(/nome da disciplina/i)).toHaveValue('Matemática')
-    expect(screen.getByLabelText(/sala preferencial/i)).toHaveValue('lab')
+    expect(screen.getByLabelText(/tipo de sala/i)).toHaveValue('lab')
     expect(screen.getByText('M1')).toBeInTheDocument()
     expect(screen.getByText('P01')).toBeInTheDocument()
     expect(screen.getByText('25h')).toBeInTheDocument()

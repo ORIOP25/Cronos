@@ -181,4 +181,11 @@ describe('ClassAvailabilityModal', () => {
       await within(document.querySelector('[data-rht-toaster]')).findByText(/Ocorreu um erro inesperado/),
     ).toBeInTheDocument()
   })
+
+  it('explains the empty grid with the availability wording', () => {
+    mocks.timeslots.mockReturnValue({ data: [], isLoading: false, error: null })
+    renderModal()
+
+    expect(screen.getByText('A disponibilidade aparece depois de configurar a grelha horária.')).toBeInTheDocument()
+  })
 })

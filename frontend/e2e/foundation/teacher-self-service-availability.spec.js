@@ -37,7 +37,7 @@ test.describe('Teacher Self-Service — Availability Painting', () => {
     // 3. Paint, save, reload, and verify the persisted value.
     await firstCell.click()
     await expect(page.locator('.availability-toolbar__status')).toContainText(/1 bloco alterado/i)
-    const saveButton = page.getByRole('button', { name: /guardar preferências/i })
+    const saveButton = page.getByRole('button', { name: /guardar disponibilidade/i })
     await expect(saveButton).toBeEnabled()
     const saveResponse = page.waitForResponse((response) => (
       response.url().includes('/api/v1/teachers/me/availability') &&

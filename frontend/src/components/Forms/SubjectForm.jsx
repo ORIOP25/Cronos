@@ -124,7 +124,7 @@ const SubjectForm = ({ initialData, onSubmit, isLoading, onCancel, readOnly = fa
             )}
           </CCol>
           <CCol md={4}>
-            <CFormSelect id="subject-room-type" label="Sala Preferencial" value={subject.required_room_type} onChange={(event) => updateSubject('required_room_type', event.target.value)} disabled={readOnly}>
+            <CFormSelect id="subject-room-type" label="Tipo de sala" value={subject.required_room_type} onChange={(event) => updateSubject('required_room_type', event.target.value)} disabled={readOnly}>
               {Object.entries(ROOM_TYPES).map(([value, metadata]) => <option key={value} value={value}>{metadata.label}</option>)}
             </CFormSelect>
           </CCol>

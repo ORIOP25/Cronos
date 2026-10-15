@@ -51,6 +51,8 @@ describe('Subjects new-module warning', () => {
   it('shows exactly one warning when an edit adds a module without an id', async () => {
     renderWithRouter(<Subjects />, { withToaster: true })
 
+    expect(screen.getByRole('columnheader', { name: 'Tipo de sala' })).toBeInTheDocument()
+
     fireEvent.click(screen.getByRole('button', { name: /editar programação/i }))
     addModule('M2', '30')
     fireEvent.click(screen.getByRole('button', { name: /guardar disciplina/i }))

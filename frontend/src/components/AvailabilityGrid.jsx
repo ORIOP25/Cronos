@@ -77,7 +77,7 @@ export default function AvailabilityGrid({ timeslots = [], availabilityMap, onCh
     <p className="small text-muted d-lg-none mb-1">Deslize horizontalmente para ver todos os dias.</p>
     <section
       className="availability-grid-scroll"
-      aria-label="Grelha de preferências de disponibilidade"
+      aria-label="Grelha de disponibilidade"
       tabIndex="0" // NOSONAR: a scrollable region must be keyboard focusable (WCAG 2.1.1)
     >
       <div className="availability-grid" style={{ '--availability-days': model.days.length }}>
