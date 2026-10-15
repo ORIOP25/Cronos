@@ -13,3 +13,5 @@ This section documents Portuguese Professional Education domain rules, team memb
 - [CLASS_MODULE_SELECTION_WBS.md](CLASS_MODULE_SELECTION_WBS.md): Work breakdown, dependencies, and done criteria for per-class module selection.
 - [JOINT_LESSONS_TECH_SPEC.md](JOINT_LESSONS_TECH_SPEC.md): Joint lessons; decisions and contracts.
 - [JOINT_LESSONS_WBS.md](JOINT_LESSONS_WBS.md): Work breakdown, dependencies, and done criteria for joint lessons.
+- [CLASS_HOME_ROOM_TECH_SPEC.md](CLASS_HOME_ROOM_TECH_SPEC.md): Class home room and school-defined room types; decisions and contracts.
+- [CLASS_HOME_ROOM_WBS.md](CLASS_HOME_ROOM_WBS.md): Work breakdown, lanes, and proofs for the class home room.
