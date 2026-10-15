@@ -13,3 +13,5 @@ This section documents Portuguese Professional Education domain rules, team memb
 - [CLASS_MODULE_SELECTION_WBS.md](CLASS_MODULE_SELECTION_WBS.md): Work breakdown, dependencies, and done criteria for per-class module selection.
 - [JOINT_LESSONS_TECH_SPEC.md](JOINT_LESSONS_TECH_SPEC.md): Joint lessons; decisions and contracts.
 - [JOINT_LESSONS_WBS.md](JOINT_LESSONS_WBS.md): Work breakdown, dependencies, and done criteria for joint lessons.
+- [TEACHER_AVAILABILITY_IMPORT_TECH_SPEC.md](TEACHER_AVAILABILITY_IMPORT_TECH_SPEC.md): CSV import of teacher availability and the four level names; decisions and contracts.
+- [TEACHER_AVAILABILITY_IMPORT_WBS.md](TEACHER_AVAILABILITY_IMPORT_WBS.md): Slices, lanes, and proof commands for the teacher availability import.
