@@ -4,6 +4,7 @@
 
 A escola descarrega um modelo com todos os professores, preenche o nível de cada bloco e importa a grelha de todos de uma vez.
 A aplicação passa a usar só os nomes Impossível, Evitar, Neutro e Preferencial para os níveis.
+A grelha chama-se sempre "Disponibilidade" e o requisito de sala da disciplina chama-se sempre "Tipo de sala".
 
 **Estado:** pronto para implementação. **Base:** `main` em `e787aa5`, Alembic `0004_joint_lesson_groups`.
 **Data:** 15 de outubro de 2026. **Origem:** item 4 dos pedidos da escola piloto, reunião de 13 de outubro de 2026.
@@ -41,22 +42,24 @@ Decisões fechadas com o responsável de produto a 15 de outubro de 2026.
 | D13 | Todos os textos da aplicação usam só os quatro nomes. | O slice S1 corrige os textos que descrevem os níveis por outras palavras. |
 | D14 | As duas secções de disponibilidade comportam-se igual. | As turmas também ganham "Blocos que mudam" e o aviso D09. |
 | D15 | As tabelas de disponibilidade mostram todas as linhas. | O limite de 100 linhas da pré-visualização não se aplica a elas. Ordem: mais blocos alterados primeiro. |
+| D16 | A grelha semanal do professor chama-se sempre "Disponibilidade", nunca "Preferências". | Página e menu do professor: `Minha Disponibilidade`, como `Meus Horários` e `Meu Progresso`. O endereço `/my-availability` não muda. |
+| D17 | O requisito de sala da disciplina chama-se sempre "Tipo de sala". | O formulário (`Sala Preferencial`) e a lista (`Requisito de Sala`) passam a usar o nome da importação CSV. |
 
 D14 e D15 seguem o pedido de uniformização (D13). Sem elas, as duas tabelas lado a lado mostrariam colunas diferentes.
+D16 e D17 foram decididas pelo responsável a 15 de outubro de 2026, depois da primeira versão deste plano.
 
 ### Âmbito
 
 - Modelo dinâmico, validação, pré-visualização e aplicação da secção `teacher_availability`.
 - Partilha do parser, do modelo e do validador entre turmas e professores.
-- Uniformização dos textos dos níveis (D13).
+- Uniformização dos textos dos níveis (D13), do nome da grelha (D16) e do tipo de sala (D17).
 
 ### Fora de âmbito
 
 - Um ficheiro único para turmas e professores (D02).
 - Aviso ao professor (D10).
 - Versões futuras da grelha. O modelo usa a versão visível, como nas turmas. Uma versão futura edita-se na janela.
-- O nome da página do professor ("Minhas Preferências", menu "Preferências") e a palavra "Disponibilidade". É outro conceito e fica para o responsável decidir.
-- "Sala Preferencial" e "Data preferencial de fim". Não são níveis de disponibilidade.
+- "Data preferencial de fim", a "preferência de feriados automáticos" e as "preferências funcionais" dos textos legais. São outros conceitos.
 - O mapa de calor ("Disponíveis: 5 / 10"). Conta professores, não mostra níveis.
 
 ## Why the Behavior Exists
@@ -82,9 +85,15 @@ A escola piloto também pediu uma só linguagem: o mesmo nível não pode ter do
 | `backend/app/scheduler/infrastructure/occurrences.py` | Motivo de exclusão de um substituto com bloco Impossível | S1 |
 | `frontend/src/features/imports/data.js` | `IMPORT_RESOURCES`, `IMPORT_COUNT_LABELS`, `IMPORT_INVALIDATIONS` | S6 |
 | `frontend/src/pages/BulkImport.jsx` | Descrição da página e tabelas de disponibilidade | S6 |
-| `frontend/src/features/marketing/content/home.js`, `workflow.js` | Texto sobre preferências do professor | S1 |
+| `frontend/src/features/marketing/content/home.js`, `workflow.js` | Texto sobre os níveis (S1) e sobre a disponibilidade do professor (S7) | S1, S7 |
 | `frontend/src/features/tutorial/tutorialContent.js` | Passo `availability` | S1 |
-| `frontend/src/components/AvailabilityGrid.jsx` | Texto acessível da célula sem bloco | S1 |
+| `frontend/src/components/AvailabilityGrid.jsx` | Texto acessível da célula sem bloco (S1) e da grelha (S7) | S1, S7 |
+| `frontend/src/components/appNavigation.js` | Menu do professor | S7 |
+| `frontend/src/pages/MyAvailability.jsx` | Título, estados, botão e mensagens | S7 |
+| `frontend/src/components/AvailabilityEditorModal.jsx` | Estado sem blocos | S7 |
+| `frontend/src/features/marketing/components/workflow/TeacherWorkflowSection.jsx` | Textos da área do professor | S7 |
+| `frontend/src/components/Forms/SubjectForm.jsx`, `frontend/src/pages/Subjects.jsx` | Rótulo e coluna do tipo de sala | S7 |
+| `frontend/e2e/utils/clerk-helpers.js`, `frontend/e2e/foundation/teacher-self-service-availability.spec.js` | Título da rota e nome do botão esperados | S7 |
 
 `grid_change_service.py`, o motor e a fingerprint leem a tabela `availability`. Não mudam, porque o `commit` escreve pela mesma função da janela.
 
@@ -227,9 +236,31 @@ As cinco primeiras são as que `useSaveTeacherAvailability` invalida. As duas ú
 | `models.py` | Comentários "Quero muito", "Tanto faz", "Proibido" | Os quatro nomes da aplicação. |
 
 A mensagem antiga do preflight estava errada: o professor tem grelha, mas está toda em Impossível.
-Um `aria-label` num `div` sem papel não é lido pelos leitores de ecrã, por isso o texto passa a escondido visualmente.
 A nova segue a mensagem das turmas, `CLASS_WITHOUT_AVAILABILITY`.
+Um `aria-label` num `div` sem papel não é lido pelos leitores de ecrã, por isso o texto passa a escondido visualmente.
 O [Glossário](../00_getting_started/GLOSSARY.md) ganha a entrada "Nível de disponibilidade" com os quatro nomes, no PR 1.
+
+### Nome da grelha e do tipo de sala (D16, D17)
+
+| Ficheiro | Texto atual | Texto novo |
+| :--- | :--- | :--- |
+| `appNavigation.js` | Menu `Preferências` | `Minha Disponibilidade` |
+| `MyAvailability.jsx` | Título `Minhas Preferências`, nos quatro estados | `Minha Disponibilidade` |
+| `MyAvailability.jsx` | `A carregar preferências` | `A carregar disponibilidade` |
+| `MyAvailability.jsx` | `As preferências ficam disponíveis depois de a grelha horária ser configurada.` | `A disponibilidade aparece depois de configurar a grelha horária.` |
+| `AvailabilityEditorModal.jsx` | `A disponibilidade fica disponível depois de a grelha horária ser configurada.` | `A disponibilidade aparece depois de configurar a grelha horária.` |
+| `MyAvailability.jsx` | `Sem permissões para consultar preferências de disponibilidade.` | `Sem permissões para consultar a disponibilidade.` |
+| `MyAvailability.jsx` | `Falha ao carregar preferências de disponibilidade. Tente novamente.` | `Falha ao carregar a disponibilidade. Tente novamente.` |
+| `MyAvailability.jsx` | Botão `Guardar preferências` | `Guardar disponibilidade` |
+| `MyAvailability.jsx` | `Preferências guardadas.` | `Disponibilidade guardada.` |
+| `AvailabilityGrid.jsx` | `Grelha de preferências de disponibilidade` | `Grelha de disponibilidade` |
+| `home.js` | `O professor define as suas preferências, consulta…`; título `Defina preferências` | `O professor define a sua disponibilidade, consulta…`; `Defina a disponibilidade` |
+| `workflow.js` | Título `As preferências são definidas pelo professor`; ponto `Escolha cada nível de preferência.` | `A disponibilidade é definida pelo professor`; `Escolha o nível de cada bloco.` |
+| `TeacherWorkflowSection.jsx` | `Minhas preferências`; `As preferências, o horário ativo, os registos e o progresso seguem a mesma rotina.` | `Minha Disponibilidade`; `A disponibilidade, o horário ativo, os registos e o progresso seguem a mesma rotina.` |
+| `SubjectForm.jsx` | Rótulo `Sala Preferencial` | `Tipo de sala` |
+| `Subjects.jsx` | Coluna `Requisito de Sala` | `Tipo de sala` |
+
+O tipo de sala é obrigatório no motor (`constraint_policy.py`). "Preferencial" sugeria o contrário e confundia-se com o nível.
 
 ## Contracts and Invariants
 
@@ -251,6 +282,10 @@ O [Glossário](../00_getting_started/GLOSSARY.md) ganha a entrada "Nível de dis
 - **I05** O modelo, a validação e o `commit` usam a mesma versão visível da grelha.
 - **I06** O parser aceita só os quatro nomes dos níveis.
 - **I07** Um nível em falta significa Neutro, na grelha atual e no ficheiro.
+
+## States and Transitions
+
+Não se aplica. A importação não cria estados novos: valida e grava de uma vez, como as outras secções.
 
 ## Failure Modes
 
@@ -289,6 +324,8 @@ Códigos novos. Os restantes são os das turmas.
 | R17 | Uniformização | O preflight de um professor todo em Impossível e a prontidão sem bloco possível usam as mensagens novas. | `backend/tests/contracts/test_preflight_service.py`, `backend/tests/contracts/test_school_readiness_service.py` |
 | R18 | Interface | As duas tabelas mostram `Blocos que mudam` e `Sem alterações` para zero. | `frontend/src/test/BulkImport.test.jsx` |
 | R19 | Leitores do motor | Depois do `commit`, as chaves da disponibilidade dos professores são invalidadas. | `frontend/src/test/importInvalidations.test.jsx` |
+| R20 | Uniformização | `/my-availability` mostra `Minha Disponibilidade` no título e no menu; `Guardar disponibilidade` grava e mostra `Disponibilidade guardada.` | `frontend/src/test/MyAvailability.test.jsx`, `frontend/src/test/DefaultLayout.test.jsx`, `frontend/e2e/foundation/teacher-self-service-availability.spec.js` |
+| R21 | Uniformização | O formulário da disciplina mostra o campo `Tipo de sala` e a lista mostra a coluna `Tipo de sala`. | `frontend/src/test/SubjectForm.test.jsx`, `frontend/src/test/Subjects.test.jsx` |
 
 Perigos sem cenário:
 
@@ -309,7 +346,8 @@ Use os perfis da [Command Reference](../00_getting_started/COMMAND_REFERENCE.md#
 1. Política pura (S2, S3): perfil "Backend pure logic" com o filtro `bulk_import`.
 2. Serviço e `commit` (S4, S5): perfil "Backend endpoint, service, or query", depois `integration` com o filtro `bulk_import or tenant_isolation`.
 3. Mensagens do preflight (S1): perfil "Backend endpoint, service, or query" com o filtro `preflight or readiness`. O filtro só reduz `integration`; os testes `contracts` correm todos.
-4. Interface (S1, S6): perfil "Frontend component or hook" com os ficheiros de teste do slice.
+4. Interface (S1, S6, S7): perfil "Frontend component or hook" com os ficheiros de teste do slice.
+   S7 muda o título de uma rota: corra também o perfil "Frontend route or user journey" com os projetos `app` e `auth`, quando houver dados de teste Clerk.
 5. Pull request: os quatro checks obrigatórios do CI.
 6. Depois do merge, reconstrua o contentor `frontend` e confirme localmente:
    descarregue o modelo, altere dois professores, verifique a tabela e importe.
@@ -324,7 +362,7 @@ Use os perfis da [Command Reference](../00_getting_started/COMMAND_REFERENCE.md#
 
 ## Related Documents
 
-Documentação a atualizar no PR 2. O PR 1 atualiza o [Glossário](../00_getting_started/GLOSSARY.md).
+Documentação a atualizar no PR 2. O PR 1 atualiza o [Glossário](../00_getting_started/GLOSSARY.md): entradas "Nível de disponibilidade" e "Tipo de sala", e o nome da página do professor na entrada "Disponibilidade".
 
 | Documento | Mudança |
 | :--- | :--- |
