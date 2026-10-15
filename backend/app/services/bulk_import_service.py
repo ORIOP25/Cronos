@@ -36,7 +36,7 @@ from app.services.bulk_import_policy import (
     ParsedResourceFile,
     ValidationResult,
     parse_resource_file,
-    render_class_availability_template,
+    render_availability_template,
     render_template,
     validate_import,
 )
@@ -85,7 +85,8 @@ async def _class_availability_template(db: AsyncSession, organization_id: int) -
     scores: dict[int, dict[int, int]] = {}
     for class_id, timeslot_id, score in score_rows:
         scores.setdefault(int(class_id), {})[int(timeslot_id)] = int(score)
-    return render_class_availability_template(
+    return render_availability_template(
+        CLASS_AVAILABILITY,
         [ExistingTimeslot(block.id, block.day_of_week, block.start_time) for block in timeslots],
         [
             ExistingClass(item.id, item.course_id, abbreviation, item.name)

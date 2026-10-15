@@ -3,8 +3,8 @@ from datetime import time
 
 from app.services.bulk_import_policy import (
     CLASS_AVAILABILITY,
-    CLASS_AVAILABILITY_FILENAME,
     IMPORT_RESOURCES,
+    TEACHER_AVAILABILITY,
     TEMPLATE_DEFINITIONS,
     ExistingClass,
     ExistingCourse,
@@ -14,8 +14,9 @@ from app.services.bulk_import_policy import (
     ExistingTimeslot,
     ImportSnapshot,
     parse_resource_file,
-    render_class_availability_template,
+    render_availability_template,
     render_template,
+    template_filename,
     validate_import,
 )
 
@@ -288,9 +289,13 @@ def _class_availability_snapshot(**kwargs) -> ImportSnapshot:
     )
 
 
-def test_import_resources_include_the_class_availability_section():
+def test_import_resources_include_both_availability_sections_and_filenames():
     assert CLASS_AVAILABILITY in IMPORT_RESOURCES
-    assert CLASS_AVAILABILITY_FILENAME == "Cronos_DisponibilidadeTurmas_Template.csv"
+    assert TEACHER_AVAILABILITY in IMPORT_RESOURCES
+    assert template_filename(CLASS_AVAILABILITY) == "Cronos_DisponibilidadeTurmas_Template.csv"
+    assert (
+        template_filename(TEACHER_AVAILABILITY) == "Cronos_DisponibilidadeProfessores_Template.csv"
+    )
 
 
 def test_class_availability_template_lists_sorted_hours_and_saved_levels():
@@ -300,13 +305,16 @@ def test_class_availability_template_lists_sorted_hours_and_saved_levels():
         ExistingTimeslot(id=12, day_of_week=4, start_time=time(8, 30)),
     )
     classes = (ExistingClass(id=1, course_id=1, course_abbreviation="TGEI", name="TGEI 25/28"),)
-    rendered = render_class_availability_template(timeslots, classes, {1: {10: -1, 12: 0}})
+    rendered = render_availability_template(
+        CLASS_AVAILABILITY, timeslots, classes, {1: {10: -1, 12: 0}}
+    )
 
     assert rendered.startswith(b"\xef\xbb\xbf")
     lines = rendered.decode("utf-8-sig").splitlines()
     assert lines[0] == "Sigla do curso;Nome da turma;Dia;08:30;09:20"
     assert lines[1] == "TGEI;TGEI 25/28;Segunda;Impossível;Neutro"
     assert lines[2] == "TGEI;TGEI 25/28;Sexta;Evitar;"
+    assert rendered.count(b"\r\n") == 3
 
 
 def test_class_availability_template_without_classes_is_header_only():
@@ -315,9 +323,91 @@ def test_class_availability_template_without_classes_is_header_only():
         ExistingTimeslot(id=11, day_of_week=4, start_time=time(9, 20)),
     )
 
-    rendered = render_class_availability_template(timeslots, (), {})
+    rendered = render_availability_template(CLASS_AVAILABILITY, timeslots, (), {})
 
     assert rendered.decode("utf-8-sig") == "Sigla do curso;Nome da turma;Dia;08:30;09:20\r\n"
+
+
+def test_teacher_availability_template_orders_active_teachers_by_name_email_and_day():
+    timeslots = (
+        ExistingTimeslot(id=10, day_of_week=0, start_time=time(8, 30)),
+        ExistingTimeslot(id=11, day_of_week=0, start_time=time(9, 20)),
+        ExistingTimeslot(id=12, day_of_week=4, start_time=time(8, 30)),
+    )
+    teachers = (
+        ExistingTeacher(id=2, email="bea@escola.pt", name="Bea Costa"),
+        ExistingTeacher(id=1, email="ana.silva@escola.pt", name="ana silva"),
+    )
+    rendered = render_availability_template(
+        TEACHER_AVAILABILITY, timeslots, teachers, {1: {10: -1, 11: 0, 12: 2}}
+    )
+
+    assert rendered.startswith(b"\xef\xbb\xbf")
+    lines = rendered.decode("utf-8-sig").splitlines()
+    assert lines[0] == "Nome do professor;Email do professor;Dia;08:30;09:20"
+    assert lines[1] == "ana silva;ana.silva@escola.pt;Segunda;Impossível;Evitar"
+    assert lines[2] == "ana silva;ana.silva@escola.pt;Sexta;Preferencial;"
+    assert lines[3] == "Bea Costa;bea@escola.pt;Segunda;Neutro;Neutro"
+    assert lines[4] == "Bea Costa;bea@escola.pt;Sexta;Neutro;"
+
+
+def test_teacher_availability_template_without_teachers_is_header_only():
+    timeslots = (
+        ExistingTimeslot(id=10, day_of_week=0, start_time=time(8, 30)),
+        ExistingTimeslot(id=11, day_of_week=4, start_time=time(9, 20)),
+    )
+
+    rendered = render_availability_template(TEACHER_AVAILABILITY, timeslots, (), {})
+
+    assert (
+        rendered.decode("utf-8-sig") == "Nome do professor;Email do professor;Dia;08:30;09:20\r\n"
+    )
+
+
+def test_teacher_availability_parser_reads_dynamic_hour_headers():
+    parsed = parse_resource_file(
+        TEACHER_AVAILABILITY,
+        "disponibilidade_professores.csv",
+        encoded(
+            "Nome do professor;Email do professor;Dia;8:30;09:20:00\r\n"
+            "Ana Silva;Ana.Silva@Escola.PT;segunda-feira;Impossivel;Evitar\r\n"
+        ),
+    )
+
+    assert parsed.issues == ()
+    assert parsed.hours == ("08:30", "09:20")
+    assert parsed.hour_titles == ("8:30", "09:20:00")
+    assert parsed.rows[0]["teacher_name"] == "Ana Silva"
+    assert parsed.rows[0]["teacher_email"] == "Ana.Silva@Escola.PT"
+    assert parsed.rows[0]["8:30"] == "Impossivel"
+
+
+def test_availability_grid_parser_rejects_the_other_grid_and_fixed_files():
+    teacher_grid = (
+        "Nome do professor;Email do professor;Dia;08:30\r\nAna;ana@escola.pt;Segunda;Neutro\r\n"
+    )
+    class_grid = "Sigla do curso;Nome da turma;Dia;08:30\r\nTGEI;TGEI 25/28;Segunda;Neutro\r\n"
+    teachers_fixed = (
+        "Nome do professor;Email do professor;Nome da disciplina\r\n"
+        "Ana;ana@escola.pt;Programação\r\n"
+    )
+    cases = (
+        (CLASS_AVAILABILITY, "professores.csv", teacher_grid),
+        (TEACHER_AVAILABILITY, "turmas.csv", class_grid),
+        (CLASS_AVAILABILITY, "professores.csv", teachers_fixed),
+        (TEACHER_AVAILABILITY, "professores.csv", teachers_fixed),
+        ("teachers", "professores.csv", teacher_grid),
+        ("teachers", "turmas.csv", class_grid),
+        ("assignments", "turmas.csv", class_grid),
+    )
+
+    for resource, filename, content in cases:
+        parsed = parse_resource_file(resource, filename, encoded(content))
+        assert parsed.issues, (resource, filename)
+        assert parsed.issues[0].code == "resource_mismatch"
+        assert parsed.issues[0].message == (
+            "Este ficheiro não corresponde à secção escolhida. Selecione o modelo correspondente."
+        )
 
 
 def test_class_availability_parser_reads_dynamic_hour_headers():

@@ -8,6 +8,7 @@ import io
 import re
 import unicodedata
 from collections import defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import time
 from email.utils import parseaddr
@@ -17,18 +18,16 @@ MAX_FILE_BYTES = 1024 * 1024
 MAX_TOTAL_BYTES = 5 * 1024 * 1024
 MAX_LINES = 5_000
 CLASS_AVAILABILITY = "class_availability"
-CLASS_AVAILABILITY_FILENAME = "Cronos_DisponibilidadeTurmas_Template.csv"
-CLASS_AVAILABILITY_FIXED_HEADERS = ("Sigla do curso", "Nome da turma", "Dia")
-CLASS_AVAILABILITY_DAY_LABELS = (
-    "Segunda",
-    "Terça",
-    "Quarta",
-    "Quinta",
-    "Sexta",
-    "Sábado",
-    "Domingo",
+TEACHER_AVAILABILITY = "teacher_availability"
+IMPORT_RESOURCES = (
+    "rooms",
+    "subjects",
+    "courses",
+    "teachers",
+    "assignments",
+    CLASS_AVAILABILITY,
+    TEACHER_AVAILABILITY,
 )
-IMPORT_RESOURCES = ("rooms", "subjects", "courses", "teachers", "assignments", CLASS_AVAILABILITY)
 IssueSeverity = Literal["error", "warning"]
 
 
@@ -107,8 +106,8 @@ RESOURCE_MISMATCH_MESSAGE = (
     "Este ficheiro não corresponde à secção escolhida. Selecione o modelo correspondente."
 )
 ROOM_TYPE_ERROR_MESSAGE = "Escreva Normal, Laboratório, Ginásio ou Artes."
-CLASS_AVAILABILITY_DAY_ERROR_MESSAGE = "Escreva um dia com blocos na grelha, por exemplo Segunda."
-CLASS_AVAILABILITY_LEVEL_ERROR_MESSAGE = "Escreva Impossível, Evitar, Neutro ou Preferencial."
+AVAILABILITY_DAY_ERROR_MESSAGE = "Escreva um dia com blocos na grelha, por exemplo Segunda."
+AVAILABILITY_LEVEL_ERROR_MESSAGE = "Escreva Impossível, Evitar, Neutro ou Preferencial."
 
 NEUTRAL_SCORE = 1
 _HOUR_PATTERN = re.compile(r"^(\d{1,2}):([0-5]\d)(?::[0-5]\d)?$")
@@ -123,6 +122,7 @@ _DAY_VALUES = {
     "sabado": 5,
     "domingo": 6,
 }
+_DAY_LABELS = ("Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo")
 
 
 @dataclass(frozen=True)
@@ -152,7 +152,7 @@ class ParsedResourceFile:
     rows: tuple[dict[str, str | int], ...] = ()
     issues: tuple[BulkImportIssue, ...] = ()
     decoded_bytes: int = 0
-    # class_availability dynamic header: normalized ``HH:MM`` hours and their
+    # weekly availability grid dynamic header: normalized ``HH:MM`` hours and their
     # original column titles, in header order.
     hours: tuple[str, ...] = ()
     hour_titles: tuple[str, ...] = ()
@@ -372,6 +372,43 @@ def _valid_email(value: str) -> bool:
     return parsed == value and "@" in value and not value.endswith("@") and " " not in value
 
 
+@dataclass(frozen=True)
+class AvailabilityResource:
+    """A weekly availability grid resource: headers, fields, filename and row accessors."""
+
+    filename: str
+    fixed_headers: tuple[str, ...]
+    fields: tuple[str, ...]
+    values: Callable[[object], tuple[str, str]]
+    sort_key: Callable[[object], tuple]
+
+
+AVAILABILITY_RESOURCES: dict[str, AvailabilityResource] = {
+    CLASS_AVAILABILITY: AvailabilityResource(
+        filename="Cronos_DisponibilidadeTurmas_Template.csv",
+        fixed_headers=("Sigla do curso", "Nome da turma", "Dia"),
+        fields=("course_abbreviation", "class_name", "day"),
+        values=lambda item: (item.course_abbreviation, item.name),
+        sort_key=lambda item: (item.course_abbreviation, item.name),
+    ),
+    TEACHER_AVAILABILITY: AvailabilityResource(
+        filename="Cronos_DisponibilidadeProfessores_Template.csv",
+        fixed_headers=("Nome do professor", "Email do professor", "Dia"),
+        fields=("teacher_name", "teacher_email", "day"),
+        values=lambda item: (item.name, item.email),
+        sort_key=lambda item: (item.name.casefold(), _email(item.email)),
+    ),
+}
+
+
+def _matches_availability_grid(headers: list[str], *, except_resource: str | None = None) -> bool:
+    return any(
+        resource != except_resource
+        and tuple(headers[: len(definition.fixed_headers)]) == definition.fixed_headers
+        for resource, definition in AVAILABILITY_RESOURCES.items()
+    )
+
+
 def render_template(resource: str) -> bytes:
     definition = TEMPLATE_DEFINITIONS.get(resource)
     if definition is None:
@@ -384,17 +421,19 @@ def render_template(resource: str) -> bytes:
 
 
 def template_filename(resource: str) -> str:
-    if resource == CLASS_AVAILABILITY:
-        return CLASS_AVAILABILITY_FILENAME
+    if resource in AVAILABILITY_RESOURCES:
+        return AVAILABILITY_RESOURCES[resource].filename
     return TEMPLATE_DEFINITIONS[resource].filename
 
 
-def render_class_availability_template(
+def render_availability_template(
+    resource: str,
     timeslots: list[ExistingTimeslot] | tuple[ExistingTimeslot, ...],
-    classes: list[ExistingClass] | tuple[ExistingClass, ...],
+    entities: list[ExistingClass | ExistingTeacher] | tuple[ExistingClass | ExistingTeacher, ...],
     scores: dict[int, dict[int, int]],
 ) -> bytes:
-    """Render the class-availability model from the visible grid, its classes and levels."""
+    """Render a weekly availability model from the visible grid, its entities and levels."""
+    definition = AVAILABILITY_RESOURCES[resource]
     hours = sorted({block.start_time.strftime("%H:%M") for block in timeslots})
     timeslot_by_day_hour = {
         (block.day_of_week, block.start_time.strftime("%H:%M")): block.id for block in timeslots
@@ -402,11 +441,9 @@ def render_class_availability_template(
     days = sorted({block.day_of_week for block in timeslots})
     output = io.StringIO(newline="")
     writer = csv.writer(output, delimiter=";", lineterminator="\r\n")
-    writer.writerow([*CLASS_AVAILABILITY_FIXED_HEADERS, *hours])
-    for item in sorted(
-        classes, key=lambda candidate: (candidate.course_abbreviation, candidate.name)
-    ):
-        class_scores = scores.get(item.id, {})
+    writer.writerow([*definition.fixed_headers, *hours])
+    for item in sorted(entities, key=definition.sort_key):
+        item_scores = scores.get(item.id, {})
         for day in days:
             cells = []
             for hour in hours:
@@ -415,16 +452,14 @@ def render_class_availability_template(
                     cells.append("")
                 else:
                     cells.append(
-                        _LEVEL_LABELS.get(class_scores.get(timeslot_id, NEUTRAL_SCORE), "Neutro")
+                        _LEVEL_LABELS.get(item_scores.get(timeslot_id, NEUTRAL_SCORE), "Neutro")
                     )
-            writer.writerow(
-                [item.course_abbreviation, item.name, CLASS_AVAILABILITY_DAY_LABELS[day], *cells]
-            )
+            writer.writerow([*definition.values(item), _DAY_LABELS[day], *cells])
     return b"\xef\xbb\xbf" + output.getvalue().encode("utf-8")
 
 
 def parse_resource_file(resource: str, filename: str, content_base64: str) -> ParsedResourceFile:
-    if resource not in TEMPLATE_DEFINITIONS and resource != CLASS_AVAILABILITY:
+    if resource not in TEMPLATE_DEFINITIONS and resource not in AVAILABILITY_RESOURCES:
         return ParsedResourceFile(
             resource,
             filename,
@@ -474,8 +509,10 @@ def parse_resource_file(resource: str, filename: str, content_base64: str) -> Pa
             decoded_bytes=len(raw),
         )
 
-    if resource == CLASS_AVAILABILITY:
-        return _parse_class_availability_file(resource, filename, text, len(raw))
+    if resource in AVAILABILITY_RESOURCES:
+        return _parse_availability_file(
+            resource, AVAILABILITY_RESOURCES[resource], filename, text, len(raw)
+        )
 
     definition = TEMPLATE_DEFINITIONS[resource]
     delimiter = None
@@ -493,6 +530,8 @@ def parse_resource_file(resource: str, filename: str, content_base64: str) -> Pa
             other_resource != resource and headers == list(other_definition.headers)
             for other_resource, other_definition in TEMPLATE_DEFINITIONS.items()
         ):
+            resource_mismatch = True
+        if _matches_availability_grid(headers):
             resource_mismatch = True
     if delimiter is None:
         return ParsedResourceFile(
@@ -546,8 +585,12 @@ def parse_resource_file(resource: str, filename: str, content_base64: str) -> Pa
     return ParsedResourceFile(resource, filename, tuple(rows), tuple(issues), len(raw))
 
 
-def _parse_class_availability_file(
-    resource: str, filename: str, text: str, decoded_bytes: int
+def _parse_availability_file(
+    resource: str,
+    definition: AvailabilityResource,
+    filename: str,
+    text: str,
+    decoded_bytes: int,
 ) -> ParsedResourceFile:
     """Parse the dynamic header: three fixed columns then sorted distinct hour columns."""
     delimiter = None
@@ -558,13 +601,12 @@ def _parse_class_availability_file(
             headers = next(reader)
         except StopIteration:
             headers = []
-        if (
-            tuple(headers[: len(CLASS_AVAILABILITY_FIXED_HEADERS)])
-            == CLASS_AVAILABILITY_FIXED_HEADERS
-        ):
+        if tuple(headers[: len(definition.fixed_headers)]) == definition.fixed_headers:
             delimiter = candidate
             break
-        if any(headers == list(definition.headers) for definition in TEMPLATE_DEFINITIONS.values()):
+        if any(headers == list(other.headers) for other in TEMPLATE_DEFINITIONS.values()):
+            resource_mismatch = True
+        if _matches_availability_grid(headers, except_resource=resource):
             resource_mismatch = True
     if delimiter is None:
         return ParsedResourceFile(
@@ -583,7 +625,7 @@ def _parse_class_availability_file(
 
     hours: list[str] = []
     hour_titles: list[str] = []
-    for title in headers[len(CLASS_AVAILABILITY_FIXED_HEADERS) :]:
+    for title in headers[len(definition.fixed_headers) :]:
         cleaned = _clean(title)
         hour = normalize_hour(cleaned)
         if hour is None or hour in hours:
@@ -600,7 +642,7 @@ def _parse_class_availability_file(
     next(reader, None)
     rows: list[dict[str, str | int]] = []
     issues: list[BulkImportIssue] = []
-    field_names = ("course_abbreviation", "class_name", "day")
+    field_names = definition.fields
     for values in reader:
         line = reader.line_num
         if not any(_clean(value) for value in values):
@@ -1176,7 +1218,7 @@ def _validate_class_availability(
                 _issue(
                     CLASS_AVAILABILITY,
                     "day_invalid",
-                    CLASS_AVAILABILITY_DAY_ERROR_MESSAGE,
+                    AVAILABILITY_DAY_ERROR_MESSAGE,
                     line=line,
                     field="day",
                 )
@@ -1218,7 +1260,7 @@ def _validate_class_availability(
                     _issue(
                         CLASS_AVAILABILITY,
                         "level_invalid",
-                        CLASS_AVAILABILITY_LEVEL_ERROR_MESSAGE,
+                        AVAILABILITY_LEVEL_ERROR_MESSAGE,
                         line=line,
                         field=title,
                     )
