@@ -1,6 +1,7 @@
 """Production recovery preserves valid positions and repairs changed school data."""
 
 from dataclasses import replace
+from datetime import time
 from time import monotonic
 
 import pytest
@@ -10,6 +11,7 @@ from app.scheduler.domain.candidate import (
     CandidateSchedule,
     LunchRule,
     SchedulingStrategy,
+    TeacherPresenceRule,
     Unavailability,
     UnavailableResource,
 )
@@ -18,6 +20,13 @@ from app.scheduler.infrastructure.recovery_construction import construct_recover
 from tests.unit.test_scheduler_recovery_solver_v1 import POLICY
 from tests.unit.test_scheduler_resource_exclusivity_v1 import assignment, lesson, plan
 from tests.unit.test_scheduler_w04_w05_regressions_v1 import period
+
+DISPENSED_TEACHER = TeacherPresenceRule(teacher_id=7, lunch_required=False)
+RECOVERY_LUNCH = LunchRule(window_start=time(12), window_end=time(14), minimum_minutes=60)
+
+
+def _shared_teacher_assignments():
+    return [assignment(1, 1, 7, {1}, 60), assignment(2, 2, 7, {2}, 120)]
 
 
 def recover(periods, assignments, baseline, **changes):
@@ -146,6 +155,29 @@ def test_recovery_preserves_lunch_when_placing_missing_hours():
     )
 
     assert len(result.candidate.lessons) == 2
+
+
+def test_recovery_construction_allows_a_teacher_dispensed_from_lunch():
+    periods = tuple(period(0, start=hour, end=hour + 1) for hour in (12, 13, 14))
+    _, result = recover(
+        periods,
+        _shared_teacher_assignments(),
+        [],
+        lunch_rule=RECOVERY_LUNCH,
+        teacher_presence=(DISPENSED_TEACHER,),
+    )
+
+    assert len(result.candidate.lessons) == 3
+
+
+def test_recovery_construction_keeps_the_lunch_rule_for_the_same_scenario():
+    periods = tuple(period(0, start=hour, end=hour + 1) for hour in (12, 13, 14))
+    target = replace(
+        plan(periods, _shared_teacher_assignments(), lunch_rule=RECOVERY_LUNCH),
+        strategy=SchedulingStrategy.ADAPTIVE_RECOVERY,
+    )
+
+    assert construct_recovery(target, periods, deadline=monotonic() + 20) is None
 
 
 def test_partial_final_credit_is_reprojected_when_recovery_adds_a_later_lesson():

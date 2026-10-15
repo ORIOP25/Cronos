@@ -36,6 +36,8 @@ In accordance with ASD-STE100, technical concepts have single approved terms. Po
 | **Disponibilidade da turma** | Class availability | Weekly level per class block (Preferencial, Neutro, Evitar, Impossível) that excludes or penalizes periods in generation; a missing row means Neutro. |
 | **Nível de disponibilidade** | Availability level | One of the four levels per weekly block: Preferencial, Neutro, Evitar, Impossível. A missing row means Neutro. |
 | **Tipo de sala** | Room type | Required type of room for a subject in schedule generation. Shown in the subject form and list. |
+| **Presença** | Presence | A teacher's morning or afternoon, split by the lunch break the engine chooses that day; without lunch the whole day is one presence. Each presence has zero hours or at least the teacher's minimum. |
+| **Furo máximo** | Maximum gap | Maximum hours without a lesson allowed inside one presence, set per teacher together with the minimum hours per presence. |
 
 ## Technical Terms and Abbreviations
 

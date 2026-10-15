@@ -281,44 +281,65 @@ def _diagnosis_rank(row: dict) -> int:
 async def _job_diagnostics(
     db: AsyncSession, organization_id: int, diagnoses: list[dict] | None
 ) -> list[dict]:
-    """One proven diagnostic per affected class, with the current names.
+    """One proven diagnostic per affected class, plus one row per teacher.
 
     The lookups are tenant-scoped. A class deleted after the failure keeps its
-    stored id and is returned with ``class_name = None``.
+    stored id and is returned with ``class_name = None``. A teacher-presence
+    estimate carries no class and no proven deficit, so it returns one row per
+    affected teacher with the current name.
     """
     if not diagnoses:
         return []
     chosen: dict[int, dict] = {}
+    teacher_ids: set[int] = set()
     for row in diagnoses:
+        if row.get("code") == DiagnosisCode.TEACHER_PRESENCE_RULES.value:
+            teacher_ids.update(row.get("affected_teacher_ids") or ())
+            continue
         for class_id in row.get("affected_class_ids") or ():
             current = chosen.get(class_id)
             if current is None or _diagnosis_rank(row) > _diagnosis_rank(current):
                 chosen[class_id] = row
-    if not chosen:
+    if not chosen and not teacher_ids:
         return []
-    class_rows = (
-        await db.execute(
-            select(models.Class.id, models.Class.name, models.Class.course_id).where(
-                models.Class.organization_id == organization_id,
-                models.Class.id.in_(set(chosen)),
-            )
-        )
-    ).all()
-    class_info = {row[0]: (row[1], row[2]) for row in class_rows}
-    subject_ids = {
-        row.get("affected_subject_id")
-        for row in chosen.values()
-        if row.get("affected_subject_id") is not None
-    }
+    class_info: dict[int, tuple[str | None, int | None]] = {}
     subject_names: dict[int, str] = {}
-    if subject_ids:
-        subject_names = {
+    if chosen:
+        class_rows = (
+            await db.execute(
+                select(models.Class.id, models.Class.name, models.Class.course_id).where(
+                    models.Class.organization_id == organization_id,
+                    models.Class.id.in_(set(chosen)),
+                )
+            )
+        ).all()
+        class_info = {row[0]: (row[1], row[2]) for row in class_rows}
+        subject_ids = {
+            row.get("affected_subject_id")
+            for row in chosen.values()
+            if row.get("affected_subject_id") is not None
+        }
+        if subject_ids:
+            subject_names = {
+                row[0]: row[1]
+                for row in (
+                    await db.execute(
+                        select(models.Subject.id, models.Subject.name).where(
+                            models.Subject.organization_id == organization_id,
+                            models.Subject.id.in_(subject_ids),
+                        )
+                    )
+                ).all()
+            }
+    teacher_names: dict[int, str] = {}
+    if teacher_ids:
+        teacher_names = {
             row[0]: row[1]
             for row in (
                 await db.execute(
-                    select(models.Subject.id, models.Subject.name).where(
-                        models.Subject.organization_id == organization_id,
-                        models.Subject.id.in_(subject_ids),
+                    select(models.Teacher.id, models.Teacher.name).where(
+                        models.Teacher.organization_id == organization_id,
+                        models.Teacher.id.in_(teacher_ids),
                     )
                 )
             ).all()
@@ -334,6 +355,15 @@ async def _job_diagnostics(
                 "class_name": class_name,
                 "course_id": course_id,
                 "subject_name": subject_names.get(row.get("affected_subject_id")),
+            }
+        )
+    for teacher_id in sorted(teacher_ids):
+        result.append(
+            {
+                "code": DiagnosisCode.TEACHER_PRESENCE_RULES.value,
+                "minimum_missing_minutes": None,
+                "teacher_id": teacher_id,
+                "teacher_name": teacher_names.get(teacher_id),
             }
         )
     return result

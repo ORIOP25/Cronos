@@ -23,8 +23,9 @@ from app.scheduler.domain.candidate import (
     UnavailableResource,
     continuous_break_minutes,
 )
+from app.scheduler.domain.teacher_presence import PresenceLesson, teacher_day_complies
 
-VALIDATOR_VERSION = "v5"
+VALIDATOR_VERSION = "v6"
 
 
 class ValidationViolationCode(StrEnum):
@@ -49,6 +50,7 @@ class ValidationViolationCode(StrEnum):
     RESERVATION_DUPLICATE = "RESERVATION_DUPLICATE"
     DEBT_OVERFLOW = "DEBT_OVERFLOW"
     LUNCH_BREAK_VIOLATION = "LUNCH_BREAK_VIOLATION"
+    TEACHER_PRESENCE_VIOLATION = "TEACHER_PRESENCE_VIOLATION"
     PRECEDENCE_VIOLATION = "PRECEDENCE_VIOLATION"
 
 
@@ -302,10 +304,15 @@ def _check_lunch(
     candidate: CandidateSchedule,
     violations: list[ValidationViolation],
 ) -> None:
-    """Reject any class or teacher without a continuous break inside the window."""
+    """Reject any class or teacher without a continuous break inside the window.
+
+    A teacher whose presence rule dispenses the lunch break is exempt; classes
+    always keep the school lunch rule (D06).
+    """
     rule = snapshot.lunch_rule
     if rule is None:
         return
+    dispensed = {row.teacher_id for row in snapshot.teacher_presence if not row.lunch_required}
     assignments = {row.assignment_id: row for row in snapshot.assignments}
     occupied: dict[tuple[str, int, date], list[tuple[int, int]]] = defaultdict(list)
     for lesson in candidate.lessons:
@@ -321,6 +328,8 @@ def _check_lunch(
             occupied[("class", class_id, lesson.period.school_date)].append(interval)
         occupied[("teacher", teacher_id, lesson.period.school_date)].append(interval)
     for (resource_type, resource_id, _), intervals in sorted(occupied.items()):
+        if resource_type == "teacher" and resource_id in dispensed:
+            continue
         if continuous_break_minutes(intervals, rule) < rule.minimum_minutes:
             violations.append(
                 ValidationViolation(
@@ -328,6 +337,61 @@ def _check_lunch(
                     "A resource has no continuous lunch break inside the window.",
                     resource_type=resource_type,
                     resource_id=resource_id,
+                )
+            )
+
+
+def _check_teacher_presence(
+    snapshot: PlanningSnapshot,
+    candidate: CandidateSchedule,
+    protected_ids: frozenset[int],
+    violations: list[ValidationViolation],
+) -> None:
+    """Reject a teacher day that no free lunch choice splits into compliant presences.
+
+    A presence with only protected lessons is exempt; a presence with at least one
+    editable lesson counts every lesson, protected included (T04).
+    """
+    if not snapshot.teacher_presence:
+        return
+    rules = {row.teacher_id: row for row in snapshot.teacher_presence}
+    assignments = {row.assignment_id: row for row in snapshot.assignments}
+    by_teacher_day: dict[tuple[int, date], list[PresenceLesson]] = defaultdict(list)
+    for lesson in candidate.lessons:
+        assignment = assignments.get(lesson.assignment_id)
+        if assignment is None:
+            continue
+        teacher_id = _teacher_for(lesson, assignment)
+        if teacher_id not in rules:
+            continue
+        by_teacher_day[(teacher_id, lesson.period.school_date)].append(
+            PresenceLesson(
+                start_minute=_local_minutes(lesson.period.start_local),
+                end_minute=_local_minutes(lesson.period.end_local),
+                protected=lesson.lesson_id in protected_ids,
+            )
+        )
+    slots_by_weekday: dict[int, list[tuple[int, int]]] = defaultdict(list)
+    for slot in snapshot.grid_slots:
+        slots_by_weekday[slot.day_of_week].append(
+            (_local_minutes(slot.start_local), _local_minutes(slot.end_local))
+        )
+    for (teacher_id, school_date), lessons in sorted(
+        by_teacher_day.items(), key=lambda item: (item[0][0], item[0][1])
+    ):
+        rule = rules[teacher_id]
+        if not teacher_day_complies(
+            lessons,
+            rule,
+            lunch_rule=snapshot.lunch_rule,
+            grid_slots=slots_by_weekday.get(school_date.weekday(), ()),
+        ):
+            violations.append(
+                ValidationViolation(
+                    ValidationViolationCode.TEACHER_PRESENCE_VIOLATION,
+                    "A teacher presence breaks the school minimum or maximum gap.",
+                    resource_type="teacher",
+                    resource_id=teacher_id,
                 )
             )
 
@@ -680,6 +744,7 @@ def validate_candidate(
     _check_reservations(snapshot, lesson_by_id, violations)
     _check_precedences(snapshot, candidate, protected_ids, violations)
     _check_lunch(snapshot, candidate, violations)
+    _check_teacher_presence(snapshot, candidate, protected_ids, violations)
 
     credited_minutes = {
         assignment.assignment_id: sum(

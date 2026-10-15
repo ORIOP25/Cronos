@@ -1406,3 +1406,124 @@ async def test_preflight_reports_incomplete_joint_group(db_session):
     assert len(incomplete) == 1
     assert incomplete[0].severity == "BLOCKER"
     assert "menos de duas turmas ativas" in incomplete[0].message
+
+
+async def test_preflight_blocks_a_teacher_whose_minimum_cannot_fit_the_visible_grid(db_session):
+    org, _user, _mem = await _create_org_and_admin(
+        db_session, "Presence Preflight School", "org_presence_preflight"
+    )
+    db_session.add(
+        models.OrganizationSettings(
+            organization_id=org.id,
+            school_start_date=date(2025, 9, 15),
+            school_hard_end_date=date(2026, 7, 31),
+        )
+    )
+    blocks = [
+        models.Timeslot(
+            organization_id=org.id, day_of_week=0, start_time=time(9, 0), end_time=time(10, 0)
+        ),
+        models.Timeslot(
+            organization_id=org.id, day_of_week=0, start_time=time(10, 0), end_time=time(11, 0)
+        ),
+        models.Timeslot(
+            organization_id=org.id, day_of_week=0, start_time=time(11, 0), end_time=time(12, 0)
+        ),
+    ]
+    db_session.add_all(blocks)
+    teacher = await create_teacher_profile(db_session, organization_id=org.id, name="Mínimo Quatro")
+    teacher.minimum_presence_hours = 4
+    teacher.maximum_presence_gap_hours = 1
+    course = models.Course(organization_id=org.id, name="Curso Presença", abbreviation="PRES")
+    subject = models.Subject(
+        organization_id=org.id,
+        name="Disciplina Presença",
+        required_room_type=models.RoomType.normal,
+    )
+    db_session.add_all([course, subject])
+    await db_session.flush()
+    klass = models.Class(
+        organization_id=org.id,
+        name="Turma Presença",
+        size=20,
+        start_year=2025,
+        end_year=2028,
+        grade_level=10,
+        course_id=course.id,
+    )
+    db_session.add(klass)
+    await db_session.flush()
+    db_session.add(
+        models.ClassSubjectLink(
+            organization_id=org.id,
+            class_id=klass.id,
+            subject_id=subject.id,
+            grade_level=10,
+            teacher_id=teacher.id,
+        )
+    )
+    db_session.add(
+        models.Room(
+            organization_id=org.id,
+            name="Sala Presença",
+            type=models.RoomType.normal,
+            capacity=30,
+        )
+    )
+    await db_session.commit()
+
+    first = await PreflightService(db_session).evaluate(
+        organization_id=org.id, resolve_fingerprint=False
+    )
+    blocked = [issue for issue in first.issues if issue.code == "TEACHER_PRESENCE_IMPOSSIBLE"]
+    assert len(blocked) == 1
+    assert blocked[0].severity == "BLOCKER"
+    assert "Mínimo Quatro" in blocked[0].message
+    assert "4 h" in blocked[0].message
+    assert blocked[0].route == f"/members?teacher_id={teacher.id}&panel=availability"
+
+    # A day with a fourth visible hour removes the blocker.
+    db_session.add(
+        models.Timeslot(
+            organization_id=org.id, day_of_week=0, start_time=time(12, 0), end_time=time(13, 0)
+        )
+    )
+    await db_session.commit()
+
+    second = await PreflightService(db_session).evaluate(
+        organization_id=org.id, resolve_fingerprint=False
+    )
+    assert "TEACHER_PRESENCE_IMPOSSIBLE" not in {issue.code for issue in second.issues}
+
+
+async def test_preflight_reports_an_invalid_lunch_rule_instead_of_masking_it(db_session):
+    org, _user, _mem = await _create_org_and_admin(
+        db_session, "Invalid Lunch School", "org_invalid_lunch"
+    )
+    db_session.add(
+        models.OrganizationSettings(
+            organization_id=org.id,
+            school_start_date=date(2025, 9, 15),
+            school_hard_end_date=date(2026, 7, 31),
+        )
+    )
+    db_session.add(
+        models.OrganizationGridSettings(
+            organization_id=org.id,
+            lunch_window_start=time(14, 0),
+            lunch_window_end=time(12, 0),
+            lunch_min_duration_minutes=60,
+        )
+    )
+    await db_session.commit()
+
+    report = await PreflightService(db_session).evaluate(
+        organization_id=org.id, resolve_fingerprint=False
+    )
+
+    blocker = [issue for issue in report.issues if issue.code == "INVALID_LUNCH_RULE"]
+    assert len(blocker) == 1
+    assert blocker[0].severity == "BLOCKER"
+    assert blocker[0].route == "/config"
+    assert "almoço" in blocker[0].message
+    assert report.status == "BLOCKED"

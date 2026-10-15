@@ -23,7 +23,13 @@ from app.scheduler.domain.capacity import (
     eligible_periods,
     residual_minutes,
 )
-from app.scheduler.infrastructure.constructive import _local_interval, _select_period
+from app.scheduler.infrastructure.constructive import (
+    _continues_open_presence,
+    _local_interval,
+    _minimum_presence_teachers,
+    _select_period,
+    _slots_by_day,
+)
 from app.scheduler.infrastructure.placement_model import _build_candidate
 
 
@@ -48,6 +54,9 @@ def construct_recovery(
     selections: dict[int, list[tuple[Period, int, int]]] = defaultdict(list)
     protected_ids = {row.lesson_id for row in snapshot.protected_lessons}
     patterns: dict[tuple, int] = {}
+    dispensed_teachers = snapshot.lunch_dispensed_teacher_ids
+    minimum_teachers = _minimum_presence_teachers(snapshot)
+    slots_by_day = _slots_by_day(snapshot)
 
     def interrupted() -> bool:
         return monotonic() >= deadline or (should_cancel is not None and should_cancel())
@@ -89,6 +98,7 @@ def construct_recovery(
             lunch = snapshot.lunch_rule
             if (
                 lunch is not None
+                and not (kind == "teacher" and identity in dispensed_teachers)
                 and continuous_break_minutes(
                     (*occupancy[key], _local_interval(period)),
                     lunch,
@@ -175,6 +185,9 @@ def construct_recovery(
                 -Fraction(
                     remaining[item[0].assignment_id],
                     sum(module.required_minutes for module in item[0].modules),
+                ),
+                not _continues_open_presence(
+                    slots_by_day, occupancy, item[0].teacher_id, period, minimum_teachers
                 ),
                 any(
                     row.overlaps(period)

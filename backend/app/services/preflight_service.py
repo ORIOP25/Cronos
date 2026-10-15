@@ -4,11 +4,13 @@ from sqlalchemy import select as sa_select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models, schemas
+from app.scheduler.domain.candidate import LunchRule, TeacherPresenceRule
 from app.scheduler.domain.constraint_policy import (
     RoomEligibilityReason,
     SchoolConstraintPolicy,
     assess_room_eligibility,
 )
+from app.scheduler.domain.teacher_presence import PresenceSlot, teacher_can_have_presence
 from app.scheduler.infrastructure.models import SchedulerProposalV1
 from app.services import grid_version_service
 from app.services.availability_matrix_service import AvailabilityMatrixInspector
@@ -24,15 +26,36 @@ CONFIG_ROUTE = "/config"
 async def _get_latest_settings_with_dates(
     db: AsyncSession,
     organization_id: int,
-) -> models.OrganizationSettings | None:
-    settings_result = await db.execute(
-        sa_select(models.OrganizationSettings).where(
-            models.OrganizationSettings.organization_id == organization_id,
-            models.OrganizationSettings.school_start_date.isnot(None),
-            models.OrganizationSettings.school_hard_end_date.isnot(None),
+) -> tuple[models.OrganizationSettings | None, tuple | None]:
+    """Calendar settings plus the lunch values, in one tenant query.
+
+    The lunch window lives on ``organization_grid_settings``. Carrying its three
+    columns here keeps the preflight free of a second settings round trip while
+    preserving the "no grid row means no configured window" behaviour.
+    """
+    row = (
+        await db.execute(
+            sa_select(
+                models.OrganizationSettings,
+                models.OrganizationGridSettings.lunch_window_start,
+                models.OrganizationGridSettings.lunch_window_end,
+                models.OrganizationGridSettings.lunch_min_duration_minutes,
+            )
+            .outerjoin(
+                models.OrganizationGridSettings,
+                models.OrganizationGridSettings.organization_id
+                == models.OrganizationSettings.organization_id,
+            )
+            .where(
+                models.OrganizationSettings.organization_id == organization_id,
+                models.OrganizationSettings.school_start_date.isnot(None),
+                models.OrganizationSettings.school_hard_end_date.isnot(None),
+            )
         )
-    )
-    return settings_result.scalars().first()
+    ).first()
+    if row is None:
+        return None, None
+    return row[0], (row[1], row[2], row[3])
 
 
 async def _get_generation_workload_counts(
@@ -187,6 +210,105 @@ async def _validate_class_availability(
         )
         for row in rows
     ]
+
+
+def _minutes_of_day(value) -> int:
+    return value.hour * 60 + value.minute
+
+
+def _lunch_rule_from_values(
+    values: tuple | None,
+) -> tuple[LunchRule | None, schemas.PreflightIssue | None]:
+    """Build the lunch rule from the carried grid values.
+
+    Missing or partial values mean a school without a configured window; the
+    grid-settings validation owns that case. A stored window that violates its
+    own invariants is reported as a blocker, never silently treated as no lunch.
+    """
+    if values is None or any(value is None for value in values):
+        return None, None
+    try:
+        return LunchRule(values[0], values[1], values[2]), None
+    except ValueError:
+        return None, schemas.PreflightIssue(
+            code="INVALID_LUNCH_RULE",
+            severity="BLOCKER",
+            message="A configuração de almoço da escola é inválida.",
+            route=CONFIG_ROUTE,
+        )
+
+
+async def _validate_teacher_presence(
+    db: AsyncSession,
+    organization_id: int,
+    timeslots: list[models.Timeslot],
+    teacher_ids: set[int],
+    lunch_rule: LunchRule | None,
+    teacher_rows: list,
+) -> list[schemas.PreflightIssue]:
+    """One blocker per teacher whose minimum cannot fit any visible presence (D08).
+
+    Uses the visible grid and the teacher's Impossible blocks. A teacher is
+    blocked only when no day has a contiguous span that reaches the minimum with
+    holes inside the maximum gap, keeping the required lunch free. The message
+    names the teacher and the deep-link opens their availability panel. The
+    active teacher rows are carried from the earlier count query.
+    """
+    if not teacher_ids or not timeslots:
+        return []
+    rows = [
+        row
+        for row in teacher_rows
+        if row.id in teacher_ids and row.minimum_presence_hours is not None
+    ]
+    if not rows:
+        return []
+    minimum_teacher_ids = {row.id for row in rows}
+    impossible = {
+        (row.teacher_id, row.timeslot_id)
+        for row in (
+            await db.execute(
+                sa_select(models.Availability.teacher_id, models.Availability.timeslot_id).where(
+                    models.Availability.organization_id == organization_id,
+                    models.Availability.teacher_id.in_(minimum_teacher_ids),
+                    models.Availability.score == models.PreferenceLevel.IMPOSSIBLE.value,
+                )
+            )
+        ).all()
+    }
+    ordered_slots = sorted(timeslots, key=lambda slot: (slot.day_of_week, slot.start_time, slot.id))
+    issues: list[schemas.PreflightIssue] = []
+    for row in rows:
+        slots_by_weekday: dict[int, list[PresenceSlot]] = {}
+        for slot in ordered_slots:
+            slots_by_weekday.setdefault(slot.day_of_week, []).append(
+                PresenceSlot(
+                    _minutes_of_day(slot.start_time),
+                    _minutes_of_day(slot.end_time),
+                    (row.id, slot.id) not in impossible,
+                )
+            )
+        rule = TeacherPresenceRule(
+            row.id,
+            row.lunch_required,
+            row.minimum_presence_hours * 60,
+            row.maximum_presence_gap_hours * 60,
+        )
+        if teacher_can_have_presence(rule, slots_by_weekday, lunch_rule=lunch_rule):
+            continue
+        issues.append(
+            schemas.PreflightIssue(
+                code="TEACHER_PRESENCE_IMPOSSIBLE",
+                severity="BLOCKER",
+                message=(
+                    f"O professor {row.name} não tem nenhuma presença com "
+                    f"{row.minimum_presence_hours} h disponíveis. "
+                    "Baixe o mínimo, aumente o furo máximo ou reveja a disponibilidade."
+                ),
+                route=f"/members?teacher_id={row.id}&panel=availability",
+            )
+        )
+    return issues
 
 
 async def _validate_subject_requirements(
@@ -484,7 +606,7 @@ class PreflightService:
                 )
             )
 
-        org_settings = await _get_latest_settings_with_dates(self.db, organization_id)
+        org_settings, lunch_values = await _get_latest_settings_with_dates(self.db, organization_id)
         if org_settings is None:
             issues.append(
                 schemas.PreflightIssue(
@@ -513,9 +635,19 @@ class PreflightService:
                 )
             )
 
-        teacher_count = (
-            await self.db.scalar(
-                sa_select(func.count(models.Teacher.id))
+        lunch_rule, lunch_issue = _lunch_rule_from_values(lunch_values)
+        if lunch_issue is not None:
+            issues.append(lunch_issue)
+
+        teacher_rows = (
+            await self.db.execute(
+                sa_select(
+                    models.Teacher.id,
+                    models.Teacher.name,
+                    models.Teacher.lunch_required,
+                    models.Teacher.minimum_presence_hours,
+                    models.Teacher.maximum_presence_gap_hours,
+                )
                 .join(
                     models.OrganizationMembership,
                     models.OrganizationMembership.id == models.Teacher.organization_membership_id,
@@ -527,9 +659,10 @@ class PreflightService:
                     == models.MembershipLifecycleStatus.active,
                     models.OrganizationMembership.can_teach.is_(True),
                 )
+                .order_by(models.Teacher.name, models.Teacher.id)
             )
-            or 0
-        )
+        ).all()
+        teacher_count = len(teacher_rows)
         if teacher_count == 0:
             issues.append(
                 schemas.PreflightIssue(
@@ -754,6 +887,17 @@ class PreflightService:
             )
 
         issues.extend(await _validate_class_availability(self.db, organization_id, timeslot_ids))
+
+        issues.extend(
+            await _validate_teacher_presence(
+                self.db,
+                organization_id,
+                resolved_grid.blocks,
+                teacher_ids,
+                lunch_rule,
+                teacher_rows,
+            )
+        )
 
         if (
             strategy

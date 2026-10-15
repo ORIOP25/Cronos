@@ -36,6 +36,7 @@ from app.scheduler.domain.diagnostics import (
     Diagnosis,
     diagnose_capacity,
     diagnose_joint_isolation,
+    diagnose_teacher_presence_rules,
 )
 from app.scheduler.domain.quality import (
     InitialQualityMetrics,
@@ -53,6 +54,14 @@ from app.scheduler.domain.results import (
 )
 
 RECOVERY_SCENARIO = "CANCEL_LATEST_PLANNED_LESSON"
+
+
+def _with_presence_hint(
+    snapshot: PlanningSnapshot, diagnoses: tuple[Diagnosis, ...]
+) -> tuple[Diagnosis, ...]:
+    """Append the teacher-presence hint to a no-schedule terminal outcome (D09)."""
+    hint = diagnose_teacher_presence_rules(snapshot)
+    return diagnoses if hint is None else (*diagnoses, hint)
 
 
 @dataclass(frozen=True)
@@ -184,7 +193,7 @@ def generate_complete(
                     certified_stages=0,
                     stop_reason=isolation.code.value,
                 ),
-                diagnoses=(isolation,),
+                diagnoses=_with_presence_hint(snapshot, (isolation,)),
                 wall_time_seconds=monotonic() - started,
             )
         details = ", ".join(
@@ -201,7 +210,7 @@ def generate_complete(
             OUTCOME_INFEASIBLE,
             None,
             message=f"Proven minimum deficit: {details}.",
-            diagnoses=diagnose_capacity(snapshot, capacity, periods),
+            diagnoses=_with_presence_hint(snapshot, diagnose_capacity(snapshot, capacity, periods)),
         )
     remaining_seconds = time_limit_seconds - (monotonic() - started)
     if remaining_seconds <= 0:
@@ -209,6 +218,7 @@ def generate_complete(
             OUTCOME_INCONCLUSIVE,
             None,
             message="The time limit was consumed before the search.",
+            diagnoses=_with_presence_hint(snapshot, ()),
             wall_time_seconds=monotonic() - started,
         )
     outcome: SearchOutcome = search(
@@ -258,6 +268,7 @@ def generate_complete(
                 None,
                 report=report,
                 message=message,
+                diagnoses=_with_presence_hint(snapshot, ()),
                 wall_time_seconds=monotonic() - started,
                 search_seconds=search_seconds,
                 evidence=outcome.evidence,
@@ -295,6 +306,7 @@ def generate_complete(
             OUTCOME_INFEASIBLE,
             None,
             message=outcome.message,
+            diagnoses=_with_presence_hint(snapshot, ()),
             wall_time_seconds=monotonic() - started,
             search_seconds=search_seconds,
             evidence=outcome.evidence,
@@ -304,6 +316,7 @@ def generate_complete(
         outcome.status,
         None,
         message=outcome.message,
+        diagnoses=_with_presence_hint(snapshot, ()),
         wall_time_seconds=monotonic() - started,
         search_seconds=search_seconds,
         evidence=outcome.evidence,

@@ -90,6 +90,68 @@ def _baseline_lesson(identity, assignment_id, when, room, teacher):
     )
 
 
+def test_presence_rules_keep_the_protected_lesson_unchanged():
+    from app.scheduler.domain.candidate import TeacherPresenceRule
+
+    spec = _spec(unavailable=(("teacher", 8, (DAY1, time(9), time(10))),))
+    snapshot = replace(
+        build_snapshot(spec),
+        teacher_presence=(
+            TeacherPresenceRule(
+                teacher_id=7, lunch_required=False, minimum_minutes=60, max_gap_minutes=600
+            ),
+        ),
+    )
+    frozen = _baseline_lesson(1, 1, normalize_period(DAY0, time(9), time(10), TZ), 500, 7)
+    protected = replace(snapshot, protected_lessons=(frozen,), protected_dates=frozenset({DAY0}))
+
+    result = repair_published_schedule(
+        protected, PERIODS_NORM, CandidateSchedule((frozen,)), POLICY, time_limit_seconds=5
+    )
+
+    assert result.outcome == "COMPLETE"
+    assert frozen in result.candidate.lessons
+    assert result.report is not None and result.report.valid
+
+
+def test_recovery_respects_a_teacher_presence_minimum():
+    from app.scheduler.domain.candidate import TeacherPresenceRule
+    from app.scheduler.domain.candidate_validation import validate_candidate
+
+    spec = _spec(
+        assignments=(
+            AssignmentSpec(1, 7, (120,), (500,)),
+            AssignmentSpec(2, 8, (60,), (501,)),
+        ),
+        periods=(
+            (DAY0, time(9), time(10)),
+            (DAY0, time(10), time(11)),
+            (DAY1, time(9), time(10)),
+        ),
+        grid_slots=((0, time(9), time(10)), (0, time(10), time(11)), (1, time(9), time(10))),
+    )
+    snapshot = replace(
+        build_snapshot(spec),
+        teacher_presence=(
+            TeacherPresenceRule(
+                teacher_id=7, lunch_required=False, minimum_minutes=120, max_gap_minutes=600
+            ),
+        ),
+    )
+    periods = tuple(normalize_period(day, start, end, TZ) for day, start, end in spec.periods)
+
+    result = repair_published_schedule(
+        snapshot, periods, CandidateSchedule(()), POLICY, time_limit_seconds=10
+    )
+
+    assert result.outcome == "COMPLETE"
+    assert result.candidate is not None
+    assert validate_candidate(snapshot, result.candidate).valid
+    # The teacher's only two lessons land on the same day, meeting the minimum.
+    teacher_lessons = [row for row in result.candidate.lessons if row.assignment_id == 1]
+    assert len({row.period.school_date for row in teacher_lessons}) == 1
+
+
 def test_t20_a_teacher_reassignment_is_repaired_instead_of_kept():
     spec = _spec(
         unavailable=(("teacher", 8, (DAY0, time(9), time(10))),),

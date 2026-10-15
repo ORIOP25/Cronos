@@ -101,6 +101,41 @@ def continuous_break_minutes(occupied: Sequence[tuple[int, int]], rule: LunchRul
     return max(longest, end - cursor)
 
 
+@dataclass(frozen=True)
+class TeacherPresenceRule:
+    """Optional school-defined presence rule for one teacher (D01, D03, D05, D06).
+
+    The minimum and the maximum gap travel together: a rule either has both, in
+    whole minutes, or neither. It is an immutable snapshot value; the pure split
+    and compliance rules live in ``teacher_presence.py``.
+    """
+
+    teacher_id: int
+    lunch_required: bool = True
+    minimum_minutes: int | None = None
+    max_gap_minutes: int | None = None
+
+    def __post_init__(self) -> None:
+        if type(self.teacher_id) is not int or self.teacher_id <= 0:
+            raise ValueError("A presence rule needs a positive teacher ID.")
+        if type(self.lunch_required) is not bool:
+            raise ValueError("The lunch requirement must be a boolean.")
+        has_minimum = self.minimum_minutes is not None
+        has_gap = self.max_gap_minutes is not None
+        if has_minimum != has_gap:
+            raise ValueError("A presence minimum and gap must both be set or both absent.")
+        if has_minimum:
+            if type(self.minimum_minutes) is not int or self.minimum_minutes <= 0:
+                raise ValueError("The presence minimum must be positive whole minutes.")
+            if type(self.max_gap_minutes) is not int or self.max_gap_minutes < 0:
+                raise ValueError("The presence gap must be nonnegative whole minutes.")
+
+    @property
+    def is_default(self) -> bool:
+        """The rule a new teacher starts with: lunch required and no minimum."""
+        return self.lunch_required and self.minimum_minutes is None
+
+
 LESSON_IDENTITY_STRIDE = 1_000_000
 
 
@@ -539,6 +574,7 @@ class PlanningSnapshot:
     claim_classes: Mapping[int, int] = field(default_factory=dict)
     active_version_id: int | None = None
     lunch_rule: LunchRule | None = None
+    teacher_presence: tuple[TeacherPresenceRule, ...] = ()
     reserved_lesson_ids: frozenset[int] = frozenset()
 
     def __post_init__(self) -> None:
@@ -600,6 +636,17 @@ class PlanningSnapshot:
             raise ValueError("The active version ID must be positive when present.")
         if self.lunch_rule is not None and type(self.lunch_rule) is not LunchRule:
             raise ValueError("The lunch rule must be a LunchRule when present.")
+        if type(self.teacher_presence) is not tuple or any(
+            type(row) is not TeacherPresenceRule for row in self.teacher_presence
+        ):
+            raise ValueError("Teacher presence must be a tuple of TeacherPresenceRule values.")
+        presence_ids = [row.teacher_id for row in self.teacher_presence]
+        if len(set(presence_ids)) != len(presence_ids):
+            raise ValueError("Teacher presence rules must be unique per teacher.")
+        if presence_ids != sorted(presence_ids):
+            raise ValueError("Teacher presence rules must be ordered by teacher ID.")
+        if any(row.is_default for row in self.teacher_presence):
+            raise ValueError("Only non-default presence rules belong to a snapshot.")
         if any(type(identity) is not int or identity <= 0 for identity in self.reserved_lesson_ids):
             raise ValueError("Reserved lesson identities must be positive integers.")
         claim_ids = {claim_id for claim_id, _ in self.open_debt_minutes.items()}
@@ -627,6 +674,7 @@ class PlanningSnapshot:
         object.__setattr__(self, "blocked_dates", frozenset(self.blocked_dates))
         object.__setattr__(self, "protected_dates", frozenset(self.protected_dates))
         object.__setattr__(self, "reserved_lesson_ids", frozenset(self.reserved_lesson_ids))
+        object.__setattr__(self, "teacher_presence", tuple(self.teacher_presence))
         object.__setattr__(
             self,
             "class_blocked_dates",
@@ -651,6 +699,13 @@ class PlanningSnapshot:
     @property
     def grid_weekdays(self) -> frozenset[int]:
         return frozenset(slot.day_of_week for slot in self.grid_slots)
+
+    @property
+    def lunch_dispensed_teacher_ids(self) -> frozenset[int]:
+        """Teachers whose presence rule dispenses the school lunch break (D06)."""
+        return frozenset(
+            rule.teacher_id for rule in self.teacher_presence if not rule.lunch_required
+        )
 
     def blocked_on(self, class_id: int, school_date: date) -> bool:
         """True when the school or this class has no lessons on the date."""

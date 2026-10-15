@@ -44,7 +44,7 @@ The engine preserves execution, curricular minutes, debt, and protected physical
 | D16 | A module is not a permanent identity of a future lesson. It follows the subject's minute sequence. |
 | D17 | One lesson can finish a module and start subsequent modules. Exact minute credits never overlap. |
 | D18 | Recalculate future modular projection automatically, including inside the window. Never rewrite execution evidence. |
-| D19 | The grid defines maximum capacity. Do not introduce implicit daily, weekly, or consecutive-load limits. |
+| D19 | The grid defines maximum capacity. The engine adds no implicit daily, weekly, or consecutive-load limit; it applies only the presence rules the school defines per teacher. |
 | D20 | Mandatory unavailability excludes periods. An unfavorable preference still permits placement. |
 | D21 | Between equivalent higher-priority solutions, reduce teacher gaps first, then class gaps. |
 | D22 | The school assigns each class subject's teacher. The solver does not allocate teaching service. |
@@ -263,6 +263,42 @@ Each active class and teacher requires one continuous lunch interval in the conf
 Separate breaks cannot combine to satisfy lunch.
 Partial lunch configuration produces `LUNCH_CONFIGURATION_INCOMPLETE`.
 Independent validation reports `LUNCH_BREAK_VIOLATION`.
+A teacher whose presence rule dispenses the lunch break is exempt from the lunch check; classes always keep the school lunch rule.
+
+### Teacher presence rules
+
+`domain/teacher_presence.py` holds the pure rules; `domain/candidate.py` carries
+`TeacherPresenceRule` and `PlanningSnapshot.teacher_presence`.
+The snapshot keeps only rules that differ from the default (lunch required, no
+minimum), ordered by teacher id.
+With a required lunch and a configured window the day splits at a free lunch
+choice into a morning and an afternoon presence; without lunch the whole day is
+one presence.
+Each presence has zero hours or at least the teacher's minimum, and its gap is
+the sum of empty grid blocks between its first and last lesson, never the
+wall-clock breaks.
+A presence with only protected lessons is exempt; a presence with at least one
+editable lesson counts protected and editable lessons together.
+A joint lesson counts once for its teacher.
+Independent validation reports `TEACHER_PRESENCE_VIOLATION` with
+`resource_type="teacher"`; `VALIDATOR_VERSION` is `v6`.
+The placement model imports `lunch_options` from the pure module, and the
+snapshot loader uses the same active, teaching, assigned teacher filter as the
+readiness fingerprint, so an unassigned teacher's rule changes no digest.
+A teacher dispensed from lunch may teach inside the school window in all three
+routes: the exact CP-SAT placement (`placement_model._add_lunch`), the fast
+construction (`constructive.construct_schedule`) and the adaptive recovery
+(`recovery_construction.free_rooms`) skip that teacher's lunch option while
+every class keeps its own mandatory break. A teacher without an exception keeps
+the previous behaviour.
+
+The exact model enforces the minimum and the gap per presence (`placement_model._add_teacher_presence`).
+Each presence has zero or at least the minimum physical minutes, and its gap is the sum of empty grid-block durations between its first and last lesson.
+A required lunch designates exactly one free option per teacher and day; the designated choice splits the day into a morning and an afternoon presence.
+A dispensed teacher, or a school without a configured window, uses the whole day as one presence.
+A presence with only protected lessons is exempt; a presence with any editable lesson counts protected and editable minutes, and a substitute protected lesson counts for its own teacher.
+The window cache salt includes every presence rule, so a changed rule never reuses a proven window.
+The annual plan keeps a teacher's editable weekly load at zero or at least the minimum, except weeks that hold a protected lesson of that teacher (T05).
 
 ```text
 sum(selected and fixed occupancy for a resource over overlapping periods) <= 1
@@ -292,6 +328,18 @@ A single joint unit left without any eligible shared period is a proven isolatio
 Complete generation returns `INFEASIBLE` carrying that code on the result stop reason and the diagnostic message; the search outcome uses the same message.
 A general deficit keeps `INSUFFICIENT_INTERSECTION`; a cancellation or interrupted search is never relabelled as joint.
 `lab/typology.py` `build_joint_typology_fixture` builds the joint family (general subjects shared, technical subjects separate) for the 48-class pilot.
+
+### Teacher presence preflight and failure diagnosis
+
+Before generation, `services/preflight_service.py` blocks each teacher whose presence minimum cannot fit any visible day.
+The pure check `domain/teacher_presence.py` `teacher_can_have_presence` uses the visible grid and the teacher's `Impossible` blocks: a day is feasible when a contiguous span of possible blocks reaches the minimum with the `Impossible` holes inside the maximum gap and, with a required lunch, the span stays on one side of a free lunch option.
+The blocker is `TEACHER_PRESENCE_IMPOSSIBLE`, names the teacher and deep-links to `/members?teacher_id={id}&panel=availability`. A stored lunch window that violates its own invariants is an explicit `INVALID_LUNCH_RULE` blocker, never silently treated as no lunch.
+
+A generation or repair that ends without a schedule may have been blocked by a teacher presence rule, but that is never demonstrated.
+`domain/diagnostics.py` `diagnose_teacher_presence_rules` returns one `TEACHER_PRESENCE_RULES` diagnosis of kind `ESTIMATE` with `affected_teacher_ids`, naming only the teachers that have a minimum.
+`generate_complete` and `repair_schedule` add it to every no-candidate terminal outcome (`INFEASIBLE`, `FAILED`, `INCONCLUSIVE`), never to `CANCELLED` or `INVALID_INPUT`.
+`application/publishing.py` `diagnostics_summary` serializes `affected_teacher_ids`, and `infrastructure/queries.py` `_job_diagnostics` returns one row per named teacher even without a class; a teacher deleted after the failure keeps its id and no name.
+`infrastructure/jobs.py` stores diagnostics for `INFEASIBLE`, `FAILED` and `INCONCLUSIVE`, and the frontend `GenerationStatusPanel` shows the presence advisory alongside any primary proven diagnosis.
 
 ### Exact credits and annual quotas
 
@@ -573,7 +621,7 @@ Rejection without changed inputs creates no new reason. Submission revalidates e
 ## Verification Procedure
 
 The independent validator recalculates coverage, identity uniqueness, references, resource collisions, eligibility, dates, and protected history.
-It also checks module slices, debt reservations, protected credit, completion metrics, physical gaps, and continuous lunch.
+It also checks module slices, debt reservations, protected credit, completion metrics, physical gaps, continuous lunch, and teacher presence.
 Index intervals by resource/date and sort them; avoid quadratic comparison.
 Store validator version and candidate digest. Solver-declared metrics never replace recalculated metrics.
 Deliberately corrupted candidates must fail with the correct violation code.

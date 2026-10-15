@@ -24,6 +24,7 @@ from app.scheduler.domain.candidate import (
     GridSlot,
     PlanningSnapshot,
     SchedulingStrategy,
+    TeacherPresenceRule,
 )
 from app.scheduler.domain.projection import ModuleRequirement
 from app.scheduler.domain.teaching_units import (
@@ -77,7 +78,7 @@ class TypologyFixture:
     rooms: int
     snapshot: PlanningSnapshot
     periods: tuple[Period, ...]
-    witness: CandidateSchedule
+    witness: CandidateSchedule | None
 
 
 def _slot_time(minutes: int) -> time:
@@ -129,12 +130,18 @@ def _assignment(class_id, subject_id, teacher_id, room_ids, assignment_id):
 
 def build_typology_fixture(
     class_count: int,
+    *,
+    teacher_presence: tuple[TeacherPresenceRule, ...] = (),
+    build_witness: bool = True,
 ) -> TypologyFixture:
     """Build a feasible school with the product typology and a witness.
 
     ``class_count`` must be a multiple of three because every course has three
     classes. Each assignment shares a pair of neighbouring rooms so alternative
-    room sets stay part of the case.
+    room sets stay part of the case. ``teacher_presence`` adds the optional
+    school presence rules; the default empty tuple keeps the legacy fixture and
+    its witness byte-for-byte. Pass ``build_witness=False`` when a rule instance
+    has no constructive witness and the caller runs the exact search itself.
     """
     if class_count < 3 or class_count % 3 != 0:
         raise ValueError("Classes are always multiples of three (three per course).")
@@ -181,9 +188,10 @@ def build_typology_fixture(
             or day in NATIONAL_HOLIDAYS
         ),
         unavailable=(),
+        teacher_presence=tuple(teacher_presence),
     )
-    witness = construct_schedule(snapshot, periods)
-    if witness is None:
+    witness = construct_schedule(snapshot, periods) if build_witness else None
+    if build_witness and witness is None:
         raise ValueError("The typology fixture has no independent witness.")
     return TypologyFixture(
         class_count=class_count,

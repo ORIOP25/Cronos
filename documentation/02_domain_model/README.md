@@ -15,3 +15,5 @@ This section documents Portuguese Professional Education domain rules, team memb
 - [JOINT_LESSONS_WBS.md](JOINT_LESSONS_WBS.md): Work breakdown, dependencies, and done criteria for joint lessons.
 - [TEACHER_AVAILABILITY_IMPORT_TECH_SPEC.md](TEACHER_AVAILABILITY_IMPORT_TECH_SPEC.md): CSV import of teacher availability and the four level names; decisions and contracts.
 - [TEACHER_AVAILABILITY_IMPORT_WBS.md](TEACHER_AVAILABILITY_IMPORT_WBS.md): Slices, lanes, and proof commands for the teacher availability import.
+- [TEACHER_PRESENCE_TECH_SPEC.md](TEACHER_PRESENCE_TECH_SPEC.md): Teacher presence rules (minimum hours per presence, maximum gap, optional lunch); decisions and contracts.
+- [TEACHER_PRESENCE_WBS.md](TEACHER_PRESENCE_WBS.md): Work breakdown, lanes, and proof per slice for teacher presence rules.

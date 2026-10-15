@@ -686,6 +686,28 @@ class Teacher(Base):
         back_populates="teacher", cascade=CASCADE_ALL_DELETE
     )
 
+    # Presença na escola (regra opcional definida pela direção).
+    lunch_required: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=text("true")
+    )
+    minimum_presence_hours: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    maximum_presence_gap_hours: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+
+    __table_args__ = (
+        CheckConstraint(
+            "minimum_presence_hours BETWEEN 1 AND 12",
+            name="ck_teacher_minimum_presence_hours_range",
+        ),
+        CheckConstraint(
+            "maximum_presence_gap_hours BETWEEN 0 AND 12",
+            name="ck_teacher_maximum_presence_gap_hours_range",
+        ),
+        CheckConstraint(
+            "(minimum_presence_hours IS NULL) = (maximum_presence_gap_hours IS NULL)",
+            name="ck_teacher_presence_pair",
+        ),
+    )
+
     def __repr__(self) -> str:
         return f"<Teacher(id={self.id}, name='{self.name}')>"
 

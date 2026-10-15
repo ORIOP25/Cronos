@@ -10,6 +10,7 @@ from app.scheduler.domain.candidate import (
     PlanningSnapshot,
     ScheduledLesson,
     SchedulingStrategy,
+    TeacherPresenceRule,
 )
 from app.scheduler.domain.projection import ModuleRequirement, ModuleSlice
 
@@ -172,9 +173,49 @@ def test_jointless_snapshot_serializes_the_legacy_shape_and_digest():
     assert "class_ids" not in assignment
     assert "precedences" not in payload
     assert "claim_classes" not in payload
+    assert "teacher_presence" not in payload
     assert payload_digest(payload) == (
         "2bca0796d98ace3edbd7c2ed3529f27c2d083b511a62f382c07d2983ab6269f1"
     )
+
+
+def test_teacher_presence_rules_serialize_sorted_and_only_when_non_default():
+    from app.scheduler.domain.serialization import (
+        payload_digest,
+        snapshot_from_dict,
+        snapshot_to_dict,
+    )
+
+    snapshot = _snapshot(
+        teacher_presence=(
+            TeacherPresenceRule(teacher_id=50, minimum_minutes=180, max_gap_minutes=60),
+            TeacherPresenceRule(teacher_id=100, lunch_required=False),
+        )
+    )
+    payload = snapshot_to_dict(snapshot)
+
+    assert payload["teacher_presence"] == [[50, True, 180, 60], [100, False, None, None]]
+    assert snapshot_from_dict(payload).teacher_presence == snapshot.teacher_presence
+    assert payload_digest(payload) != payload_digest(snapshot_to_dict(_snapshot()))
+
+
+def test_snapshot_rejects_default_duplicate_or_unsorted_presence_rules():
+    with pytest.raises(ValueError):
+        _snapshot(teacher_presence=(TeacherPresenceRule(teacher_id=100),))
+    with pytest.raises(ValueError):
+        _snapshot(
+            teacher_presence=(
+                TeacherPresenceRule(teacher_id=100, lunch_required=False),
+                TeacherPresenceRule(teacher_id=100, lunch_required=False),
+            )
+        )
+    with pytest.raises(ValueError):
+        _snapshot(
+            teacher_presence=(
+                TeacherPresenceRule(teacher_id=100, lunch_required=False),
+                TeacherPresenceRule(teacher_id=50, lunch_required=False),
+            )
+        )
 
 
 def test_joint_snapshot_roundtrip_keeps_classes_precedences_and_claims():

@@ -124,6 +124,9 @@ A joint lesson group joins two or more classes of one subject for a set of modul
 | `PUT` | `/api/v1/teachers/me/availability` | Teacher; rate limit `30/minute` |
 | `GET` | `/api/v1/teachers/{teacher_id}/availability` | Active; self or admin |
 | `PUT` | `/api/v1/teachers/{teacher_id}/availability` | Admin |
+| `GET` | `/api/v1/teachers/me/presence` | Teacher |
+| `GET` | `/api/v1/teachers/{teacher_id}/presence` | Active; self or admin |
+| `PUT` | `/api/v1/teachers/{teacher_id}/presence` | Admin |
 | `GET` | `/api/v1/teachers/me/progress` | Teacher |
 
 ### Administrative CSV import
@@ -297,6 +300,31 @@ The administrative availability reads and writes accept optional `on_date`.
 Both requests select the grid valid on that school date.
 Saving replaces that grid's preferences and preserves other grid versions.
 The route uses `teacher_id`, not the organization membership identifier.
+
+### Teacher presence
+
+`GET /api/v1/teachers/{teacher_id}/presence` and
+`PUT /api/v1/teachers/{teacher_id}/presence` read and write one teacher's optional
+presence rule.
+`PUT` requires the `admin` capability; `GET` allows the administrator or the
+teacher themselves, and returns `403` for another teacher.
+`GET /api/v1/teachers/me/presence` returns the rule of the teacher linked to the
+caller, and `403` when the caller has no teacher profile.
+Every route uses `teacher_id`, never the organization membership identifier, and
+filters by `organization_id`; another organization's teacher returns
+`404 resource_not_found`.
+
+The rule is stored on `teacher` and survives grid versions and school years.
+`TeacherPresence` carries `lunch_required`, `minimum_hours` and `max_gap_hours`.
+`minimum_hours` and `max_gap_hours` are either both `null` or both set;
+`minimum_hours` is between 1 and 12, `max_gap_hours` between 0 and 12.
+Out-of-range values and an unpaired range return `422`.
+Writing an unchanged rule records no scheduler change event.
+A real change records `record_scheduler_change` with `entity_type="TEACHER_PRESENCE"`
+and `active_resource` equal to whether the teacher has an assignment, so the
+readiness fingerprint and the input revision follow the rule (D15).
+`MemberRead.teacher_presence` exposes the same object for the Equipa list, or
+`null` for a member without a teacher profile.
 
 The server rejects decisions, revisions, and reversals that would change a
 submitted or approved weekly timesheet. The normal summary route cannot change

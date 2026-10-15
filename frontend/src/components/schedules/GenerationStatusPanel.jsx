@@ -35,6 +35,9 @@ const TERMINAL_MESSAGES = {
 }
 
 const JOINT_NO_COMMON_TIME = 'JOINT_NO_COMMON_TIME'
+const TEACHER_PRESENCE_RULES = 'TEACHER_PRESENCE_RULES'
+// T09: the presence estimate is shown only in these no-schedule terminal states.
+const PRESENCE_ADVISORY_STATUSES = new Set(['INFEASIBLE', 'FAILED', 'INCONCLUSIVE'])
 
 // The joint message names every member class and the subject only when the read
 // model resolved all of them. A deleted class or subject keeps the honest
@@ -143,6 +146,14 @@ const GenerationStatusPanel = ({ jobId }) => {
     const jointContext = status === 'INFEASIBLE' ? jointDiagnosisContext(job.diagnostics) : null
     const jointNoCommonTime = jobCodes.includes(JOINT_NO_COMMON_TIME)
       || jointDiagnostics.length > 0
+    // The presence estimate is an extra advisory rendered alongside the primary
+    // diagnosis; it never replaces a proven room, protected, joint or class
+    // message, and it appears only in the statuses T09 allows.
+    const presenceAdvisory = PRESENCE_ADVISORY_STATUSES.has(status)
+      ? (Array.isArray(job.diagnostics) ? job.diagnostics : [])
+          .filter((item) => item.code === TEACHER_PRESENCE_RULES)
+      : []
+    const presenceNames = presenceAdvisory.map((item) => item.teacher_name).filter(Boolean)
     const classDiagnostics = status === 'INFEASIBLE' && !roomBlocked
       ? provenClassDiagnostics(job.diagnostics)
       : []
@@ -183,6 +194,17 @@ const GenerationStatusPanel = ({ jobId }) => {
               Reveja a disponibilidade destas turmas.
             </>
           ) : (TERMINAL_MESSAGES[status] || '')}
+          {presenceAdvisory.length > 0 && (
+            <>
+              {' '}
+              <span>
+                {presenceNames.length > 0
+                  ? `Não foi possível cumprir as regras de presença. Professores com mínimo de horas: ${presenceNames.join(', ')}. Experimente baixar o mínimo, aumentar o furo máximo ou alargar a disponibilidade.`
+                  : 'Não foi possível cumprir as regras de presença. Experimente baixar o mínimo, aumentar o furo máximo ou alargar a disponibilidade.'}
+              </span>{' '}
+              <Link to="/members">Abrir Equipa</Link>.
+            </>
+          )}
         </FeedbackBanner>
       </div>
     )

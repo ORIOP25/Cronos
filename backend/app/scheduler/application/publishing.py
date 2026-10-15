@@ -309,6 +309,7 @@ def diagnostics_summary(diagnoses: tuple[Diagnosis, ...]) -> list[dict[str, Any]
             "minimum_missing_minutes": diagnosis.minimum_missing_minutes,
             "affected_class_ids": list(diagnosis.affected_class_ids),
             "affected_subject_id": diagnosis.affected_subject_id,
+            "affected_teacher_ids": list(diagnosis.affected_teacher_ids),
         }
         for diagnosis in diagnoses
     ]

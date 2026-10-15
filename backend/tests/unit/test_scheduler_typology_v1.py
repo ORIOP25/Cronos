@@ -8,10 +8,12 @@ validated schedule for the 12-class and 48-class topologies.
 """
 
 from datetime import date
+from time import monotonic
 
 import pytest
 
 from app.scheduler.composition import generate_schedule
+from app.scheduler.domain.candidate import TeacherPresenceRule
 from app.scheduler.domain.candidate_validation import validate_candidate
 from app.scheduler.lab.typology import (
     CHRISTMAS_BREAK,
@@ -98,6 +100,59 @@ def test_forty_eight_classes_generate_a_complete_valid_schedule():
     assert result.completion is not None
     assert result.completion.latest_completion_date <= PREFERRED_END
     assert result.wall_time_seconds < 900
+
+
+def test_typology_fixture_accepts_optional_presence_rules():
+    rule = TeacherPresenceRule(
+        teacher_id=1001, lunch_required=False, minimum_minutes=180, max_gap_minutes=120
+    )
+
+    fixture = build_typology_fixture(12, teacher_presence=(rule,), build_witness=False)
+
+    assert fixture.snapshot.teacher_presence == (rule,)
+    assert fixture.witness is None
+    legacy = build_typology_fixture(12)
+    assert legacy.snapshot.teacher_presence == ()
+    assert legacy.witness is not None
+    assert validate_candidate(legacy.snapshot, legacy.witness).valid
+
+
+@pytest.mark.slow_solver
+def test_forty_eight_classes_with_presence_rules_measure_the_route():
+    """Measure the 48-class case under meaningful presence rules (T10/S6)."""
+    from app.scheduler.infrastructure.constructive import construct_schedule
+    from app.scheduler.infrastructure.search import search_complete_schedule
+
+    rule = TeacherPresenceRule(
+        teacher_id=1001, lunch_required=False, minimum_minutes=180, max_gap_minutes=120
+    )
+    fixture = build_typology_fixture(48, teacher_presence=(rule,), build_witness=False)
+    assert fixture.snapshot.teacher_presence == (rule,)
+
+    started = monotonic()
+    constructed = construct_schedule(fixture.snapshot, fixture.periods)
+    constructive_seconds = monotonic() - started
+    assert constructed is None or validate_candidate(fixture.snapshot, constructed).valid
+
+    if constructed is not None:
+        route = "constructive"
+        outcome, candidate, elapsed = "COMPLETE", constructed, constructive_seconds
+    else:
+        started = monotonic()
+        search_outcome = search_complete_schedule(
+            fixture.snapshot, fixture.periods, time_limit_seconds=900, num_workers=1, random_seed=3
+        )
+        elapsed = monotonic() - started
+        route, outcome, candidate = "exact", search_outcome.status, search_outcome.candidate
+
+    # The slice proof records the measured route and time.
+    print(
+        f"presence48 route={route} outcome={outcome} seconds={elapsed:.1f} "
+        f"constructive_seconds={constructive_seconds:.1f}"
+    )
+    assert outcome == "COMPLETE"
+    assert candidate is not None
+    assert validate_candidate(fixture.snapshot, candidate).valid
 
 
 def test_the_school_year_break_dates_are_within_the_calendar():
