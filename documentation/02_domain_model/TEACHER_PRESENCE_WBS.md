@@ -22,7 +22,7 @@ O spec aprovado pelo responsável de produto. Base `main` em `e787aa5`, Alembic 
 | PR 0 | spec e WBS | incluído no PR 2 | — |
 | PR 1 | S1 | merged | [#146](https://github.com/ORIOP25/Cronos/pull/146) |
 | PR 2 | S2–S7 | merged | [#147](https://github.com/ORIOP25/Cronos/pull/147) |
-| PR 3 | S8–S9 | Implementado; acompanhamento no PR | [branch](https://github.com/ORIOP25/Cronos/tree/feat/teacher-presence-ui-release) |
+| PR 3 | S8–S9 | Implementado; acompanhamento no PR | [#148](https://github.com/ORIOP25/Cronos/pull/148) |
 | PR 4 | S10 | por iniciar | — |
 
 Provas e limitações do PR 2, medidas na árvore de trabalho `teacher-presence-impl`:
