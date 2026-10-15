@@ -21,13 +21,13 @@ O spec aprovado pelo responsável de produto. Base `main` em `e787aa5`, Alembic 
 | :--- | :--- | :--- | :--- |
 | PR 0 | spec e WBS | incluído no PR 2 | — |
 | PR 1 | S1 | merged | [#146](https://github.com/ORIOP25/Cronos/pull/146) |
-| PR 2 | S2–S7 | localmente verificado; CI pendente | — |
-| PR 3 | S8–S9 | por iniciar | — |
-| PR 4 | S10 | localmente verificado; CI pendente | — |
+| PR 2 | S2–S7 | merged | [#147](https://github.com/ORIOP25/Cronos/pull/147) |
+| PR 3 | S8–S9 | merged | [#148](https://github.com/ORIOP25/Cronos/pull/148) |
+| PR 4 | S10 | Implementado; acompanhamento no PR #149 | [#149](https://github.com/ORIOP25/Cronos/pull/149) |
 
 Provas e limitações do PR 2, medidas na árvore de trabalho `teacher-presence-impl`:
 
-- S2–S7 estão implementados e provados localmente; o PR 2 está aberto e aguarda a CI. O PR 1 (S1) já entrou em `main` no [#146](https://github.com/ORIOP25/Cronos/pull/146); o estado de PR 3 e de PR 4 não muda.
+- S2–S7 estão implementados e provados; o PR 2 entrou em `main` no [#147](https://github.com/ORIOP25/Cronos/pull/147). O PR 1 (S1) entrou em `main` no [#146](https://github.com/ORIOP25/Cronos/pull/146). O PR 3 (S8–S9) entrou em `main` no [#148](https://github.com/ORIOP25/Cronos/pull/148). O PR 4 (S10) está implementado e em acompanhamento no PR [#149](https://github.com/ORIOP25/Cronos/pull/149).
 - Fixture de 48 turmas com regras de presença (professor 1001, mínimo 3 h, furo 2 h): a construção rápida devolve `None` em 6,2 s e o caminho exato devolve `COMPLETE` com um candidato válido em **848,4 s**. É uma limitação de desempenho perto do orçamento de 900 s, não um bloqueio; a regra e o validador não foram enfraquecidos.
 - Desvio de TDD no S6: a heurística de continuação de presença foi implementada antes do teste de falha na primeira passagem. Na correção, o teste de falha (grelha 60 min + intervalo de 5 min) foi escrito primeiro e a heurística passou a usar posições de bloco. Não há "red" retroativo.
 

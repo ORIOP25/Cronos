@@ -411,6 +411,10 @@ function handleMemberRoutes(context) {
 
 function handleAvailabilityRoute(context) {
   const { method, path, body, snapshot, scenario, read, write } = context
+  if (path === '/teachers/me/presence') {
+    if (method !== 'get') return methodNotAllowed(context)
+    return read({ lunch_required: true, minimum_hours: null, max_gap_hours: null })
+  }
   if (path !== '/teachers/me/availability') return null
   if (method === 'get') return read(getAvailability(snapshot, scenario))
   if (method === 'put') return write(TUTORIAL_ACTIONS.UPDATE_AVAILABILITY, { slots: Array.isArray(body) ? body : body.availability }, (_next, nextSnapshot) => getAvailability(nextSnapshot, _next))

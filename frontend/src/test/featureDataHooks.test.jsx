@@ -31,7 +31,10 @@ import {
 } from '../features/catalog/data'
 import {
   useDebts,
+  useMyPresence,
   useOccurrences,
+  useSaveTeacherPresence,
+  useTeacherPresence,
   useTimesheets,
   useUpdateOccurrence,
 } from '../features/operations/data'
@@ -591,5 +594,67 @@ describe('vertical feature data hooks', () => {
       ['weekSchedule', 'org-a'],
       ['scheduler-job', 'org-a', 22],
     ]))
+  })
+
+  it('reads and saves a teacher presence rule by teacher id with member and readiness invalidations', async () => {
+    const { queryClient, wrapper } = createHarness()
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
+    const presence = { lunch_required: false, minimum_hours: 3, max_gap_hours: 1 }
+    apiClient.get.mockResolvedValue(presence)
+    apiClient.put.mockResolvedValue(presence)
+    const read = renderHook(() => useTeacherPresence({ teacherId: 7 }), { wrapper })
+
+    await waitFor(() => expect(read.result.current.isSuccess).toBe(true))
+    expect(apiClient.get).toHaveBeenCalledWith('/teachers/7/presence')
+    expect(queryClient.getQueryCache().getAll().map(({ queryKey }) => queryKey))
+      .toContainEqual(['teacher-presence', 'org-a', 7])
+    read.unmount()
+
+    const save = renderHook(() => useSaveTeacherPresence(), { wrapper })
+    await act(() => save.result.current.mutateAsync({ teacherId: 7, payload: presence }))
+
+    expect(apiClient.put).toHaveBeenCalledWith('/teachers/7/presence', presence)
+    expect(queryClient.getQueryData(['teacher-presence', 'org-a', 7])).toEqual(presence)
+    expect(invalidate.mock.calls.map(([options]) => options.queryKey)).toEqual(expect.arrayContaining([
+      ['teacher-presence', 'org-a'],
+      ['members', 'org-a'],
+      ['readiness-bases', 'org-a'],
+    ]))
+  })
+
+  it('does not read a teacher presence rule without a teacher id', async () => {
+    const { wrapper } = createHarness()
+    renderHook(() => useTeacherPresence({ teacherId: undefined }), { wrapper })
+
+    await waitFor(() => expect(apiClient.get).not.toHaveBeenCalled())
+  })
+
+  it('reads the authenticated teacher presence rule with a tenant key', async () => {
+    const { queryClient, wrapper } = createHarness()
+    const presence = { lunch_required: true, minimum_hours: null, max_gap_hours: null }
+    apiClient.get.mockResolvedValue(presence)
+    const read = renderHook(() => useMyPresence(), { wrapper })
+
+    await waitFor(() => expect(read.result.current.isSuccess).toBe(true))
+    expect(apiClient.get).toHaveBeenCalledWith('/teachers/me/presence')
+    expect(queryClient.getQueryCache().getAll().map(({ queryKey }) => queryKey))
+      .toContainEqual(['my-presence', 'org-a'])
+  })
+
+  it('invalidates the self presence rule when an admin changes the same teacher rule', async () => {
+    const { queryClient, wrapper } = createHarness()
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
+    queryClient.setQueryData(['my-presence', 'org-a'], {
+      lunch_required: true,
+      minimum_hours: null,
+      max_gap_hours: null,
+    })
+    const save = renderHook(() => useSaveTeacherPresence(), { wrapper })
+    const presence = { lunch_required: false, minimum_hours: 3, max_gap_hours: 1 }
+
+    await act(() => save.result.current.mutateAsync({ teacherId: 7, payload: presence }))
+
+    expect(invalidate.mock.calls.map(([options]) => options.queryKey))
+      .toContainEqual(['my-presence', 'org-a'])
   })
 })

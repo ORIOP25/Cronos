@@ -392,6 +392,14 @@ const Members = ({ readOnly = false, allowedActions }) => {
                   <td>
                     {member.capabilities.includes('teacher') && <CBadge color="primary" className="me-1">Professor</CBadge>}
                     {member.capabilities.includes('admin') && <CBadge color="dark">Administrador</CBadge>}
+                    {member.capabilities.includes('teacher') && member.teacher_presence?.lunch_required === false && (
+                      <CBadge color="secondary" className="ms-1">Sem almoço</CBadge>
+                    )}
+                    {member.capabilities.includes('teacher') && member.teacher_presence?.minimum_hours != null && (
+                      <CBadge color="secondary" className="ms-1">
+                        {`Mín. ${member.teacher_presence.minimum_hours}h · furo ${member.teacher_presence.max_gap_hours}h`}
+                      </CBadge>
+                    )}
                   </td>
                   <td>
                     <CBadge color={lifecycleColor} className="me-1">{lifecycleLabel}</CBadge>

@@ -93,6 +93,14 @@ describe('tutorial v3 local API adapter', () => {
     expect((await runtime.request('/teachers/me/availability')).data[0]).toEqual({ timeslot_id: 1, score: -1 })
   })
 
+  it('serves a safe default presence rule for the teacher page', async () => {
+    const runtime = makeRuntime('availability')
+    const response = await runtime.request('/teachers/me/presence')
+
+    expect(response.status).toBe(200)
+    expect(response.data).toEqual({ lunch_required: true, minimum_hours: null, max_gap_hours: null })
+  })
+
   it('supports complete schedule generation and approval without network requests', async () => {
     const runtime = makeRuntime('schedule')
     expect((await runtime.request('/scheduler/status')).data).toMatchObject({
