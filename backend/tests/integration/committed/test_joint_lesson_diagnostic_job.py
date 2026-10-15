@@ -10,6 +10,9 @@ code, and ``finish_job`` still prefers cancellation and staleness.
 from __future__ import annotations
 
 from datetime import datetime
+from zoneinfo import ZoneInfo
+
+from sqlalchemy import select
 
 from app import models
 from app.scheduler.infrastructure.jobs import (
@@ -18,10 +21,15 @@ from app.scheduler.infrastructure.jobs import (
     finish_job,
     request_cancellation,
 )
-from app.scheduler.infrastructure.models import SchedulerJobV1
+from app.scheduler.infrastructure.models import SchedulerJobV1, SchedulerLessonV1
 from app.scheduler.infrastructure.queries import get_job
 from app.services.scheduler_state_service import SchedulerStateService
-from tests._support.scheduler_v1 import MOMENT, seed_generatable_school, seed_joint_school
+from tests._support.scheduler_v1 import (
+    MOMENT,
+    run_generation,
+    seed_generatable_school,
+    seed_joint_school,
+)
 
 JOINT_CODE = "JOINT_NO_COMMON_TIME"
 
@@ -111,6 +119,61 @@ async def test_an_isolated_joint_unit_persists_class_and_subject_ids(db_session,
         seed.second_class.id,
     }
     assert all(row["subject_name"] == seed.base.subject.name for row in diagnostics)
+
+
+async def test_protected_class_availability_conflict_reaches_the_job_without_replacing_publication(
+    db_session, monkeypatch
+):
+    seed = await seed_joint_school(db_session)
+    organization_id = seed.base.organization.id
+    settings = await db_session.scalar(
+        select(models.OrganizationSettings).where(
+            models.OrganizationSettings.organization_id == organization_id
+        )
+    )
+    if settings is None:
+        settings = models.OrganizationSettings(organization_id=organization_id)
+        db_session.add(settings)
+    settings.repair_stability_window_days = 10
+    await run_generation(db_session, monkeypatch, seed.base, key="protected-publish")
+    version_id = int(seed.base.state.active_schedule_version_id)
+    first = await db_session.scalar(
+        select(SchedulerLessonV1)
+        .where(
+            SchedulerLessonV1.organization_id == organization_id,
+            SchedulerLessonV1.version_id == version_id,
+        )
+        .order_by(SchedulerLessonV1.starts_at)
+        .limit(1)
+    )
+    slot = await db_session.scalar(
+        select(models.Timeslot).where(
+            models.Timeslot.organization_id == organization_id,
+            models.Timeslot.day_of_week
+            == first.starts_at.astimezone(ZoneInfo("Europe/Lisbon")).weekday(),
+        )
+    )
+    db_session.add(
+        models.ClassAvailability(
+            organization_id=organization_id,
+            class_id=seed.second_class.id,
+            timeslot_id=slot.id,
+            score=models.PreferenceLevel.IMPOSSIBLE.value,
+        )
+    )
+    seed.base.state.input_revision += 1
+    seed.base.state.planning_revision += 1
+    queued = await _enqueue(db_session, seed.base, key="protected-repair")
+
+    await _run_worker(monkeypatch)
+
+    await db_session.refresh(queued.job)
+    payload = await get_job(db_session, organization_id, queued.job.id)
+    assert payload["status"] == "INFEASIBLE"
+    assert {row["code"] for row in payload["diagnostics"]} == {"PROTECTED_AVAILABILITY_CONFLICT"}
+    assert {row["class_name"] for row in payload["diagnostics"]} == {"A", "B"}
+    await db_session.refresh(seed.base.state)
+    assert int(seed.base.state.active_schedule_version_id) == version_id
 
 
 async def test_a_generic_deficit_keeps_the_generic_job_code(db_session, monkeypatch):

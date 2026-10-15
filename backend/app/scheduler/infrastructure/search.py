@@ -920,7 +920,7 @@ def search_adaptive_schedule(
         raise ValueError("Adaptive search needs a published baseline and a recovery policy.")
     if time_limit_seconds <= 0:
         raise ValueError("The time limit must be positive.")
-    profile = _SearchProfile(baseline, policy, prior_changes)
+    profile: _SearchProfile = _SearchProfile(baseline, policy, prior_changes)
     profile = replace(profile, cache_salt=_profile_cache_salt(profile, snapshot))
     if stop_at_first_complete:
         start = monotonic()
@@ -938,9 +938,8 @@ def search_adaptive_schedule(
             started_at=phase_start,
             status="BUILT" if local is not None else "NONE",
         )
-        # ponytail: compare two validated constructions without a global
-        # certificate. The existing annual search remains available above
-        # this ceiling when stop_at_first_complete is disabled.
+        # Compare validated constructions first; only use placement when both
+        # fail, so a greedy dead end does not discard the remaining budget.
         phase_start = monotonic()
         phase_started("RECOVERY_REBUILD")
         rebuilt = construct_schedule(
@@ -959,12 +958,28 @@ def search_adaptive_schedule(
             return _cancelled(start, "The request was cancelled during repair.")
         candidates = [row for row in (local, rebuilt) if row is not None]
         if not candidates:
-            return SearchOutcome(
+            return _unrestricted_fallback(
+                planning,
+                periods,
+                profile,
+                start=start,
+                deadline=deadline,
+                num_workers=num_workers,
+                random_seed=random_seed,
+                room_cost=_room_cost_for_profile(planning, profile),
+                should_cancel=should_cancel,
+                exploration=exploration,
+                trajectory_out=trajectory_out,
+                phase_totals={},
+                excluded=[],
+                rounds=0,
+                stop_at_first_complete=True,
+            ) or SearchOutcome(
                 OUTCOME_INCONCLUSIVE,
                 None,
                 None,
                 None,
-                "No complete constructive repair was found within the budget.",
+                "No complete repair was found within the budget.",
                 monotonic() - start,
                 {},
                 None,

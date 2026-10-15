@@ -32,6 +32,7 @@ from app.scheduler.domain.diagnostics import (
     diagnose_failure,
     diagnose_inconclusive,
     diagnose_invalid_input,
+    diagnose_protected_availability,
     diagnose_scope_proof,
 )
 from app.scheduler.domain.quality import SearchEvidence
@@ -146,6 +147,18 @@ def repair_schedule(
                 budget=budget,
                 wall_time_seconds=monotonic() - started,
             )
+    protected_conflicts = diagnose_protected_availability(snapshot)
+    if protected_conflicts:
+        charge(BudgetPhase.CONSTRUCTION)
+        return RepairResult(
+            OUTCOME_INFEASIBLE,
+            None,
+            message="Hard availability conflicts with protected published lessons.",
+            baseline=baseline_assessment,
+            diagnoses=protected_conflicts,
+            budget=budget,
+            wall_time_seconds=monotonic() - started,
+        )
     capacity = aggregate_capacity_check(snapshot, periods)
     charge(BudgetPhase.CONSTRUCTION)
     if capacity.proven_infeasible:

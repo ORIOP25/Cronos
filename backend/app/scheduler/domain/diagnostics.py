@@ -14,6 +14,7 @@ from enum import StrEnum
 
 from app.scheduler.domain.calendar import Period
 from app.scheduler.domain.candidate import Assignment, PlanningSnapshot
+from app.scheduler.domain.candidate_validation import ValidationViolationCode, lesson_violations
 from app.scheduler.domain.capacity import (
     CapacityCheck,
     aggregate_capacity_check,
@@ -31,6 +32,7 @@ class DiagnosisCode(StrEnum):
     EXCESS_EXECUTED_CREDIT = "EXCESS_EXECUTED_CREDIT"
     EXECUTION_FAILURE = "EXECUTION_FAILURE"
     JOINT_NO_COMMON_TIME = "JOINT_NO_COMMON_TIME"
+    PROTECTED_AVAILABILITY_CONFLICT = "PROTECTED_AVAILABILITY_CONFLICT"
 
 
 class EvidenceKind(StrEnum):
@@ -45,6 +47,7 @@ REVIEW_END_DATE = "REVIEW_END_DATE"
 REVIEW_RECORDED_PROGRESS = "REVIEW_RECORDED_PROGRESS"
 REVIEW_ROOMS = "REVIEW_ROOMS"
 REVIEW_SAFETY_LIMIT = "REVIEW_SAFETY_LIMIT"
+REVIEW_STABILITY_WINDOW = "REVIEW_STABILITY_WINDOW"
 
 
 @dataclass(frozen=True)
@@ -66,6 +69,34 @@ class Diagnosis:
                 raise ValueError("Only a proven lower bound carries a minimum deficit.")
             if type(self.minimum_missing_minutes) is not int or self.minimum_missing_minutes <= 0:
                 raise ValueError("A minimum deficit must be positive minutes.")
+
+
+def diagnose_protected_availability(snapshot: PlanningSnapshot) -> tuple[Diagnosis, ...]:
+    """Hard availability cannot invalidate a position that recovery must preserve."""
+    protected_ids = frozenset(row.lesson_id for row in snapshot.protected_lessons)
+    diagnoses = []
+    for lesson in snapshot.protected_lessons:
+        if not any(
+            row.code is ValidationViolationCode.RESOURCE_UNAVAILABLE
+            for row in lesson_violations(snapshot, lesson, protected_ids=protected_ids)
+        ):
+            continue
+        assignment = snapshot.assignment_for(lesson.assignment_id)
+        diagnoses.append(
+            Diagnosis(
+                code=DiagnosisCode.PROTECTED_AVAILABILITY_CONFLICT,
+                evidence_kind=EvidenceKind.PROVEN_SCOPE,
+                message=(
+                    f"A protected lesson on {lesson.period.school_date} at "
+                    f"{lesson.period.start_local} overlaps hard resource unavailability."
+                ),
+                scope=f"PROTECTED_LESSON:{lesson.lesson_id}",
+                affected_class_ids=assignment.class_ids,
+                affected_subject_id=assignment.subject_id,
+                suggestions=(REVIEW_AVAILABILITY, REVIEW_STABILITY_WINDOW),
+            )
+        )
+    return tuple(diagnoses)
 
 
 def diagnose_capacity(

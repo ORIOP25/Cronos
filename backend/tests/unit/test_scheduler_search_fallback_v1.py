@@ -8,7 +8,12 @@ fallback or an inconclusive outcome that keeps its evidence and statistics.
 
 from __future__ import annotations
 
+from dataclasses import replace
+
+import pytest
+
 import app.scheduler.infrastructure.search as search_module
+from app.scheduler.domain.candidate import CandidateSchedule, SchedulingStrategy
 from app.scheduler.domain.candidate_validation import validate_candidate
 from app.scheduler.infrastructure.annual_model import (
     STATUS_INCONCLUSIVE as ANNUAL_INCONCLUSIVE,
@@ -19,6 +24,7 @@ from app.scheduler.infrastructure.placement_model import (
 )
 from app.scheduler.infrastructure.placement_model import PlacementOutcome
 from app.scheduler.lab.scale import build_scale_fixture
+from tests.unit.test_scheduler_recovery_solver_v1 import POLICY
 
 INCONCLUSIVE_PLAN = AnnualPlan(
     ANNUAL_INCONCLUSIVE, None, None, None, 0, False, 0.0, {"variables": 0}
@@ -223,3 +229,39 @@ def test_the_search_never_returns_worse_than_the_constructor(monkeypatch):
     assert max(lesson.period.school_date for lesson in outcome.candidate.lessons) == max(
         lesson.period.school_date for lesson in better.lessons
     )
+
+
+@pytest.mark.parametrize("interruption", ["deadline", "cancellation"])
+def test_recovery_never_starts_fallback_placement_after_interruption(monkeypatch, interruption):
+    fixture = build_scale_fixture(6, seed=1)
+    snapshot = replace(fixture.snapshot, strategy=SchedulingStrategy.ADAPTIVE_RECOVERY)
+    clock = [0.0]
+    cancelled = [False]
+
+    def failed_construction(*_args, **_kwargs):
+        if interruption == "deadline":
+            clock[0] = 11.0
+        else:
+            cancelled[0] = True
+        return None
+
+    def unexpected_placement(*_args, **_kwargs):
+        pytest.fail("An interrupted recovery must not start placement.")
+
+    monkeypatch.setattr(search_module, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(search_module, "construct_recovery", failed_construction)
+    monkeypatch.setattr(search_module, "construct_schedule", failed_construction)
+    monkeypatch.setattr(search_module, "solve_placement", unexpected_placement)
+
+    outcome = search_module.search_adaptive_schedule(
+        snapshot,
+        fixture.periods,
+        CandidateSchedule(()),
+        POLICY,
+        time_limit_seconds=10,
+        stop_at_first_complete=True,
+        should_cancel=lambda: cancelled[0],
+    )
+
+    assert outcome.status == ("CANCELLED" if interruption == "cancellation" else "INCONCLUSIVE")
+    assert outcome.candidate is None

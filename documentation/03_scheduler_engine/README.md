@@ -25,6 +25,11 @@ Per-class module selection. The projection reads `class_subject_module` and plan
 
 Stability window. The stability window protects only an already-published schedule. The snapshot computes `protected_dates` only when an ACTIVE `SchedulerVersionV1` exists; a first generation has empty `protected_dates`. The window counts grid days, not calendar days, and always preserves executed and past lessons.
 
+Protected availability conflicts. Recovery checks hard availability against protected lessons before search.
+A conflict is proven infeasible because recovery must preserve those physical positions.
+The generation panel asks the administrator to review availability or the protection window; it never moves protected lessons automatically.
+The diagnosis includes the affected classes and subject. See `domain/diagnostics.py` `diagnose_protected_availability`.
+
 Balanced classroom progression. Constructive priority favors subjects with less curricular progress and classes that have not started. Annual quotas are planned by `infrastructure/annual_model.py` `plan_annual_quotas`. Quality exposes `minimum_class_progress_per_mille` and `class_progress_spread_per_mille`.
 
 Weekly pattern. The constructor remembers the first assignment and room used for each class, weekday and local grid interval. Repeating that assignment can compensate for one lesson of progress. Progress ties favor contiguous class and teacher lessons, then baseline intervals and assignments. The same room is preferred when available. These preferences never remove otherwise eligible resource combinations. Mandatory rules and simultaneous lesson capacity still apply; the pattern can change when resources or curricular progress require it.
@@ -34,7 +39,8 @@ One retains valid published positions and fills missing credit at the earliest a
 The other rebuilds the editable future using the published weekly reference and parallel curricular progress.
 The global recovery vector chooses between completion impact, disruption, gaps and preferences.
 Both candidates use current calendar, teacher availability, room eligibility and manually corrected execution.
-The default route avoids annual placement models and claims no optimality certificate.
+If both constructions fail, placement search uses the remaining safety budget and stops at the first complete candidate.
+The default route claims no optimality certificate.
 Disabling `SCHEDULER_V1_STOP_AT_FIRST_COMPLETE` retains the existing master/detail optimization route.
 
 Operational history. Logged `COMPLETED` and `OCCURRENCE` lessons remain visible across published versions.
