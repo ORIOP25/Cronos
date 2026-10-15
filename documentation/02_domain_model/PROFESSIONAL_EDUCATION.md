@@ -20,6 +20,12 @@ Each module stores `required_minutes` and an `order` within its subject.
 A class-subject link binds a class, subject, grade level, and optional teacher.
 A class-subject link also selects which modules of the subject the class takes.
 
+A joint lesson group (*Junção*, "Aula conjunta") joins two or more class-subject links of one subject for a set of joint modules.
+The member links share one teacher, and the scheduler plans the joint modules once for all member classes.
+A link belongs to at most one group per subject, and a joint module must be selected on every member class.
+Changing a joint group records one scheduler change and requires a new generation.
+The interface configures it in "Disciplinas e Professores"; the glossary defines *Junção* and *Aula conjunta*.
+
 ## Why the Behavior Exists
 
 Module-level minutes represent modular execution more accurately than a fixed annual subject total.
@@ -46,10 +52,11 @@ The selection is stored on the class-subject link, which is keyed by grade level
 
 1. An administrator creates a course and class.
 2. An administrator creates subjects and ordered modules.
-3. An administrator links subjects to a class, assigns a teacher, and marks the class modules.
-4. The scheduler reads module minutes and execution ledger values.
-5. Lesson logs and recovery delivery append ledger deltas.
-6. The UI reports completed minutes, debt minutes, and percentage.
+3. An administrator links subjects to a class and assigns a teacher.
+4. An administrator selects which modules the class takes, per class and school year.
+5. The scheduler reads the selected module minutes and execution ledger values.
+6. Lesson logs and recovery delivery append ledger deltas.
+7. The UI reports completed minutes, debt minutes, and percentage.
 
 ## Contracts and Invariants
 
@@ -60,13 +67,19 @@ The selection is stored on the class-subject link, which is keyed by grade level
 - Remaining demand starts at the first incomplete module.
 - Completed minutes cannot exceed the module requirement in progress views.
 - Ledger entries use idempotency keys and preserve source evidence.
-- Each class-subject link selects modules per grade level.
+- A new subject on a class selects all its modules. A new module is not selected on any class.
+- A selected module belongs to the subject of its class link.
+- The scheduler projects one requirement per selected module with `sequence = order + 1`.
+- Deselecting a module without executed credits deletes its requirement. Deselecting a module with credits keeps `planned = false` and closes it at the executed minutes.
+- Deselecting is always allowed, including the last selected module. Generation then blocks with `CLASS_SUBJECT_WITHOUT_MODULES` until at least one module is selected.
+- Re-selecting a module restores its catalogue minutes and counts its history again.
+- A joint lesson group has at least two member classes of the same subject, and all member links share one teacher.
+- A joint module is selected on every member class. Deselecting a joint module returns `409 JOINT_MODULE_LOCKED` until it leaves the group.
+- A module or class with executed minutes cannot enter or leave a joint group (`409 JOINT_MODULE_STARTED` or `JOINT_CLASS_STARTED`).
+- A member link belongs to at most one joint group per subject. A class/subject link, a member class and a joint module in use return `409 resource_in_use`.
 - A new class subject and a CSV assignment select every module of the subject.
 - The migration selects every module for the existing links.
-- A new module in a subject is not selected in any class.
-- A deselected module with execution credit stays as a `planned = false` requirement.
 - History replay uses the catalogue module minutes, so a retired module stays valid.
-- A link without a selected module never reaches the solver.
 - Class and teacher progress count only the selected modules.
 
 ## States and Transitions
@@ -82,8 +95,9 @@ Planning and progress reads use the live selection, so a change applies before t
 ## Failure Modes
 
 - Invalid module order or minutes return validation errors.
-- A class cannot update progress for a module outside its curriculum.
-- A class-subject link without a selected module returns the `CLASS_SUBJECT_WITHOUT_MODULES` blocker.
+- A class cannot update progress for a module outside its curriculum, including a deselected module.
+- A module of another subject returns `400 bad_request`. A module of another organization returns `404 resource_not_found`.
+- A class subject without a selected module blocks generation with `CLASS_SUBJECT_WITHOUT_MODULES`.
 - Deselecting a module never erases its execution history.
 - A cross-organization relationship fails scoped validation.
 

@@ -71,7 +71,7 @@ const Subjects = ({ readOnly = false, allowedActions }) => {
       if (selectedItem) {
         await updateMutation.mutateAsync({ id: selectedItem.id, ...formData })
         if (!attemptScope.isCurrent(attempt)) return
-        const addsModule = formData.modules.some((module) => module.id == null)
+        const addsModule = (formData.modules || []).some((module) => module.id == null)
         toast.success(addsModule ? NEW_MODULE_WARNING : 'Disciplina atualizada.')
       } else {
         await createMutation.mutateAsync(formData)

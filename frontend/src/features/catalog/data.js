@@ -541,6 +541,18 @@ export const useUpdateClassSubject = () => {
     },
     onSuccess: (data, variables) => {
       queryClient.setQueryData(orgQueryKey('class-subjects', orgId, variables.classId), data)
+      // A joint teacher change propagates to every member link. Refresh the
+      // other member class-subjects and the candidate facts (stale teacher).
+      // The current class keeps the immediate response above.
+      const jointClasses = data?.subjects
+        ?.find((subject) => subject.subject_id === variables.subjectId)
+        ?.joint_group?.classes ?? []
+      const otherClassIds = jointClasses
+        .map((cls) => cls.class_id)
+        .filter((id) => id !== variables.classId)
+      if (otherClassIds.length > 0) {
+        invalidateJointMemberQueries(queryClient, orgId, otherClassIds)
+      }
       void invalidateOrgQueries(queryClient, orgId, ['classes', 'teacher-progress'])
       void invalidatePreparationQueries(queryClient, orgId)
     }
@@ -564,6 +576,114 @@ export const useRemoveClassSubject = () => {
       void invalidateOrgQueries(queryClient, orgId, ['available-subjects', 'classes', 'courses'])
       void invalidatePreparationQueries(queryClient, orgId)
     }
+  })
+}
+
+// ==========================================
+//  AULAS CONJUNTAS (Junção)
+// ==========================================
+
+/**
+ * Invalida a lista de disciplinas de todas as turmas membro, além das raízes de catálogo.
+ */
+const invalidateJointMemberQueries = (queryClient, orgId, classIds) => {
+  const uniqueClassIds = [...new Set((classIds || []).filter(Boolean))]
+  for (const classId of uniqueClassIds) {
+    void queryClient.invalidateQueries({ queryKey: orgQueryKey('class-subjects', orgId, classId) })
+  }
+  void invalidateOrgQueries(queryClient, orgId, ['classes', 'readiness-bases', 'joint-candidates'])
+  void invalidatePreparationQueries(queryClient, orgId)
+}
+
+/**
+ * Turmas que podem entrar numa junção com a turma indicada.
+ * Ao editar, `groupId` devolve também os membros atuais, incluindo a turma de origem.
+ * `includeSource` pede as facts da própria turma (para bloquear módulos já começados).
+ */
+export const useJointCandidates = (subjectId, classId, groupId = null, includeSource = false) => {
+  const apiClient = useApiClient()
+  const orgId = useOrganization().organization?.id
+  const queryKey = includeSource
+    ? orgQueryKey('joint-candidates', orgId, subjectId, classId, groupId, 'include_source')
+    : orgQueryKey('joint-candidates', orgId, subjectId, classId, groupId)
+  return useQuery({
+    queryKey,
+    queryFn: async () => {
+      const params = { class_id: classId }
+      if (groupId != null) params.group_id = groupId
+      if (includeSource) params.include_source = true
+      return apiClient.get(`/subjects/${subjectId}/joint-candidates`, { params })
+    },
+    enabled: Boolean(orgId) && Boolean(subjectId) && Boolean(classId),
+    staleTime: 1000 * 60 * 5,
+  })
+}
+
+/**
+ * Cria uma junção.
+ */
+export const useCreateJointGroup = () => {
+  const apiClient = useApiClient()
+  const queryClient = useQueryClient()
+  const orgId = useOrganization().organization?.id
+
+  return useMutation({
+    mutationFn: async ({ subjectId, classIds, moduleIds, teacherId }) => {
+      return apiClient.post('/joint-lesson-groups', {
+        subject_id: subjectId,
+        class_ids: classIds,
+        module_ids: moduleIds,
+        teacher_id: teacherId,
+      })
+    },
+    onSuccess: (_data, variables) => {
+      invalidateJointMemberQueries(queryClient, orgId, variables.classIds)
+    },
+  })
+}
+
+/**
+ * Substitui as turmas, módulos e professor de uma junção.
+ * `previousClassIds` são as turmas que saem, para invalidar a cache delas.
+ */
+export const useUpdateJointGroup = () => {
+  const apiClient = useApiClient()
+  const queryClient = useQueryClient()
+  const orgId = useOrganization().organization?.id
+
+  return useMutation({
+    mutationFn: async ({ groupId, classIds, moduleIds, teacherId }) => {
+      return apiClient.put(`/joint-lesson-groups/${groupId}`, {
+        class_ids: classIds,
+        module_ids: moduleIds,
+        teacher_id: teacherId,
+      })
+    },
+    onSuccess: (_data, variables) => {
+      invalidateJointMemberQueries(
+        queryClient,
+        orgId,
+        [...(variables.classIds || []), ...(variables.previousClassIds || [])],
+      )
+    },
+  })
+}
+
+/**
+ * Desfaz uma junção. As turmas ficam com os mesmos módulos, todos separados.
+ */
+export const useDeleteJointGroup = () => {
+  const apiClient = useApiClient()
+  const queryClient = useQueryClient()
+  const orgId = useOrganization().organization?.id
+
+  return useMutation({
+    mutationFn: async ({ groupId }) => {
+      return apiClient.delete(`/joint-lesson-groups/${groupId}`)
+    },
+    onSuccess: (_data, variables) => {
+      invalidateJointMemberQueries(queryClient, orgId, variables.classIds)
+    },
   })
 }
 

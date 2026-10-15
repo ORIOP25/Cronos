@@ -642,6 +642,46 @@ async def create_teacher_profile(
     return teacher
 
 
+async def select_all_subject_modules(
+    db_session: AsyncSession,
+    *,
+    organization_id: int,
+    class_subject_link_id: int,
+    subject_id: int,
+) -> None:
+    """Explicitly mark every module of a subject on a class/subject link.
+
+    Tests that build a ``ClassSubjectLink`` directly call this so the selection
+    mirrors the product default (D03/D04) without any production auto-selection.
+    """
+    module_ids = (
+        (
+            await db_session.execute(
+                select(models.Module.id).where(
+                    models.Module.organization_id == organization_id,
+                    models.Module.subject_id == subject_id,
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if not module_ids:
+        return
+    await db_session.execute(
+        models.class_subject_module.insert().values(
+            [
+                {
+                    "organization_id": organization_id,
+                    "class_subject_link_id": class_subject_link_id,
+                    "module_id": module_id,
+                }
+                for module_id in module_ids
+            ]
+        )
+    )
+
+
 # ============================================================
 # FIXTURES DE AUTENTICAÇÃO (Fase 3 — com mock + user DB)
 # ============================================================

@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process'
 import { expect } from '@playwright/test'
 import {
   expectRouteReady,
@@ -184,6 +185,220 @@ async function ensureClassSubject(page, classId, subjectId, teacherId) {
     }
   }
   await apiRequest(page, 'PATCH', `/classes/${classId}/subjects/${subjectId}`, { teacher_id: teacherId })
+}
+
+async function ensureSubjectWithModules(page, fixture) {
+  const subjects = await apiRequest(page, 'GET', '/subjects/')
+  const existing = subjects.find((subject) => subject.name === fixture.subjectName)
+  const modules = fixture.moduleNames.map((name, index) => ({
+    ...(existing?.modules?.[index]?.id ? { id: existing.modules[index].id } : {}),
+    name,
+    code: fixture.moduleCodes[index],
+    hours_total: 2,
+    order: index,
+  }))
+  const payload = { name: fixture.subjectName, required_room_type: 'normal', modules }
+  if (existing) await apiRequest(page, 'PATCH', `/subjects/${existing.id}`, payload)
+  else await apiRequest(page, 'POST', '/subjects/', payload)
+  const refreshed = await apiRequest(page, 'GET', '/subjects/')
+  const saved = refreshed.find((subject) => subject.name === fixture.subjectName)
+  if (!saved) throw new Error(`Fixture subject not found: ${fixture.subjectName}`)
+  return saved
+}
+
+async function ensureNamedCourse(page, subjectId, fixture) {
+  const courses = await apiRequest(page, 'GET', '/courses/')
+  const existing = courses.find((course) => course.name === fixture.courseName)
+  const payload = { name: fixture.courseName, abbreviation: fixture.courseAbbreviation, subject_ids: [subjectId] }
+  return existing
+    ? apiRequest(page, 'PATCH', `/courses/${existing.id}`, payload)
+    : apiRequest(page, 'POST', '/courses/', { ...payload, teacher_assignments: [], classes_config: [] })
+}
+
+async function ensureNamedClass(page, courseId, name, dates) {
+  const course = await apiRequest(page, 'GET', `/courses/${courseId}`)
+  const existing = course.classes.find((classroom) => classroom.name === name)
+  const payload = { name, size: 20, grade_level: 10, start_year: dates.startYear, end_year: dates.endYear }
+  return existing
+    ? apiRequest(page, 'PATCH', `/courses/${courseId}/classes/${existing.id}`, payload)
+    : apiRequest(page, 'POST', `/courses/${courseId}/classes`, payload)
+}
+
+async function ensureNamedRoom(page, name, capacity = 30) {
+  const rooms = await apiRequest(page, 'GET', '/rooms/')
+  const existing = rooms.find((room) => room.name === name)
+  const payload = { name, type: 'normal', capacity }
+  return existing
+    ? apiRequest(page, 'PATCH', `/rooms/${existing.id}`, payload)
+    : apiRequest(page, 'POST', '/rooms/', payload)
+}
+
+async function prepareFixtureTeacher(page, subjectId) {
+  const members = await apiRequest(page, 'GET', '/members')
+  const teacherEmail = process.env.E2E_CLERK_TEACHER_EMAIL
+  if (!teacherEmail) throw new Error('E2E_CLERK_TEACHER_EMAIL is required for scheduler E2E.')
+  const teacherMember = members.items.find((member) => member.email.toLowerCase() === teacherEmail.toLowerCase())
+  if (!teacherMember) throw new Error(`Prepared E2E teacher member not found: ${teacherEmail}`)
+  const teacher = await apiRequest(page, 'PATCH', `/members/${teacherMember.id}`, {
+    capabilities: Array.from(new Set([...teacherMember.capabilities, 'teacher'])),
+    teacher_access_mode: teacherMember.teacher_access_mode || 'scheduler_only',
+    subject_ids: Array.from(new Set([...(teacherMember.subject_ids || []), subjectId])),
+    lock_version: teacherMember.lock_version,
+  })
+  if (!teacher.teacher_id) throw new Error('Prepared E2E teacher has no teacher_id.')
+  return teacher
+}
+
+async function configureFixtureSchool(page, dates) {
+  await apiRequest(page, 'POST', '/school/settings/', {
+    school_start_date: dates.schoolStartDate,
+    school_hard_end_date: dates.schoolHardEndDate,
+    preferred_end_date: dates.schoolHardEndDate,
+    repair_stability_window_days: 0,
+  })
+  await apiRequest(page, 'POST', '/school/grid-settings/regenerate', {
+    grid_settings: { lunch_window_start: '12:30', lunch_window_end: '14:00', lunch_min_duration_minutes: 60 },
+    timeslots: {
+      start_time: '09:00', end_time: '14:00', slot_duration_minutes: 60,
+      break_duration_minutes: 0, days_of_week: [0, 1, 2, 3, 4],
+    },
+  })
+}
+
+async function attachClassSubjectWithModules(page, classId, subjectId, teacherId, moduleIds) {
+  let subjects = await apiRequest(page, 'GET', `/classes/${classId}/subjects`)
+  if (!subjects.subjects.some((subject) => subject.subject_id === subjectId)) {
+    await apiRequest(page, 'POST', `/classes/${classId}/subjects`, { subject_id: subjectId })
+  }
+  subjects = await apiRequest(page, 'GET', `/classes/${classId}/subjects`)
+  for (const subject of subjects.subjects) {
+    if (subject.subject_id !== subjectId) {
+      await apiRequest(page, 'DELETE', `/classes/${classId}/subjects/${subject.subject_id}`)
+    }
+  }
+  await apiRequest(page, 'PATCH', `/classes/${classId}/subjects/${subjectId}`, {
+    teacher_id: teacherId,
+    module_ids: moduleIds,
+  })
+}
+
+const JOINT_ACCEPTANCE_FIXTURE = {
+  subjectName: 'E2E Joint Subject',
+  moduleNames: [
+    'E2E Joint M1',
+    'E2E Joint M2',
+    'E2E Joint M3',
+    'E2E Joint M4',
+    'E2E Joint M5',
+    'E2E Joint M6',
+  ],
+  moduleCodes: ['E2E-J1', 'E2E-J2', 'E2E-J3', 'E2E-J4', 'E2E-J5', 'E2E-J6'],
+  courseName: 'E2E Joint Course',
+  courseAbbreviation: 'E2EJOINT',
+  classNames: ['E2E Joint A', 'E2E Joint B'],
+  roomName: 'E2E Joint Room',
+}
+
+/**
+ * Two classes with four shared modules (M1..M4) and one separate module each
+ * (M5 in A, M6 in B), ready for the joint acceptance journey. The joint group
+ * is created later through the UI.
+ */
+export async function seedJointAcceptanceInputs(page) {
+  const dates = fixtureDates()
+  await resetSchedulerState(page)
+  const subject = await ensureSubjectWithModules(page, JOINT_ACCEPTANCE_FIXTURE)
+  const teacher = await prepareFixtureTeacher(page, subject.id)
+  await configureFixtureSchool(page, dates)
+  await ensureNamedRoom(page, JOINT_ACCEPTANCE_FIXTURE.roomName, 60)
+  const course = await ensureNamedCourse(page, subject.id, JOINT_ACCEPTANCE_FIXTURE)
+  const classes = []
+  for (const name of JOINT_ACCEPTANCE_FIXTURE.classNames) {
+    classes.push(await ensureNamedClass(page, course.id, name, dates))
+  }
+  const moduleIdByName = new Map(subject.modules.map((module) => [module.name, module.id]))
+  const names = JOINT_ACCEPTANCE_FIXTURE.moduleNames
+  const sharedModuleIds = names.slice(0, 4).map((name) => moduleIdByName.get(name))
+  const separateModuleIds = {
+    a: moduleIdByName.get(names[4]),
+    b: moduleIdByName.get(names[5]),
+  }
+  await attachClassSubjectWithModules(
+    page, classes[0].id, subject.id, teacher.teacher_id, [...sharedModuleIds, separateModuleIds.a],
+  )
+  await attachClassSubjectWithModules(
+    page, classes[1].id, subject.id, teacher.teacher_id, [...sharedModuleIds, separateModuleIds.b],
+  )
+  return {
+    courseId: course.id,
+    subjectId: subject.id,
+    classes: classes.map((classroom) => ({ id: classroom.id, name: classroom.name })),
+    sharedModuleIds,
+    separateModuleIds,
+  }
+}
+
+// The Compose project the runner owns for this run: a generated local project or
+// the one an external (CI) run already exports. Nothing else may reach the seed.
+const RESERVED_E2E_COMPOSE_PROJECT = /^cronos-(?:test|ci)-/
+
+/**
+ * Move the first published joint lesson of the E2E Joint fixture into the past
+ * so the acceptance journey can log it and decide its gap. The test-only build
+ * runs inside the backend container the caller owns. The project and file come
+ * from the runner environment, are validated against the reserved prefixes and
+ * are never guessed or printed. Any guard failure exits non-zero and this
+ * helper fails closed without a fallback.
+ */
+export async function seedEndedJointLesson(page) {
+  const settings = await apiRequest(page, 'GET', '/school/settings/')
+  const organizationId = settings?.organization_id
+  const clerkOrgId = await page.evaluate(() => window.Clerk?.organization?.id ?? null)
+  const project = process.env.E2E_COMPOSE_PROJECT_NAME ?? ''
+  const composeFile = process.env.E2E_COMPOSE_FILE ?? ''
+  if (!organizationId) throw new Error('The E2E school settings did not expose organization_id.')
+  if (!clerkOrgId) throw new Error('window.Clerk.organization.id is required to guard the joint seed.')
+  if (!composeFile) throw new Error('E2E_COMPOSE_FILE is required to run the joint seed.')
+  if (!RESERVED_E2E_COMPOSE_PROJECT.test(project)) {
+    throw new Error(`Refusing to seed joint history outside a reserved E2E Compose project: ${project || '(unset)'}`)
+  }
+  const result = spawnSync('docker', [
+    'compose', '-f', composeFile, '-p', project, 'exec', '-T', 'backend',
+    'python', 'scripts/seed_e2e_joint_history.py',
+    '--organization-id', String(organizationId),
+    '--expected-clerk-org-id', clerkOrgId,
+  ], { encoding: 'utf8' })
+  if (result.error) throw result.error
+  if (result.status !== 0) {
+    throw new Error(`seed_e2e_joint_history exited ${result.status}: ${result.stderr?.trim() || result.stdout?.trim()}`)
+  }
+  const lastLine = (result.stdout ?? '').trim().split(/\r?\n/).filter(Boolean).at(-1)
+  if (!lastLine) throw new Error('seed_e2e_joint_history returned no JSON result.')
+  const history = JSON.parse(lastLine)
+  if (!history.school_date || !Array.isArray(history.lesson_ids) || history.lesson_ids.length < 2) {
+    throw new Error(`seed_e2e_joint_history returned an unexpected result: ${lastLine}`)
+  }
+  return history
+}
+
+/**
+ * Undo the joint group this journey created. Once a member class has executed a
+ * joint module the product refuses the undo (J19), so the group stays and the
+ * disposable test stack removes it; the refusal is reported instead of forced.
+ */
+export async function deleteJointGroup(page, classId) {
+  const subjects = await apiRequest(page, 'GET', `/classes/${classId}/subjects`)
+  const groupId = subjects.subjects.find((subject) => subject.joint_group)?.joint_group?.id
+  if (!groupId) return 'absent'
+  try {
+    await apiRequest(page, 'DELETE', `/joint-lesson-groups/${groupId}`)
+    return 'deleted'
+  } catch (error) {
+    if (/failed: 409\b/.test(error?.message ?? '') && error.message.includes('JOINT_MODULE_STARTED')) {
+      return 'started'
+    }
+    throw error
+  }
 }
 
 export async function waitForJobToSucceed(page, jobId) {

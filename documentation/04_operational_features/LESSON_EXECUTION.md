@@ -42,6 +42,7 @@ Separating them preserves schedule history and supports occurrence decisions.
 
 The write endpoints are `/api/v1/schedule/operational-blocks/{id}/log` and `/api/v1/schedule/lessons/{lesson_id}/log`.
 Both use `PUT`. The operational-block route returns a lesson log; the lesson route returns `SchedulerV1LessonLogResponse`. The operational-block route requires a `V1` origin and uses the v1 ledger.
+The lesson route accepts `absent_class_ids` (default empty) for a joint lesson and returns `classes`.
 
 ## Contracts and Invariants
 
@@ -59,6 +60,12 @@ Both use `PUT`. The operational-block route returns a lesson log; the lesson rou
 - A planned substitution exposes `substitute_execution_status` and `block_source="operational"`.
 - The normal summary route cannot change the state of a lesson with an active occurrence decision.
 - An open week guard blocks creation, completion, and reversal with `409 week_locked`.
+- A joint lesson is a group of `scheduler_lesson_v1` siblings that share `(version_id, stable_key)`, date, teacher, room, interval, credit and slices. `lesson_id` may be any sibling.
+- `absent_class_ids` is only valid on a joint lesson and must be a proper subset of its member classes. An unknown class returns `422 absent_class_unknown`; every class absent returns `422 absent_classes_all`.
+- `COMPLETED` with absent classes credits every present class with the same summary and notes and leaves each absent class as a pending occurrence with the note `Turma ausente`. `OCCURRENCE` leaves every sibling as an occurrence.
+- The service locks every sibling log by `id` and applies all writes in one transaction. A later correction reverses or credits only the class whose state changed.
+- The lesson-route response adds `classes` with `class_id`, `status`, and `credited_minutes` per member class. Its top-level `credited_minutes` counts the physical lesson once; `classes[].credited_minutes` carries the per-class detail.
+- Completing a lesson credits the planning view. A module deselected after publication never receives new credit: the credit follows the next selected module. A joint lesson credits the joint progress identically for every present class; a deficit (`D`) unit keeps its per-class frontier. Already logged credits are untouched.
 
 ## States and Transitions
 
@@ -89,7 +96,7 @@ Completing a `V1` operational block credits the substitute curricular assignment
 - `backend/app/scheduler/infrastructure/operations.py`
 - `backend/app/models.py`
 - `frontend/src/components/LessonLogModal.jsx`
-- Tests: `frontend/src/test/MySchedules.test.jsx`, `frontend/src/test/WeekGrid.test.jsx`, `frontend/src/test/weekSubmission.test.js`
+- Tests: `frontend/src/test/MySchedules.test.jsx`, `frontend/src/test/WeekGrid.test.jsx`, `frontend/src/test/weekSubmission.test.js`, `backend/tests/integration/committed/test_joint_lesson_operations.py`
 
 ## Related Documents
 

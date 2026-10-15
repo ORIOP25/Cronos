@@ -24,7 +24,7 @@ from app.scheduler.domain.candidate import (
     continuous_break_minutes,
 )
 
-VALIDATOR_VERSION = "v4"
+VALIDATOR_VERSION = "v5"
 
 
 class ValidationViolationCode(StrEnum):
@@ -49,6 +49,7 @@ class ValidationViolationCode(StrEnum):
     RESERVATION_DUPLICATE = "RESERVATION_DUPLICATE"
     DEBT_OVERFLOW = "DEBT_OVERFLOW"
     LUNCH_BREAK_VIOLATION = "LUNCH_BREAK_VIOLATION"
+    PRECEDENCE_VIOLATION = "PRECEDENCE_VIOLATION"
 
 
 @dataclass(frozen=True)
@@ -288,7 +289,7 @@ def _physical_key(lesson: ScheduledLesson) -> tuple:
         lesson.credit_minutes,
         lesson.source_lesson_id,
         lesson.teacher_id,
-        lesson.class_id,
+        lesson.class_ids,
     )
 
 
@@ -316,7 +317,8 @@ def _check_lunch(
             _local_minutes(lesson.period.start_local),
             _local_minutes(lesson.period.end_local),
         )
-        occupied[("class", assignment.class_id, lesson.period.school_date)].append(interval)
+        for class_id in assignment.class_ids:
+            occupied[("class", class_id, lesson.period.school_date)].append(interval)
         occupied[("teacher", teacher_id, lesson.period.school_date)].append(interval)
     for (resource_type, resource_id, _), intervals in sorted(occupied.items()):
         if continuous_break_minutes(intervals, rule) < rule.minimum_minutes:
@@ -335,7 +337,8 @@ def _check_reservations(
     lessons: Mapping[int, ScheduledLesson],
     violations: list[ValidationViolation],
 ) -> None:
-    reserved_lesson: dict[int, int] = defaultdict(int)
+    owners = {row.assignment_id: row for row in snapshot.assignments}
+    reserved_lesson: dict[tuple[int, int | None], int] = defaultdict(int)
     reserved_claim: dict[int, int] = defaultdict(int)
     seen: set[tuple[int, int]] = set()
     for allocation in snapshot.reservations:
@@ -371,17 +374,28 @@ def _check_reservations(
             )
             continue
         seen.add(key)
-        if snapshot.claim_assignments.get(allocation.claim_id) != lesson.assignment_id:
+        owner = owners.get(lesson.assignment_id)
+        claim_class = snapshot.claim_classes.get(allocation.claim_id)
+        member_classes = (
+            lesson.class_ids
+            if lesson.class_ids is not None
+            else (owner.class_ids if owner is not None else ())
+        )
+        if claim_class is None and member_classes:
+            claim_class = member_classes[0]
+        if snapshot.claim_assignments.get(allocation.claim_id) != lesson.assignment_id or (
+            claim_class is not None and claim_class not in member_classes
+        ):
             violations.append(
                 ValidationViolation(
                     ValidationViolationCode.RESERVATION_ASSIGNMENT_MISMATCH,
-                    "A recovery reservation does not belong to the lesson assignment.",
+                    "A recovery reservation does not belong to the lesson unit and class.",
                     lesson_id=allocation.lesson_id,
                 )
             )
-        reserved_lesson[allocation.lesson_id] += allocation.minutes
+        reserved_lesson[(allocation.lesson_id, claim_class)] += allocation.minutes
         reserved_claim[allocation.claim_id] += allocation.minutes
-    for lesson_id, minutes in sorted(reserved_lesson.items()):
+    for (lesson_id, _), minutes in sorted(reserved_lesson.items(), key=lambda item: str(item[0])):
         if minutes > lessons[lesson_id].credit_minutes:
             violations.append(
                 ValidationViolation(
@@ -429,12 +443,12 @@ def lesson_violations(
         return tuple(violations)
     if lesson.lesson_id not in protected_ids and (
         lesson.teacher_id not in (None, assignment.teacher_id)
-        or lesson.class_id not in (None, assignment.class_id)
+        or (lesson.class_ids is not None and lesson.class_ids != assignment.class_ids)
     ):
         violations.append(
             ValidationViolation(
                 ValidationViolationCode.ASSIGNMENT_RESOURCE_MISMATCH,
-                "A new lesson changes the assigned teacher or class.",
+                "A new lesson changes the assigned teacher or classes.",
                 assignment_id=assignment.assignment_id,
                 lesson_id=lesson.lesson_id,
             )
@@ -459,7 +473,10 @@ def lesson_violations(
         lesson.period.timezone_name != snapshot.timezone_name
         or lesson.period.school_date < snapshot.origin
         or lesson.period.school_date > limit
-        or snapshot.blocked_on(assignment.class_id, lesson.period.school_date)
+        or any(
+            snapshot.blocked_on(class_id, lesson.period.school_date)
+            for class_id in assignment.class_ids
+        )
     ):
         violations.append(
             ValidationViolation(
@@ -487,11 +504,9 @@ def lesson_violations(
                 lesson_id=lesson.lesson_id,
             )
         )
-    resources = (
-        (UnavailableResource.CLASS, assignment.class_id),
-        (UnavailableResource.TEACHER, _teacher_for(lesson, assignment)),
-        (UnavailableResource.ROOM, lesson.room_id),
-    )
+    resources = [(UnavailableResource.TEACHER, _teacher_for(lesson, assignment))]
+    resources.extend((UnavailableResource.CLASS, class_id) for class_id in assignment.class_ids)
+    resources.append((UnavailableResource.ROOM, lesson.room_id))
     reported: set[tuple[str, int]] = set()
     for resource_type, resource_id in resources:
         if (resource_type.value, resource_id) in reported:
@@ -515,6 +530,41 @@ def lesson_violations(
             )
     _check_slices(assignment, lesson, violations)
     return tuple(violations)
+
+
+def _check_precedences(
+    snapshot: PlanningSnapshot,
+    candidate: CandidateSchedule,
+    protected_ids: frozenset[int],
+    violations: list[ValidationViolation],
+) -> None:
+    """Every new lesson of the target starts after the last lesson of the source.
+
+    Protected lessons of either unit are facts and are never reported: a
+    published target lesson keeps its slot even when the source moved earlier.
+    """
+    if not snapshot.precedences:
+        return
+    by_assignment: dict[int, list[ScheduledLesson]] = defaultdict(list)
+    for lesson in candidate.lessons:
+        by_assignment[lesson.assignment_id].append(lesson)
+    for source, target in snapshot.precedences:
+        source_lessons = by_assignment.get(source, [])
+        if not source_lessons:
+            continue
+        last_end = max(lesson.period.end_utc for lesson in source_lessons)
+        for lesson in by_assignment.get(target, []):
+            if lesson.lesson_id in protected_ids:
+                continue
+            if lesson.period.start_utc < last_end:
+                violations.append(
+                    ValidationViolation(
+                        ValidationViolationCode.PRECEDENCE_VIOLATION,
+                        "A new lesson starts before its predecessor unit ended.",
+                        assignment_id=target,
+                        lesson_id=lesson.lesson_id,
+                    )
+                )
 
 
 def validate_candidate(
@@ -588,8 +638,11 @@ def validate_candidate(
     for assignment_id, lessons in accountable.items():
         assignment = assignments[assignment_id]
         for lesson in lessons:
+            for class_id in assignment.class_ids:
+                resource_intervals[("class", class_id, lesson.period.school_date)].append(
+                    (lesson.period.start_utc, lesson.period.end_utc)
+                )
             for kind, resource_id in (
-                ("class", assignment.class_id),
                 ("teacher", _teacher_for(lesson, assignment)),
                 ("room", lesson.room_id),
             ):
@@ -625,6 +678,7 @@ def validate_candidate(
             )
 
     _check_reservations(snapshot, lesson_by_id, violations)
+    _check_precedences(snapshot, candidate, protected_ids, violations)
     _check_lunch(snapshot, candidate, violations)
 
     credited_minutes = {
@@ -635,11 +689,11 @@ def validate_candidate(
     }
     completion_dates: dict[int, date] = {}
     for assignment_id, lessons in accountable.items():
-        class_id = assignments[assignment_id].class_id
-        for lesson in lessons:
-            previous = completion_dates.get(class_id)
-            if previous is None or lesson.period.school_date > previous:
-                completion_dates[class_id] = lesson.period.school_date
+        for class_id in assignments[assignment_id].class_ids:
+            for lesson in lessons:
+                previous = completion_dates.get(class_id)
+                if previous is None or lesson.period.school_date > previous:
+                    completion_dates[class_id] = lesson.period.school_date
     return ValidationReport(
         validator_version=VALIDATOR_VERSION,
         violations=tuple(violations),

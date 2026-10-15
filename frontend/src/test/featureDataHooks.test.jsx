@@ -15,14 +15,18 @@ import {
   useClassSubjects,
   useCopyClassAvailability,
   useCourses,
+  useCreateJointGroup,
   useCreateSubject,
+  useDeleteJointGroup,
   useEligibleTeachers,
+  useJointCandidates,
   useRooms,
   useSaveClassAvailability,
   useSubjects,
   useTimeslots,
   useUpdateClassSubject,
   useUpdateCourseClass,
+  useUpdateJointGroup,
   useWeekGridVersions,
 } from '../features/catalog/data'
 import {
@@ -301,6 +305,192 @@ describe('vertical feature data hooks', () => {
       ['dashboard', 'org-a'],
       ['readiness-bases', 'org-a'],
     ]))
+  })
+
+  it('sends only the defined fields and refreshes the class, teacher progress, and preparation queries', async () => {
+    const { queryClient, wrapper } = createHarness()
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
+    const setQueryData = vi.spyOn(queryClient, 'setQueryData')
+    const response = { id: 7, subject_id: 7, modules: [{ id: 1, selected: false }] }
+    apiClient.patch.mockResolvedValue(response)
+    const mutation = renderHook(() => useUpdateClassSubject(), { wrapper })
+
+    await act(() => mutation.result.current.mutateAsync({ classId: 4, subjectId: 7, moduleIds: [2, 3] }))
+
+    expect(apiClient.patch).toHaveBeenCalledWith('/classes/4/subjects/7', { module_ids: [2, 3] })
+    expect(setQueryData).toHaveBeenCalledWith(['class-subjects', 'org-a', 4], response)
+    expect(invalidate.mock.calls.map(([options]) => options.queryKey)).toEqual(expect.arrayContaining([
+      ['classes', 'org-a'],
+      ['teacher-progress', 'org-a'],
+      ['dashboard', 'org-a'],
+      ['readiness-bases', 'org-a'],
+    ]))
+  })
+
+  it('invalidates the other joint member class caches after a teacher update', async () => {
+    const { queryClient, wrapper } = createHarness()
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
+    const response = {
+      class_name: '10.º A',
+      subjects: [
+        { subject_id: 7, joint_group: { id: 3, classes: [{ class_id: 11 }, { class_id: 12 }] } },
+      ],
+    }
+    apiClient.patch.mockResolvedValue(response)
+    queryClient.setQueryData(['class-subjects', 'org-a', 11], { subjects: [] })
+    queryClient.setQueryData(['class-subjects', 'org-a', 12], { subjects: [] })
+    const mutation = renderHook(() => useUpdateClassSubject(), { wrapper })
+
+    await act(() => mutation.result.current.mutateAsync({ classId: 11, subjectId: 7, teacherId: 9 }))
+
+    expect(apiClient.patch).toHaveBeenCalledWith('/classes/11/subjects/7', { teacher_id: 9 })
+    expect(queryClient.getQueryData(['class-subjects', 'org-a', 11])).toEqual(response)
+    expect(invalidate.mock.calls.map(([options]) => options.queryKey)).toEqual(expect.arrayContaining([
+      ['class-subjects', 'org-a', 12],
+      ['joint-candidates', 'org-a'],
+      ['classes', 'org-a'],
+      ['teacher-progress', 'org-a'],
+      ['readiness-bases', 'org-a'],
+    ]))
+  })
+
+  it('loads the joint candidates for the selected subject and class', async () => {
+    apiClient.get.mockResolvedValue([
+      { class_id: 5, selected_module_ids: [1, 2], started_module_ids: [1] },
+    ])
+    const { queryClient, wrapper } = createHarness()
+    const read = renderHook(() => useJointCandidates(7, 4), { wrapper })
+
+    await waitFor(() => expect(read.result.current.isSuccess).toBe(true))
+    expect(apiClient.get).toHaveBeenCalledWith('/subjects/7/joint-candidates', {
+      params: { class_id: 4 },
+    })
+    expect(queryClient.getQueryCache().getAll().map(({ queryKey }) => queryKey))
+      .toContainEqual(['joint-candidates', 'org-a', 7, 4, null])
+  })
+
+  it('loads the current joint group members with the optional group id', async () => {
+    apiClient.get.mockResolvedValue([
+      { class_id: 4, name: '10.º A', selected_module_ids: [1], started_module_ids: [] },
+    ])
+    const { queryClient, wrapper } = createHarness()
+    const read = renderHook(() => useJointCandidates(7, 4, 9), { wrapper })
+
+    await waitFor(() => expect(read.result.current.isSuccess).toBe(true))
+    expect(apiClient.get).toHaveBeenCalledWith('/subjects/7/joint-candidates', {
+      params: { class_id: 4, group_id: 9 },
+    })
+    expect(queryClient.getQueryCache().getAll().map(({ queryKey }) => queryKey))
+      .toContainEqual(['joint-candidates', 'org-a', 7, 4, 9])
+  })
+
+  it('requests the source class facts when include_source is set', async () => {
+    apiClient.get.mockResolvedValue([
+      { class_id: 4, name: '10.º A', selected_module_ids: [1], started_module_ids: [1] },
+    ])
+    const { queryClient, wrapper } = createHarness()
+    const read = renderHook(() => useJointCandidates(7, 4, null, true), { wrapper })
+
+    await waitFor(() => expect(read.result.current.isSuccess).toBe(true))
+    expect(apiClient.get).toHaveBeenCalledWith('/subjects/7/joint-candidates', {
+      params: { class_id: 4, include_source: true },
+    })
+    expect(queryClient.getQueryCache().getAll().map(({ queryKey }) => queryKey))
+      .toContainEqual(['joint-candidates', 'org-a', 7, 4, null, 'include_source'])
+  })
+
+  it('invalidates every member class after creating a joint group', async () => {
+    const { queryClient, wrapper } = createHarness()
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
+    apiClient.post.mockResolvedValue({ id: 9 })
+    const mutation = renderHook(() => useCreateJointGroup(), { wrapper })
+
+    await act(() => mutation.result.current.mutateAsync({
+      subjectId: 7,
+      classIds: [4, 5],
+      moduleIds: [1, 2],
+      teacherId: 3,
+    }))
+
+    expect(apiClient.post).toHaveBeenCalledWith('/joint-lesson-groups', {
+      subject_id: 7,
+      class_ids: [4, 5],
+      module_ids: [1, 2],
+      teacher_id: 3,
+    })
+    expect(invalidate.mock.calls.map(([options]) => options.queryKey)).toEqual(expect.arrayContaining([
+      ['class-subjects', 'org-a', 4],
+      ['class-subjects', 'org-a', 5],
+      ['classes', 'org-a'],
+      ['readiness-bases', 'org-a'],
+      ['joint-candidates', 'org-a'],
+    ]))
+  })
+
+  it('invalidates new and old member classes after updating a joint group', async () => {
+    const { queryClient, wrapper } = createHarness()
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
+    apiClient.put.mockResolvedValue({ id: 9 })
+    const mutation = renderHook(() => useUpdateJointGroup(), { wrapper })
+
+    await act(() => mutation.result.current.mutateAsync({
+      groupId: 9,
+      classIds: [5, 6],
+      previousClassIds: [4],
+      moduleIds: [1],
+      teacherId: 3,
+    }))
+
+    expect(apiClient.put).toHaveBeenCalledWith('/joint-lesson-groups/9', {
+      class_ids: [5, 6],
+      module_ids: [1],
+      teacher_id: 3,
+    })
+    expect(invalidate.mock.calls.map(([options]) => options.queryKey)).toEqual(expect.arrayContaining([
+      ['class-subjects', 'org-a', 5],
+      ['class-subjects', 'org-a', 6],
+      ['class-subjects', 'org-a', 4],
+      ['classes', 'org-a'],
+      ['joint-candidates', 'org-a'],
+    ]))
+  })
+
+  it('invalidates the former member classes after deleting a joint group', async () => {
+    const { queryClient, wrapper } = createHarness()
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
+    apiClient.delete.mockResolvedValue(undefined)
+    const mutation = renderHook(() => useDeleteJointGroup(), { wrapper })
+
+    await act(() => mutation.result.current.mutateAsync({ groupId: 9, classIds: [4, 5] }))
+
+    expect(apiClient.delete).toHaveBeenCalledWith('/joint-lesson-groups/9')
+    expect(invalidate.mock.calls.map(([options]) => options.queryKey)).toEqual(expect.arrayContaining([
+      ['class-subjects', 'org-a', 4],
+      ['class-subjects', 'org-a', 5],
+      ['classes', 'org-a'],
+      ['readiness-bases', 'org-a'],
+      ['joint-candidates', 'org-a'],
+    ]))
+  })
+
+  it('sends class_ids when deciding a joint occurrence', async () => {
+    const { wrapper } = createHarness()
+    const mutation = renderHook(() => useUpdateOccurrence(), { wrapper })
+
+    await act(() => mutation.result.current.mutateAsync({
+      id: 9,
+      status: 'GAP',
+      version: 2,
+      classIds: [4, 5],
+    }))
+
+    expect(apiClient.patch).toHaveBeenCalledWith('/occurrences/9', {
+      status: 'GAP',
+      version: 2,
+      substitute_teacher_id: null,
+      substitute_subject_id: null,
+      class_ids: [4, 5],
+    })
   })
 
   it('caches the updated class-subjects response after a module change', async () => {

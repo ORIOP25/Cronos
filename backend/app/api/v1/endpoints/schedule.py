@@ -328,6 +328,7 @@ async def upsert_scheduler_v1_lesson_log(
             notes=payload.notes,
             now_utc=datetime.now(UTC),
             planning_relevant=payload.status == "OCCURRENCE",
+            absent_class_ids=payload.absent_class_ids,
         )
     except operations.OperationsError as exc:
         _raise_operations_error(exc)

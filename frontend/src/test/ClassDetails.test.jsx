@@ -290,4 +290,85 @@ describe('ClassDetails composition', () => {
     expect(screen.getByText('Disponibilidade — 10.º A')).toBeInTheDocument()
     expect(screen.getByText(/Os alunos não usam a aplicação/)).toBeInTheDocument()
   })
+
+  it('shows the selected module count per discipline in the subjects table', () => {
+    hooks.classSubjects.mockReturnValue({
+      data: {
+        subjects: [
+          { id: 1, subject_name: 'Algoritmos', teacher_id: null, teacher_name: null, modules: [
+            { id: 11, selected: true },
+            { id: 12, selected: false },
+          ] },
+          { id: 2, subject_name: 'Zeta', teacher_id: 5, teacher_name: 'Ana Silva', modules: [
+            { id: 21, selected: true },
+            { id: 22, selected: true },
+            { id: 23, selected: false },
+          ] },
+        ],
+      },
+    })
+
+    renderClassDetails()
+
+    const subjectsCard = screen.getByText('Disciplinas & Professores').closest('.card')
+    expect(within(subjectsCard).getByRole('columnheader', { name: 'Módulos' })).toBeInTheDocument()
+    expect(within(subjectsCard).getByText('1/2')).toBeInTheDocument()
+    expect(within(subjectsCard).getByText('2/3')).toBeInTheDocument()
+  })
+
+  it('tells the user when a discipline has no selected modules', () => {
+    hooks.classDetails.mockReturnValue({
+      data: createClassData({
+        subjects: [{
+          id: 9,
+          name: 'Sem módulos',
+          required_room_type: 'normal',
+          total_hours: 0,
+          completed_hours: 0,
+          overall_percentage: 0,
+          modules: [],
+        }],
+      }),
+      isLoading: false,
+      error: null,
+    })
+
+    renderClassDetails()
+
+    expect(screen.getByText('Nenhum módulo selecionado para esta turma.')).toBeInTheDocument()
+  })
+
+  it('marks a joint discipline with the other classes in the tooltip', () => {
+    hooks.classSubjects.mockReturnValue({
+      data: {
+        subjects: [
+          {
+            id: 1,
+            subject_name: 'Português',
+            teacher_id: 5,
+            teacher_name: 'Ana Silva',
+            modules: [],
+            joint_group: {
+              id: 3,
+              subject_id: 1,
+              subject_name: 'Português',
+              teacher_id: 5,
+              module_ids: [11],
+              classes: [
+                { class_id: 11, class_name: '10.º MKT', course_abbreviation: 'MKT', grade_level: 10 },
+                { class_id: 12, class_name: '10.º MAS', course_abbreviation: 'MAS', grade_level: 10 },
+              ],
+            },
+          },
+        ],
+      },
+    })
+
+    renderClassDetails()
+
+    const subjectsCard = screen.getByText('Disciplinas & Professores').closest('.card')
+    const badge = within(subjectsCard).getByText('Conjunta')
+    expect(badge).toHaveAttribute('title', expect.stringContaining('10.º MAS'))
+    expect(badge.getAttribute('title')).not.toContain('10.º MKT')
+  })
 })

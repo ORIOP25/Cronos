@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Callable
+from datetime import datetime
 from fractions import Fraction
 from time import monotonic
 
@@ -51,9 +52,21 @@ def construct_recovery(
     def interrupted() -> bool:
         return monotonic() >= deadline or (should_cancel is not None and should_cancel())
 
+    predecessors: dict[int, list[int]] = defaultdict(list)
+    for source, target in snapshot.precedences:
+        predecessors[target].append(source)
+    last_end: dict[int, datetime] = {}
+
+    def ready(identity: int, period: Period) -> bool:
+        """All predecessor units are finished before the period (WBS 3.4)."""
+        return all(
+            remaining[source] <= 0 and last_end.get(source, period.start_utc) <= period.start_utc
+            for source in predecessors.get(identity, ())
+        )
+
     def occupy(assignment: Assignment, period: Period, room: int, teacher: int) -> None:
         for kind, identity in (
-            ("class", assignment.class_id),
+            *(("class", class_id) for class_id in assignment.class_ids),
             ("teacher", teacher),
             ("room", room),
         ):
@@ -63,7 +76,10 @@ def construct_recovery(
                 occupancy[key].append(_local_interval(period))
 
     def free_rooms(assignment: Assignment, period: Period) -> tuple[int, ...]:
-        for kind, identity in (("class", assignment.class_id), ("teacher", assignment.teacher_id)):
+        for kind, identity in (
+            *(("class", class_id) for class_id in assignment.class_ids),
+            ("teacher", assignment.teacher_id),
+        ):
             key = (kind, identity, period.school_date)
             if any(
                 period.start_utc < row.end_utc and row.start_utc < period.end_utc
@@ -101,11 +117,17 @@ def construct_recovery(
         credit = min(remaining[assignment.assignment_id], period.duration_minutes)
         selections[assignment.assignment_id].append((period, room, credit))
         remaining[assignment.assignment_id] -= credit
+        current_end = last_end.get(assignment.assignment_id)
+        if current_end is None or period.end_utc > current_end:
+            last_end[assignment.assignment_id] = period.end_utc
         occupy(assignment, period, room, assignment.teacher_id)
 
     for row in snapshot.protected_lessons:
         assignment = assignments[row.assignment_id]
         occupy(assignment, row.period, row.room_id, row.teacher_id or assignment.teacher_id)
+        current_end = last_end.get(row.assignment_id)
+        if current_end is None or row.period.end_utc > current_end:
+            last_end[row.assignment_id] = row.period.end_utc
     for identity, assignment in assignments.items():
         if interrupted():
             return None
@@ -120,6 +142,7 @@ def construct_recovery(
             assignment is None
             or row.lesson_id in protected_ids
             or remaining[row.assignment_id] <= 0
+            or not ready(row.assignment_id, row.period)
         ):
             continue
         patterns.setdefault(
@@ -143,7 +166,9 @@ def construct_recovery(
         options = [
             (row, rooms)
             for row in options_by_period[period]
-            if remaining[row.assignment_id] > 0 and (rooms := free_rooms(row, period))
+            if remaining[row.assignment_id] > 0
+            and ready(row.assignment_id, period)
+            and (rooms := free_rooms(row, period))
         ]
         options.sort(
             key=lambda item: (
@@ -159,8 +184,9 @@ def construct_recovery(
                 ),
                 any(
                     row.overlaps(period)
+                    for class_id in item[0].class_ids
                     for row in snapshot.soft_unavailable_on(
-                        UnavailableResource.CLASS, item[0].class_id, period.school_date
+                        UnavailableResource.CLASS, class_id, period.school_date
                     )
                 ),
                 item[0].assignment_id,

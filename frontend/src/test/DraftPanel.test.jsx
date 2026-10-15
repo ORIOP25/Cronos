@@ -142,4 +142,26 @@ describe('DraftPanel', () => {
       /depois da data preferencial/i
     )
   })
+
+  it('marks a joint lesson in the proposal diff', () => {
+    useScheduleDiff.mockImplementation(() => ({
+      data: {
+        ...diff,
+        physical: [{ ...diff.physical[0], joint_class_ids: [7, 8] }],
+      },
+      isLoading: false,
+    }))
+
+    render(
+      <DraftPanel
+        draft={proposal}
+        onApprove={vi.fn()}
+        onReject={vi.fn()}
+      />
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ver alterações' }))
+
+    expect(screen.getByText('Conjunta')).toBeInTheDocument()
+  })
 })

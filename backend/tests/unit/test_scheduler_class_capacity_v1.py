@@ -39,7 +39,7 @@ def _snapshot(periods, assignments, executed=None):
 def assignment(identity, class_id, teacher_id, room_id, minutes):
     return Assignment(
         identity,
-        class_id,
+        (class_id,),
         identity,
         teacher_id,
         frozenset({room_id}),

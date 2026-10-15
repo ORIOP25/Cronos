@@ -271,6 +271,28 @@ sum(selected and fixed occupancy for a resource over overlapping periods) <= 1
 Compact exclusivity groups equal intervals and uses `AddAtMostOne`.
 Do not merge groups linked only by transitive overlap. The ends of an overlap chain must remain selectable.
 
+### Teaching units, joint precedence and diagnosis
+
+`domain/teaching_units.py` `build_teaching_units` turns class assignments into teaching units.
+`A:{assignment}` is an assignment without a joint group; `S:{assignment}:{module}` is a maximal separate segment;
+`J:{group}:{module}` is a shared joint segment; `D:{assignment}:{module}` is a per-class deficit segment.
+Keys use module ids, never positions.
+A joint module credits every member class with the joint progress (the largest executed minutes).
+A class behind gets a `D` unit whose per-module requirement is that joint progress.
+Unit identifiers are stable inside a snapshot: the assignment id for `A`, and consecutive ids above the largest assignment id in key order for `S`, `J` and `D`.
+
+Per class the stages are `S0, {J1,D1}, S1, {J2,D2}, ..., Sn`.
+Each remaining unit of a stage precedes every remaining unit of the next stage, and `Jk` and `Dk` never precede each other.
+A unit with no remaining minutes is skipped and the chain continues.
+Construction and recovery only start a unit after its predecessors finish and the last predecessor lesson ends before the period.
+A `D` unit is an ordinary residual unit; it competes on the same progress fraction every open debt uses and needs no extra snapshot metadata or `teaching_unit_key`.
+
+A single joint unit left without any eligible shared period is a proven isolation.
+`domain/diagnostics.py` reports `JOINT_NO_COMMON_TIME` with the classes and the subject.
+Complete generation returns `INFEASIBLE` carrying that code on the result stop reason and the diagnostic message; the search outcome uses the same message.
+A general deficit keeps `INSUFFICIENT_INTERSECTION`; a cancellation or interrupted search is never relabelled as joint.
+`lab/typology.py` `build_joint_typology_fixture` builds the joint family (general subjects shared, technical subjects separate) for the 48-class pilot.
+
 ### Exact credits and annual quotas
 
 Subtract protected credits before planning each editable assignment residual.

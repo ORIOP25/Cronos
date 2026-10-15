@@ -86,6 +86,7 @@ function getClassSubjects(snapshot, scenario, classId) {
           subject_id: snapshotSubject?.id,
           subject_name: subject.name,
           required_room_type: subject.roomType.toLowerCase(),
+          joint_group: null,
           teacher_id: snapshot.teachers.find((item) => item.name === teacher?.name)?.id ?? null,
           teacher_name: teacher?.name ?? null,
           // O guia mostra a seleção de módulos apenas para leitura, com tudo marcado.

@@ -10,6 +10,7 @@ import {
   cleanupOwnedResources,
   criticalPytestArgs,
   displayArgs,
+  e2eStackTargetIdentity,
   frontendFastArgs,
   frontendJunitEnv,
   isOwnedResource,
@@ -29,6 +30,16 @@ import { classifyPath, collectFiles, countNonBlankLines, measureFiles } from './
 test('the isolated E2E frontend uses the Clerk test browser policy', () => {
   const compose = readFileSync(join(ROOT, 'docker-compose.test.yml'), 'utf8')
   assert.match(compose, /frontend:\s+build:\s+context: \.\/frontend\s+target: ci/)
+})
+
+test('the CI E2E backend ships the administrative database URL the joint seed needs', () => {
+  // The joint-history seed opens its own connection to read the RLS-forced
+  // organization row, so the CI backend must expose the migrator URL the way
+  // the isolated test stack already does. Without it the seed falls back to the
+  // RLS-bound app URL and cannot find the organization.
+  const compose = readFileSync(join(ROOT, 'docker-compose.ci.yml'), 'utf8')
+  const backendService = compose.slice(compose.indexOf('\n  backend:'), compose.indexOf('\n  worker:'))
+  assert.match(backendService, /MIGRATION_DATABASE_URL:\s+postgresql\+psycopg2:\/\/cronos_migrator:/)
 })
 
 test('parses forwarded runner arguments without rebuilding a shell command', () => {
@@ -413,6 +424,30 @@ test('a throwing first cleaner never prevents stopping the owned test stack', as
 test('refuses resources that are not owned by the current run', () => {
   assert.equal(isOwnedResource('cronos-test-owned', new Set(['cronos-test-owned'])), true)
   assert.equal(isOwnedResource('cronos-dev', new Set(['cronos-test-owned'])), false)
+})
+
+test('exposes only the non-secret Compose project name to the browser specs', () => {
+  assert.deepEqual(
+    e2eStackTargetIdentity({
+      externalStack: false,
+      composeProjectName: undefined,
+      stackProject: 'cronos-test-owned',
+    }),
+    { E2E_COMPOSE_PROJECT_NAME: 'cronos-test-owned' },
+  )
+  assert.deepEqual(
+    e2eStackTargetIdentity({
+      externalStack: true,
+      composeProjectName: 'cronos-ci-1-1',
+      stackProject: undefined,
+    }),
+    { E2E_COMPOSE_PROJECT_NAME: 'cronos-ci-1-1' },
+  )
+  // An external run without a project name adds nothing instead of a fallback.
+  assert.deepEqual(
+    e2eStackTargetIdentity({ externalStack: true, composeProjectName: undefined, stackProject: 'ignored' }),
+    {},
+  )
 })
 
 test('summarizes structured JUnit cases without parsing terminal output', () => {

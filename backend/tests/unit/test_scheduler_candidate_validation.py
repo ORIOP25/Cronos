@@ -35,7 +35,7 @@ def _period(day, start=time(9), end=time(10)):
 def _assignment(**overrides) -> Assignment:
     values = {
         "assignment_id": 1,
-        "class_id": 1,
+        "class_ids": (1,),
         "subject_id": 10,
         "teacher_id": 100,
         "eligible_room_ids": frozenset({500, 501}),
@@ -296,7 +296,7 @@ def test_reservation_assignment_mismatch_is_rejected():
     snapshot = _snapshot(
         assignments=(
             _assignment(),
-            _assignment(assignment_id=2, class_id=2, teacher_id=101),
+            _assignment(assignment_id=2, class_ids=(2,), teacher_id=101),
         ),
         active_version_id=5,
         reservations=(reservation,),
@@ -360,3 +360,127 @@ def test_validator_rejects_wrong_argument_types():
         validate_candidate(_snapshot(), _lesson())  # type: ignore[arg-type]
     with pytest.raises(ValueError):
         validate_candidate(_snapshot(), "candidate")  # type: ignore[arg-type]
+
+
+def test_a_joint_lesson_conflicts_with_a_lesson_of_any_member_class():
+    joint = _assignment(class_ids=(1, 2))
+    other = _assignment(
+        assignment_id=2,
+        class_ids=(1,),
+        modules=(ModuleRequirement(3, 1, 60),),
+    )
+    snapshot = _snapshot(assignments=(joint, other))
+    joint_lesson = _lesson(slices=(ModuleSlice(1, 1, 0, 60),))
+    member_lesson = _lesson(
+        lesson_id=2,
+        assignment_id=2,
+        room_id=501,
+        slices=(ModuleSlice(3, 1, 0, 60),),
+    )
+
+    report = validate_candidate(snapshot, CandidateSchedule((joint_lesson, member_lesson)))
+
+    assert ValidationViolationCode.RESOURCE_CONFLICT in _codes(report)
+
+
+def test_completion_dates_cover_every_member_class_of_a_joint_lesson():
+    snapshot = _snapshot(assignments=(_assignment(class_ids=(1, 2)),))
+
+    report = validate_candidate(snapshot, _candidate())
+
+    assert report.completion_dates == {1: WEDNESDAY, 2: WEDNESDAY}
+
+
+def test_precedence_violation_flags_a_new_target_before_its_source():
+    source = _assignment(assignment_id=1, class_ids=(1,))
+    target = _assignment(
+        assignment_id=2,
+        class_ids=(2,),
+        teacher_id=101,
+        modules=(ModuleRequirement(1, 1, 60),),
+    )
+    snapshot = _snapshot(assignments=(source, target), precedences=((1, 2),))
+    source_lesson = _second_lesson()
+    target_lesson = _lesson(
+        lesson_id=3,
+        assignment_id=2,
+        room_id=501,
+        slices=(ModuleSlice(3, 1, 0, 60),),
+    )
+
+    report = validate_candidate(snapshot, CandidateSchedule((source_lesson, target_lesson)))
+
+    assert ValidationViolationCode.PRECEDENCE_VIOLATION in _codes(report)
+
+
+def test_precedence_violation_exempts_a_protected_target_lesson():
+    source = _assignment(assignment_id=1, class_ids=(1,))
+    target = _assignment(
+        assignment_id=2,
+        class_ids=(2,),
+        teacher_id=101,
+        modules=(ModuleRequirement(1, 1, 60),),
+    )
+    target_lesson = _lesson(
+        lesson_id=3,
+        assignment_id=2,
+        room_id=501,
+        slices=(ModuleSlice(3, 1, 0, 60),),
+    )
+    snapshot = _snapshot(
+        assignments=(source, target),
+        precedences=((1, 2),),
+        protected_lessons=(target_lesson,),
+    )
+
+    report = validate_candidate(snapshot, CandidateSchedule((_second_lesson(), target_lesson)))
+
+    assert ValidationViolationCode.PRECEDENCE_VIOLATION not in _codes(report)
+
+
+def test_reservations_are_limited_per_lesson_and_class():
+    snapshot = _snapshot(
+        assignments=(_assignment(class_ids=(1, 2)),),
+        active_version_id=5,
+        open_debt_minutes={7: 50, 8: 50},
+        claim_assignments={7: 1, 8: 1},
+        claim_classes={7: 1, 8: 2},
+        reservations=(
+            RecoveryAllocation(5, 1, 7, 50),
+            RecoveryAllocation(5, 1, 8, 50),
+        ),
+    )
+
+    report = validate_candidate(snapshot, _candidate())
+
+    assert ValidationViolationCode.RESERVATION_OVERFLOW not in _codes(report)
+
+
+def test_one_class_reservation_above_the_lesson_credit_overflows():
+    snapshot = _snapshot(
+        assignments=(_assignment(class_ids=(1, 2)),),
+        active_version_id=5,
+        open_debt_minutes={7: 70},
+        claim_assignments={7: 1},
+        claim_classes={7: 1},
+        reservations=(RecoveryAllocation(5, 1, 7, 70),),
+    )
+
+    report = validate_candidate(snapshot, _candidate())
+
+    assert ValidationViolationCode.RESERVATION_OVERFLOW in _codes(report)
+
+
+def test_a_claim_class_outside_the_lesson_is_a_mismatch():
+    snapshot = _snapshot(
+        assignments=(_assignment(class_ids=(1, 2)),),
+        active_version_id=5,
+        open_debt_minutes={7: 50},
+        claim_assignments={7: 1},
+        claim_classes={7: 2},
+        reservations=(RecoveryAllocation(5, 1, 7, 50),),
+    )
+
+    report = validate_candidate(snapshot, _candidate(_lesson(class_ids=(1,))))
+
+    assert ValidationViolationCode.RESERVATION_ASSIGNMENT_MISMATCH in _codes(report)

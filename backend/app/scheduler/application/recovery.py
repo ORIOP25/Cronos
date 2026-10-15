@@ -154,7 +154,7 @@ def repair_schedule(
             None,
             message="A repair cannot cover the demand with the current capacity.",
             baseline=baseline_assessment,
-            diagnoses=diagnose_capacity(snapshot, capacity),
+            diagnoses=diagnose_capacity(snapshot, capacity, periods),
             budget=budget,
             wall_time_seconds=monotonic() - started,
         )
@@ -276,7 +276,7 @@ def repair_schedule(
             statistics=dict(outcome.statistics),
         )
     if outcome.status == OUTCOME_INFEASIBLE:
-        diagnoses = diagnose_capacity(snapshot, capacity)
+        diagnoses = diagnose_capacity(snapshot, capacity, periods)
         if not diagnoses:
             diagnoses = (diagnose_scope_proof(outcome.message),)
         return RepairResult(

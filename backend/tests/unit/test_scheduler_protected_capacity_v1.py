@@ -1,6 +1,9 @@
 """Recovery capacity checks inspect only frozen lessons on the relevant day."""
 
-from app.scheduler.domain.capacity import available_rooms
+from dataclasses import replace
+
+from app.scheduler.domain.candidate import Unavailability, UnavailableResource
+from app.scheduler.domain.capacity import available_rooms, eligible_periods
 from tests.unit.test_scheduler_resource_exclusivity_v1 import assignment, lesson, plan
 from tests.unit.test_scheduler_w04_w05_regressions_v1 import period
 
@@ -28,3 +31,26 @@ def test_room_checks_do_not_scan_the_entire_frozen_window(monkeypatch):
     assert comparisons == 0
     assert available_rooms(target, assignments[-1], periods[0]) == ()
     assert comparisons == 1
+
+
+def test_a_member_class_block_excludes_the_period_for_the_whole_unit():
+    when = period(0)
+    unit = replace(assignment(1, 1, 1, {1}, 60), class_ids=(1, 2))
+    free = plan((when,), (unit,))
+    blocked = plan(
+        (when,),
+        (unit,),
+        unavailable=(Unavailability(UnavailableResource.CLASS, 2, when),),
+    )
+
+    assert eligible_periods(free, unit, (when,)) == (when,)
+    assert eligible_periods(blocked, unit, (when,)) == ()
+
+
+def test_a_protected_lesson_of_one_member_class_closes_the_unit_period():
+    when = period(0)
+    unit = replace(assignment(1, 1, 1, {1}, 60), class_ids=(1, 2))
+    other = assignment(2, 2, 2, {2}, 60)
+    target = plan((when,), (unit, other), protected_lessons=(lesson(2, 2, when, 2),))
+
+    assert eligible_periods(target, unit, (when,)) == ()

@@ -116,6 +116,52 @@ async def test_generation_never_places_a_class_lesson_in_its_impossible_block(db
     assert all(lesson.period.school_date.weekday() != 0 for lesson in result.candidate.lessons)
 
 
+async def test_class_availability_applies_to_every_joint_member(db_session):
+    """A member's impossible block removes the shared period from the joint unit."""
+    from app.scheduler.domain.capacity import eligible_periods
+    from tests._support.scheduler_v1 import seed_joint_school
+
+    seed = await seed_joint_school(db_session)
+    await db_session.commit()
+    monday = await db_session.scalar(
+        select(models.Timeslot).where(
+            models.Timeslot.organization_id == seed.base.organization.id,
+            models.Timeslot.day_of_week == 0,
+        )
+    )
+    db_session.add(
+        models.ClassAvailability(
+            organization_id=seed.base.organization.id,
+            class_id=seed.second_class.id,
+            timeslot_id=monday.id,
+            score=models.PreferenceLevel.IMPOSSIBLE.value,
+        )
+    )
+    await db_session.commit()
+
+    bundle = await load_snapshot(
+        db_session,
+        seed.base.organization.id,
+        strategy=SchedulingStrategy.COMPLETE_GENERATION,
+        now_utc=MOMENT,
+        school_year_id=seed.base.year.id,
+    )
+    joint = next(row for row in bundle.snapshot.assignments if len(row.class_ids) > 1)
+    blocked = [
+        row
+        for row in bundle.snapshot.unavailable
+        if row.resource_type is UnavailableResource.CLASS
+        and row.resource_id == seed.second_class.id
+    ]
+    assert blocked
+    assert all(row.period.school_date.weekday() == 0 for row in blocked)
+    # The second member's grid applies to the joint unit as a whole.
+    assert all(
+        period.school_date.weekday() != 0
+        for period in eligible_periods(bundle.snapshot, joint, bundle.periods)
+    )
+
+
 async def test_class_deficit_honours_the_selected_modules(db_session):
     """WBS 2.4.1 compatibility: residual demand follows the selected modules."""
     seed = await seed_generatable_school(

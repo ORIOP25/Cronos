@@ -20,8 +20,11 @@ In accordance with ASD-STE100, technical concepts have single approved terms. Po
 | **Equipa** | Team | The organization membership view where administrators manage staff members and invites. |
 | **Turma** | Class / Student Group | A cohort of students enrolled in a specific year and course. |
 | **Módulo** | Module | A self-contained instructional unit with a defined instructional time requirement. |
-| **Módulo selecionado** | Selected module | A module a class-subject link marks for the class in its grade level. |
-| **Módulo retirado** | Retired module | A module removed from a class selection that keeps its executed history. |
+| **Módulo selecionado** | Selected module | A module marked for a class/subject link in the current school year. Only selected modules are planned and counted in progress. |
+| **Módulo retirado** | Retired module | A module deselected on a class/subject link. With executed history it stays closed at the executed minutes and receives no new credit. |
+| **Junção** | Joint lesson group | A subject, two or more member class/subject links, and a set of joint modules. A link belongs to at most one group. In the interface: "Aula conjunta". |
+| **Aula conjunta** | Joint lesson | A lesson of a joint group, taught to every member class at the same time, by one teacher, in one room. Each member class has one sibling lesson row. |
+| **Módulo conjunto** | Joint module | A module of a joint lesson group. It must be selected on every member class and is taught to all of them together. |
 | **Sumário** | Lesson Log | Formal record of lesson execution, topics taught, and student attendance entered by a teacher. |
 | **Falta** | Absence | Record of teacher absence for a scheduled lesson block. |
 | **Substituição** | Cover / Substitution | Arrangement assigning a replacement teacher or subject to an absence block. |

@@ -562,3 +562,82 @@ async def test_a_repair_persists_planned_recovery_allocations(db_session, monkey
         reserved_by_claim[row.debt_id] = reserved_by_claim.get(row.debt_id, 0) + row.minutes
     for minutes in reserved_by_claim.values():
         assert minutes <= owed
+
+
+async def test_a_new_summary_credits_the_next_selected_module(db_session, monkeypatch):
+    """WBS 2.6.3: a log after a deselection credits the next planned module (D07)."""
+    seed = await _minimal_school(db_session)
+    await db_session.commit()
+    await _publish_schedule(db_session, monkeypatch, seed)
+    lesson = await _first_lesson(db_session, seed)
+
+    # The scheduled module is deselected and a new one is selected: the
+    # planning view drops the retired module and keeps the new one.
+    second = models.Module(
+        organization_id=seed.organization.id,
+        subject_id=seed.subject.id,
+        name="Módulo B",
+        required_minutes=100,
+        order=2,
+    )
+    db_session.add(second)
+    await db_session.flush()
+    retired = await db_session.scalar(
+        select(CurricularRequirement).where(
+            CurricularRequirement.organization_id == seed.organization.id,
+            CurricularRequirement.assignment_id == seed.assignment.id,
+            CurricularRequirement.module_id == seed.module.id,
+        )
+    )
+    retired.planned = False
+    db_session.add(
+        CurricularRequirement(
+            organization_id=seed.organization.id,
+            assignment_id=seed.assignment.id,
+            module_id=second.id,
+            sequence=3,
+            required_minutes=100,
+        )
+    )
+    # Deselect the scheduled module and select the new one on the live link:
+    # the read-time planning view follows the live selection, not the flag.
+    link_id = await db_session.scalar(
+        select(models.ClassSubjectLink.id).where(
+            models.ClassSubjectLink.organization_id == seed.organization.id,
+            models.ClassSubjectLink.class_id == seed.class_.id,
+            models.ClassSubjectLink.subject_id == seed.subject.id,
+        )
+    )
+    await db_session.execute(
+        models.class_subject_module.delete().where(
+            models.class_subject_module.c.organization_id == seed.organization.id,
+            models.class_subject_module.c.class_subject_link_id == link_id,
+            models.class_subject_module.c.module_id == seed.module.id,
+        )
+    )
+    await db_session.execute(
+        models.class_subject_module.insert().values(
+            organization_id=seed.organization.id,
+            class_subject_link_id=link_id,
+            module_id=second.id,
+        )
+    )
+    await db_session.commit()
+
+    await record_lesson_log(
+        db_session,
+        seed.organization.id,
+        membership_id=seed.membership.id,
+        lesson_id=lesson.id,
+        status="COMPLETED",
+        summary="Sumário após desmarcar.",
+        notes=None,
+        now_utc=lesson.ends_at,
+    )
+    await db_session.commit()
+
+    executed = await load_executed_minutes(db_session, seed.organization.id, [seed.assignment.id])
+    assert executed[seed.assignment.id].get(seed.module.id, 0) == 0, (
+        "Um módulo retirado não recebe crédito novo."
+    )
+    assert executed[seed.assignment.id].get(second.id, 0) == lesson.credit_minutes

@@ -10,7 +10,7 @@ from app.scheduler.domain.candidate import LunchRule, Unavailability, Unavailabl
 from app.scheduler.domain.candidate_validation import validate_candidate
 from app.scheduler.infrastructure.constructive import _select_period, construct_schedule
 from tests.unit.test_scheduler_resource_exclusivity_v1 import assignment, lesson, plan
-from tests.unit.test_scheduler_w04_w05_regressions_v1 import period
+from tests.unit.test_scheduler_w04_w05_regressions_v1 import period, snapshot
 
 
 def construct(target, periods):
@@ -30,6 +30,24 @@ def test_a_long_calendar_does_not_delay_subjects_when_earlier_capacity_exists():
 
     assert {row.assignment_id for row in candidate.lessons[:2]} == {1, 2}
     assert max(row.period.school_date for row in candidate.lessons) == periods[6].school_date
+
+
+def test_a_successor_unit_never_starts_before_its_predecessor_ends():
+    periods = tuple(period(day) for day in range(6))
+    joint = replace(assignment(1, 1, 1, {1}, 60), class_ids=(1, 2))
+    successor = assignment(2, 3, 2, {2}, 60)
+    target = replace(
+        snapshot(periods),
+        assignments=(joint, successor),
+        precedences=((1, 2),),
+    )
+
+    candidate = construct(target, periods)
+
+    joint_end = max(row.period.end_utc for row in candidate.lessons if row.assignment_id == 1)
+    successor_lessons = [row for row in candidate.lessons if row.assignment_id == 2]
+    assert successor_lessons
+    assert min(row.period.start_utc for row in successor_lessons) >= joint_end
 
 
 @pytest.mark.parametrize("break_minutes", (0, 10))
@@ -64,7 +82,7 @@ def test_calendar_progress_prefers_contiguous_class_and_teacher_lessons(break_mi
                     row
                     for row in candidate.lessons
                     if row.period.school_date == period(day).school_date
-                    and target.assignment_for(row.assignment_id).class_id == class_id
+                    and class_id in target.assignment_for(row.assignment_id).class_ids
                 ),
                 key=lambda row: row.period.start_utc,
             )
@@ -297,7 +315,7 @@ def test_shared_resources_do_not_finish_one_subject_before_others_start():
             if row.period == when:
                 credited[row.assignment_id] += row.credit_minutes
         for class_id in range(1, 7):
-            members = [row for row in assignments if row.class_id == class_id]
+            members = [row for row in assignments if class_id in row.class_ids]
             if any(
                 credited[row.assignment_id] == row.modules[0].required_minutes for row in members
             ):

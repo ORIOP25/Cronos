@@ -201,7 +201,7 @@ def build_annual_fixture(
             assignments.append(
                 Assignment(
                     assignment_id=assignment_id,
-                    class_id=class_id,
+                    class_ids=(class_id,),
                     subject_id=1000 + subject_index,
                     teacher_id=teacher_id,
                     eligible_room_ids=frozenset(rooms),
@@ -264,8 +264,9 @@ def annual_topology(snapshot: PlanningSnapshot) -> dict[str, int]:
     rooms_in_use: set[int] = set()
     alternatives = 0
     for assignment in snapshot.assignments:
-        classes_by_teacher[assignment.teacher_id].add(assignment.class_id)
-        classes[assignment.class_id].add(assignment.teacher_id)
+        for class_id in assignment.class_ids:
+            classes_by_teacher[assignment.teacher_id].add(class_id)
+            classes[class_id].add(assignment.teacher_id)
         rooms_in_use.update(assignment.eligible_room_ids)
         if len(assignment.eligible_room_ids) > 1:
             alternatives += 1

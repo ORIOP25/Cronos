@@ -31,7 +31,7 @@ from tests.unit.test_scheduler_w04_w05_regressions_v1 import period, snapshot
 def assignment(identity, class_id, teacher_id, rooms, minutes):
     return Assignment(
         identity,
-        class_id,
+        (class_id,),
         identity,
         teacher_id,
         frozenset(rooms),
@@ -211,6 +211,18 @@ def test_resource_exclusivity_allows_the_ends_of_an_overlap_chain():
     model.Add(third == 1)
 
     assert feasible(model)
+
+
+def test_placement_forbids_a_successor_before_its_predecessor():
+    periods = (period(0, start=9, end=10), period(0, start=10, end=11))
+    source = assignment(1, 1, 1, {1}, 60)
+    successor = assignment(2, 2, 2, {2}, 60)
+    target = replace(snapshot(periods), assignments=(source, successor), precedences=((1, 2),))
+    state = scope_state(target, periods)
+    state.model.Add(state.x[(2, periods[0])] == 1)
+    state.model.Add(state.x[(1, periods[1])] == 1)
+
+    assert solve(state.model) == cp_model.INFEASIBLE
 
 
 def test_room_optimization_preserves_a_protected_room_and_uses_an_alternative():

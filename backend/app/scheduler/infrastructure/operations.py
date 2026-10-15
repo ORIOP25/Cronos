@@ -19,7 +19,12 @@ from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models, schemas
-from app.scheduler.domain.demand import ExecutionEntry, ModuleCredit, frontier_credit
+from app.scheduler.domain.demand import (
+    ExecutionEntry,
+    ModuleCredit,
+    frontier_credit,
+    joint_frontier_credit,
+)
 from app.scheduler.domain.lesson_time import execution_allowed
 from app.scheduler.domain.projection import ModuleRequirement
 from app.scheduler.infrastructure.models import (
@@ -43,6 +48,8 @@ LESSON_LOG_ORIGIN = "lesson-log:{lesson_id}"
 LESSON_OCCURRENCE_ORIGIN = "lesson-occurrence:{lesson_id}"
 SUBSTITUTION_ORIGIN = "substitution:{occurrence_id}:{teacher_id}"
 SUBSTITUTION_LIKE = "substitution:{occurrence_id}:%"
+# Note stored on the occurrence of a class that missed a joint lesson (J12).
+JOINT_ABSENT_NOTE = "Turma ausente"
 
 
 class OperationsError(ValueError):
@@ -93,6 +100,68 @@ def _module_summary(
     if module_id is None or required_minutes is None or name is None:
         return None
     return {"id": module_id, "name": name, "hours_total": required_minutes / 60}
+
+
+async def _joint_group_members(
+    db: AsyncSession,
+    organization_id: int,
+    year_id: int,
+    version_id: int,
+    stable_keys: set[str],
+) -> dict[str, list[dict]]:
+    """Member classes of every joint lesson in the given stable keys (J17).
+
+    A stable key with a single member is a plain lesson. A key with several
+    members is a joint lesson; each member carries its class and its log so the
+    weekly view can show the presence state of every class.
+    """
+    if not stable_keys:
+        return {}
+    result_rows = (
+        await db.execute(
+            select(SchedulerLessonV1, models.Class.id, models.Class.name, SchedulerLessonLogV1)
+            .join(
+                CurricularAssignment,
+                and_(
+                    CurricularAssignment.organization_id == SchedulerLessonV1.organization_id,
+                    CurricularAssignment.school_year_id == SchedulerLessonV1.school_year_id,
+                    CurricularAssignment.id == SchedulerLessonV1.assignment_id,
+                ),
+            )
+            .join(
+                models.Class,
+                and_(
+                    models.Class.organization_id == organization_id,
+                    models.Class.id == CurricularAssignment.class_id,
+                ),
+            )
+            .outerjoin(
+                SchedulerLessonLogV1,
+                and_(
+                    SchedulerLessonLogV1.organization_id == organization_id,
+                    SchedulerLessonLogV1.lesson_id == SchedulerLessonV1.id,
+                ),
+            )
+            .where(
+                SchedulerLessonV1.organization_id == organization_id,
+                SchedulerLessonV1.school_year_id == year_id,
+                SchedulerLessonV1.version_id == version_id,
+                SchedulerLessonV1.stable_key.in_(stable_keys),
+            )
+            .order_by(SchedulerLessonV1.id)
+        )
+    ).all()
+    groups: dict[str, list[dict]] = defaultdict(list)
+    for lesson, class_id, class_name, log in result_rows:
+        groups[lesson.stable_key].append(
+            {
+                "class_id": class_id,
+                "class_name": class_name,
+                "lesson_id": lesson.id,
+                "log": log,
+            }
+        )
+    return groups
 
 
 async def week_schedule(
@@ -269,6 +338,50 @@ async def week_schedule(
     block_rows = [
         row for row in all_block_rows if teacher_id is None or row[0].teacher_id == teacher_id
     ]
+    # Every member block of the displayed joint substitutions, including the
+    # cancelled ones, so the weekly metadata carries each class's block (J18).
+    member_block_by_class: dict[tuple[str, int], tuple] = {}
+    if block_rows:
+        member_block_rows = (
+            await db.execute(
+                select(models.OperationalScheduleBlock, SchedulerLessonV1, models.LessonLog)
+                .join(
+                    SchedulerLessonLogV1,
+                    and_(
+                        SchedulerLessonLogV1.organization_id
+                        == models.OperationalScheduleBlock.organization_id,
+                        SchedulerLessonLogV1.id
+                        == models.OperationalScheduleBlock.source_v1_lesson_log_id,
+                    ),
+                )
+                .join(
+                    SchedulerLessonV1,
+                    and_(
+                        SchedulerLessonV1.organization_id == SchedulerLessonLogV1.organization_id,
+                        SchedulerLessonV1.school_year_id == SchedulerLessonLogV1.school_year_id,
+                        SchedulerLessonV1.id == SchedulerLessonLogV1.lesson_id,
+                    ),
+                )
+                .outerjoin(
+                    models.LessonLog,
+                    and_(
+                        models.LessonLog.organization_id == organization_id,
+                        models.LessonLog.operational_block_id == models.OperationalScheduleBlock.id,
+                    ),
+                )
+                .where(
+                    models.OperationalScheduleBlock.organization_id == organization_id,
+                    models.OperationalScheduleBlock.origin_kind == models.OperationalBlockOrigin.V1,
+                    SchedulerLessonV1.version_id == version.id,
+                    SchedulerLessonV1.stable_key.in_({row[1].stable_key for row in block_rows}),
+                )
+            )
+        ).all()
+        for member_block, member_lesson, member_log in member_block_rows:
+            member_block_by_class[(member_lesson.stable_key, member_block.class_id)] = (
+                member_block,
+                member_log,
+            )
     lesson_ids = [row[0].id for row in rows]
     assignment_ids = sorted({row[0].assignment_id for row in rows})
     executed = await load_executed_minutes(db, organization_id, assignment_ids)
@@ -315,6 +428,14 @@ async def week_schedule(
             )
         ).all()
     }
+    joint_members = await _joint_group_members(
+        db,
+        organization_id,
+        year.id,
+        version.id,
+        {row[0].stable_key for row in rows} | {row[1].stable_key for row in block_rows},
+    )
+    joint_keys = {key for key, members in joint_members.items() if len(members) > 1}
     timeslots = {
         (row.day_of_week, row.start_time, row.end_time): row.id
         for row in (
@@ -344,6 +465,26 @@ async def week_schedule(
         module_minutes = position[0][1].required_minutes if position else None
         log = logs.get(lesson.id)
         occurrence_status, lesson_log_status = _week_log_states(log)
+        members = joint_members.get(lesson.stable_key, [])
+        joint_classes: list[dict] = []
+        class_infos: list[dict] = []
+        if len(members) > 1:
+            for member in members:
+                if member["class_id"] != class_model.id:
+                    joint_classes.append({"id": member["class_id"], "name": member["class_name"]})
+                member_log = member["log"]
+                class_infos.append(
+                    {
+                        "id": member["class_id"],
+                        "name": member["class_name"],
+                        "lesson_log_status": (
+                            None
+                            if member_log is None or member_log.status == "REVOKED"
+                            else member_log.status
+                        ),
+                        "lesson_db_id": member["lesson_id"],
+                    }
+                )
         timesheet = timesheet_status.get(teacher.id)
         lesson_finished = execution_allowed(moment, lesson.ends_at)
         timesheet_locked = timesheet is not None and timesheet.status in (
@@ -408,6 +549,10 @@ async def week_schedule(
             "ends_at": lesson.ends_at,
             "can_complete": can_complete,
             "blocked_reason": blocked_reason,
+            # WBS 5.7 (J17): joint view metadata.
+            "joint_classes": joint_classes,
+            "class_infos": class_infos,
+            "_stable_key": lesson.stable_key,
         }
 
     slots.extend(_planned_week_slot(row) for row in rows if row[0].id not in hidden_lesson_ids)
@@ -446,6 +591,36 @@ async def week_schedule(
             else:
                 blocked_reason = None
             block_log = block_logs.get(block.id)
+            members = joint_members.get(source_lesson.stable_key, [])
+            joint_classes: list[dict] = []
+            class_infos: list[dict] = []
+            if len(members) > 1:
+                for member in members:
+                    if member["class_id"] != class_model.id:
+                        joint_classes.append(
+                            {"id": member["class_id"], "name": member["class_name"]}
+                        )
+                    member_entry = member_block_by_class.get(
+                        (source_lesson.stable_key, member["class_id"])
+                    )
+                    member_block = member_entry[0] if member_entry is not None else None
+                    member_log = member_entry[1] if member_entry is not None else None
+                    class_infos.append(
+                        {
+                            "id": member["class_id"],
+                            "name": member["class_name"],
+                            "lesson_log_status": (
+                                None
+                                if member_log is None or member_log.status.value == "PENDING"
+                                else member_log.status
+                            ),
+                            "lesson_db_id": member["lesson_id"],
+                            "operational_block_id": member_block.id if member_block else None,
+                            "substitute_execution_status": (
+                                member_block.execution_status.value if member_block else None
+                            ),
+                        }
+                    )
             return {
                 "scheduler_lesson_id": None,
                 "operational_block_id": block.id,
@@ -487,6 +662,10 @@ async def week_schedule(
                 "ends_at": source_lesson.ends_at,
                 "can_complete": can_complete,
                 "blocked_reason": blocked_reason,
+                # WBS 5.3.4/5.7: joint substitute metadata for the modal/teacher view.
+                "joint_classes": joint_classes,
+                "class_infos": class_infos,
+                "_stable_key": source_lesson.stable_key,
             }
 
         slots.extend(_operational_week_slot(row) for row in block_rows)
@@ -497,6 +676,20 @@ async def week_schedule(
                 row["operational_block_id"] or 0,
             )
         )
+    # Teacher view: a joint lesson is one block, not one per member class (J17).
+    if class_id is None and teacher_id is not None:
+        seen: set[str] = set()
+        deduped: list[dict] = []
+        for slot in slots:
+            key = slot.get("_stable_key")
+            if key is not None and key in joint_keys:
+                if key in seen:
+                    continue
+                seen.add(key)
+            deduped.append(slot)
+        slots = deduped
+    for slot in slots:
+        slot.pop("_stable_key", None)
     return slots
 
 
@@ -661,56 +854,218 @@ async def _planning_slice_credits(
         ) from exc
 
 
-async def record_lesson_log(
-    db: AsyncSession,
-    organization_id: int,
-    *,
-    membership_id: int,
-    lesson_id: int,
-    status: str,
-    summary: str | None,
-    notes: str | None,
-    now_utc: datetime,
-    planning_relevant: bool = False,
-    allow_decision_override: bool = False,
-) -> dict:
-    """Register or update one lesson log and move the v1 ledger accordingly."""
-    if status not in ("COMPLETED", "OCCURRENCE"):
-        raise OperationsError("invalid_lesson_log_status", "Estado de aula inválido.")
-    context = await lesson_context(db, organization_id, lesson_id)
-    if status == "COMPLETED" and not execution_allowed(now_utc, context.lesson.ends_at):
-        raise OperationsError(
-            "lesson_not_finished",
-            "Só pode concluir esta aula depois do seu término.",
-        )
-    await assert_week_open(
-        db,
-        organization_id,
-        teacher_id=context.assignment.teacher_id,
-        lesson_date=context.lesson.school_date,
-    )
+async def lock_school_year_state(
+    db: AsyncSession, organization_id: int, school_year_id: int
+) -> None:
+    """Lock the school-year state row first, the repository-wide lock order.
+
+    Every schedule mutator takes this lock before any mutable log or block row,
+    so ``state -> logs`` holds for all of them. That single ordered lock is what
+    keeps the operation transactions atomic without locking the immutable
+    published lesson rows, which the runtime role may not update.
+    """
     state = await db.scalar(
         select(models.SchedulerSchoolYearState)
         .where(
             models.SchedulerSchoolYearState.organization_id == organization_id,
-            models.SchedulerSchoolYearState.school_year_id == context.year.id,
+            models.SchedulerSchoolYearState.school_year_id == school_year_id,
         )
         .with_for_update()
     )
     if state is None:
         raise OperationsError("scheduler_year_missing", "Ano letivo sem estado de planeamento.")
-    log = await db.scalar(
-        select(SchedulerLessonLogV1)
-        .where(
-            SchedulerLessonLogV1.organization_id == organization_id,
-            SchedulerLessonLogV1.lesson_id == lesson_id,
+
+
+async def lesson_siblings(
+    db: AsyncSession, organization_id: int, lesson: SchedulerLessonV1
+) -> tuple[SchedulerLessonV1, ...]:
+    """Every row of one logical lesson (the siblings of a joint lesson), by id.
+
+    A lesson without a joint group returns just its own row. The rows share the
+    stable key, date, teacher, room, interval, credit and slices (J12).
+
+    The published lesson rows are immutable after publication and the runtime
+    role holds only ``SELECT, INSERT`` on them, so this read is never locked.
+    Concurrency is serialized by the school-year state lock and the mutable
+    ``scheduler_lesson_log_v1`` rows, which are locked ``FOR UPDATE`` by ``id``.
+    """
+    rows = (
+        await db.scalars(
+            select(SchedulerLessonV1)
+            .where(
+                SchedulerLessonV1.organization_id == organization_id,
+                SchedulerLessonV1.school_year_id == lesson.school_year_id,
+                SchedulerLessonV1.version_id == lesson.version_id,
+                SchedulerLessonV1.stable_key == lesson.stable_key,
+            )
+            .order_by(SchedulerLessonV1.id)
         )
-        .with_for_update()
-    )
-    if log is not None and log.withdrawn_at is not None:
+    ).all()
+    return tuple(rows)
+
+
+async def _assignments_by_ids(
+    db: AsyncSession, organization_id: int, assignment_ids: Sequence[int]
+) -> dict[int, CurricularAssignment]:
+    identifiers = sorted(set(assignment_ids))
+    if not identifiers:
+        return {}
+    rows = (
+        await db.scalars(
+            select(CurricularAssignment).where(
+                CurricularAssignment.organization_id == organization_id,
+                CurricularAssignment.id.in_(identifiers),
+            )
+        )
+    ).all()
+    return {row.id: row for row in rows}
+
+
+def _resolve_absent_classes(
+    absent_class_ids: Sequence[int], class_ids: Sequence[int], *, joint: bool
+) -> frozenset[int]:
+    """Validate the present/absent split of a joint lesson registration (J12).
+
+    An empty list keeps every class present. A non-empty list is only valid on
+    a joint lesson, never names an unknown class, and never covers every class:
+    registering that nobody attended is ``422`` and asks for an occurrence.
+    """
+    ordered = tuple(dict.fromkeys(absent_class_ids))
+    if not ordered:
+        return frozenset()
+    if not joint:
         raise OperationsError(
-            "lesson_withdrawn", "A aula foi retirada por fluxo de estágio.", status_code=409
+            "absent_classes_not_joint",
+            "Só uma aula conjunta pode ter turmas ausentes.",
         )
+    known = set(class_ids)
+    if any(class_id not in known for class_id in ordered):
+        raise OperationsError("absent_class_unknown", "A turma ausente não pertence a esta aula.")
+    if set(ordered) == known:
+        raise OperationsError(
+            "absent_classes_all",
+            "Pelo menos uma turma tem de estar presente. Registe uma ocorrência.",
+        )
+    return frozenset(ordered)
+
+
+def _ensure_log_writable(
+    log: SchedulerLessonLogV1 | None, status: str, *, allow_decision_override: bool
+) -> None:
+    """Reject a conflicting active decision before any sibling ledger write."""
+    if (
+        log is not None
+        and log.status != "REVOKED"
+        and log.decision is not None
+        and status != log.status
+        and not allow_decision_override
+    ):
+        raise OperationsError(
+            "occurrence_active",
+            "Esta aula tem uma ocorrência ativa. Gira a decisão em Faltas e Ocorrências.",
+            status_code=409,
+        )
+
+
+async def _completion_credits(
+    db: AsyncSession,
+    organization_id: int,
+    *,
+    siblings: Sequence[SchedulerLessonV1],
+    sibling_contexts: dict[int, LessonContext],
+    class_by_lesson: dict[int, int],
+    present_classes: set[int],
+) -> dict[int, tuple[ModuleCredit, ...]]:
+    """Credits for the present classes when a lesson is completed (D07).
+
+    The published slices are exact while every slice module is still in the
+    planning view. When a module was deselected after publication, the credit
+    follows the planning frontier instead: a joint lesson credits the joint
+    progress once, identically for every present class, while a deficit (``D``)
+    lesson keeps its per-class frontier. Already logged credits are untouched.
+    """
+    present_rows = [row for row in siblings if class_by_lesson[row.id] in present_classes]
+    if not present_rows:
+        return {}
+    assignment_ids = [sibling_contexts[row.id].assignment.id for row in present_rows]
+    planning, executed = await load_planning_requirements(db, organization_id, assignment_ids)
+    outdated = False
+    for row in present_rows:
+        context = sibling_contexts[row.id]
+        required = {
+            module.module_id: module.required_minutes
+            for module in planning.get(context.assignment.id, ())
+        }
+        if any(
+            slice_.module_id not in required
+            or slice_.offset_minutes + slice_.minutes > required[slice_.module_id]
+            for slice_ in context.slices
+        ):
+            outdated = True
+            break
+    if not outdated:
+        return {
+            row.id: tuple(
+                ModuleCredit(slice_.module_id, slice_.minutes)
+                for slice_ in sibling_contexts[row.id].slices
+            )
+            for row in present_rows
+        }
+    credits: dict[int, tuple[ModuleCredit, ...]] = {}
+    lesson = present_rows[0]
+    deficit = (lesson.teaching_unit_key or "").startswith("D:")
+    try:
+        if len(siblings) > 1 and not deficit:
+            modules: tuple[ModuleRequirement, ...] = ()
+            for row in present_rows:
+                modules = planning.get(sibling_contexts[row.id].assignment.id, ())
+                if modules:
+                    break
+            completed_by_class = {
+                sibling_contexts[row.id].assignment.id: executed.get(
+                    sibling_contexts[row.id].assignment.id, {}
+                )
+                for row in siblings
+            }
+            joint_credits = joint_frontier_credit(
+                modules, completed_by_class, lesson.credit_minutes
+            )
+            return {row.id: joint_credits for row in present_rows}
+        for row in present_rows:
+            context = sibling_contexts[row.id]
+            credits[row.id] = frontier_credit(
+                planning.get(context.assignment.id, ()),
+                executed.get(context.assignment.id, {}),
+                sum(slice_.minutes for slice_ in context.slices),
+            )
+    except ValueError as exc:
+        raise OperationsError(
+            "lesson_without_slices",
+            "A aula não tem minutos curriculares disponíveis para creditar.",
+        ) from exc
+    return credits
+
+
+async def _apply_lesson_log(
+    db: AsyncSession,
+    organization_id: int,
+    *,
+    context: LessonContext,
+    log: SchedulerLessonLogV1 | None,
+    membership_id: int,
+    status: str,
+    summary: str | None,
+    notes: str | None,
+    now_utc: datetime,
+    planning_relevant: bool,
+    allow_decision_override: bool,
+    execution_credits: tuple[ModuleCredit, ...] | None = None,
+) -> tuple[int, int]:
+    """Apply one lesson log and move only that class's ledger.
+
+    Returns ``(credited_minutes, revision)``. A correction reverses or credits
+    only the class that changed, so the ledger stays append-only (J12).
+    """
     previous_status = log.status if log is not None else None
     if (
         log is not None
@@ -730,13 +1085,7 @@ async def record_lesson_log(
         and (log.summary or None) == (summary or None)
         and (log.notes or None) == (notes or None)
     ):
-        return {
-            "lesson_id": lesson_id,
-            "status": status,
-            "credited_minutes": 0,
-            "debt_minutes": 0,
-            "revision": log.revision,
-        }
+        return 0, log.revision
     if log is not None and previous_status == "REVOKED" and status == "OCCURRENCE":
         # A new occurrence cycle starts; the revocation audit stays on the row.
         log.decision = None
@@ -744,26 +1093,29 @@ async def record_lesson_log(
         log.decided_by_membership_id = None
     revision = (log.revision + 1) if log is not None else 1
     credited = 0
-    debt_minutes = 0
     if previous_status == "COMPLETED" and status != "COMPLETED":
         await reverse_lesson_execution(
             db, organization_id, context, membership_id=membership_id, now_utc=now_utc
         )
     if status == "COMPLETED" and previous_status != "COMPLETED":
-        execution_credits = await _planning_slice_credits(
-            db, organization_id, context.assignment.id, context.slices
+        credits = (
+            execution_credits
+            if execution_credits is not None
+            else await _planning_slice_credits(
+                db, organization_id, context.assignment.id, context.slices
+            )
         )
-        if not execution_credits:
+        if not credits:
             raise OperationsError(
                 "lesson_without_slices",
                 "A aula não tem minutos curriculares associados.",
             )
         entry = ExecutionEntry(
-            LESSON_LOG_ORIGIN.format(lesson_id=lesson_id),
+            LESSON_LOG_ORIGIN.format(lesson_id=context.lesson.id),
             revision,
             membership_id,
             (summary or "Aula registada").strip() or "Aula registada",
-            execution_credits,
+            credits,
             recorded_at=now_utc,
         )
         await record_execution(
@@ -774,7 +1126,7 @@ async def record_lesson_log(
             entry,
             planning_relevant=planning_relevant,
         )
-        credited = sum(credit.minutes for credit in execution_credits)
+        credited = sum(credit.minutes for credit in credits)
     # A pending occurrence only signals a problem. Debt is created by the
     # direction decision, never by the registration itself.
     if log is None:
@@ -782,7 +1134,7 @@ async def record_lesson_log(
             SchedulerLessonLogV1(
                 organization_id=organization_id,
                 school_year_id=context.year.id,
-                lesson_id=lesson_id,
+                lesson_id=context.lesson.id,
                 status=status,
                 summary=summary,
                 notes=notes,
@@ -801,13 +1153,165 @@ async def record_lesson_log(
         log.logged_by_membership_id = membership_id
         log.logged_at = now_utc
         log.updated_at = now_utc
+    return credited, revision
+
+
+async def record_lesson_log(
+    db: AsyncSession,
+    organization_id: int,
+    *,
+    membership_id: int,
+    lesson_id: int,
+    status: str,
+    summary: str | None,
+    notes: str | None,
+    now_utc: datetime,
+    planning_relevant: bool = False,
+    allow_decision_override: bool = False,
+    absent_class_ids: Sequence[int] = (),
+    include_siblings: bool = True,
+) -> dict:
+    """Register a lesson and move the v1 ledger of every sibling class.
+
+    ``lesson_id`` may be any sibling of a joint lesson. ``absent_class_ids``
+    marks the classes that did not attend when the lesson was given: they stay
+    as pending occurrences without a summary, while the present classes share
+    the same summary and notes. The full sibling set is locked by ``id`` and
+    every write happens in one transaction (J12). ``include_siblings=False``
+    applies the log to the given lesson only, which the occurrence decision
+    uses to complete a single member class.
+    """
+    if status not in ("COMPLETED", "OCCURRENCE"):
+        raise OperationsError("invalid_lesson_log_status", "Estado de aula inválido.")
+    primary = await lesson_context(db, organization_id, lesson_id)
+    # Repository lock order: the school-year state row first.
+    await lock_school_year_state(db, organization_id, primary.year.id)
+    siblings = (
+        await lesson_siblings(db, organization_id, primary.lesson)
+        if include_siblings
+        else (primary.lesson,)
+    )
+    assignments = await _assignments_by_ids(
+        db, organization_id, [row.assignment_id for row in siblings]
+    )
+    if any(row.assignment_id not in assignments for row in siblings):
+        raise OperationsError("scheduler_lesson_not_found", "Aula não encontrada.", status_code=404)
+    class_by_lesson = {row.id: assignments[row.assignment_id].class_id for row in siblings}
+    class_ids = sorted(set(class_by_lesson.values()))
+    absent = _resolve_absent_classes(absent_class_ids, class_ids, joint=len(siblings) > 1)
+    if absent and status != "COMPLETED":
+        raise OperationsError(
+            "absent_classes_require_completed",
+            "As turmas ausentes só se aplicam ao registo da aula dada.",
+        )
+    # Lock every sibling log by ``id`` and refresh their facts.
+    logs = (
+        await db.scalars(
+            select(SchedulerLessonLogV1)
+            .where(
+                SchedulerLessonLogV1.organization_id == organization_id,
+                SchedulerLessonLogV1.lesson_id.in_([row.id for row in siblings]),
+            )
+            .order_by(SchedulerLessonLogV1.id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+    ).all()
+    logs_by_lesson = {row.lesson_id: row for row in logs}
+    # Validate every sibling before any ledger write.
+    if any(row.withdrawn_at is not None for row in logs):
+        raise OperationsError(
+            "lesson_withdrawn", "A aula foi retirada por fluxo de estágio.", status_code=409
+        )
+    if status == "COMPLETED":
+        for row in siblings:
+            if class_by_lesson[row.id] in absent:
+                continue
+            if not execution_allowed(now_utc, row.ends_at):
+                raise OperationsError(
+                    "lesson_not_finished",
+                    "Só pode concluir esta aula depois do seu término.",
+                )
+    for teacher_id in sorted({assignments[row.assignment_id].teacher_id for row in siblings}):
+        await assert_week_open(
+            db,
+            organization_id,
+            teacher_id=teacher_id,
+            lesson_date=primary.lesson.school_date,
+        )
+    for row in siblings:
+        target_status = "OCCURRENCE" if class_by_lesson[row.id] in absent else status
+        _ensure_log_writable(
+            logs_by_lesson.get(row.id),
+            target_status,
+            allow_decision_override=allow_decision_override,
+        )
+    sibling_contexts: dict[int, LessonContext] = {}
+    for row in siblings:
+        sibling_contexts[row.id] = (
+            primary
+            if row.id == primary.lesson.id
+            else await lesson_context(db, organization_id, row.id)
+        )
+    credits_by_lesson: dict[int, tuple[ModuleCredit, ...]] = {}
+    if status == "COMPLETED":
+        present_classes = {class_id for class_id in class_ids if class_id not in absent}
+        needs_credit = any(
+            class_by_lesson[row.id] in present_classes
+            and (logs_by_lesson.get(row.id) is None or logs_by_lesson[row.id].status != "COMPLETED")
+            for row in siblings
+        )
+        if needs_credit:
+            credits_by_lesson = await _completion_credits(
+                db,
+                organization_id,
+                siblings=siblings,
+                sibling_contexts=sibling_contexts,
+                class_by_lesson=class_by_lesson,
+                present_classes=present_classes,
+            )
+    classes_payload: list[dict] = []
+    revision = 1
+    primary_credited = 0
+    for row in siblings:
+        class_id = class_by_lesson[row.id]
+        if class_id in absent:
+            target_status, target_summary, target_notes = "OCCURRENCE", None, JOINT_ABSENT_NOTE
+        else:
+            target_status, target_summary, target_notes = status, summary, notes
+        credited, revision = await _apply_lesson_log(
+            db,
+            organization_id,
+            context=sibling_contexts[row.id],
+            log=logs_by_lesson.get(row.id),
+            membership_id=membership_id,
+            status=target_status,
+            summary=target_summary,
+            notes=target_notes,
+            now_utc=now_utc,
+            planning_relevant=planning_relevant or target_status == "OCCURRENCE",
+            allow_decision_override=allow_decision_override,
+            execution_credits=credits_by_lesson.get(row.id),
+        )
+        if row.id == primary.lesson.id:
+            primary_credited = credited
+        classes_payload.append(
+            {
+                "class_id": class_id,
+                "status": target_status,
+                "credited_minutes": credited,
+            }
+        )
     await db.flush()
+    # The top-level total is the primary lesson's credited minutes; ``classes``
+    # keeps the per-class ledger detail of a joint lesson.
     return {
         "lesson_id": lesson_id,
         "status": status,
-        "credited_minutes": credited,
-        "debt_minutes": debt_minutes,
+        "credited_minutes": primary_credited,
+        "debt_minutes": 0,
         "revision": revision,
+        "classes": classes_payload,
     }
 
 
@@ -957,6 +1461,181 @@ async def _reverse_origin_executions(
         next_revision += 1
 
 
+async def _joint_substitute_blocks(
+    db: AsyncSession, organization_id: int, lesson: SchedulerLessonV1
+) -> list[models.OperationalScheduleBlock]:
+    """Active substitute blocks of every sibling of one logical lesson (J14)."""
+    sibling_lesson_ids = select(SchedulerLessonV1.id).where(
+        SchedulerLessonV1.organization_id == organization_id,
+        SchedulerLessonV1.version_id == lesson.version_id,
+        SchedulerLessonV1.stable_key == lesson.stable_key,
+    )
+    log_ids = list(
+        await db.scalars(
+            select(SchedulerLessonLogV1.id).where(
+                SchedulerLessonLogV1.organization_id == organization_id,
+                SchedulerLessonLogV1.lesson_id.in_(sibling_lesson_ids),
+            )
+        )
+    )
+    if not log_ids:
+        return []
+    rows = await db.scalars(
+        select(models.OperationalScheduleBlock)
+        .where(
+            models.OperationalScheduleBlock.organization_id == organization_id,
+            models.OperationalScheduleBlock.source_v1_lesson_log_id.in_(log_ids),
+            models.OperationalScheduleBlock.status == models.OperationalBlockStatus.ACTIVE,
+        )
+        .order_by(models.OperationalScheduleBlock.class_id)
+        .with_for_update()
+    )
+    return list(rows)
+
+
+async def _upsert_block_log(
+    db: AsyncSession,
+    organization_id: int,
+    block_id: int,
+    payload: schemas.LessonLogCreate,
+    membership_id: int,
+    now_utc: datetime,
+) -> models.LessonLog:
+    log = await db.scalar(
+        select(models.LessonLog)
+        .where(models.LessonLog.operational_block_id == block_id)
+        .with_for_update()
+    )
+    current = models.LessonLogStatus(
+        payload.status.value if hasattr(payload.status, "value") else str(payload.status)
+    )
+    if log is None:
+        log = models.LessonLog(
+            organization_id=organization_id,
+            operational_block_id=block_id,
+            status=current,
+            summary=payload.summary,
+            notes=payload.notes,
+            logged_by_membership_id=membership_id,
+            logged_at=now_utc,
+            version=1,
+        )
+        db.add(log)
+    else:
+        log.version = int(log.version or 1) + 1
+        log.status = current
+        log.summary = payload.summary
+        log.notes = payload.notes
+        log.logged_by_membership_id = membership_id
+        log.logged_at = now_utc
+    return log
+
+
+async def _complete_joint_substitution(
+    db: AsyncSession,
+    organization_id: int,
+    *,
+    block: models.OperationalScheduleBlock,
+    joint_blocks: list[models.OperationalScheduleBlock],
+    payload: schemas.LessonLogCreate,
+    membership_id: int,
+    now_utc: datetime,
+    lesson: SchedulerLessonV1,
+) -> models.LessonLog:
+    """Conclude a joint substitution: every present class shares the credit (J14).
+
+    Completing any block concludes the whole joint substitution. An absent
+    member class keeps its block cancelled and receives no credit. Every present
+    class receives the same credit over the joint progress, never duplicated.
+    """
+    class_ids = [row.class_id for row in joint_blocks]
+    absent = _resolve_absent_classes(payload.absent_class_ids, class_ids, joint=True)
+    if block.class_id in absent:
+        raise OperationsError(
+            "absent_class_cannot_complete",
+            "A turma do bloco indicado está ausente. Conclua a partir de uma turma presente.",
+        )
+    present = [row for row in joint_blocks if row.class_id not in absent]
+    absent_blocks = [row for row in joint_blocks if row.class_id in absent]
+    assignment_ids = [row.substitute_curricular_assignment_id for row in present]
+    requirements, executed_by_assignment = await load_planning_requirements(
+        db, organization_id, assignment_ids
+    )
+    modules = next(
+        (
+            requirements.get(assignment_id, ())
+            for assignment_id in assignment_ids
+            if requirements.get(assignment_id)
+        ),
+        (),
+    )
+    if not modules:
+        raise OperationsError(
+            "substitute_without_requirements",
+            "A disciplina substituta não tem módulos configurados.",
+        )
+    completed_by_class = {
+        assignment_id: executed_by_assignment.get(assignment_id, {})
+        for assignment_id in assignment_ids
+    }
+    try:
+        execution_credits = joint_frontier_credit(
+            modules, completed_by_class, lesson.credit_minutes
+        )
+    except ValueError as exc:
+        raise OperationsError(
+            "substitute_without_capacity",
+            "A disciplina substituta não tem minutos curriculares disponíveis.",
+        ) from exc
+    year_id = await db.scalar(
+        select(CurricularAssignment.school_year_id).where(
+            CurricularAssignment.id == assignment_ids[0],
+            CurricularAssignment.organization_id == organization_id,
+        )
+    )
+    result_log: models.LessonLog | None = None
+    for row in present:
+        assignment_id = row.substitute_curricular_assignment_id
+        origin = SUBSTITUTION_ORIGIN.format(
+            occurrence_id=row.source_v1_lesson_log_id, teacher_id=row.teacher_id
+        )
+        entries = await load_execution_entries(db, organization_id, assignment_id)
+        revision = (
+            max((entry.revision for entry in entries if entry.origin == origin), default=0) + 1
+        )
+        await record_execution(
+            db,
+            organization_id,
+            year_id,
+            assignment_id,
+            ExecutionEntry(
+                origin,
+                revision,
+                membership_id,
+                "Aula substituta conjunta concluída",
+                execution_credits,
+                recorded_at=now_utc,
+            ),
+            planning_relevant=True,
+        )
+        row.execution_status = models.OperationalBlockExecutionStatus.COMPLETED
+        log = await _upsert_block_log(db, organization_id, row.id, payload, membership_id, now_utc)
+        if row.id == block.id:
+            result_log = log
+    for row in absent_blocks:
+        row.status = models.OperationalBlockStatus.CANCELLED
+        row.execution_status = models.OperationalBlockExecutionStatus.CANCELLED
+        row.cancelled_at = now_utc
+    await db.flush()
+    if result_log is None:
+        result_log = await _upsert_block_log(
+            db, organization_id, block.id, payload, membership_id, now_utc
+        )
+        await db.flush()
+    await db.refresh(result_log)
+    return result_log
+
+
 async def record_operational_lesson_log(
     db: AsyncSession,
     organization_id: int,
@@ -967,14 +1646,14 @@ async def record_operational_lesson_log(
     now_utc: datetime,
 ) -> models.LessonLog:
     """Register execution of a v1-origin substitute block in the v1 ledger."""
+    # Resolve the school year without locking, then take the state lock before
+    # the mutable block and log rows (repository lock order: state -> logs).
     block = await db.scalar(
-        select(models.OperationalScheduleBlock)
-        .where(
+        select(models.OperationalScheduleBlock).where(
             models.OperationalScheduleBlock.id == operational_block_id,
             models.OperationalScheduleBlock.organization_id == organization_id,
             models.OperationalScheduleBlock.status == models.OperationalBlockStatus.ACTIVE,
         )
-        .with_for_update()
     )
     if block is None:
         raise OperationsError(
@@ -1007,6 +1686,22 @@ async def record_operational_lesson_log(
         raise OperationsError(
             "scheduler_lesson_not_found", "Aula de origem não encontrada.", status_code=404
         )
+    await lock_school_year_state(db, organization_id, lesson.school_year_id)
+    # Re-read the block under the state lock before touching its mutable rows.
+    block = await db.scalar(
+        select(models.OperationalScheduleBlock)
+        .where(
+            models.OperationalScheduleBlock.id == operational_block_id,
+            models.OperationalScheduleBlock.organization_id == organization_id,
+            models.OperationalScheduleBlock.status == models.OperationalBlockStatus.ACTIVE,
+        )
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    if block is None:
+        raise OperationsError(
+            "operational_block_not_found", "Bloco operacional não encontrado.", status_code=404
+        )
     if status == "COMPLETED" and not execution_allowed(now_utc, lesson.ends_at):
         raise OperationsError(
             "lesson_not_finished",
@@ -1027,6 +1722,18 @@ async def record_operational_lesson_log(
         raise OperationsError(
             "week_locked",
             "Esta semana já foi submetida ou aprovada. Não é possível alterar registos.",
+        )
+    joint_blocks = await _joint_substitute_blocks(db, organization_id, lesson)
+    if len(joint_blocks) > 1:
+        return await _complete_joint_substitution(
+            db,
+            organization_id,
+            block=block,
+            joint_blocks=joint_blocks,
+            payload=payload,
+            membership_id=membership_id,
+            now_utc=now_utc,
+            lesson=lesson,
         )
     log = await db.scalar(
         select(models.LessonLog)
@@ -1157,7 +1864,9 @@ async def adjust_class_progress(
         return False
     for assignment in assignments:
         await reconcile_assignment_requirements(db, organization_id, assignment.id)
-    requirements = await _requirements_for_assignments(
+    # Planning view: a retired module is closed and cannot receive manual
+    # progress, so an unselected module is rejected as not assigned.
+    requirements, executed = await load_planning_requirements(
         db, organization_id, [row.id for row in assignments]
     )
     module_owner: dict[int, int] = {}
@@ -1166,7 +1875,6 @@ async def adjust_class_progress(
         for module in requirements.get(assignment.id, ()):
             module_owner[module.module_id] = assignment.id
             required_by_module[module.module_id] = module.required_minutes
-    executed = await load_executed_minutes(db, organization_id, [row.id for row in assignments])
     for update in updates:
         assignment_id = module_owner.get(update.module_id)
         if assignment_id is None:
@@ -1293,9 +2001,10 @@ async def class_progress_map(
     if not assignments:
         return None
     assignment_ids = [row.id for row in assignments]
-    executed = await load_executed_minutes(db, organization_id, assignment_ids)
+    # Dashboard readers use the planning view: a retired module is closed and
+    # receives no new debt or progress credit.
+    requirements, executed = await load_planning_requirements(db, organization_id, assignment_ids)
     open_debt, claim_assignments = await load_open_debt(db, organization_id, assignment_ids)
-    requirements = await _requirements_for_assignments(db, organization_id, assignment_ids)
     assignment_for_claim = claim_assignments
     debt_by_module: dict[int, int] = defaultdict(int)
     for claim_id, minutes in open_debt.items():

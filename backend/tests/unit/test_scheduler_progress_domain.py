@@ -10,6 +10,7 @@ from app.scheduler.domain.demand import (
     close_retired_modules,
     completed_by_module,
     frontier_credit,
+    joint_frontier_credit,
     remaining_minutes,
 )
 from app.scheduler.domain.projection import ModuleRequirement
@@ -127,6 +128,33 @@ def test_execution_audit_instant_must_be_explicit_utc():
         )
 
 
+def test_close_retired_modules_keeps_planned_modules_unchanged():
+    closed, completed = close_retired_modules(MODULES, frozenset(), {1: 100, 2: 0})
+
+    assert closed == MODULES
+    assert completed == {1: 100, 2: 0}
+
+
+def test_close_retired_modules_closes_a_retired_module_at_its_executed_minutes():
+    closed, completed = close_retired_modules(MODULES, frozenset({1}), {1: 250, 2: 0})
+
+    assert closed == (ModuleRequirement(1, 1, 250), ModuleRequirement(2, 2, 600))
+    assert completed == {1: 250, 2: 0}
+
+
+def test_close_retired_modules_drops_a_retired_module_without_minutes():
+    closed, completed = close_retired_modules(MODULES, frozenset({2}), {1: 100, 2: 0})
+
+    assert closed == (ModuleRequirement(1, 1, 600),)
+    assert completed == {1: 100}
+
+
+def test_frontier_credit_on_the_planning_view_never_credits_a_retired_module():
+    planning, completed = close_retired_modules(MODULES, frozenset({1}), {1: 250, 2: 0})
+
+    assert frontier_credit(planning, completed, 100) == (ModuleCredit(2, 100),)
+
+
 def test_t29_substitution_credits_taught_subject_and_leaves_original_demand():
     original = (ModuleRequirement(1, 1, 50),)
     substitute = (ModuleRequirement(2, 1, 50),)
@@ -137,6 +165,26 @@ def test_t29_substitution_credits_taught_subject_and_leaves_original_demand():
     assert reconcile_debt((DebtClaim(1, date(2026, 9, 22), 50),), residual_minutes=50) == (
         DebtBalance(1, open_minutes=50, reserved_minutes=0),
     )
+
+
+def test_joint_frontier_credit_uses_the_highest_progress_and_never_exceeds_a_class():
+    modules = (ModuleRequirement(1, 1, 100), ModuleRequirement(2, 2, 100))
+    ahead = {1: {1: 80, 2: 0}, 2: {1: 30, 2: 0}}
+
+    credit = joint_frontier_credit(modules, ahead, 50)
+
+    assert credit == (ModuleCredit(1, 20), ModuleCredit(2, 30))
+    for completed in ahead.values():
+        assert all(
+            item.minutes
+            <= modules[item.module_id - 1].required_minutes - completed.get(item.module_id, 0)
+            for item in credit
+        )
+
+
+def test_joint_frontier_credit_without_a_class_is_rejected():
+    with pytest.raises(ValueError):
+        joint_frontier_credit(MODULES, {}, 30)
 
 
 def test_close_retired_modules_keeps_planned_requirements_and_minutes():

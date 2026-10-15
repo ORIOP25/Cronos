@@ -27,12 +27,32 @@ const OCCURRENCE_LABELS = {
 // Pure helpers — outside component (SonarQube S7721)
 // ---------------------------------------------------------------------------
 
+function slotClassNames(slot) {
+  if (Array.isArray(slot?.class_infos) && slot.class_infos.length > 0) {
+    return slot.class_infos
+      .map((item) => item.class_name ?? item.name)
+      .filter(Boolean)
+      .join(' + ')
+  }
+  return slot?.class_info?.name ?? ''
+}
+
+function jointOtherClassNames(slot) {
+  return (slot?.joint_classes ?? [])
+    .map((item) => item.name)
+    .filter(Boolean)
+    .join(', ')
+}
+
 function buildTooltipLines(slot) {
+  const classNames = slotClassNames(slot)
+  const jointNames = jointOtherClassNames(slot)
   return [
     slot.module ? `Modulo: ${slot.module.name} (${slot.module.hours_total}h)` : '',
     slot.teacher ? `Professor: ${slot.teacher.name}` : '',
     slot.room ? `Sala: ${slot.room.name}` : '',
-    slot.class_info ? `Turma: ${slot.class_info.name}` : '',
+    classNames ? `Turma: ${classNames}` : '',
+    jointNames ? `Em conjunto com: ${jointNames}` : '',
     slot.hours_given == null ? '' : `Horas dadas: ${slot.hours_given}h`,
   ].filter(Boolean)
 }
@@ -184,7 +204,11 @@ const SlotCell = ({ slotEntries, isOperationalEnabled, onOpenOperationalAction }
       >
       <div className="week-grid__subject">
         {slot.subject?.name ?? '—'}
+        {jointOtherClassNames(slot) ? ` · em conjunto com ${jointOtherClassNames(slot)}` : ''}
       </div>
+      {Array.isArray(slot.class_infos) && slot.class_infos.length > 1 ? (
+        <div className="week-grid__secondary week-grid__classes">{slotClassNames(slot)}</div>
+      ) : null}
       <div className="week-grid__details">
         <span className="week-grid__secondary">
           {[slot.teacher?.name, slot.room?.name].filter(Boolean).join(' · ')}
@@ -221,8 +245,12 @@ const SlotCell = ({ slotEntries, isOperationalEnabled, onOpenOperationalAction }
     ? 'Concluída'
     : (statusLabel ?? 'Planeado')
 
+  const jointClassNames = jointOtherClassNames(slot)
+  const multiClassNames = Array.isArray(slot.class_infos) && slot.class_infos.length > 1
+    ? slotClassNames(slot)
+    : ''
   const ariaLabel = slot
-    ? `${slot.subject?.name ?? 'Sem disciplina'}, ${slot.teacher?.name ?? ''}, ${slot.room?.name ?? ''}, ${ariaStatus}`
+    ? `${slot.subject?.name ?? 'Sem disciplina'}, ${multiClassNames ? `${multiClassNames}, ` : ''}${jointClassNames ? `em conjunto com ${jointClassNames}, ` : ''}${slot.teacher?.name ?? ''}, ${slot.room?.name ?? ''}, ${ariaStatus}`
     : 'Célula vazia'
 
   return (

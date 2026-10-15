@@ -393,7 +393,8 @@ def _assignment_scopes(
         if assignment is None:
             continue
         day = (lesson.period.school_date - snapshot.origin).days
-        protected_days[assignment.class_id] = max(protected_days[assignment.class_id], day)
+        for class_id in assignment.class_ids:
+            protected_days[class_id] = max(protected_days[class_id], day)
     completion_week: dict[int, int] = {}
     for assignment in snapshot.assignments:
         remaining = residual_minutes(snapshot, assignment.assignment_id)
@@ -423,11 +424,12 @@ def _assignment_scopes(
             raise NoEligiblePeriodsError(
                 f"Assignment {assignment.assignment_id} has no eligible period."
             )
-        completion_week[assignment.class_id] = max(
-            completion_week.get(assignment.class_id, 0),
-            final_group[0],
-            protected_days.get(assignment.class_id, 0) // 7,
-        )
+        for class_id in assignment.class_ids:
+            completion_week[class_id] = max(
+                completion_week.get(class_id, 0),
+                final_group[0],
+                protected_days.get(class_id, 0) // 7,
+            )
         for week, durations in sorted(grouped.items()):
             week_periods = tuple(
                 period
@@ -495,7 +497,8 @@ def _unrestricted_scope(snapshot: PlanningSnapshot, periods: tuple[Period, ...])
         if assignment is None:
             continue
         day = (lesson.period.school_date - snapshot.origin).days
-        protected_days[assignment.class_id] = max(protected_days[assignment.class_id], day)
+        for class_id in assignment.class_ids:
+            protected_days[class_id] = max(protected_days[class_id], day)
     for assignment in snapshot.assignments:
         remaining = residual_minutes(snapshot, assignment.assignment_id)
         if remaining <= 0:
@@ -514,7 +517,9 @@ def _unrestricted_scope(snapshot: PlanningSnapshot, periods: tuple[Period, ...])
             final_periods=eligible,
             last_window=True,
         )
-    completing = tuple(sorted({row.class_id for row in snapshot.assignments}))
+    completing = tuple(
+        sorted({class_id for row in snapshot.assignments for class_id in row.class_ids})
+    )
     return _WindowScope(
         week=None,
         periods=canonical,
@@ -535,17 +540,17 @@ def _add_assignment_options(state, assignment_id, row):
         if not rooms:
             raise NoEligiblePeriodsError(f"Assignment {assignment_id} lost its eligible rooms.")
         state.rooms_of[key] = rooms
-        pair = (assignment.class_id, assignment.subject_id)
+        room_variables = {}
         for room_id in rooms:
             variable = model.NewBoolVar(
                 f"r_{assignment_id}_{period.start_utc.isoformat()}_{room_id}"
             )
             state.room_choice[(assignment_id, period, room_id)] = variable
-            state.room_pairs.setdefault(pair, {}).setdefault(room_id, []).append(variable)
-        model.Add(
-            sum(state.room_choice[(assignment_id, period, room_id)] for room_id in rooms)
-            == state.x[key]
-        )
+            room_variables[room_id] = variable
+            for class_id in assignment.class_ids:
+                pair = (class_id, assignment.subject_id)
+                state.room_pairs.setdefault(pair, {}).setdefault(room_id, []).append(variable)
+        model.Add(sum(room_variables.values()) == state.x[key])
         if row.last_window:
             state.last[key] = model.NewBoolVar(f"l_{assignment_id}_{period.start_utc.isoformat()}")
             state.waste[key] = model.NewIntVar(
@@ -597,7 +602,65 @@ def _build_scope_state(snapshot: PlanningSnapshot, scope: _WindowScope) -> _Scop
     _add_conflicts(state)
     _add_lunch(state)
     _add_completion_measure(state)
+    _add_precedence_constraints(state)
     return state
+
+
+def _absolute_minutes(snapshot: PlanningSnapshot, period: Period) -> tuple[int, int]:
+    """Local (start, end) minutes counted from the snapshot origin's school date."""
+    day = (period.school_date - snapshot.origin).days
+    base = day * 24 * 60
+    start = base + period.start_local.hour * 60 + period.start_local.minute
+    end = base + period.end_local.hour * 60 + period.end_local.minute
+    return start, end
+
+
+def _add_precedence_constraints(state: _ScopeState) -> None:
+    """Stagger a successor after its predecessor inside one window (WBS 3.6.2).
+
+    ``last_end[u]`` is the end of the latest selected (or protected) lesson of
+    the predecessor; ``first_start[v]`` is the start of the earliest selected
+    lesson of the successor. The relation is linear in the number of periods.
+    Protected target lessons are facts and stay outside the constraint.
+    """
+    snapshot = state.snapshot
+    if not snapshot.precedences:
+        return
+    model = state.model
+    scope_assignments = state.scope.assignments
+    horizon = 0
+    for row in scope_assignments.values():
+        for period in row.periods:
+            horizon = max(horizon, _absolute_minutes(snapshot, period)[1])
+    for lesson in snapshot.protected_lessons:
+        horizon = max(horizon, _absolute_minutes(snapshot, lesson.period)[1])
+    if horizon <= 0:
+        return
+    for source, target in snapshot.precedences:
+        if source not in scope_assignments or target not in scope_assignments:
+            continue
+        source_periods = scope_assignments[source].periods
+        target_periods = scope_assignments[target].periods
+        if not source_periods or not target_periods:
+            continue
+        last_end = model.NewIntVar(0, horizon, f"last_end_{source}_{target}")
+        for period in source_periods:
+            end = _absolute_minutes(snapshot, period)[1]
+            model.Add(last_end >= end).OnlyEnforceIf(state.x[(source, period)])
+        for lesson in snapshot.protected_lessons:
+            if lesson.assignment_id != source:
+                continue
+            if (
+                state.scope.week is not None
+                and week_index(snapshot.origin, lesson.period) != state.scope.week
+            ):
+                continue
+            model.Add(last_end >= _absolute_minutes(snapshot, lesson.period)[1])
+        first_start = model.NewIntVar(0, horizon, f"first_start_{source}_{target}")
+        for period in target_periods:
+            start = _absolute_minutes(snapshot, period)[0]
+            model.Add(first_start <= start + horizon * (1 - state.x[(target, period)]))
+        model.Add(last_end <= first_start)
 
 
 def _add_resource_exclusivity(model: cp_model.CpModel, rows: Sequence[tuple[Period, Any]]) -> None:
@@ -633,7 +696,8 @@ def _add_conflicts(state: _ScopeState) -> None:
         assignment = state.assignment_by_id[assignment_id]
         for period in row.periods:
             variable = state.x[(assignment_id, period)]
-            by_class[assignment.class_id].append((period, variable))
+            for class_id in assignment.class_ids:
+                by_class[class_id].append((period, variable))
             by_teacher[assignment.teacher_id].append((period, variable))
             for room_id in state.rooms_of[(assignment_id, period)]:
                 by_room[room_id].append(
@@ -674,7 +738,8 @@ def _lunch_resource_rows(state):
     by_resource: dict[tuple[str, int, date], list[tuple[Period, Any]]] = defaultdict(list)
     for (assignment_id, period), variable in state.x.items():
         assignment = state.assignment_by_id[assignment_id]
-        by_resource[("class", assignment.class_id, period.school_date)].append((period, variable))
+        for class_id in assignment.class_ids:
+            by_resource[("class", class_id, period.school_date)].append((period, variable))
         by_resource[("teacher", assignment.teacher_id, period.school_date)].append(
             (period, variable)
         )
@@ -688,9 +753,8 @@ def _lunch_resource_rows(state):
         ):
             continue
         teacher_id = lesson.teacher_id if lesson.teacher_id is not None else assignment.teacher_id
-        by_resource[("class", assignment.class_id, lesson.period.school_date)].append(
-            (lesson.period, 1)
-        )
+        for class_id in assignment.class_ids:
+            by_resource[("class", class_id, lesson.period.school_date)].append((lesson.period, 1))
         by_resource[("teacher", teacher_id, lesson.period.school_date)].append((lesson.period, 1))
     return by_resource
 
@@ -762,14 +826,16 @@ def _add_completion_measure(state: _ScopeState) -> None:
         return
     values: set[int] = {0, *state.scope.protected_days.values()}
     for (assignment_id, period), _variable in state.x.items():
-        if state.assignment_by_id[assignment_id].class_id in state.scope.completing_classes:
+        if set(state.assignment_by_id[assignment_id].class_ids) & set(
+            state.scope.completing_classes
+        ):
             values.add((period.school_date - state.snapshot.origin).days)
     upper = max(values)
     for class_id in state.scope.completing_classes:
         terms = [
             (period.school_date - state.snapshot.origin).days * variable
             for (assignment_id, period), variable in state.x.items()
-            if state.assignment_by_id[assignment_id].class_id == class_id
+            if class_id in state.assignment_by_id[assignment_id].class_ids
         ]
         day = model.NewIntVar(0, upper, f"day_{class_id}")
         model.AddMaxEquality(day, [*terms, state.scope.protected_days.get(class_id, 0)])
@@ -795,8 +861,9 @@ def _preference_terms(state: _ScopeState) -> list[Any]:
     for (assignment_id, period), variable in state.x.items():
         assignment = state.assignment_by_id[assignment_id]
         duration = period.duration_minutes
-        if _soft_overlaps(
-            state.snapshot, UnavailableResource.CLASS, assignment.class_id, period
+        if any(
+            _soft_overlaps(state.snapshot, UnavailableResource.CLASS, class_id, period)
+            for class_id in assignment.class_ids
         ) or _soft_overlaps(
             state.snapshot, UnavailableResource.TEACHER, assignment.teacher_id, period
         ):
@@ -838,10 +905,11 @@ def _gap_resource_rows(state, kind):
     groups: dict[tuple[int, date], dict[int, list[Any]]] = defaultdict(lambda: defaultdict(list))
     for (assignment_id, period), variable in state.x.items():
         assignment = state.assignment_by_id[assignment_id]
-        resource_id = assignment.teacher_id if kind == "teacher" else assignment.class_id
+        resource_ids = [assignment.teacher_id] if kind == "teacher" else list(assignment.class_ids)
         position = state.position_of.get(period)
         if position is not None:
-            groups[(resource_id, period.school_date)][position].append(variable)
+            for resource_id in resource_ids:
+                groups[(resource_id, period.school_date)][position].append(variable)
     for lesson in state.snapshot.protected_lessons:
         assignment = state.assignment_by_id.get(lesson.assignment_id)
         if assignment is None:
@@ -851,12 +919,15 @@ def _gap_resource_rows(state, kind):
             and week_index(state.snapshot.origin, lesson.period) != state.scope.week
         ):
             continue
-        resource_id = (
-            lesson.teacher_id or assignment.teacher_id if kind == "teacher" else assignment.class_id
+        resource_ids = (
+            [lesson.teacher_id or assignment.teacher_id]
+            if kind == "teacher"
+            else list(assignment.class_ids)
         )
         position = _slot_position(state.slots_by_day, lesson.period)
         if position is not None:
-            groups[(resource_id, lesson.period.school_date)][position].append(1)
+            for resource_id in resource_ids:
+                groups[(resource_id, lesson.period.school_date)][position].append(1)
     return groups
 
 
@@ -916,8 +987,9 @@ def _room_continuity_expression(state: _ScopeState) -> Any:
     for lesson in state.snapshot.protected_lessons:
         assignment = state.assignment_by_id.get(lesson.assignment_id)
         if assignment is not None:
-            pair = (assignment.class_id, assignment.subject_id)
-            pairs.setdefault(pair, {}).setdefault(lesson.room_id, []).append(1)
+            for class_id in assignment.class_ids:
+                pair = (class_id, assignment.subject_id)
+                pairs.setdefault(pair, {}).setdefault(lesson.room_id, []).append(1)
     return sum(
         sum(
             _or_expressions(state.model, f"used_{pair}_{room}", values)
@@ -1134,7 +1206,8 @@ def _room_change_value(
         assignment = assignment_by_id.get(lesson.assignment_id)
         if assignment is None:
             continue
-        pairs[(assignment.class_id, assignment.subject_id)].add(rooms[lesson.lesson_id])
+        for class_id in assignment.class_ids:
+            pairs[(class_id, assignment.subject_id)].add(rooms[lesson.lesson_id])
     return sum(max(0, len(values) - 1) for values in pairs.values())
 
 
@@ -1212,8 +1285,9 @@ def _optimize_rooms(
         assignment = assignment_by_id.get(lesson.assignment_id)
         if assignment is None:
             continue
-        if _soft_overlaps(
-            snapshot, UnavailableResource.CLASS, assignment.class_id, lesson.period
+        if any(
+            _soft_overlaps(snapshot, UnavailableResource.CLASS, class_id, lesson.period)
+            for class_id in assignment.class_ids
         ) or _soft_overlaps(
             snapshot,
             UnavailableResource.TEACHER,
@@ -1241,16 +1315,16 @@ def _optimize_rooms(
         assignment = assignment_by_id.get(lesson.assignment_id)
         if assignment is None:
             continue
-        pair = (assignment.class_id, assignment.subject_id)
         rooms = (
             (current_rooms[lesson.lesson_id],)
             if lesson.lesson_id in fixed
             else variable_rooms[lesson.lesson_id]
         )
         for room_id in rooms:
-            continuity_terms[(pair, room_id)].append(
-                choice[(lesson.lesson_id, room_id)] if lesson.lesson_id in variable_rooms else 1
-            )
+            for class_id in assignment.class_ids:
+                continuity_terms[((class_id, assignment.subject_id), room_id)].append(
+                    choice[(lesson.lesson_id, room_id)] if lesson.lesson_id in variable_rooms else 1
+                )
     used_by_pair: dict[tuple[int, int], list[Any]] = defaultdict(list)
     for (pair_key, room_id), terms in sorted(continuity_terms.items()):
         used_by_pair[pair_key].append(

@@ -32,14 +32,19 @@ Separate scheduler v1 records preserve curricular demand, execution evidence, de
 | Access audit | `member_access_operation`, `clerk_webhook_event` |
 | Legal evidence | `organization_legal_acceptance` |
 | Curriculum | `course`, `class`, `subject`, `module`, `course_subject_link`, `teacher_subject_link`, `class_subject_link`, `class_subject_module` |
+| Joint lessons | `joint_lesson_group`, `joint_lesson_group_member`, `joint_lesson_group_module` |
 | Resources | `room`, `timeslot`, `grid_version`, `availability`, `class_availability`, `constraint` |
 | School calendar | `organization_settings`, `organization_grid_settings`, `school_calendar_event`, `school_calendar_event_class` |
 | Scheduler lifecycle | `scheduler_school_year`, `scheduler_school_year_state`, `scheduler_state_version_events` |
 | Operational records | `lesson_occurrence`, `operational_schedule_block` |
 | Execution | `lesson_log`, `progress_ledger_entry`, `teacher_weekly_timesheet` |
-| Scheduler v1 curriculum | `curricular_assignment`, `curricular_requirement`, `curricular_execution`, `curricular_execution_credit`, `curricular_debt`, `curricular_debt_revision`, `curricular_debt_settlement` |
+| Scheduler v1 curriculum | `curricular_assignment`, `curricular_requirement` (`planned`), `curricular_execution`, `curricular_execution_credit`, `curricular_debt`, `curricular_debt_revision`, `curricular_debt_settlement` |
 | Scheduler v1 schedule | `scheduler_version_v1`, `scheduler_lesson_v1`, `scheduler_lesson_slice_v1`, `scheduler_recovery_reservation_v1`, `scheduler_lesson_log_v1`, `scheduler_job_v1`, `scheduler_proposal_v1` |
 | Definitions | `backend/app/models.py` and `backend/app/scheduler/infrastructure/models.py` |
+
+`class_subject_module` marks the modules selected on a class/subject link. Its primary key is `(organization_id, class_subject_link_id, module_id)`, and forced row-level security isolates the tenant. The migration `0002_class_subject_modules` fills every existing link with all its subject modules. `curricular_requirement.planned` is `false` for a retired module that keeps executed history; see [Professional Education](../02_domain_model/PROFESSIONAL_EDUCATION.md).
+
+`joint_lesson_group` is one joint lesson: a subject, its member class/subject links and its joint modules. `joint_lesson_group_member` has primary key `(organization_id, class_subject_link_id)`, so a link belongs to at most one group. `joint_lesson_group_module` has primary key `(organization_id, group_id, module_id)`. The member and module foreign keys do not cascade, so the database refuses removing a link or module that a joint lesson uses. The migration `0004_joint_lesson_groups` creates the three tables and adds `scheduler_lesson_v1.teaching_unit_key` (backfilled as `A:{assignment_id}`); the lesson identity becomes `(version_id, stable_key, assignment_id)` so sibling lessons of a joint lesson share a `stable_key`. See [Professional Education](../02_domain_model/PROFESSIONAL_EDUCATION.md).
 
 ## Data or Request Flow
 
@@ -125,7 +130,7 @@ erDiagram
 - ORM models: `backend/app/models.py`
 - Scheduler v1 models: `backend/app/scheduler/infrastructure/models.py`
 - Schemas: `backend/app/schemas.py`
-- Migrations: `backend/alembic/versions/` holds the baseline `0001_scheduler_v1_baseline`, a PostgreSQL 18 SQL schema dump, and the linear chain that stacks on it, including `0002_class_subject_modules` and `0003_class_availability`.
+- Migrations: `backend/alembic/versions/` holds the baseline `0001_scheduler_v1_baseline`, a PostgreSQL 18 SQL schema dump, and the linear chain that stacks on it, including `0002_class_subject_modules`, `0003_class_availability` and `0004_joint_lesson_groups`.
 - RLS tests: `backend/tests/contracts/test_rls_database_policies.py`
 - Integrity tests: `backend/tests/integration/committed/test_tenant_isolation_complete.py`
 

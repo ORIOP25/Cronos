@@ -493,12 +493,25 @@ const ClassDetails = () => {
                   {classSubjects.subjects.map(s => {
                     const modules = s.modules || []
                     const selectedCount = modules.filter(module => module.selected).length
+                    const jointOtherNames = (s.joint_group?.classes || [])
+                      .filter(cls => cls.class_id !== numClassId)
+                      .map(cls => cls.class_name)
+                      .join(', ')
                     return (
                       <tr key={s.id}>
                         <td>
                           <div className="d-flex align-items-center gap-2">
                             <CIcon icon={cilBook} className="text-info" size="sm" />
                             <span className="fw-medium">{s.subject_name}</span>
+                            {jointOtherNames && (
+                              <CBadge
+                                color="info"
+                                title={`Aula conjunta com ${jointOtherNames}`}
+                                aria-label={`Aula conjunta com ${jointOtherNames}`}
+                              >
+                                Conjunta
+                              </CBadge>
+                            )}
                           </div>
                         </td>
                         <td>

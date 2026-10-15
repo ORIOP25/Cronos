@@ -27,7 +27,7 @@ from app.scheduler.application.publishing import (
 )
 from app.scheduler.composition import generate_schedule, repair_published_schedule
 from app.scheduler.domain.candidate import SchedulingStrategy
-from app.scheduler.domain.diagnostics import Diagnosis
+from app.scheduler.domain.diagnostics import Diagnosis, DiagnosisCode, EvidenceKind
 from app.scheduler.domain.quality import QUALITY_POLICY_VERSION
 from app.scheduler.domain.results import (
     OUTCOME_CANCELLED,
@@ -67,6 +67,52 @@ _TERMINAL_BY_OUTCOME = {
     OUTCOME_FAILED: ("FAILED", "FAILED", "FAILED"),
     OUTCOME_INVALID_INPUT: ("FAILED", "INVALID_INPUT", "INVALID_INPUT"),
 }
+
+
+def _diagnosis_value(value) -> str:
+    return str(getattr(value, "value", value))
+
+
+_JOINT_NO_COMMON_TIME = DiagnosisCode.JOINT_NO_COMMON_TIME.value
+
+
+def _proven_diagnosis_code(result) -> str | None:
+    """The single recognized joint diagnosis code of an INFEASIBLE result.
+
+    Only ``JOINT_NO_COMMON_TIME`` is propagated: complete generation records it
+    verbatim on ``evidence.stop_reason``; adaptive recovery records it as a
+    ``PROVEN_SCOPE`` diagnosis. Every other stop reason or diagnosis code keeps
+    the generic ``INFEASIBLE`` code, so a school without joints is unchanged.
+    """
+    stop_reason = getattr(getattr(result, "evidence", None), "stop_reason", None)
+    if stop_reason == _JOINT_NO_COMMON_TIME:
+        return _JOINT_NO_COMMON_TIME
+    for diagnosis in getattr(result, "diagnoses", ()) or ():
+        code = _diagnosis_value(diagnosis.code)
+        kind = getattr(diagnosis, "evidence_kind", None)
+        if code == _JOINT_NO_COMMON_TIME and (
+            kind is None or _diagnosis_value(kind) == EvidenceKind.PROVEN_SCOPE.value
+        ):
+            return _JOINT_NO_COMMON_TIME
+    return None
+
+
+def _terminal_finish(result) -> tuple[str, str, str]:
+    """Map a non-complete result to its persisted status, code and stop reason.
+
+    Only a proven ``INFEASIBLE`` diagnosis changes the generic code, so a school
+    without joints keeps exactly today's values. Cancellation and staleness still
+    override the result inside ``finish_job``.
+    """
+    status, result_code, stop_reason = _TERMINAL_BY_OUTCOME.get(
+        result.outcome, ("FAILED", "SYSTEM_ERROR", "FAILED")
+    )
+    if result.outcome == OUTCOME_INFEASIBLE:
+        proven_code = _proven_diagnosis_code(result)
+        if proven_code is not None:
+            result_code = proven_code
+            stop_reason = proven_code
+    return status, result_code, stop_reason
 
 
 def _now() -> datetime:
@@ -163,9 +209,7 @@ async def _execute_claim(claim: JobClaim, lock_connection=None) -> dict[str, obj
                 "PERSISTENCE", started_at=persist_start, status=outcome.refused or "LOST"
             )
             return {"job_id": claim.job_id, "status": outcome.refused or "LOST"}
-        status, result_code, stop_reason = _TERMINAL_BY_OUTCOME.get(
-            result.outcome, ("FAILED", "SYSTEM_ERROR", "FAILED")
-        )
+        status, result_code, stop_reason = _terminal_finish(result)
         written = await _finish(claim, status, result_code, stop_reason, diagnoses=result.diagnoses)
         return {"job_id": claim.job_id, "status": written, "calculated": status}
 

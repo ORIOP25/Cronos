@@ -60,6 +60,9 @@ Routes under `/api/v1/timesheets`: `GET /` (admin list), `GET /me/{week_start_da
 - Reopening returns the week to `OPEN`.
 - [The timesheet service](../../backend/app/services/timesheet_service.py) rejects invalid transitions with a Portuguese message showing the source and target states.
 - Ledger entries require non-zero deltas and unique idempotency keys.
+- A joint lesson counts once per teacher week. The service groups its sibling rows by `(version_id, stable_key)`, so the week has one slot and one teacher-hour.
+- A joint lesson is registered only when every sibling has a lesson log. A missing sibling blocks submission.
+- A joint substitution counts once. Its blocks are grouped by the source lesson identity, so the week does not count one block per member class.
 
 ## States and Transitions
 
@@ -92,7 +95,7 @@ The selected weekly admin view uses the active teacher roster. It includes teach
 - `backend/app/models.py`
 - `frontend/src/pages/Timesheets.jsx`
 - `frontend/src/pages/MyProgress.jsx`
-- Tests: `backend/tests/integration/committed/test_module_progress.py`, `backend/tests/integration/committed/test_timesheets.py`, `backend/tests/integration/committed/test_timesheets_v1.py`, `frontend/src/test/weekSubmission.test.js`
+- Tests: `backend/tests/integration/committed/test_module_progress.py`, `backend/tests/integration/committed/test_timesheets.py`, `backend/tests/integration/committed/test_timesheets_v1.py`, `backend/tests/integration/committed/test_joint_lesson_timesheets.py`, `frontend/src/test/weekSubmission.test.js`
 
 ## Related Documents
 

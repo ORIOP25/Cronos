@@ -10,7 +10,7 @@ import {
 import CIcon from '@coreui/icons-react'
 import {
   cilArrowLeft, cilBook, cilUserPlus, cilTrash, cilPeople,
-  cilBookmark, cilCheckCircle, cilWarning,
+  cilBookmark, cilCheckCircle, cilWarning, cilLink,
 } from '@coreui/icons'
 import {
   useClassSubjects,
@@ -19,18 +19,34 @@ import {
   useAddClassSubject,
   useUpdateClassSubject,
   useRemoveClassSubject,
+  useJointCandidates,
+  useCreateJointGroup,
+  useUpdateJointGroup,
+  useDeleteJointGroup,
 } from '../features/catalog/data'
 import Breadcrumbs from '../components/Breadcrumbs'
 import ConfirmationModal from '../components/ConfirmationModal'
 import FeedbackBanner from '../components/FeedbackBanner'
 import RoomTypeBadge from '../components/RoomTypeBadge'
-import { getApiErrorMessage, isApiErrorBlock, isApiErrorTransient } from '../utils/apiErrors'
+import { getApiErrorMessage, getApiErrorCode, isApiErrorBlock, isApiErrorTransient } from '../utils/apiErrors'
 import { useAttemptScope } from '../hooks/useAttemptScope'
 import { formatGradeLevel } from '../utils/presentation'
 
 // ==========================================
 //  HELPERS
 // ==========================================
+
+const formatModuleLabel = (module) => {
+  const code = module.code ? `${module.code} ` : ''
+  return `${code}${module.name} · ${module.hours_total} h`
+}
+
+const jointOtherClassNames = (subject, classId) => (
+  (subject?.joint_group?.classes ?? [])
+    .filter((cls) => cls.class_id !== classId)
+    .map((cls) => cls.class_name)
+    .join(', ')
+)
 
 /** Mostra horas decimais sem ruído de vírgula flutuante (ex.: 25, 12.5). */
 const formatHours = (hours) => Number((Number(hours) || 0).toFixed(1))
@@ -40,13 +56,17 @@ const formatHours = (hours) => Number((Number(hours) || 0).toFixed(1))
 // ==========================================
 const SubjectRow = ({
   subject,
+  classId,
   onRemove,
   onTeacherChange,
   onModulesChange,
+  onOpenJoint,
+  onUndoJoint,
   isUpdating,
   canEditTeacher = true,
-  canRemove = true,
   canEditModules = true,
+  canEditJoint = true,
+  canRemove = true,
   teacherError = '',
   modulesError = '',
 }) => {
@@ -56,9 +76,24 @@ const SubjectRow = ({
   const teacherErrorId = `class-subject-teacher-error-${subject.subject_id}`
   const modulesPanelId = `class-subject-modules-${subject.subject_id}`
   const modulesErrorId = `class-subject-modules-error-${subject.subject_id}`
+
   const modules = subject.modules || []
   const selectedModules = modules.filter(module => module.selected)
   const selectedHours = selectedModules.reduce((total, module) => total + (Number(module.hours_total) || 0), 0)
+
+  const jointGroup = subject.joint_group
+  const jointModuleIds = new Set(jointGroup?.module_ids ?? [])
+  const jointOtherNames = (jointGroup?.classes ?? [])
+    .filter((cls) => cls.class_id !== classId)
+    .map((cls) => cls.class_name)
+    .join(', ')
+  const jointModuleLabels = (jointGroup?.module_ids ?? [])
+    .map((id) => {
+      const module = modules.find((item) => item.id === id)
+      return module ? (module.code || module.name) : null
+    })
+    .filter(Boolean)
+    .join(', ')
   
   const handleTeacherChange = (e) => {
     const teacherId = e.target.value ? Number.parseInt(e.target.value, 10) : null
@@ -178,23 +213,351 @@ const SubjectRow = ({
                 <p className="text-muted mb-0" style={{ fontSize: '0.85rem' }}>
                   Esta disciplina não tem módulos. Adicione-os em Disciplinas.
                 </p>
-              ) : modules.map(module => (
-                <CFormCheck
-                  key={module.id}
-                  type="checkbox"
-                  id={`class-subject-module-${subject.subject_id}-${module.id}`}
-                  label={`${module.code ? `${module.code} ` : ''}${module.name} · ${formatHours(module.hours_total)} h`}
-                  checked={Boolean(module.selected)}
-                  disabled={isUpdating || !canEditModules}
-                  onChange={(e) => handleModuleToggle(module.id, e.target.checked)}
-                  data-tutorial-target="class-subject-module"
-                />
-              ))}
+              ) : modules.map(module => {
+                const isJoint = jointModuleIds.has(module.id)
+                return (
+                  <div key={module.id}>
+                    <CFormCheck
+                      type="checkbox"
+                      id={`class-subject-module-${subject.subject_id}-${module.id}`}
+                      label={`${module.code ? `${module.code} ` : ''}${module.name} · ${formatHours(module.hours_total)} h`}
+                      checked={Boolean(module.selected)}
+                      disabled={isUpdating || !canEditModules || isJoint}
+                      onChange={(e) => handleModuleToggle(module.id, e.target.checked)}
+                      data-tutorial-target="class-subject-module"
+                    />
+                    {isJoint && (
+                      <div className="text-muted ms-4" style={{ fontSize: '0.8rem' }}>
+                        <CIcon icon={cilLink} size="sm" className="me-1" />
+                        Retire primeiro este módulo da aula conjunta.
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
             </div>
+          )}
+        </div>
+
+        {/* Aula conjunta */}
+        <div className="mt-2">
+          {jointGroup ? (
+            <div className="d-flex flex-wrap align-items-center gap-2">
+              <span className="text-muted" style={{ fontSize: '0.85rem' }}>
+                Em conjunto com {jointOtherNames} · Módulos {jointModuleLabels}
+              </span>
+              {canEditJoint && (
+                <>
+                  <CButton color="secondary" variant="outline" size="sm" onClick={() => onOpenJoint(subject)}>
+                    Editar
+                  </CButton>
+                  <CButton color="danger" variant="outline" size="sm" onClick={() => onUndoJoint(subject)}>
+                    Desfazer
+                  </CButton>
+                </>
+              )}
+            </div>
+          ) : (
+            canEditJoint && (
+              <CButton
+                color="secondary"
+                variant="outline"
+                size="sm"
+                onClick={() => onOpenJoint(subject)}
+                data-tutorial-target="joint-group-create"
+              >
+                Dar em conjunto com…
+              </CButton>
+            )
           )}
         </div>
       </CCardBody>
     </CCard>
+  )
+}
+
+// ==========================================
+//  MODAL: Aula conjunta
+// ==========================================
+const JOINT_ERROR_FIELDS = {
+  JOINT_TOO_FEW_CLASSES: 'classes',
+  JOINT_CLASS_WITHOUT_SUBJECT: 'classes',
+  JOINT_CLASS_ALREADY_JOINED: 'classes',
+  JOINT_CLASS_STARTED: 'classes',
+  JOINT_NO_MODULES: 'modules',
+  JOINT_MODULE_NOT_SELECTED: 'modules',
+  JOINT_MODULE_STARTED: 'modules',
+  JOINT_TEACHER_NOT_ELIGIBLE: 'teacher',
+  teacher_competency_missing: 'teacher',
+}
+
+const formatClassCandidate = (candidate) => (
+  `${candidate.class_name} · ${candidate.course_abbreviation} · ${formatGradeLevel(candidate.grade_level)}`
+)
+
+const jointCommonModuleIds = (sourceSelectedIds, rows, fallbackIds, modules) => {
+  let ids = sourceSelectedIds
+  for (const row of rows) {
+    const rowSelected = Array.isArray(row.selected_module_ids) ? row.selected_module_ids : fallbackIds
+    ids = ids.filter((id) => rowSelected.includes(id))
+  }
+  return ids.filter((id) => modules.some((module) => module.id === id))
+}
+
+const jointStartedModuleIds = (sourceStartedIds, rows) => {
+  const started = new Set(sourceStartedIds)
+  for (const row of rows) {
+    for (const id of row.started_module_ids ?? []) started.add(id)
+  }
+  return started
+}
+
+const JointGroupModal = ({
+  subject,
+  classId,
+  jointGroup,
+  onClose,
+  onSubmit,
+  isPending,
+  error,
+}) => {
+  const { data: candidates = [], isLoading: candidatesLoading } = useJointCandidates(
+    subject.subject_id,
+    classId,
+    jointGroup?.id,
+    true,
+  )
+  const { data: eligibleTeachers = [] } = useEligibleTeachers(subject.subject_id)
+
+  const modules = useMemo(() => subject.modules || [], [subject.modules])
+  const sourceSelectedIds = useMemo(
+    () => modules.filter((module) => module.selected).map((module) => module.id),
+    [modules],
+  )
+  const sourceCandidate = candidates.find((candidate) => candidate.class_id === classId) ?? null
+  const sourceStartedIds = useMemo(
+    () => sourceCandidate?.started_module_ids ?? [],
+    [sourceCandidate],
+  )
+
+  // Every class shown: the other members of the edited group plus any addable candidate.
+  const classRows = useMemo(() => {
+    const byId = new Map()
+    if (jointGroup) {
+      for (const cls of jointGroup.classes ?? []) {
+        if (cls.class_id === classId) continue
+        byId.set(cls.class_id, {
+          class_id: cls.class_id,
+          class_name: cls.class_name,
+          course_abbreviation: cls.course_abbreviation,
+          grade_level: cls.grade_level,
+          selected_module_ids: null,
+          started_module_ids: [],
+          teacher_id: null,
+        })
+      }
+    }
+    for (const candidate of candidates) {
+      if (candidate.class_id === classId) continue
+      const existing = byId.get(candidate.class_id)
+      byId.set(candidate.class_id, {
+        class_id: candidate.class_id,
+        class_name: candidate.class_name ?? existing?.class_name,
+        course_abbreviation: candidate.course_abbreviation ?? existing?.course_abbreviation,
+        grade_level: candidate.grade_level ?? existing?.grade_level,
+        selected_module_ids: candidate.selected_module_ids ?? existing?.selected_module_ids ?? null,
+        started_module_ids: candidate.started_module_ids ?? [],
+        teacher_id: candidate.teacher_id ?? null,
+      })
+    }
+    return [...byId.values()]
+  }, [jointGroup, candidates, classId])
+
+  const [chosenClassIds, setChosenClassIds] = useState(() => (
+    jointGroup
+      ? (jointGroup.classes ?? []).filter((cls) => cls.class_id !== classId).map((cls) => cls.class_id)
+      : []
+  ))
+  const [checkedModuleIds, setCheckedModuleIds] = useState(() => jointGroup?.module_ids ?? [])
+  const [teacherId, setTeacherId] = useState(() => (
+    jointGroup?.teacher_id != null ? String(jointGroup.teacher_id) : ''
+  ))
+
+  const chosenRows = classRows.filter((row) => chosenClassIds.includes(row.class_id))
+  const fallbackIds = useMemo(() => jointGroup?.module_ids ?? [], [jointGroup])
+
+  const startedModuleIds = useMemo(
+    () => jointStartedModuleIds(sourceStartedIds, chosenRows),
+    [sourceStartedIds, chosenRows],
+  )
+  const commonModuleIds = useMemo(
+    () => jointCommonModuleIds(sourceSelectedIds, chosenRows, fallbackIds, modules),
+    [sourceSelectedIds, chosenRows, fallbackIds, modules],
+  )
+
+  // J19: no class may be added or removed once any previous joint module began.
+  const classLocked = useMemo(
+    () => fallbackIds.some((id) => startedModuleIds.has(id)),
+    [fallbackIds, startedModuleIds],
+  )
+
+  const sourceTeacherId = sourceCandidate?.teacher_id ?? subject.teacher_id ?? null
+  const memberTeacherIds = []
+  if (sourceTeacherId != null) memberTeacherIds.push(sourceTeacherId)
+  for (const row of chosenRows) {
+    if (row.teacher_id != null) memberTeacherIds.push(row.teacher_id)
+  }
+  const distinctTeacherIds = [...new Set(memberTeacherIds)]
+  const requiresTeacherChoice = distinctTeacherIds.length !== 1
+  const effectiveTeacherId = requiresTeacherChoice ? teacherId : String(distinctTeacherIds[0])
+
+  const errorField = error ? JOINT_ERROR_FIELDS[error.code] ?? null : null
+  const genericError = error && !errorField ? error.message : ''
+
+  const chosenNames = chosenRows.map((row) => row.class_name).join(', ')
+
+  const handleClassToggle = (row) => {
+    if (classLocked || isPending) return
+    const nextIds = chosenClassIds.includes(row.class_id)
+      ? chosenClassIds.filter((id) => id !== row.class_id)
+      : [...chosenClassIds, row.class_id]
+    setChosenClassIds(nextIds)
+    const nextRows = classRows.filter((item) => nextIds.includes(item.class_id))
+    const nextCommon = jointCommonModuleIds(sourceSelectedIds, nextRows, fallbackIds, modules)
+    if (jointGroup) {
+      setCheckedModuleIds((previous) => previous.filter((id) => nextCommon.includes(id)))
+    } else {
+      const started = jointStartedModuleIds(sourceStartedIds, nextRows)
+      setCheckedModuleIds(nextCommon.filter((id) => !started.has(id)))
+      const nextTeachers = [...new Set(
+        [sourceTeacherId, ...nextRows.map((item) => item.teacher_id)].filter((value) => value != null),
+      )]
+      if (nextTeachers.length !== 1) setTeacherId('')
+    }
+  }
+
+  const handleModuleToggle = (moduleId) => {
+    setCheckedModuleIds((previous) => (
+      previous.includes(moduleId)
+        ? previous.filter((id) => id !== moduleId)
+        : [...previous, moduleId]
+    ))
+  }
+
+  const submittedModuleIds = checkedModuleIds.filter((id) => commonModuleIds.includes(id))
+  const canSubmit = chosenClassIds.length >= 1
+    && submittedModuleIds.length >= 1
+    && Boolean(effectiveTeacherId)
+
+  const handleSubmit = () => {
+    if (!canSubmit) return
+    onSubmit({
+      classIds: [classId, ...chosenClassIds],
+      moduleIds: submittedModuleIds,
+      teacherId: Number(effectiveTeacherId),
+    })
+  }
+
+  return (
+    <CModal visible onClose={onClose} size="lg" alignment="center">
+      <CModalHeader>
+        <CModalTitle>{`Aula conjunta · ${subject.subject_name}`}</CModalTitle>
+      </CModalHeader>
+      <CModalBody>
+        {genericError && (
+          <div className="mb-3"><FeedbackBanner tone="danger">{genericError}</FeedbackBanner></div>
+        )}
+
+        <fieldset className="mb-3">
+          <legend className="h6">Turmas</legend>
+          {candidatesLoading ? (
+            <CSpinner size="sm" />
+          ) : classRows.length === 0 ? (
+            <p className="text-muted small mb-0">Não há turmas candidatas para esta junção.</p>
+          ) : (
+            classRows.map((row) => (
+              <CFormCheck
+                key={row.class_id}
+                id={`joint-class-${row.class_id}`}
+                label={formatClassCandidate(row)}
+                checked={chosenClassIds.includes(row.class_id)}
+                disabled={isPending || classLocked}
+                onChange={() => handleClassToggle(row)}
+              />
+            ))
+          )}
+          {classLocked && (
+            <p className="text-muted small mb-0 mt-1">
+              A aula conjunta já começou. Não pode juntar nem retirar turmas.
+            </p>
+          )}
+          {errorField === 'classes' && (
+            <div className="text-danger small mt-1" role="alert">{error.message}</div>
+          )}
+        </fieldset>
+
+        <fieldset className="mb-3">
+          <legend className="h6">Módulos conjuntos</legend>
+          {modules.length === 0 ? (
+            <p className="text-muted small mb-0">Esta disciplina não tem módulos.</p>
+          ) : (
+            modules.map((module) => {
+              const isStarted = startedModuleIds.has(module.id)
+              const isCommon = commonModuleIds.includes(module.id)
+              return (
+                <div key={module.id}>
+                  <CFormCheck
+                    id={`joint-module-${module.id}`}
+                    label={formatModuleLabel(module)}
+                    checked={isCommon && checkedModuleIds.includes(module.id)}
+                    disabled={!isCommon || isStarted || isPending}
+                    onChange={() => handleModuleToggle(module.id)}
+                  />
+                  {isStarted && (
+                    <div className="text-muted ms-4" style={{ fontSize: '0.8rem' }}>Já começou</div>
+                  )}
+                </div>
+              )
+            })
+          )}
+          {errorField === 'modules' && (
+            <div className="text-danger small mt-1" role="alert">{error.message}</div>
+          )}
+        </fieldset>
+
+        {requiresTeacherChoice && (
+          <div className="mb-3">
+            <CFormSelect
+              id="jointTeacher"
+              label="Professor da aula conjunta"
+              value={teacherId}
+              onChange={(event) => setTeacherId(event.target.value)}
+              disabled={isPending}
+            >
+              <option value="">— Selecionar professor —</option>
+              {eligibleTeachers.map((teacher) => (
+                <option key={teacher.id} value={teacher.id}>{teacher.name}</option>
+              ))}
+            </CFormSelect>
+            {errorField === 'teacher' && (
+              <div className="text-danger small mt-1" role="alert">{error.message}</div>
+            )}
+          </div>
+        )}
+
+        {chosenRows.length > 0 && (
+          <p className="text-muted small mb-0">Esta alteração também muda {chosenNames}.</p>
+        )}
+      </CModalBody>
+      <CModalFooter>
+        <CButton color="secondary" variant="outline" onClick={onClose} disabled={isPending}>
+          Cancelar
+        </CButton>
+        <CButton color="primary" onClick={handleSubmit} disabled={!canSubmit || isPending}>
+          {jointGroup ? 'Guardar junção' : 'Criar junção'}
+        </CButton>
+      </CModalFooter>
+    </CModal>
   )
 }
 
@@ -210,9 +573,10 @@ const ClassSubjects = ({ courseIdOverride, classIdOverride, navigationDisabled =
   const numCourseId = Number(courseId)
   const isTutorial = Array.isArray(allowedActions)
   const canEditTeacher = !readOnly && (!isTutorial || allowedActions.includes('UPDATE_CLASS_SUBJECT_TEACHER'))
+  const canEditModules = !readOnly && !isTutorial
+  const canEditJoint = !readOnly && !isTutorial
   const canAdd = !readOnly && !isTutorial
   const canRemove = !readOnly && !isTutorial
-  const canEditModules = !readOnly && !isTutorial
 
   // State para modal de adicionar disciplina
   const [showAddModal, setShowAddModal] = useState(false)
@@ -221,6 +585,10 @@ const ClassSubjects = ({ courseIdOverride, classIdOverride, navigationDisabled =
   const [blockedMessage, setBlockedMessage] = useState('')
   const [teacherBlock, setTeacherBlock] = useState(null)
   const [moduleBlock, setModuleBlock] = useState(null)
+  const [jointSubject, setJointSubject] = useState(null)
+  const [jointToUndo, setJointToUndo] = useState(null)
+  const [jointError, setJointError] = useState(null)
+  const [teacherConfirm, setTeacherConfirm] = useState(null)
 
   // Data hooks
   const { data: classSubjects, isLoading, error } = useClassSubjects(numClassId)
@@ -230,9 +598,17 @@ const ClassSubjects = ({ courseIdOverride, classIdOverride, navigationDisabled =
   const addSubject = useAddClassSubject()
   const updateClassSubject = useUpdateClassSubject()
   const removeSubject = useRemoveClassSubject()
+  const createJointGroup = useCreateJointGroup()
+  const updateJointGroup = useUpdateJointGroup()
+  const deleteJointGroup = useDeleteJointGroup()
   const attemptScope = useAttemptScope()
 
-  const isUpdating = addSubject.isPending || updateClassSubject.isPending || removeSubject.isPending
+  const isUpdating = addSubject.isPending
+    || updateClassSubject.isPending
+    || removeSubject.isPending
+    || createJointGroup.isPending
+    || updateJointGroup.isPending
+    || deleteJointGroup.isPending
 
   // Stats
   const stats = useMemo(() => {
@@ -284,8 +660,7 @@ const ClassSubjects = ({ courseIdOverride, classIdOverride, navigationDisabled =
     )
   }
 
-  const handleTeacherChange = (subjectId, teacherId) => {
-    if (!canEditTeacher) return
+  const performTeacherChange = (subjectId, teacherId) => {
     updateClassSubject.mutate(
       { classId: numClassId, subjectId, teacherId },
       attemptScope.guard({
@@ -300,6 +675,24 @@ const ClassSubjects = ({ courseIdOverride, classIdOverride, navigationDisabled =
         },
       })
     )
+  }
+
+  const handleTeacherChange = (subjectId, teacherId) => {
+    if (!canEditTeacher) return
+    const subject = classSubjects?.subjects?.find(item => item.subject_id === subjectId)
+    const otherNames = jointOtherClassNames(subject, numClassId)
+    if (otherNames && teacherId !== subject.teacher_id) {
+      setTeacherConfirm({ subjectId, teacherId, otherNames })
+      return
+    }
+    performTeacherChange(subjectId, teacherId)
+  }
+
+  const confirmTeacherChange = () => {
+    if (!teacherConfirm) return
+    const { subjectId, teacherId } = teacherConfirm
+    setTeacherConfirm(null)
+    performTeacherChange(subjectId, teacherId)
   }
 
   const handleModulesChange = (subjectId, moduleIds) => {
@@ -318,6 +711,65 @@ const ClassSubjects = ({ courseIdOverride, classIdOverride, navigationDisabled =
         },
       })
     )
+  }
+
+  const openJoint = (subject) => {
+    setJointError(null)
+    setJointSubject(subject)
+  }
+
+  const closeJoint = () => {
+    setJointSubject(null)
+    setJointError(null)
+  }
+
+  const handleJointSubmit = ({ classIds, moduleIds, teacherId }) => {
+    if (!jointSubject) return
+    const existing = jointSubject.joint_group
+    const onSuccess = () => {
+      closeJoint()
+      toast.success(existing ? 'Aula conjunta atualizada.' : 'Aula conjunta criada.')
+    }
+    const onError = (error) => {
+      const message = getApiErrorMessage(error, 'Não foi possível guardar a aula conjunta. Tente novamente.')
+      if (isApiErrorTransient(error)) toast.error(message)
+      else setJointError({ code: getApiErrorCode(error), message })
+    }
+    if (existing) {
+      updateJointGroup.mutate({
+        groupId: existing.id,
+        classIds,
+        moduleIds,
+        teacherId,
+        previousClassIds: existing.classes.map((cls) => cls.class_id),
+      }, attemptScope.guard({ onSuccess, onError }))
+    } else {
+      createJointGroup.mutate({
+        subjectId: jointSubject.subject_id,
+        classIds,
+        moduleIds,
+        teacherId,
+      }, attemptScope.guard({ onSuccess, onError }))
+    }
+  }
+
+  const requestUndoJoint = (subject) => setJointToUndo(subject)
+
+  const confirmUndoJoint = () => {
+    if (!jointToUndo?.joint_group) return
+    deleteJointGroup.mutate({
+      groupId: jointToUndo.joint_group.id,
+      classIds: jointToUndo.joint_group.classes.map((cls) => cls.class_id),
+    }, attemptScope.guard({
+      onSuccess: () => {
+        setJointToUndo(null)
+        toast.success('Aula conjunta desfeita.')
+      },
+      onError: (error) => {
+        setJointToUndo(null)
+        toast.error(getApiErrorMessage(error, 'Não foi possível desfazer a aula conjunta. Tente novamente.'))
+      },
+    }))
   }
 
   const renderAddModalBody = () => {
@@ -465,13 +917,17 @@ const ClassSubjects = ({ courseIdOverride, classIdOverride, navigationDisabled =
               <SubjectRow
                 key={subject.id}
                 subject={subject}
+                classId={numClassId}
                 onRemove={handleRemoveSubject}
                 onTeacherChange={handleTeacherChange}
                 onModulesChange={handleModulesChange}
+                onOpenJoint={openJoint}
+                onUndoJoint={requestUndoJoint}
                 isUpdating={isUpdating}
                 canEditTeacher={canEditTeacher}
-                canRemove={canRemove}
                 canEditModules={canEditModules}
+                canEditJoint={canEditJoint}
+                canRemove={canRemove}
                 teacherError={teacherBlock?.subjectId === subject.subject_id ? teacherBlock.message : ''}
                 modulesError={moduleBlock?.subjectId === subject.subject_id ? moduleBlock.message : ''}
               />
@@ -510,6 +966,37 @@ const ClassSubjects = ({ courseIdOverride, classIdOverride, navigationDisabled =
         confirmText="Remover"
         isLoading={removeSubject.isPending}
         variant="danger"
+      />
+      {jointSubject && (
+        <JointGroupModal
+          subject={jointSubject}
+          classId={numClassId}
+          jointGroup={jointSubject.joint_group}
+          onClose={closeJoint}
+          onSubmit={handleJointSubmit}
+          isPending={createJointGroup.isPending || updateJointGroup.isPending}
+          error={jointError}
+        />
+      )}
+      <ConfirmationModal
+        visible={Boolean(jointToUndo)}
+        onClose={() => setJointToUndo(null)}
+        onConfirm={confirmUndoJoint}
+        title="Desfazer aula conjunta"
+        message={`As turmas ${jointOtherClassNames(jointToUndo, numClassId)} passam a ter ${jointToUndo?.subject_name ?? 'a disciplina'} em separado. É preciso gerar o horário de novo.`}
+        confirmText="Desfazer"
+        isLoading={deleteJointGroup.isPending}
+        variant="warning"
+      />
+      <ConfirmationModal
+        visible={Boolean(teacherConfirm)}
+        onClose={() => setTeacherConfirm(null)}
+        onConfirm={confirmTeacherChange}
+        title="Mudar professor da aula conjunta"
+        message={`O professor muda também em ${teacherConfirm?.otherNames ?? ''} (aula conjunta).`}
+        confirmText="Mudar professor"
+        isLoading={updateClassSubject.isPending}
+        variant="warning"
       />
     </div>
   )

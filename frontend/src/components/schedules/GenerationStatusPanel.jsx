@@ -34,6 +34,28 @@ const TERMINAL_MESSAGES = {
   FAILED: 'Ocorreu um erro durante a geração. Tente novamente.',
 }
 
+const JOINT_NO_COMMON_TIME = 'JOINT_NO_COMMON_TIME'
+
+// The joint message names every member class and the subject only when the read
+// model resolved all of them. A deleted class or subject keeps the honest
+// generic message instead of inventing a name.
+const jointDiagnosisContext = (diagnostics) => {
+  const rows = (Array.isArray(diagnostics) ? diagnostics : [])
+    .filter((item) => item.code === JOINT_NO_COMMON_TIME)
+  if (rows.length === 0) return null
+  const subject = rows[0].subject_name
+  const classNames = []
+  const seen = new Set()
+  for (const row of rows) {
+    if (!row.class_id || !row.class_name) return null
+    if (seen.has(row.class_id)) continue
+    seen.add(row.class_id)
+    classNames.push(row.class_name)
+  }
+  if (!subject || classNames.length < 2) return null
+  return { classNames: classNames.join(', '), subject }
+}
+
 // A proven class diagnostic always carries the current name, the course and a
 // positive deficit. An unresolved class (deleted after the failure) or one
 // without a proven number never appears as a known name or as "0 min".
@@ -108,19 +130,38 @@ const GenerationStatusPanel = ({ jobId }) => {
     )
   }
   if (TERMINAL_STATUSES.has(status)) {
-    const roomBlocked = job.stop_reason === 'NO_ELIGIBLE_ROOM'
+    const isStaleLike = status === 'CANCELLED' || status === 'STALE'
+    const jobCodes = [job.result_code, job.stop_reason]
+    const roomBlocked = jobCodes.includes('NO_ELIGIBLE_ROOM') || jobCodes.includes('JOINT_ROOM_CAPACITY')
+    const jointDiagnostics = status === 'INFEASIBLE'
+      ? (Array.isArray(job.diagnostics) ? job.diagnostics : [])
+          .filter((item) => item.code === JOINT_NO_COMMON_TIME)
+      : []
+    const jointContext = status === 'INFEASIBLE' ? jointDiagnosisContext(job.diagnostics) : null
+    const jointNoCommonTime = jobCodes.includes(JOINT_NO_COMMON_TIME)
+      || jointDiagnostics.length > 0
     const classDiagnostics = status === 'INFEASIBLE' && !roomBlocked
       ? provenClassDiagnostics(job.diagnostics)
       : []
     return (
       <div className="mb-4" data-testid="generation-terminal">
-        <FeedbackBanner tone={status === 'CANCELLED' || status === 'STALE' ? 'warning' : 'danger'}>
+        <FeedbackBanner tone={isStaleLike ? 'warning' : 'danger'}>
           <strong>{STATUS_LABELS[status] || 'Estado da geração indisponível'}</strong>
           {' '}
           {roomBlocked ? (
             <>
               Existem turmas sem sala compatível com o tipo e a lotação.{' '}
               <Link to="/rooms">Abrir Salas</Link> para corrigir e voltar a gerar.
+            </>
+          ) : jointNoCommonTime && !isStaleLike ? (
+            <>
+              <span>
+                {jointContext
+                  ? `As turmas ${jointContext.classNames} não têm horas livres em comum para ${jointContext.subject}.`
+                  : 'As turmas da aula conjunta não têm horas livres em comum.'}
+              </span>{' '}
+              Reveja as disponibilidades das turmas e do professor.{' '}
+              <Link to="/config">Abrir Configuração</Link>.
             </>
           ) : classDiagnostics.length > 0 ? (
             <>

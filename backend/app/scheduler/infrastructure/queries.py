@@ -263,13 +263,19 @@ async def get_job(db: AsyncSession, organization_id: int, job_id: int) -> dict |
 
 
 def _diagnosis_rank(row: dict) -> int:
-    """Prefer the class-scoped proof when a class has both deficits.
+    """Choose one proven row per affected class.
 
-    A class-level lower bound already explains the shortage for the whole
-    class, so the assignment intersection that shares the same class does not
-    add a second row.
+    A joint isolation outranks the class-scoped lower bound: it is the specific
+    proven cause, and every member class must keep it so the read model can name
+    the whole joint group. Otherwise the class-level proof wins over the
+    assignment intersection that shares the same class, which adds no second row.
     """
-    return 1 if row.get("code") == DiagnosisCode.INSUFFICIENT_CLASS_TIME.value else 0
+    code = row.get("code")
+    if code == DiagnosisCode.JOINT_NO_COMMON_TIME.value:
+        return 2
+    if code == DiagnosisCode.INSUFFICIENT_CLASS_TIME.value:
+        return 1
+    return 0
 
 
 async def _job_diagnostics(

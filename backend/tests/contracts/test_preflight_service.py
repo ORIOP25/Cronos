@@ -1247,3 +1247,131 @@ async def test_preflight_class_availability_requires_every_block_and_an_assigned
     )
     await db_session.flush()
     assert await blocker_routes() == []
+
+
+async def _create_joint_scenario(
+    db_session,
+    *,
+    suffix: str,
+    sizes: tuple[int, ...] = (18, 15),
+    room_capacity: int = 30,
+    members: int | None = None,
+):
+    org, _ = await create_org_and_user(
+        db_session,
+        clerk_user_id=f"joint-{suffix}-user",
+        clerk_org_id=f"joint-{suffix}-org",
+    )
+    course = models.Course(organization_id=org.id, name="Curso J", abbreviation="CJ")
+    subject = models.Subject(
+        organization_id=org.id,
+        name="Português",
+        required_room_type=models.RoomType.normal,
+    )
+    db_session.add_all([course, subject])
+    await db_session.flush()
+    module = models.Module(
+        organization_id=org.id,
+        subject_id=subject.id,
+        name="M1",
+        required_minutes=60,
+        order=0,
+    )
+    db_session.add(module)
+    await db_session.flush()
+    teacher = await create_teacher_profile(
+        db_session, organization_id=org.id, subject_ids=[subject.id]
+    )
+    links = []
+    for index, size in enumerate(sizes):
+        school_class = models.Class(
+            organization_id=org.id,
+            course_id=course.id,
+            name=f"Turma {index}",
+            size=size,
+            grade_level=10,
+            start_year=2025,
+            end_year=2028,
+        )
+        db_session.add(school_class)
+        await db_session.flush()
+        link = models.ClassSubjectLink(
+            organization_id=org.id,
+            class_id=school_class.id,
+            subject_id=subject.id,
+            grade_level=10,
+            teacher_id=teacher.id,
+        )
+        db_session.add(link)
+        await db_session.flush()
+        links.append(link)
+        await db_session.execute(
+            models.class_subject_module.insert().values(
+                organization_id=org.id,
+                class_subject_link_id=link.id,
+                module_id=module.id,
+            )
+        )
+    room = models.Room(
+        organization_id=org.id,
+        name="Sala J",
+        type=models.RoomType.normal,
+        capacity=room_capacity,
+    )
+    db_session.add(room)
+    await db_session.flush()
+    group = models.JointLessonGroup(organization_id=org.id, subject_id=subject.id)
+    db_session.add(group)
+    await db_session.flush()
+    selected = links if members is None else links[:members]
+    await db_session.execute(
+        models.joint_lesson_group_member.insert().values(
+            [
+                {
+                    "organization_id": org.id,
+                    "group_id": group.id,
+                    "class_subject_link_id": link.id,
+                }
+                for link in selected
+            ]
+        )
+    )
+    await db_session.execute(
+        models.joint_lesson_group_module.insert().values(
+            organization_id=org.id, group_id=group.id, module_id=module.id
+        )
+    )
+    await db_session.flush()
+    return org, subject, room
+
+
+async def test_preflight_reports_joint_room_capacity(db_session):
+    org, subject, room = await _create_joint_scenario(db_session, suffix="room")
+
+    issues = await _validate_room_requirements(db_session, org.id)
+
+    joint = [issue for issue in issues if issue.code == "JOINT_ROOM_CAPACITY"]
+    assert len(joint) == 1
+    assert joint[0].severity == "BLOCKER"
+    assert joint[0].route == "/rooms"
+    assert "33 lugares" in joint[0].message
+    assert "Português" in joint[0].message
+
+    room.capacity = 33
+    await db_session.flush()
+    assert [
+        i
+        for i in await _validate_room_requirements(db_session, org.id)
+        if i.code == "JOINT_ROOM_CAPACITY"
+    ] == []
+
+
+async def test_preflight_reports_incomplete_joint_group(db_session):
+    org, _subject, _room = await _create_joint_scenario(db_session, suffix="incomplete", members=1)
+
+    issues = await _validate_room_requirements(db_session, org.id)
+
+    incomplete = [issue for issue in issues if issue.code == "JOINT_GROUP_INCOMPLETE"]
+    assert len(incomplete) == 1
+    assert incomplete[0].severity == "BLOCKER"
+    assert "menos de duas turmas ativas" in incomplete[0].message

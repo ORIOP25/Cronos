@@ -94,10 +94,17 @@ Stable route families keep frontend features and provider webhooks independent f
 | `POST` | `/api/v1/classes/{class_id}/availability/copy` | Admin |
 | `GET` / `POST` | `/api/v1/subjects/` | Active / Admin |
 | `PATCH` / `DELETE` | `/api/v1/subjects/{subject_id}` | Admin |
+| `GET` | `/api/v1/subjects/{subject_id}/joint-candidates` | Admin |
+| `POST` | `/api/v1/joint-lesson-groups` | Admin; returns `201` |
+| `PUT` / `DELETE` | `/api/v1/joint-lesson-groups/{group_id}` | Admin |
 | `GET` / `POST` | `/api/v1/rooms/` | Active / Admin |
 | `PATCH` / `DELETE` | `/api/v1/rooms/{room_id}` | Admin |
 | `GET` | `/api/v1/timeslots/` | Active |
 | `GET` | `/api/v1/timeslots/range` | Active |
+
+Each subject in `GET /api/v1/classes/{class_id}/subjects` carries `modules`, ordered by `order`, with `selected` per module. `POST` selects every module of the subject (D03). `PATCH /api/v1/classes/{class_id}/subjects/{subject_id}` accepts `module_ids`: an empty list is valid, repeated IDs or a module of another subject return `400 bad_request`, and a module of another organization returns `404 resource_not_found`. The write stores the selection on `class_subject_module` and records a scheduler change. `GET /api/v1/classes/{class_id}` and `PATCH /api/v1/classes/{class_id}/progress` count only the selected modules.
+
+A joint lesson group joins two or more classes of one subject for a set of modules. `POST /api/v1/joint-lesson-groups` creates it, `PUT` replaces its classes, modules and teacher, and `DELETE` undoes it. `GET /api/v1/subjects/{subject_id}/joint-candidates?class_id={id}` lists the classes that can join the given class; the optional `group_id` includes the current members of that group (and the source class) so the editor can show the current selection and started modules, while the default excludes the source class and every joined class. In create mode, `include_source=true` adds the source class to the result so its selected, started and teacher facts are available; the default still excludes it. A source class without a current link in the organization returns `404`. Configuration rules return `400` with a `JOINT_*` code, except `JOINT_MODULE_STARTED` and `JOINT_CLASS_STARTED`, which return `409`. A group, teacher or module of another organization returns `404 resource_not_found`. `teacher_id` is required and positive; repeated `class_ids` or `module_ids` return `400`. Each subject in `GET /api/v1/classes/{class_id}/subjects` carries `joint_group` (or `null`). Changing the teacher of a member link changes every member link in one transaction. Removing a joint module from the checklist returns `409 JOINT_MODULE_LOCKED`, and removing a member link, archiving a member class, removing a joint module or deleting a subject in a joint group returns `409 resource_in_use`.
 
 ### Members and teachers
 
@@ -172,7 +179,7 @@ Each `affected_availabilities` entry of `POST /school/grid-changes/preview` incl
 | `PUT` | `/api/v1/schedule/lessons/{lesson_id}/log` | Active; assigned teacher or admin |
 
 Scheduler status exposes `active_proposal_id` for the approved proposal linked to the active version, or `null` when absent.
-`GET /scheduler/jobs/{job_id}` returns a `diagnostics` list with one proven entry per affected class.
+`GET /scheduler/jobs/{job_id}` returns a `diagnostics` list with one proven entry per affected class. A proven joint isolation (`JOINT_NO_COMMON_TIME`) returns one entry per member class, each with the current class name and subject name, so the client can name every class and the subject. A class or subject deleted before the read keeps a null name and the client shows the generic message.
 Weekly schedule reads return published lesson intervals, resource identifiers, module projections, and operational log state.
 There is no separate proposal-lesson listing route.
 The API has no observability summary routes, no `POST /api/v1/occurrences/` create route, and no `GET /api/v1/scheduler/drafts/{id}/lessons` route.

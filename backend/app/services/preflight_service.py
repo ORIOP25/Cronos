@@ -304,13 +304,24 @@ async def _validate_room_requirements(
                 models.Class.id.label("class_id"),
                 models.Class.name.label("class_name"),
                 models.Class.size.label("class_size"),
+                models.Class.is_archived.label("is_archived"),
+                models.Class.course_id.label("course_id"),
                 models.Subject.id.label("subject_id"),
                 models.Subject.name.label("subject_name"),
                 models.Subject.required_room_type.label("required_room_type"),
+                models.joint_lesson_group_member.c.group_id.label("joint_group_id"),
             )
             .select_from(models.ClassSubjectLink)
             .join(models.Class, models.Class.id == models.ClassSubjectLink.class_id)
             .join(models.Subject, models.Subject.id == models.ClassSubjectLink.subject_id)
+            .outerjoin(
+                models.joint_lesson_group_member,
+                and_(
+                    models.joint_lesson_group_member.c.class_subject_link_id
+                    == models.ClassSubjectLink.id,
+                    models.joint_lesson_group_member.c.organization_id == organization_id,
+                ),
+            )
             .where(
                 models.ClassSubjectLink.organization_id == organization_id,
                 models.Class.organization_id == organization_id,
@@ -357,7 +368,90 @@ async def _validate_room_requirements(
                 context=context,
             )
         )
+    issues.extend(_joint_requirements_from_rows(rows, rooms, specific_rooms))
     return issues
+
+
+def _joint_room_message(subject_name, class_names, room_type, required_capacity) -> str:
+    classes = ", ".join(class_names)
+    return (
+        f"A aula conjunta de {subject_name} ({classes}) precisa de uma sala de "
+        f"{room_type} com pelo menos {required_capacity} lugares."
+    )
+
+
+def _joint_requirements_from_rows(
+    rows,
+    rooms: list[tuple[int, str, int]],
+    specific_rooms: dict,
+) -> list[schemas.PreflightIssue]:
+    """Joint group diagnosis reusing the class/subject rows already loaded."""
+    groups: dict[int, list] = {}
+    for row in rows:
+        if row.joint_group_id is None:
+            continue
+        groups.setdefault(row.joint_group_id, []).append(row)
+
+    issues: list[schemas.PreflightIssue] = []
+    for members in groups.values():
+        active = [member for member in members if not member.is_archived]
+        first = members[0]
+        subject_name = first.subject_name
+        if len(active) < 2:
+            issues.append(
+                schemas.PreflightIssue(
+                    code="JOINT_GROUP_INCOMPLETE",
+                    severity="BLOCKER",
+                    message=(
+                        f"A aula conjunta de {subject_name} tem menos de duas turmas ativas. "
+                        "Edite ou desfaça a junção."
+                    ),
+                    route=_joint_group_route(active or members),
+                )
+            )
+            continue
+        required_capacity = sum(member.class_size for member in active)
+        subject_id = first.subject_id
+        restricted = [
+            specific_rooms[(member.class_id, subject_id)]
+            for member in active
+            if (member.class_id, subject_id) in specific_rooms
+        ]
+        allowed_room_ids = None
+        if restricted:
+            allowed = set(restricted[0])
+            for room_ids in restricted[1:]:
+                allowed &= set(room_ids)
+            allowed_room_ids = allowed
+        eligibility = assess_room_eligibility(
+            rooms,
+            required_room_type=first.required_room_type.value,
+            required_capacity=required_capacity,
+            allowed_room_ids=allowed_room_ids,
+        )
+        if eligibility.reason is None:
+            continue
+        issues.append(
+            schemas.PreflightIssue(
+                code="JOINT_ROOM_CAPACITY",
+                severity="BLOCKER",
+                message=_joint_room_message(
+                    subject_name,
+                    [member.class_name for member in active],
+                    first.required_room_type.value,
+                    required_capacity,
+                ),
+                route="/rooms",
+            )
+        )
+    return issues
+
+
+def _joint_group_route(members) -> str:
+    if not members:
+        return "/courses"
+    member = members[0]
+    return f"/courses/{member.course_id}/classes/{member.class_id}/subjects"
 
 
 class PreflightService:

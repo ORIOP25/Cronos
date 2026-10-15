@@ -2,6 +2,7 @@ import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import and_, delete, func
+from sqlalchemy import update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
@@ -12,7 +13,7 @@ from app.scheduler.infrastructure.operations import (
     adjust_class_progress,
     class_progress_map,
 )
-from app.services import resource_removal
+from app.services import joint_lesson_service, resource_removal
 from app.services.scheduler_state_service import record_scheduler_change
 
 
@@ -37,7 +38,74 @@ def _class_subject_snapshot(link: models.ClassSubjectLink, module_ids) -> dict:
     }
 
 
+async def _load_link_module_ids(db: AsyncSession, organization_id: int, link_id: int) -> list[int]:
+    rows = await db.execute(
+        select(models.class_subject_module.c.module_id)
+        .where(
+            models.class_subject_module.c.organization_id == organization_id,
+            models.class_subject_module.c.class_subject_link_id == link_id,
+        )
+        .order_by(models.class_subject_module.c.module_id)
+    )
+    return [row[0] for row in rows.all()]
+
+
+async def _replace_link_modules(
+    db: AsyncSession, organization_id: int, link_id: int, module_ids: list[int]
+) -> None:
+    await db.execute(
+        delete(models.class_subject_module).where(
+            models.class_subject_module.c.organization_id == organization_id,
+            models.class_subject_module.c.class_subject_link_id == link_id,
+        )
+    )
+    if module_ids:
+        await db.execute(
+            models.class_subject_module.insert().values(
+                [
+                    {
+                        "organization_id": organization_id,
+                        "class_subject_link_id": link_id,
+                        "module_id": module_id,
+                    }
+                    for module_id in module_ids
+                ]
+            )
+        )
+
+
 # --- HELPERS INTERNOS ---
+async def _joint_group_for_link(db: AsyncSession, organization_id: int, link_id: int) -> int | None:
+    return await db.scalar(
+        select(models.joint_lesson_group_member.c.group_id).where(
+            models.joint_lesson_group_member.c.organization_id == organization_id,
+            models.joint_lesson_group_member.c.class_subject_link_id == link_id,
+        )
+    )
+
+
+async def _joint_module_ids(db: AsyncSession, organization_id: int, group_id: int) -> list[int]:
+    rows = await db.execute(
+        select(models.joint_lesson_group_module.c.module_id).where(
+            models.joint_lesson_group_module.c.organization_id == organization_id,
+            models.joint_lesson_group_module.c.group_id == group_id,
+        )
+    )
+    return [row[0] for row in rows.all()]
+
+
+async def _joint_member_link_ids(
+    db: AsyncSession, organization_id: int, group_id: int
+) -> list[int]:
+    rows = await db.execute(
+        select(models.joint_lesson_group_member.c.class_subject_link_id).where(
+            models.joint_lesson_group_member.c.organization_id == organization_id,
+            models.joint_lesson_group_member.c.group_id == group_id,
+        )
+    )
+    return [row[0] for row in rows.all()]
+
+
 async def _get_class_by_org(db: AsyncSession, class_id: int, organization_id: int):
     """Busca uma turma por id + organization_id (isolamento de tenant)."""
     result = await db.execute(
@@ -655,6 +723,14 @@ async def get_class_subjects(db: AsyncSession, class_id: int, organization_id: i
     catalogue, selected_by_link = await _subject_catalogue_with_selection(
         db, organization_id, links
     )
+
+    # 3b. Junção de cada ligação, numa única consulta em lote (J02).
+    link_ids = [link.id for link in links]
+    joint_by_link = await joint_lesson_service.load_joint_groups_by_link(
+        db, organization_id, link_ids
+    )
+
+    # 4. Construir resposta
     subjects_data = []
     for link in sorted(links, key=lambda item: item.subject.name if item.subject else ""):
         subjects_data.append(
@@ -669,6 +745,7 @@ async def get_class_subjects(db: AsyncSession, class_id: int, organization_id: i
                 "modules": _subject_modules_payload(
                     catalogue.get(link.subject_id, []), selected_by_link.get(link.id, set())
                 ),
+                "joint_group": joint_by_link.get(link.id),
             }
         )
 
@@ -825,12 +902,15 @@ async def update_class_subject(
 ):
     """
     Atualiza uma associação disciplina-turma: professor e/ou módulos selecionados.
-    Usa exclude_unset para distinguir entre 'não enviado' e 'enviado como null'.
+
+    Usa exclude_unset para distinguir entre 'não enviado' e 'enviado'.
+    Uma lista vazia de module_ids é válida e substitui a seleção (D06).
 
     Validações (antes de qualquer alteração):
     - Associação existe
     - Se teacher_id não é None, professor existe e tem competência na disciplina
-    - A lista de module_ids não tem repetidos e pertence toda à disciplina
+    - Módulos repetidos ou de outra disciplina devolvem 400
+    - Módulo de outra organização devolve 404
     """
     update_data = payload.model_dump(exclude_unset=True)
 
@@ -866,8 +946,9 @@ async def update_class_subject(
             code="resource_not_found",
             detail=f"Subject {subject_id} is not assigned to class {class_id}.",
         )
-    before_modules = await _selected_module_ids(db, organization_id, link.id)
-    before = _class_subject_snapshot(link, before_modules)
+    current_module_ids = await _load_link_module_ids(db, organization_id, link.id)
+    before = _class_subject_snapshot(link, current_module_ids)
+    joint_group_id = await _joint_group_for_link(db, organization_id, link.id)
 
     # 3. Se teacher_id foi enviado, validar
     if update_data.get("teacher_id") is not None:
@@ -938,33 +1019,37 @@ async def update_class_subject(
                     detail=f"Module {module_id} does not belong to subject {subject_id}.",
                 )
 
-    # 5. Aplicar professor
+    # 5. Substituir a seleção de módulos quando enviada.
+    #    Numa junção, um módulo da aula conjunta não pode ser retirado (J05).
+    next_module_ids = current_module_ids
+    if replace_modules:
+        next_module_ids = sorted(unique_module_ids)
+        if joint_group_id is not None:
+            joint_module_ids = await _joint_module_ids(db, organization_id, joint_group_id)
+            if set(joint_module_ids) - set(next_module_ids):
+                raise AppError(
+                    kind="conflict",
+                    code="JOINT_MODULE_LOCKED",
+                    detail="Retire primeiro este módulo da aula conjunta.",
+                )
+        await _replace_link_modules(db, organization_id, link.id, next_module_ids)
+
+    # 6. Aplicar alterações ao professor
     if "teacher_id" in update_data:
         link.teacher_id = update_data["teacher_id"]
 
-    # 6. Substituir a seleção de módulos
-    if replace_modules:
+    # 5b. Numa junção, o professor muda em todas as ligações membro (J06).
+    if joint_group_id is not None and "teacher_id" in update_data:
+        member_link_ids = await _joint_member_link_ids(db, organization_id, joint_group_id)
         await db.execute(
-            delete(models.class_subject_module).where(
-                models.class_subject_module.c.organization_id == organization_id,
-                models.class_subject_module.c.class_subject_link_id == link.id,
+            sql_update(models.ClassSubjectLink)
+            .where(
+                models.ClassSubjectLink.organization_id == organization_id,
+                models.ClassSubjectLink.id.in_(member_link_ids),
             )
+            .values(teacher_id=link.teacher_id)
+            .execution_options(synchronize_session=False)
         )
-        if unique_module_ids:
-            await db.execute(
-                models.class_subject_module.insert(),
-                [
-                    {
-                        "organization_id": organization_id,
-                        "class_subject_link_id": link.id,
-                        "module_id": module_id,
-                    }
-                    for module_id in unique_module_ids
-                ],
-            )
-        after_modules = set(unique_module_ids)
-    else:
-        after_modules = before_modules
 
     await record_scheduler_change(
         db,
@@ -973,7 +1058,7 @@ async def update_class_subject(
         entity_id=link.id,
         operation=models.SchedulerStateChangeOperation.UPDATE,
         before=before,
-        after=_class_subject_snapshot(link, after_modules),
+        after=_class_subject_snapshot(link, next_module_ids),
         changed_by_membership_id=changed_by_membership_id,
         active_resource=not db_class.is_archived,
     )
@@ -1019,7 +1104,15 @@ async def remove_class_subject(
             code="resource_not_found",
             detail=f"Subject {subject_id} is not assigned to class {class_id}.",
         )
-    before = _class_subject_snapshot(link, await _selected_module_ids(db, organization_id, link.id))
+    before = _class_subject_snapshot(
+        link, await _load_link_module_ids(db, organization_id, link.id)
+    )
+    if await _joint_group_for_link(db, organization_id, link.id) is not None:
+        raise AppError(
+            kind="conflict",
+            code="resource_in_use",
+            detail="A ligação pertence a uma aula conjunta.",
+        )
     # 3. Remover
     await db.delete(link)
 

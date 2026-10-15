@@ -124,10 +124,13 @@ def apply_event_with_effect(
         if assignment is None:
             raise ValueError("The published baseline does not belong to the snapshot.")
         rows = [
-            Unavailability(UnavailableResource.CLASS, assignment.class_id, lesson.period),
+            *(
+                Unavailability(UnavailableResource.CLASS, class_id, lesson.period)
+                for class_id in assignment.class_ids
+            ),
             Unavailability(UnavailableResource.TEACHER, assignment.teacher_id, lesson.period),
         ]
-        effect = EventEffect(CANCEL_LESSON, True, 1, "class", assignment.class_id)
+        effect = EventEffect(CANCEL_LESSON, True, 1, "class", assignment.class_ids[0])
     elif event == ROOM_CLOSED:
         rank = (event_seed // len(EVENTS)) % len(lessons)
         lesson = lessons[rank]

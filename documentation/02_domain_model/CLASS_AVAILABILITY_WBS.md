@@ -159,7 +159,7 @@ Este PR acrescenta o bloqueio da pré-validação e os diagnósticos na API. Os 
 - **Depende de:** 2.1.1
 - **Spec:** [Modelo de dados](CLASS_AVAILABILITY_TECH_SPEC.md#modelo-de-dados) e [Migração](CLASS_AVAILABILITY_TECH_SPEC.md#migração).
 - **Risco:** as FKs compostas exigem `uq_class_org_id` e `uq_timeslot_org_id`. As duas existem na baseline.
-- **Nota de implementação:** a migração real é `0003_class_availability`, com `down_revision = "0002_class_subject_modules"`. A migração de seleção de módulos por turma integrou em `main`, por isso a cadeia passou a `0001 → 0002 → 0003`.
+- **Nota de implementação:** a migração real é `0003_class_availability`, com `down_revision = "0002_class_subject_modules"`. A migração de seleção de módulos por turma integrou em `main`, por isso a cadeia passou a `0001 → 0002 → 0003 → 0004`.
 
 ##### 2.1.3 Modelos SQLAlchemy — P
 

@@ -26,6 +26,11 @@ from app.scheduler.domain.candidate import (
     SchedulingStrategy,
 )
 from app.scheduler.domain.projection import ModuleRequirement
+from app.scheduler.domain.teaching_units import (
+    AssignmentPlan,
+    JointGroupPlan,
+    build_teaching_units,
+)
 from app.scheduler.infrastructure.constructive import construct_schedule
 
 TIMEZONE = "Europe/Lisbon"
@@ -35,6 +40,13 @@ MODULE_MINUTES = 15 * 60
 LESSON_MINUTES = 60
 SLOT_START_MINUTES = (9 * 60, 10 * 60, 11 * 60, 14 * 60, 15 * 60)
 WEEK_DAYS = 5
+
+# In the joint family the first subjects are shared by the three classes of a
+# course (their first three modules are joint), while the technical subjects stay
+# separate. This mirrors the product typology: general subjects together,
+# technical subjects per class.
+GENERAL_SUBJECT_COUNT = 4
+JOINT_MODULE_COUNT = 3
 
 SCHOOL_YEAR_START = date(2026, 9, 14)
 PREFERRED_END = date(2027, 6, 15)
@@ -107,7 +119,7 @@ def _assignment(class_id, subject_id, teacher_id, room_ids, assignment_id):
     )
     return Assignment(
         assignment_id=assignment_id,
-        class_id=class_id,
+        class_ids=(class_id,),
         subject_id=subject_id,
         teacher_id=teacher_id,
         eligible_room_ids=frozenset(room_ids),
@@ -178,6 +190,140 @@ def build_typology_fixture(
         courses=class_count // 3,
         teachers=SUBJECT_COUNT * ((class_count + 1) // 2),
         rooms=rooms,
+        snapshot=snapshot,
+        periods=periods,
+        witness=witness,
+    )
+
+
+@dataclass(frozen=True)
+class JointTypologyFixture:
+    class_count: int
+    courses: int
+    joint_units: int
+    separate_units: int
+    precedences: int
+    snapshot: PlanningSnapshot
+    periods: tuple[Period, ...]
+    witness: CandidateSchedule
+
+
+def _general_teacher(course: int, subject: int) -> int:
+    return 5000 + course * 10 + subject
+
+
+def _technical_teacher(class_index: int, subject: int) -> int:
+    return 9000 + class_index * 10 + subject
+
+
+def build_joint_typology_fixture(class_count: int) -> JointTypologyFixture:
+    """Build the joint family: general subjects shared, technical ones separate.
+
+    Each course joins its three classes for the first ``JOINT_MODULE_COUNT``
+    modules of the general subjects; the remaining subjects (and the general
+    subjects' last module) are separate. ``build_teaching_units`` produces the
+    units, the deficit units and the precedences, and the independent
+    constructor builds the witness. ``class_count`` is a multiple of three.
+    """
+    if class_count < 3 or class_count % 3 != 0:
+        raise ValueError("Classes are always multiples of three (three per course).")
+    courses = class_count // 3
+    rooms = class_count
+    periods = _periods(SCHOOL_YEAR_START, PREFERRED_END)
+    grid_slots = tuple(
+        dict.fromkeys(
+            GridSlot(day.weekday(), _slot_time(start), _slot_time(start + LESSON_MINUTES))
+            for day in _school_days(SCHOOL_YEAR_START, PREFERRED_END)
+            if not _blocked(day)
+            for start in SLOT_START_MINUTES
+        )
+    )
+
+    room_pairs: dict[int, tuple[int, int]] = {}
+    plans: list[AssignmentPlan] = []
+    for class_index in range(class_count):
+        class_id = class_index + 1
+        room_pairs[class_id] = (class_id, (class_index + 1) % rooms + 1)
+        course = class_index // 3
+        modules = tuple(
+            ModuleRequirement(module_id, module_id, MODULE_MINUTES)
+            for module_id in range(1, MODULES_PER_SUBJECT + 1)
+        )
+        for subject in range(1, SUBJECT_COUNT + 1):
+            general = subject <= GENERAL_SUBJECT_COUNT
+            teacher = (
+                _general_teacher(course, subject)
+                if general
+                else _technical_teacher(class_index, subject)
+            )
+            plans.append(
+                AssignmentPlan(
+                    assignment_id=class_id * 10 + subject,
+                    class_id=class_id,
+                    subject_id=subject,
+                    teacher_id=teacher,
+                    student_count=20,
+                    modules=modules,
+                    executed_minutes={},
+                )
+            )
+
+    groups = tuple(
+        JointGroupPlan(
+            group_id=course * 100 + subject,
+            subject_id=subject,
+            member_assignment_ids=tuple(
+                class_id * 10 + subject
+                for class_id in (3 * course + 1, 3 * course + 2, 3 * course + 3)
+            ),
+            module_ids=tuple(range(1, JOINT_MODULE_COUNT + 1)),
+        )
+        for course in range(courses)
+        for subject in range(1, GENERAL_SUBJECT_COUNT + 1)
+    )
+    unit_plan = build_teaching_units(plans, groups, set())
+
+    assignments = tuple(
+        Assignment(
+            assignment_id=unit.unit_id,
+            class_ids=unit.class_ids,
+            subject_id=unit.subject_id,
+            teacher_id=unit.teacher_id,
+            eligible_room_ids=frozenset(
+                room for class_id in unit.class_ids for room in room_pairs[class_id]
+            ),
+            modules=unit.modules,
+        )
+        for unit in unit_plan.units
+    )
+    snapshot = PlanningSnapshot(
+        strategy=SchedulingStrategy.COMPLETE_GENERATION,
+        origin=SCHOOL_YEAR_START,
+        preferred_end_date=PREFERRED_END,
+        hard_end_date=HARD_END,
+        timezone_name=TIMEZONE,
+        grid_slots=grid_slots,
+        assignments=assignments,
+        executed_minutes={},
+        blocked_dates=frozenset(
+            day
+            for day in _school_days(SCHOOL_YEAR_START, HARD_END)
+            if CHRISTMAS_BREAK[0] <= day <= CHRISTMAS_BREAK[1]
+            or EASTER_BREAK[0] <= day <= EASTER_BREAK[1]
+            or day in NATIONAL_HOLIDAYS
+        ),
+        unavailable=(),
+        precedences=unit_plan.precedences,
+    )
+    witness = construct_schedule(snapshot, periods)
+    if witness is None:
+        raise ValueError("The joint typology fixture has no independent witness.")
+    return JointTypologyFixture(
+        class_count=class_count,
+        courses=courses,
+        joint_units=sum(1 for unit in assignments if len(unit.class_ids) > 1),
+        separate_units=sum(1 for unit in assignments if len(unit.class_ids) == 1),
+        precedences=len(snapshot.precedences),
         snapshot=snapshot,
         periods=periods,
         witness=witness,

@@ -1,6 +1,7 @@
 """Production recovery preserves valid positions and repairs changed school data."""
 
 from dataclasses import replace
+from time import monotonic
 
 import pytest
 
@@ -13,6 +14,7 @@ from app.scheduler.domain.candidate import (
     UnavailableResource,
 )
 from app.scheduler.domain.candidate_validation import validate_candidate
+from app.scheduler.infrastructure.recovery_construction import construct_recovery
 from tests.unit.test_scheduler_recovery_solver_v1 import POLICY
 from tests.unit.test_scheduler_resource_exclusivity_v1 import assignment, lesson, plan
 from tests.unit.test_scheduler_w04_w05_regressions_v1 import period
@@ -174,3 +176,30 @@ def test_cancelled_recovery_never_returns_a_publishable_candidate():
 
     assert result.outcome == "CANCELLED"
     assert result.candidate is None
+
+
+def test_recovery_orders_a_successor_after_its_predecessor():
+    periods = (
+        period(0, start=9, end=10),
+        period(0, start=10, end=11),
+        period(0, start=11, end=12),
+    )
+    source = assignment(1, 1, 1, {1}, 60)
+    successor = assignment(2, 2, 2, {2}, 60)
+    baseline = (lesson(10, 2, periods[0], 2), lesson(11, 1, periods[1], 1))
+    target = replace(
+        plan(periods, [source, successor]),
+        strategy=SchedulingStrategy.ADAPTIVE_RECOVERY,
+        baseline_lessons=baseline,
+        precedences=((1, 2),),
+    )
+
+    candidate = construct_recovery(target, periods, deadline=monotonic() + 20)
+
+    assert candidate is not None
+    assert validate_candidate(target, candidate).valid
+    source_end = max(row.period.end_utc for row in candidate.lessons if row.assignment_id == 1)
+    successor_start = min(
+        row.period.start_utc for row in candidate.lessons if row.assignment_id == 2
+    )
+    assert successor_start >= source_end

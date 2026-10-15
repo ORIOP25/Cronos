@@ -78,6 +78,13 @@ Create a v1 occurrence through the scheduled lesson workflow. There is no standa
 - An internship flow withdraws its lessons and records a `GAP` decision for each. Withdrawn-lesson absences stay listed after a new schedule version.
 - A withdrawn lesson accepts only a `GAP` decision; any other decision returns `409`.
 - The diagnostics endpoint explains each excluded candidate with a structured reason and a setup path.
+- The list groups the sibling logs of a joint lesson into one card. Each item carries `joint_lesson.classes` with `class_id`, `class_name`, `operational_state`, `status`, `version`, and `id` per member class.
+- `PATCH /api/v1/occurrences/{id}` accepts `class_ids`. The decision applies to those member classes in one transaction after locking every sibling log by `id`. By default it applies only to the indicated line.
+- `GIVEN` and `GAP` can be decided per class. `SUBSTITUTED` applies to every member class and requires every sibling to be a pending occurrence; a completed or already decided sibling returns `409`.
+- The payload `version` references the clicked line. Each sibling is decided at its own locked revision, so a joint decision never leaves a partial set.
+- A joint substitute must give a subject whose joint group has exactly the same member classes, whose next residual unit for each class is that joint segment, with enough joint residual for the lesson credit. The new exclusions are `joint_classes_mismatch`, `joint_not_in_progress`, and `joint_in_progress` on a single-class lesson.
+- Planning a joint substitution creates one operational block per member class. Concluding one block concludes the whole joint substitution. `absent_class_ids` cancels an absent class's block without credit, and every present class receives the same joint-frontier credit.
+- An internship flow withdraws every sibling of a joint lesson and records a `GAP` for each: `Turma em estágio` on the blocked class and `Aula conjunta retirada por estágio de {turma}` on the others.
 
 ## States and Transitions
 
@@ -123,7 +130,7 @@ snapshot must not count them twice.
 - `backend/app/scheduler/infrastructure/operations.py`
 - `backend/app/models.py`
 - `frontend/src/pages/Occurrences.jsx`
-- Tests: `backend/tests/integration/committed/test_scheduler_v1_occurrences.py`, `backend/tests/integration/committed/test_scheduler_v1_operations.py`
+- Tests: `backend/tests/integration/committed/test_scheduler_v1_occurrences.py`, `backend/tests/integration/committed/test_scheduler_v1_operations.py`, `backend/tests/integration/committed/test_joint_lesson_occurrences.py`, `backend/tests/integration/committed/test_joint_lesson_internship.py`
 
 ## Related Documents
 

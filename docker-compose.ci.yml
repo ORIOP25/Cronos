@@ -73,6 +73,10 @@ services:
       target: ci
     environment:
       <<: *runtime-environment
+      # The joint-history E2E seed opens its own administrative connection to
+      # read the RLS-forced organization row, exactly as the isolated test stack
+      # does. Only the browser E2E backend needs it; no product path uses it.
+      MIGRATION_DATABASE_URL: postgresql+psycopg2://cronos_migrator:${CRONOS_MIGRATOR_PASSWORD:?CRONOS_MIGRATOR_PASSWORD is required}@db:5432/${POSTGRES_DB:-cronos_ci_db}
       CLERK_SECRET_KEY: ${CLERK_SECRET_KEY:?CLERK_SECRET_KEY is required}
       # E2E exercises Clerk authentication, not inbound webhook delivery. The
       # application handles an unset webhook secret by returning 503 on that

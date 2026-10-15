@@ -73,7 +73,7 @@ async def seed_v1_assignment(
         subject_id=subject.id,
         name="Module",
         required_minutes=module_minutes,
-        order=1,
+        order=0,
     )
     db_session.add_all((class_, module))
     await db_session.flush()
@@ -160,6 +160,117 @@ async def seed_generatable_school(
     )
     await db_session.flush()
     return seed
+
+
+@dataclass
+class JointSeed:
+    base: V1Seed
+    second_class: models.Class
+    link_ids: tuple[int, int]
+    assignment_ids: tuple[int, int]
+    group_id: int
+
+
+async def seed_joint_school(
+    db_session,
+    *,
+    module_minutes: int = 100,
+    preferred_end_date: date = date(2026, 10, 30),
+) -> JointSeed:
+    """Two classes sharing one subject in a joint group, ready to generate (WBS 3.1.1)."""
+    seed = await seed_generatable_school(
+        db_session, module_minutes=module_minutes, preferred_end_date=preferred_end_date
+    )
+    db_session.add(
+        models.Room(name="Sala Grande", capacity=60, organization_id=seed.organization.id)
+    )
+    second_class = models.Class(
+        name="B",
+        size=20,
+        start_year=2026,
+        end_year=2029,
+        grade_level=10,
+        course_id=seed.course.id,
+        organization_id=seed.organization.id,
+    )
+    db_session.add(second_class)
+    await db_session.flush()
+    second_assignment = CurricularAssignment(
+        organization_id=seed.organization.id,
+        school_year_id=seed.year.id,
+        class_id=second_class.id,
+        subject_id=seed.subject.id,
+        teacher_id=seed.assignment.teacher_id,
+    )
+    second_link = models.ClassSubjectLink(
+        organization_id=seed.organization.id,
+        class_id=second_class.id,
+        subject_id=seed.subject.id,
+        grade_level=second_class.grade_level,
+        teacher_id=seed.assignment.teacher_id,
+    )
+    db_session.add_all((second_assignment, second_link))
+    await db_session.flush()
+    db_session.add(
+        CurricularRequirement(
+            organization_id=seed.organization.id,
+            assignment_id=second_assignment.id,
+            module_id=seed.module.id,
+            sequence=1,
+            required_minutes=module_minutes,
+        )
+    )
+    await db_session.execute(
+        models.class_subject_module.insert().values(
+            organization_id=seed.organization.id,
+            class_subject_link_id=second_link.id,
+            module_id=seed.module.id,
+        )
+    )
+    await db_session.flush()
+    first_link = await db_session.scalar(
+        select(models.ClassSubjectLink).where(
+            models.ClassSubjectLink.organization_id == seed.organization.id,
+            models.ClassSubjectLink.class_id == seed.class_.id,
+            models.ClassSubjectLink.subject_id == seed.subject.id,
+        )
+    )
+    group = models.JointLessonGroup(
+        organization_id=seed.organization.id, subject_id=seed.subject.id
+    )
+    db_session.add(group)
+    await db_session.flush()
+    await db_session.execute(
+        models.joint_lesson_group_member.insert().values(
+            [
+                {
+                    "organization_id": seed.organization.id,
+                    "group_id": group.id,
+                    "class_subject_link_id": first_link.id,
+                },
+                {
+                    "organization_id": seed.organization.id,
+                    "group_id": group.id,
+                    "class_subject_link_id": second_link.id,
+                },
+            ]
+        )
+    )
+    await db_session.execute(
+        models.joint_lesson_group_module.insert().values(
+            organization_id=seed.organization.id,
+            group_id=group.id,
+            module_id=seed.module.id,
+        )
+    )
+    await db_session.flush()
+    return JointSeed(
+        base=seed,
+        second_class=second_class,
+        link_ids=(first_link.id, second_link.id),
+        assignment_ids=(seed.assignment.id, second_assignment.id),
+        group_id=group.id,
+    )
 
 
 async def add_version(

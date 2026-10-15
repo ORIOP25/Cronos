@@ -24,7 +24,7 @@ def _period(day=ORIGIN, start=time(9), end=time(10)):
 def _assignment(**overrides) -> Assignment:
     values = {
         "assignment_id": 1,
-        "class_id": 1,
+        "class_ids": (1,),
         "subject_id": 10,
         "teacher_id": 100,
         "eligible_room_ids": frozenset({500}),
@@ -113,3 +113,87 @@ def test_grid_weekdays_are_derived_from_concrete_slots():
     )
 
     assert snapshot.grid_weekdays == frozenset({0, 2})
+
+
+def test_assignment_accepts_sorted_classes_and_rejects_empty():
+    assignment = _assignment(class_ids=(1, 2))
+
+    assert assignment.class_ids == (1, 2)
+    with pytest.raises(ValueError):
+        _assignment(class_ids=())
+    with pytest.raises(ValueError):
+        _assignment(class_ids=(2, 1))
+    with pytest.raises(ValueError):
+        _assignment(class_ids=(1, 1))
+
+
+def test_snapshot_rejects_unknown_self_and_cyclic_precedences():
+    with pytest.raises(ValueError):
+        _snapshot(precedences=((1, 99),))
+    with pytest.raises(ValueError):
+        _snapshot(precedences=((1, 1),))
+    with pytest.raises(ValueError):
+        _snapshot(
+            assignments=(_assignment(), _assignment(assignment_id=2, class_ids=(2,))),
+            precedences=((1, 2), (2, 1)),
+        )
+
+
+def test_snapshot_claim_classes_must_belong_to_their_unit():
+    with pytest.raises(ValueError):
+        _snapshot(
+            open_debt_minutes={7: 30},
+            claim_assignments={7: 1},
+            claim_classes={7: 2},
+        )
+    snapshot = _snapshot(
+        open_debt_minutes={7: 30},
+        claim_assignments={7: 1},
+        claim_classes={7: 1},
+    )
+
+    assert snapshot.claim_classes[7] == 1
+
+
+def test_snapshot_without_joint_fields_keeps_the_legacy_defaults():
+    snapshot = _snapshot()
+
+    assert snapshot.precedences == ()
+    assert dict(snapshot.claim_classes) == {}
+
+
+def test_jointless_snapshot_serializes_the_legacy_shape_and_digest():
+    from app.scheduler.domain.serialization import payload_digest, snapshot_to_dict
+
+    payload = snapshot_to_dict(_snapshot())
+    assignment = payload["assignments"][0]
+
+    assert assignment["class_id"] == 1
+    assert "class_ids" not in assignment
+    assert "precedences" not in payload
+    assert "claim_classes" not in payload
+    assert payload_digest(payload) == (
+        "2bca0796d98ace3edbd7c2ed3529f27c2d083b511a62f382c07d2983ab6269f1"
+    )
+
+
+def test_joint_snapshot_roundtrip_keeps_classes_precedences_and_claims():
+    from app.scheduler.domain.serialization import snapshot_from_dict, snapshot_to_dict
+
+    snapshot = _snapshot(
+        assignments=(_assignment(), _assignment(assignment_id=2, class_ids=(1, 2))),
+        precedences=((1, 2),),
+        open_debt_minutes={7: 30},
+        claim_assignments={7: 2},
+        claim_classes={7: 2},
+    )
+
+    payload = snapshot_to_dict(snapshot)
+    restored = snapshot_from_dict(payload)
+
+    assert payload["assignments"][1]["class_ids"] == [1, 2]
+    assert payload["precedences"] == [[1, 2]]
+    assert payload["claim_classes"] == [[7, 2]]
+    assert restored.assignments[1].class_ids == (1, 2)
+    assert restored.precedences == ((1, 2),)
+    assert restored.claim_classes[7] == 2

@@ -139,6 +139,9 @@ const DraftPanel = ({ draft, onApprove, onReject, isApproving, isRejecting, allo
                         {row.before?.date && row.after?.date && row.before.date !== row.after.date
                           ? <span className="text-muted"> · {row.before.date} → {row.after.date}</span>
                           : null}
+                        {Array.isArray(row.joint_class_ids) && row.joint_class_ids.length > 0 && (
+                          <CBadge color="info" className="ms-1">Conjunta</CBadge>
+                        )}
                       </div>
                     ))}
                     {(diff?.modular || []).slice(0, 20).map(row => (

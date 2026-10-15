@@ -152,3 +152,26 @@ def frontier_credit(
     if remaining > 0:
         raise ValueError("Not enough residual curricular minutes for the credit.")
     return tuple(credits)
+
+
+def joint_frontier_credit(
+    modules: Sequence[ModuleRequirement],
+    completed_by_class: Mapping[int, Mapping[int, int]],
+    minutes: int,
+) -> tuple[ModuleCredit, ...]:
+    """Sequential credit over the joint progress, equal for every class (WBS 5.3.1).
+
+    The joint progress of a module is the largest executed count across the
+    member classes. The credit follows the strict sequence over that frontier,
+    so every present class receives the same module credit and it never exceeds
+    the residual of any member class.
+    """
+    if not completed_by_class:
+        raise ValueError("Joint credit needs at least one class.")
+    progress = {
+        module.module_id: max(
+            completed.get(module.module_id, 0) for completed in completed_by_class.values()
+        )
+        for module in modules
+    }
+    return frontier_credit(modules, progress, minutes)

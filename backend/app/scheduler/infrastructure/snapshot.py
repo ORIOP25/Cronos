@@ -10,8 +10,8 @@ injects ``school_today`` and ``now_utc``.
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass, replace
+from collections.abc import Iterable, Mapping, Sequence, Set
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime, time
 from types import MappingProxyType
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -59,8 +59,16 @@ from app.scheduler.domain.projection import (
 )
 from app.scheduler.domain.recovery import RecoveryPolicy
 from app.scheduler.domain.serialization import payload_digest, period_to_dict, snapshot_to_dict
+from app.scheduler.domain.teaching_units import (
+    AssignmentPlan,
+    JointGroupPlan,
+    JointTeacherMismatch,
+    TeachingUnitPlan,
+    build_teaching_units,
+)
 from app.scheduler.infrastructure.models import (
     CurricularAssignment,
+    CurricularRequirement,
     SchedulerLessonLogV1,
     SchedulerLessonSliceV1,
     SchedulerLessonV1,
@@ -117,6 +125,16 @@ class SnapshotBundle:
     planning_revision: int
     digest: str
     policy: RecoveryPolicy | None
+    # Teaching-unit keys and their accounting (per class) assignment ids. The
+    # domain ``assignment_id`` is a unit id; persistence maps it back to the
+    # real per-class assignment FKs through ``unit_accounting`` (WBS 3.2.1/3.8.1).
+    unit_keys: Mapping[str, int] = field(default_factory=dict)
+    unit_accounting: Mapping[int, tuple[int, ...]] = field(default_factory=dict)
+    # Accounting (per-class) assignment id -> class id, and per logical lesson
+    # the database row id of each class sibling. Persistence maps every written
+    # row back to a real assignment FK and links each sister to its own source.
+    accounting_classes: Mapping[int, int] = field(default_factory=dict)
+    base_lesson_classes: Mapping[int, Mapping[int, int]] = field(default_factory=dict)
 
     @property
     def baseline(self) -> CandidateSchedule | None:
@@ -199,34 +217,8 @@ async def load_snapshot(
         school_today=now_utc.astimezone(zone).date(),
         grid_version_id=grid_version_id,
     )
-    assignments = await _load_assignments(db, organization_id, year.id)
-    requirements, executed = await load_planning_requirements(
-        db, organization_id, [row.id for row in assignments]
-    )
+    assignments, requirements, executed = await _load_assignments(db, organization_id, year.id)
     constraints = await _load_constraint_policy(db, organization_id)
-    domain_assignments = await _build_assignments(
-        db,
-        organization_id,
-        assignments,
-        requirements,
-        constraints=constraints,
-    )
-    unavailable, soft_unavailable = await _load_unavailability(
-        db,
-        organization_id,
-        constraints=constraints,
-        calendar=calendar,
-    )
-    operational_unavailable, operational_demand = await _load_operational_reservations(
-        db, organization_id, year.id, year.timezone
-    )
-    executed = _apply_operational_demand(executed, domain_assignments, operational_demand)
-    unavailable = (*unavailable, *operational_unavailable)
-    open_debt, claim_assignments = await load_open_debt(
-        db, organization_id, [row.assignment_id for row in domain_assignments]
-    )
-    school_today = now_utc.astimezone(zone).date()
-    lunch_rule = await _load_lunch_rule(db, organization_id)
     active_version = await db.scalar(
         select(SchedulerVersionV1).where(
             SchedulerVersionV1.organization_id == organization_id,
@@ -247,6 +239,45 @@ async def load_snapshot(
             "ACTIVE_VERSION_PUBLISHED",
             "Já existe um horário publicado. A primeira geração não o pode substituir.",
         )
+    operational_unavailable, operational_demand = await _load_operational_reservations(
+        db, organization_id, year.id, year.timezone
+    )
+    executed = _apply_operational_demand(executed, requirements, operational_demand)
+    groups = await _load_joint_groups(
+        db, organization_id, _assignment_ids_by_class_subject(assignments)
+    )
+    published_unit_keys = await _load_published_unit_keys(
+        db, organization_id, year.id, active_version
+    )
+    domain_assignments, unit_plan, executed = await _build_assignments(
+        db,
+        organization_id,
+        assignments,
+        requirements,
+        executed,
+        groups,
+        published_unit_keys,
+        constraints=constraints,
+    )
+    unit_accounting = {
+        unit_id: tuple(payers) for unit_id, payers in unit_plan.accounting_assignments.items()
+    }
+    unavailable, soft_unavailable = await _load_unavailability(
+        db,
+        organization_id,
+        constraints=constraints,
+        calendar=calendar,
+    )
+    unavailable = (*unavailable, *operational_unavailable)
+    open_debt, raw_claim_assignments = await load_open_debt(
+        db, organization_id, [row.id for row in assignments]
+    )
+    joint_mode = any(len(row.class_ids) > 1 for row in domain_assignments)
+    claim_assignments, claim_classes = _map_claim_units(
+        unit_plan, assignments, open_debt, raw_claim_assignments
+    )
+    school_today = now_utc.astimezone(zone).date()
+    lunch_rule = await _load_lunch_rule(db, organization_id)
     # The stability window protects only a schedule that is already published.
     # A first generation has no published lessons to preserve, so it must not
     # lose future days to a window that protects nothing.
@@ -257,12 +288,15 @@ async def load_snapshot(
         if active_version is not None
         else frozenset()
     )
+    class_ids_by_unit = {unit.unit_id: unit.class_ids for unit in unit_plan.units}
+    accounting_classes = {row.id: row.class_id for row in assignments}
     (
         baseline_lessons,
         protected_lessons,
         reservations,
         base_lesson_ids,
         history_unavailable,
+        base_lesson_classes,
     ) = await _load_baseline(
         db,
         organization_id,
@@ -273,6 +307,9 @@ async def load_snapshot(
         protected_dates=protected_dates,
         assignments={row.assignment_id: row for row in domain_assignments},
         executed=executed,
+        unit_keys=unit_plan.unit_ids,
+        class_ids_by_unit=class_ids_by_unit,
+        accounting_classes=accounting_classes,
     )
     try:
         snapshot = PlanningSnapshot(
@@ -295,6 +332,8 @@ async def load_snapshot(
             reservations=tuple(row for row in reservations if row.claim_id in open_debt),
             open_debt_minutes=open_debt,
             claim_assignments=claim_assignments,
+            claim_classes=claim_classes if joint_mode else {},
+            precedences=unit_plan.precedences,
             active_version_id=active_version.id if active_version is not None else None,
             lunch_rule=lunch_rule,
             reserved_lesson_ids=frozenset(base_lesson_ids).difference(
@@ -329,6 +368,15 @@ async def load_snapshot(
         planning_revision=state.planning_revision,
         digest=digest,
         policy=policy,
+        unit_keys=MappingProxyType(dict(unit_plan.unit_ids)),
+        unit_accounting=MappingProxyType(dict(unit_accounting)),
+        accounting_classes=MappingProxyType(dict(accounting_classes)),
+        base_lesson_classes=MappingProxyType(
+            {
+                identity: MappingProxyType(dict(rows))
+                for identity, rows in base_lesson_classes.items()
+            }
+        ),
     )
 
 
@@ -406,7 +454,7 @@ async def _load_operational_reservations(
 
 def _apply_operational_demand(
     executed: Mapping[int, Mapping[int, int]],
-    assignments: Sequence[Assignment],
+    requirements: Mapping[int, tuple[ModuleRequirement, ...]],
     demand: Mapping[int, Mapping[int, int]],
 ) -> dict[int, dict[int, int]]:
     """Fold planned substitution minutes into the consumed demand.
@@ -419,12 +467,11 @@ def _apply_operational_demand(
     result: dict[int, dict[int, int]] = {
         assignment_id: dict(modules) for assignment_id, modules in executed.items()
     }
-    by_id = {row.assignment_id: row for row in assignments}
     for assignment_id, modules in demand.items():
-        assignment = by_id.get(assignment_id)
-        if assignment is None:
+        required_modules = requirements.get(assignment_id)
+        if not required_modules:
             continue
-        required = {module.module_id: module.required_minutes for module in assignment.modules}
+        required = {module.module_id: module.required_minutes for module in required_modules}
         for module_id, minutes in modules.items():
             if module_id not in required:
                 continue
@@ -716,7 +763,11 @@ async def _load_assignments(
     db: AsyncSession,
     organization_id: int,
     school_year_id: int,
-) -> list[CurricularAssignment]:
+) -> tuple[
+    list[CurricularAssignment],
+    dict[int, tuple[ModuleRequirement, ...]],
+    dict[int, dict[int, int]],
+]:
     assignments = (
         await db.scalars(
             select(CurricularAssignment)
@@ -732,7 +783,206 @@ async def _load_assignments(
             "NO_CURRICULAR_ASSIGNMENTS",
             "Não existem atribuições curriculares configuradas para o ano letivo.",
         )
-    return list(assignments)
+    requirement_rows = (
+        await db.execute(
+            select(CurricularRequirement).where(
+                CurricularRequirement.organization_id == organization_id,
+                CurricularRequirement.assignment_id.in_([row.id for row in assignments]),
+            )
+        )
+    ).scalars()
+    requirements: dict[int, list[ModuleRequirement]] = defaultdict(list)
+    for row in requirement_rows:
+        requirements[row.assignment_id].append(
+            ModuleRequirement(row.module_id, row.sequence, row.required_minutes)
+        )
+    for assignment in assignments:
+        modules = requirements.get(assignment.id)
+        if not modules:
+            raise SnapshotConfigurationError(
+                "ASSIGNMENT_WITHOUT_REQUIREMENTS",
+                "Existem disciplinas atribuídas sem módulos com minutos definidos.",
+            )
+    # Planning view: a retired module is closed at its executed minutes and
+    # never receives new credit. The executed minutes cover only the modules
+    # that remain in the planning order.
+    planning, executed = await load_planning_requirements(
+        db, organization_id, [row.id for row in assignments]
+    )
+    return list(assignments), planning, executed
+
+
+def _assignment_ids_by_class_subject(
+    assignments: Sequence[CurricularAssignment],
+) -> dict[tuple[int, int], int]:
+    return {(row.class_id, row.subject_id): row.id for row in assignments}
+
+
+async def _load_joint_groups(
+    db: AsyncSession,
+    organization_id: int,
+    assignment_id_by_key: Mapping[tuple[int, int], int],
+) -> tuple[JointGroupPlan, ...]:
+    """Active joint groups over the current curricular projection (WBS 3.2.1)."""
+    groups = (
+        await db.execute(
+            select(models.JointLessonGroup.id, models.JointLessonGroup.subject_id)
+            .where(models.JointLessonGroup.organization_id == organization_id)
+            .order_by(models.JointLessonGroup.id)
+        )
+    ).all()
+    if not groups:
+        return ()
+    group_ids = [group_id for group_id, _subject_id in groups]
+    member_rows = (
+        await db.execute(
+            select(
+                models.joint_lesson_group_member.c.group_id,
+                models.ClassSubjectLink.class_id,
+                models.ClassSubjectLink.subject_id,
+            )
+            .join(
+                models.ClassSubjectLink,
+                (
+                    models.ClassSubjectLink.organization_id
+                    == models.joint_lesson_group_member.c.organization_id
+                )
+                & (
+                    models.ClassSubjectLink.id
+                    == models.joint_lesson_group_member.c.class_subject_link_id
+                ),
+            )
+            .where(
+                models.joint_lesson_group_member.c.organization_id == organization_id,
+                models.joint_lesson_group_member.c.group_id.in_(group_ids),
+            )
+        )
+    ).all()
+    module_rows = (
+        await db.execute(
+            select(
+                models.joint_lesson_group_module.c.group_id,
+                models.joint_lesson_group_module.c.module_id,
+            )
+            .where(
+                models.joint_lesson_group_module.c.organization_id == organization_id,
+                models.joint_lesson_group_module.c.group_id.in_(group_ids),
+            )
+            .order_by(models.joint_lesson_group_module.c.module_id)
+        )
+    ).all()
+    members: dict[int, list[int]] = defaultdict(list)
+    for group_id, class_id, subject_id in member_rows:
+        assignment_id = assignment_id_by_key.get((class_id, subject_id))
+        if assignment_id is not None:
+            members[group_id].append(assignment_id)
+    modules: dict[int, list[int]] = defaultdict(list)
+    for group_id, module_id in module_rows:
+        modules[group_id].append(module_id)
+    plans: list[JointGroupPlan] = []
+    for group_id, subject_id in groups:
+        member_ids = tuple(sorted(set(members.get(group_id, ()))))
+        joint_modules = tuple(modules.get(group_id, ()))
+        if len(member_ids) < 2 or not joint_modules:
+            raise SnapshotConfigurationError(
+                "JOINT_GROUP_INCOMPLETE",
+                "Existem aulas conjuntas com menos de duas turmas ativas ou sem módulos. "
+                "Edite ou desfaça a junção.",
+            )
+        plans.append(JointGroupPlan(group_id, subject_id, member_ids, joint_modules))
+    return tuple(plans)
+
+
+async def _retired_modules(
+    db: AsyncSession, organization_id: int, assignment_ids: Set[int]
+) -> dict[int, set[int]]:
+    """Retired (``planned = false``) modules per assignment, for joint grouping only."""
+    if not assignment_ids:
+        return {}
+    rows = (
+        await db.execute(
+            select(CurricularRequirement.assignment_id, CurricularRequirement.module_id).where(
+                CurricularRequirement.organization_id == organization_id,
+                CurricularRequirement.assignment_id.in_(assignment_ids),
+                CurricularRequirement.planned.is_(False),
+            )
+        )
+    ).all()
+    retired: dict[int, set[int]] = defaultdict(set)
+    for assignment_id, module_id in rows:
+        retired[assignment_id].add(module_id)
+    return retired
+
+
+async def _load_published_unit_keys(
+    db: AsyncSession,
+    organization_id: int,
+    school_year_id: int,
+    active_version: SchedulerVersionV1 | None,
+) -> frozenset[str]:
+    if active_version is None:
+        return frozenset()
+    rows = (
+        await db.scalars(
+            select(SchedulerLessonV1.teaching_unit_key)
+            .where(
+                SchedulerLessonV1.organization_id == organization_id,
+                SchedulerLessonV1.school_year_id == school_year_id,
+                SchedulerLessonV1.version_id == active_version.id,
+            )
+            .distinct()
+        )
+    ).all()
+    return frozenset(rows)
+
+
+_CLAIM_UNIT_RANK = {"D": 0, "J": 1, "S": 2, "A": 3}
+
+
+def _map_claim_units(
+    unit_plan: TeachingUnitPlan,
+    assignments: Sequence[CurricularAssignment],
+    open_debt: Mapping[int, int],
+    raw_claim_assignments: Mapping[int, int],
+) -> tuple[dict[int, int], dict[int, int]]:
+    """Map every open debt claim to a teaching unit and its class (WBS 3.2.4).
+
+    The debt's accounting assignment names the class; the unit is the deficit
+    (``D``) unit of that class when it still has residual minutes, otherwise the
+    joint unit, then the separate/assignment units. The class map is always
+    derived from the accounting assignment, never from a unit's first class.
+    """
+    units_by_id = {unit.unit_id: unit for unit in unit_plan.units}
+    class_by_assignment = {row.id: row.class_id for row in assignments}
+    accounting_to_units: dict[int, list[int]] = defaultdict(list)
+    for unit_id, payers in unit_plan.accounting_assignments.items():
+        for payer in payers:
+            accounting_to_units[payer].append(unit_id)
+
+    def rank(unit_id: int) -> tuple[int, int]:
+        prefix = units_by_id[unit_id].key.split(":", 1)[0]
+        return (_CLAIM_UNIT_RANK.get(prefix, 4), unit_id)
+
+    claim_assignments: dict[int, int] = {}
+    claim_classes: dict[int, int] = {}
+    for claim_id in open_debt:
+        accounting = raw_claim_assignments.get(claim_id)
+        if accounting is None:
+            continue
+        candidates = accounting_to_units.get(accounting, [])
+        if not candidates:
+            continue
+        claim_class = class_by_assignment.get(accounting)
+        if claim_class is not None:
+            claim_classes[claim_id] = claim_class
+        matching = [
+            unit_id
+            for unit_id in candidates
+            if claim_class in units_by_id[unit_id].class_ids
+            and units_by_id[unit_id].residual_minutes > 0
+        ]
+        claim_assignments[claim_id] = min(matching or candidates, key=rank)
+    return claim_assignments, claim_classes
 
 
 async def _build_assignments(
@@ -740,9 +990,13 @@ async def _build_assignments(
     organization_id: int,
     assignments: Sequence[CurricularAssignment],
     requirements: Mapping[int, tuple[ModuleRequirement, ...]],
+    executed: Mapping[int, Mapping[int, int]],
+    groups: Sequence[JointGroupPlan],
+    published_unit_keys: Set[str],
     *,
     constraints: SchoolConstraintPolicy,
-) -> tuple[Assignment, ...]:
+) -> tuple[tuple[Assignment, ...], TeachingUnitPlan, dict[int, dict[int, int]]]:
+    """Build one domain unit per ``build_teaching_units`` unit (WBS 3.2.1-3.2.2)."""
     class_sizes = {
         class_id: (size, name)
         for class_id, size, name in (
@@ -782,63 +1036,117 @@ async def _build_assignments(
             )
         ).all()
     ]
-    result: list[Assignment] = []
-    room_issues: list[dict[str, object]] = []
+    grouped_ids = {member for group in groups for member in group.member_assignment_ids}
+    retired = await _retired_modules(db, organization_id, grouped_ids)
+    plans: list[AssignmentPlan] = []
     for row in assignments:
-        if not requirements.get(row.id):
+        kept = requirements[row.id]
+        if row.id in grouped_ids and retired.get(row.id):
+            dropped = retired[row.id]
+            kept = tuple(module for module in kept if module.module_id not in dropped)
+        if not kept:
+            if row.id in grouped_ids:
+                raise SnapshotConfigurationError(
+                    "JOINT_GROUP_INCOMPLETE",
+                    "Existem aulas conjuntas sem módulos conjuntos. Edite ou desfaça a junção.",
+                )
             raise SnapshotConfigurationError(
                 "ASSIGNMENT_WITHOUT_REQUIREMENTS",
                 "Existem disciplinas atribuídas sem módulos com minutos definidos.",
             )
-        subject = subject_types.get(row.subject_id)
+        kept_ids = {module.module_id for module in kept}
+        plans.append(
+            AssignmentPlan(
+                assignment_id=row.id,
+                class_id=row.class_id,
+                subject_id=row.subject_id,
+                teacher_id=row.teacher_id,
+                student_count=class_sizes.get(row.class_id, (0, ""))[0],
+                modules=kept,
+                executed_minutes={
+                    module_id: minutes
+                    for module_id, minutes in executed.get(row.id, {}).items()
+                    if module_id in kept_ids
+                },
+            )
+        )
+    try:
+        plan = build_teaching_units(plans, groups, set(published_unit_keys))
+    except JointTeacherMismatch as exc:
+        raise SnapshotConfigurationError(
+            "JOINT_TEACHER_MISMATCH",
+            "As turmas de uma aula conjunta têm professores diferentes.",
+        ) from exc
+    except ValueError as exc:
+        raise SnapshotConfigurationError(
+            "JOINT_GROUP_INCOMPLETE",
+            "Uma aula conjunta é inconsistente com os módulos marcados nas turmas.",
+        ) from exc
+
+    result: list[Assignment] = []
+    room_issues: list[dict[str, object]] = []
+    for unit in plan.units:
+        subject = subject_types.get(unit.subject_id)
         if subject is None:
             raise SnapshotConfigurationError(
                 "UNKNOWN_SUBJECT", "Uma atribuição curricular refere uma disciplina desconhecida."
             )
         required_type, subject_name = subject
-        course_class = class_sizes.get(row.class_id)
-        if course_class is None:
+        if any(class_id not in class_sizes for class_id in unit.class_ids):
             raise SnapshotConfigurationError(
                 "UNKNOWN_CLASS", "Uma atribuição curricular refere uma turma desconhecida."
             )
-        class_size, class_name = course_class
+        names = [class_sizes[class_id][1] for class_id in unit.class_ids]
+        required_capacity = sum(class_sizes[class_id][0] for class_id in unit.class_ids)
+        restricted = [
+            constraints.specific_rooms[(class_id, unit.subject_id)]
+            for class_id in unit.class_ids
+            if (class_id, unit.subject_id) in constraints.specific_rooms
+        ]
+        allowed = (
+            frozenset.intersection(*(frozenset(value) for value in restricted))
+            if restricted
+            else None
+        )
         eligibility = assess_room_eligibility(
             rooms,
             required_room_type=required_type.value,
-            required_capacity=class_size,
-            allowed_room_ids=constraints.specific_rooms.get((row.class_id, row.subject_id)),
+            required_capacity=required_capacity,
+            allowed_room_ids=allowed,
         )
         if eligibility.reason is not None:
-            room_issues.append(
-                {
-                    "class_id": row.class_id,
-                    "class_name": class_name,
-                    "subject_id": row.subject_id,
-                    "subject_name": subject_name,
-                    "required_room_type": required_type.value,
-                    "required_capacity": class_size,
-                    "max_available_capacity": eligibility.max_available_capacity,
-                    "reason": eligibility.reason.value,
-                }
-            )
+            issue: dict[str, object] = {
+                "class_id": unit.class_ids[0],
+                "class_name": ", ".join(name for name in names if name),
+                "subject_id": unit.subject_id,
+                "subject_name": subject_name,
+                "required_room_type": required_type.value,
+                "required_capacity": required_capacity,
+                "max_available_capacity": eligibility.max_available_capacity,
+                "reason": eligibility.reason.value,
+            }
+            if len(unit.class_ids) > 1:
+                issue["class_ids"] = list(unit.class_ids)
+            room_issues.append(issue)
             continue
         result.append(
             Assignment(
-                assignment_id=row.id,
-                class_id=row.class_id,
-                subject_id=row.subject_id,
-                teacher_id=row.teacher_id,
+                assignment_id=unit.unit_id,
+                class_ids=unit.class_ids,
+                subject_id=unit.subject_id,
+                teacher_id=unit.teacher_id,
                 eligible_room_ids=eligibility.eligible_room_ids,
-                modules=requirements[row.id],
+                modules=unit.modules,
             )
         )
     if room_issues:
         raise SnapshotConfigurationError(
             "NO_ELIGIBLE_ROOM",
-            "Existem disciplinas sem sala compatível com o tipo e a lotação da turma.",
+            "Existem disciplinas sem sala compatível com o tipo e a lotação das turmas.",
             public_context={"room_issues": room_issues},
         )
-    return tuple(result)
+    unit_executed = {unit.unit_id: dict(unit.executed_minutes) for unit in plan.units}
+    return tuple(result), plan, unit_executed
 
 
 async def _load_constraint_policy(db: AsyncSession, organization_id: int) -> SchoolConstraintPolicy:
@@ -1002,18 +1310,45 @@ async def _load_baseline(
     protected_dates: frozenset[date],
     assignments: Mapping[int, Assignment] | None = None,
     executed: Mapping[int, Mapping[int, int]] | None = None,
+    unit_keys: Mapping[str, int] | None = None,
+    class_ids_by_unit: Mapping[int, tuple[int, ...]] | None = None,
+    accounting_classes: Mapping[int, int] | None = None,
 ) -> tuple[
     tuple[ScheduledLesson, ...],
     tuple[ScheduledLesson, ...],
     tuple[RecoveryAllocation, ...],
     Mapping[int, int],
     tuple[Unavailability, ...],
+    Mapping[int, Mapping[int, int]],
 ]:
     if active_version is None:
-        return (), (), (), MappingProxyType({}), ()
-    baseline, identity_by_db_id, _ = await load_version_lessons(
-        db, organization_id, school_year_id, active_version, zone
+        empty: Mapping = MappingProxyType({})
+        return (), (), (), empty, (), empty
+    version_lessons = await load_version_lessons(
+        db,
+        organization_id,
+        school_year_id,
+        active_version,
+        zone,
+        unit_keys=unit_keys,
+        class_ids_by_unit=class_ids_by_unit,
+        accounting_classes=accounting_classes,
     )
+    identity_by_db_id = version_lessons.identity_by_db_id
+    baseline = tuple(
+        lesson
+        for lesson in version_lessons.lessons
+        if lesson.lesson_id not in version_lessons.unresolved_identities
+    )
+    for lesson in version_lessons.lessons:
+        if lesson.lesson_id not in version_lessons.unresolved_identities:
+            continue
+        if lesson.period.start_utc <= now_utc or lesson.period.school_date in protected_dates:
+            raise SnapshotConfigurationError(
+                "JOINT_PUBLISHED_LESSONS_CONFLICT",
+                "Uma aula conjunta publicada usa uma unidade que já não existe. "
+                "Gere um novo horário.",
+            )
     history_unavailable: list[Unavailability] = []
     if assignments is not None and executed is not None:
         try:
@@ -1039,7 +1374,7 @@ async def _load_baseline(
                 continue
             assignment = assignments[lesson.assignment_id]
             for resource_type, resource_id in (
-                (UnavailableResource.CLASS, assignment.class_id),
+                *((UnavailableResource.CLASS, class_id) for class_id in assignment.class_ids),
                 (UnavailableResource.TEACHER, lesson.teacher_id or assignment.teacher_id),
                 (UnavailableResource.ROOM, lesson.room_id),
             ):
@@ -1082,6 +1417,7 @@ async def _load_baseline(
         allocations,
         MappingProxyType({identity: db_id for db_id, identity in identity_by_db_id.items()}),
         tuple(history_unavailable),
+        version_lessons.db_ids_by_identity_class,
     )
 
 
@@ -1222,19 +1558,64 @@ def _reproject_baseline(
     return tuple(revised.get(row.lesson_id, row) for row in lessons if row.lesson_id not in dropped)
 
 
+@dataclass(frozen=True)
+class VersionLessons:
+    """One version's lessons as domain values, with sibling-aware identity maps."""
+
+    lessons: tuple[ScheduledLesson, ...]
+    identity_by_db_id: Mapping[int, int]
+    db_id_by_identity: Mapping[int, int]
+    db_ids_by_identity_class: Mapping[int, Mapping[int, int]]
+    unresolved_identities: frozenset[int]
+
+
+def _sibling_rows_are_consistent(
+    first: SchedulerLessonV1, group: Sequence[SchedulerLessonV1]
+) -> bool:
+    physical = (
+        first.teaching_unit_key,
+        first.school_date,
+        first.starts_at,
+        first.ends_at,
+        first.room_id,
+        first.physical_minutes,
+        first.credit_minutes,
+    )
+    for other in group[1:]:
+        if (
+            other.teaching_unit_key,
+            other.school_date,
+            other.starts_at,
+            other.ends_at,
+            other.room_id,
+            other.physical_minutes,
+            other.credit_minutes,
+        ) != physical:
+            return False
+    return True
+
+
 async def load_version_lessons(
     db: AsyncSession,
     organization_id: int,
     school_year_id: int,
     version: SchedulerVersionV1,
     zone: ZoneInfo,
-) -> tuple[tuple[ScheduledLesson, ...], Mapping[int, int], Mapping[int, int]]:
-    """Lessons of one version as domain values, with both identity maps.
+    *,
+    unit_keys: Mapping[str, int] | None = None,
+    class_ids_by_unit: Mapping[int, tuple[int, ...]] | None = None,
+    accounting_classes: Mapping[int, int] | None = None,
+) -> VersionLessons:
+    """Lessons of one version grouped into logical lessons (WBS 3.2.3).
 
-    The returned mappings translate between database lesson IDs and the stable
-    domain identities used by the search and the validator.
+    Sister rows of a joint lesson share ``stable_key``; they collapse into one
+    domain ``ScheduledLesson`` carrying every member class and the unit id
+    resolved from ``teaching_unit_key``. Physical metadata, slices and the unit
+    key must match across sisters (``JOINT_LESSON_INCONSISTENT``). A protected
+    sister whose key has no current unit is rejected earlier; an editable
+    future lesson without a unit only pairs identities.
     """
-    lessons = (
+    rows = (
         await db.scalars(
             select(SchedulerLessonV1)
             .where(
@@ -1251,61 +1632,117 @@ async def load_version_lessons(
             .order_by(SchedulerLessonV1.id)
         )
     ).all()
-    lesson_ids = [row.id for row in lessons]
-    identity_by_db_id = {row.id: _identity(row.stable_key) for row in lessons}
-    db_id_by_identity = {identity: row_id for row_id, identity in identity_by_db_id.items()}
-    slices_by_lesson: dict[int, list[ModuleSlice]] = defaultdict(list)
-    if lesson_ids:
-        slice_rows = (
-            await db.scalars(
-                select(SchedulerLessonSliceV1)
-                .where(
-                    SchedulerLessonSliceV1.organization_id == organization_id,
-                    SchedulerLessonSliceV1.school_year_id == school_year_id,
-                    SchedulerLessonSliceV1.lesson_id.in_(lesson_ids),
-                )
-                .order_by(SchedulerLessonSliceV1.id)
+    if not rows:
+        empty: Mapping = MappingProxyType({})
+        return VersionLessons((), empty, empty, empty, frozenset())
+    row_identity = {row.id: _identity(row.stable_key) for row in rows}
+    slice_rows = (
+        await db.scalars(
+            select(SchedulerLessonSliceV1)
+            .where(
+                SchedulerLessonSliceV1.organization_id == organization_id,
+                SchedulerLessonSliceV1.school_year_id == school_year_id,
+                SchedulerLessonSliceV1.lesson_id.in_([row.id for row in rows]),
             )
-        ).all()
-        for row in slice_rows:
-            slices_by_lesson[row.lesson_id].append(
-                ModuleSlice(
-                    identity_by_db_id[row.lesson_id],
-                    row.module_id,
-                    row.offset_minutes,
-                    row.minutes,
-                )
+            .order_by(SchedulerLessonSliceV1.id)
+        )
+    ).all()
+    slices_by_db_id: dict[int, list[tuple[int, int, int]]] = defaultdict(list)
+    for slice_row in slice_rows:
+        slices_by_db_id[slice_row.lesson_id].append(
+            (slice_row.module_id, slice_row.offset_minutes, slice_row.minutes)
+        )
+
+    known_unit_keys = dict(unit_keys or {})
+    unit_class_ids = dict(class_ids_by_unit or {})
+    accounting_class = dict(accounting_classes or {})
+    groups: dict[str, list[SchedulerLessonV1]] = defaultdict(list)
+    for row in rows:
+        groups[row.stable_key].append(row)
+
+    lessons: list[ScheduledLesson] = []
+    identity_by_db_id: dict[int, int] = {}
+    db_id_by_identity: dict[int, int] = {}
+    db_ids_by_identity_class: dict[int, dict[int, int]] = {}
+    unresolved: set[int] = set()
+    for stable_key, group in sorted(
+        groups.items(), key=lambda pair: min(row.id for row in pair[1])
+    ):
+        identity = _identity(stable_key)
+        first = group[0]
+        if not _sibling_rows_are_consistent(first, group):
+            raise SnapshotConfigurationError(
+                "JOINT_LESSON_INCONSISTENT",
+                "As aulas irmãs de uma aula conjunta não são idênticas. Gere um novo horário.",
             )
-    result: list[ScheduledLesson] = []
-    for row in lessons:
-        local_start = row.starts_at.astimezone(zone)
-        local_end = row.ends_at.astimezone(zone)
-        result.append(
+        base_slices = sorted(slices_by_db_id.get(first.id, ()))
+        if any(sorted(slices_by_db_id.get(row.id, ())) != base_slices for row in group[1:]):
+            raise SnapshotConfigurationError(
+                "JOINT_LESSON_INCONSISTENT",
+                "As aulas irmãs de uma aula conjunta não partilham os mesmos módulos.",
+            )
+        unit_id = known_unit_keys.get(first.teaching_unit_key)
+        expected_classes = unit_class_ids.get(unit_id) if unit_id is not None else None
+        class_ids: tuple[int, ...] | None = None
+        if expected_classes is not None:
+            row_classes = {accounting_class.get(row.assignment_id) for row in group}
+            if None in row_classes or set(row_classes) != set(expected_classes):
+                raise SnapshotConfigurationError(
+                    "JOINT_LESSON_INCONSISTENT",
+                    "Uma aula conjunta publicada não tem exatamente as aulas irmãs das suas turmas.",
+                )
+            class_ids = tuple(expected_classes)
+        elif len(group) > 1:
+            raise SnapshotConfigurationError(
+                "JOINT_PUBLISHED_LESSONS_CONFLICT",
+                "Uma aula conjunta publicada usa uma unidade que já não existe. Gere um novo horário.",
+            )
+        else:
+            unresolved.add(identity)
+        local_start = first.starts_at.astimezone(zone)
+        local_end = first.ends_at.astimezone(zone)
+        lessons.append(
             ScheduledLesson(
-                lesson_id=identity_by_db_id[row.id],
-                assignment_id=row.assignment_id,
+                lesson_id=identity,
+                assignment_id=unit_id if unit_id is not None else first.assignment_id,
                 period=normalize_period(
-                    row.school_date,
+                    first.school_date,
                     time(local_start.hour, local_start.minute),
                     time(local_end.hour, local_end.minute),
                     zone.key,
                 ),
-                room_id=row.room_id,
-                credit_minutes=row.credit_minutes,
+                room_id=first.room_id,
+                credit_minutes=first.credit_minutes,
                 slices=tuple(
-                    sorted(
-                        slices_by_lesson.get(row.id, ()),
-                        key=lambda slice_: (slice_.offset_minutes, slice_.module_id),
-                    )
+                    ModuleSlice(identity, module_id, offset, credit)
+                    for module_id, offset, credit in sorted(base_slices)
                 ),
                 source_lesson_id=(
-                    identity_by_db_id.get(row.source_lesson_id)
-                    if row.source_lesson_id is not None
+                    row_identity.get(first.source_lesson_id)
+                    if first.source_lesson_id is not None
                     else None
                 ),
+                class_ids=class_ids,
             )
         )
-    return tuple(result), MappingProxyType(identity_by_db_id), MappingProxyType(db_id_by_identity)
+        for row in group:
+            identity_by_db_id[row.id] = identity
+            class_id = accounting_class.get(row.assignment_id)
+            if class_id is not None:
+                db_ids_by_identity_class.setdefault(identity, {})[class_id] = row.id
+        db_id_by_identity[identity] = min(row.id for row in group)
+    return VersionLessons(
+        tuple(lessons),
+        MappingProxyType(identity_by_db_id),
+        MappingProxyType(db_id_by_identity),
+        MappingProxyType(
+            {
+                identity: MappingProxyType(rows)
+                for identity, rows in db_ids_by_identity_class.items()
+            }
+        ),
+        frozenset(unresolved),
+    )
 
 
 def _identity(stable_key: str) -> int:

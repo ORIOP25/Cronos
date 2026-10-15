@@ -42,7 +42,7 @@ class AssignmentSpec:
     def to_assignment(self, assignment_id: int) -> Assignment:
         return Assignment(
             assignment_id=assignment_id,
-            class_id=self.class_id,
+            class_ids=(self.class_id,),
             subject_id=assignment_id,
             teacher_id=self.teacher_id,
             eligible_room_ids=frozenset(self.eligible_rooms),

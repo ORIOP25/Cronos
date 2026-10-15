@@ -177,6 +177,7 @@ async def update_class_subject(
     - Associação turma/disciplina existe
     - Se teacher_id não é null, professor tem competência na disciplina
     - module_ids não tem repetidos e pertence todo à disciplina
+    - module_ids substitui a seleção; uma lista vazia é válida
 
     Enviar teacher_id=null para remover a atribuição. Enviar module_ids=[]
     para limpar a seleção. Omitir um campo deixa-o inalterado.

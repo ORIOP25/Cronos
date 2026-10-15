@@ -33,6 +33,7 @@ from app.scheduler.domain.candidate import (
 )
 from app.scheduler.domain.candidate_validation import validate_candidate
 from app.scheduler.domain.capacity import available_rooms, eligible_periods
+from app.scheduler.domain.diagnostics import diagnose_joint_isolation
 from app.scheduler.domain.quality import SearchEvidence, measure_initial_quality
 from app.scheduler.domain.recovery import RecoveryPolicy, recovery_vector
 from app.scheduler.domain.results import (
@@ -603,6 +604,9 @@ def _joint_search(
             return fallback
     if incumbent is None:
         if exhausted:
+            # A single joint unit left without any eligible period is a proven
+            # isolation, not a generic relaxation failure (WBS 3.9).
+            isolation = diagnose_joint_isolation(snapshot, periods)
             return SearchOutcome(
                 OUTCOME_INFEASIBLE,
                 None,
@@ -617,7 +621,9 @@ def _joint_search(
                     relaxation_scope=RELAXATION_SCOPE,
                     relaxation_proven=True,
                 ),
-                "The annual quota relaxation is infeasible.",
+                isolation.message
+                if isolation is not None
+                else "The annual quota relaxation is infeasible.",
                 monotonic() - start,
                 dict(phase_totals),
             )

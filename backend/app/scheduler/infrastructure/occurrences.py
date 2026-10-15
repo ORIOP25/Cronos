@@ -10,7 +10,7 @@ the subject actually taught, and reversal revises the debt and revokes the log.
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
@@ -43,11 +43,11 @@ from app.scheduler.infrastructure.operations import (
     lesson_context,
     lesson_lineage_ids,
     local_times,
+    lock_school_year_state,
     record_lesson_log,
     reverse_lesson_execution,
 )
 from app.scheduler.infrastructure.progress import (
-    load_executed_minutes,
     load_planning_requirements,
     record_debt,
     record_execution,
@@ -189,7 +189,12 @@ async def _log_rows(
                 ),
             ),
         )
-        .order_by(SchedulerLessonV1.school_date, SchedulerLessonV1.starts_at)
+        .order_by(
+            SchedulerLessonV1.school_date,
+            SchedulerLessonV1.starts_at,
+            SchedulerLessonV1.id,
+            SchedulerLessonLogV1.id,
+        )
     )
     if class_id is not None:
         query = query.where(CurricularAssignment.class_id == class_id)
@@ -363,6 +368,28 @@ async def _active_blocks_for_logs(
     return {row.source_v1_lesson_log_id: row for row in rows}
 
 
+async def _lock_member_logs(
+    db: AsyncSession, organization_id: int, log_ids: Iterable[int]
+) -> dict[int, SchedulerLessonLogV1]:
+    """Lock member logs by ``id`` and refresh their facts (tenant scoped)."""
+    identifiers = sorted({log_id for log_id in log_ids})
+    if not identifiers:
+        return {}
+    rows = (
+        await db.scalars(
+            select(SchedulerLessonLogV1)
+            .where(
+                SchedulerLessonLogV1.organization_id == organization_id,
+                SchedulerLessonLogV1.id.in_(identifiers),
+            )
+            .order_by(SchedulerLessonLogV1.id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+    ).all()
+    return {row.id: row for row in rows}
+
+
 async def _require_open_week(
     db: AsyncSession,
     organization_id: int,
@@ -403,6 +430,81 @@ async def _locked_weeks(
     }
 
 
+def _log_state(log) -> tuple[str, str]:
+    """Public status and operational state of a lesson log, or a pending line."""
+    if log is None:
+        return "GAP", OP_STATE_OPEN
+    if log.status == "REVOKED":
+        return "REVOKED", OP_STATE_REVOKED
+    if log.decision == "GIVEN" or log.status == "COMPLETED":
+        return "GIVEN", OP_STATE_GIVEN
+    if log.decision == "SUBSTITUTED":
+        return "SUBSTITUTED", OP_STATE_SUBSTITUTED
+    if log.decision == "GAP":
+        return "GAP", OP_STATE_GAP
+    return "GAP", OP_STATE_OPEN
+
+
+async def _joint_members_for_keys(
+    db: AsyncSession,
+    organization_id: int,
+    year_id: int,
+    version_id: int,
+    stable_keys: set[str],
+) -> dict[str, list[dict]]:
+    """Every member class of the given stable keys with its class and log (J13)."""
+    if not stable_keys:
+        return {}
+    rows = (
+        await db.execute(
+            select(SchedulerLessonV1, models.Class.id, models.Class.name, SchedulerLessonLogV1)
+            .join(
+                CurricularAssignment,
+                and_(
+                    CurricularAssignment.organization_id == SchedulerLessonV1.organization_id,
+                    CurricularAssignment.school_year_id == SchedulerLessonV1.school_year_id,
+                    CurricularAssignment.id == SchedulerLessonV1.assignment_id,
+                ),
+            )
+            .join(
+                models.Class,
+                and_(
+                    models.Class.organization_id == organization_id,
+                    models.Class.id == CurricularAssignment.class_id,
+                ),
+            )
+            .outerjoin(
+                SchedulerLessonLogV1,
+                and_(
+                    SchedulerLessonLogV1.organization_id == organization_id,
+                    SchedulerLessonLogV1.lesson_id == SchedulerLessonV1.id,
+                ),
+            )
+            .where(
+                SchedulerLessonV1.organization_id == organization_id,
+                SchedulerLessonV1.school_year_id == year_id,
+                SchedulerLessonV1.version_id == version_id,
+                SchedulerLessonV1.stable_key.in_(stable_keys),
+            )
+            .order_by(SchedulerLessonV1.id)
+        )
+    ).all()
+    groups: dict[str, list[dict]] = defaultdict(list)
+    for lesson, class_id, class_name, log in rows:
+        status_value, operational_state = _log_state(log)
+        groups[lesson.stable_key].append(
+            {
+                "class_id": class_id,
+                "class_name": class_name,
+                "lesson_db_id": lesson.id,
+                "log": log,
+                "status": status_value,
+                "operational_state": operational_state,
+            }
+        )
+    return groups
+
+
 async def _items(
     db: AsyncSession,
     organization_id: int,
@@ -420,6 +522,9 @@ async def _items(
     )
     if not rows:
         return []
+    joint_members = await _joint_members_for_keys(
+        db, organization_id, context[0].id, context[1].id, {row[1].stable_key for row in rows}
+    )
     log_ids = [row[0].id for row in rows]
     blocks = await _active_blocks_for_logs(db, organization_id, log_ids)
     executions, credits_by_execution = await _executions_for_occurrences(
@@ -448,21 +553,23 @@ async def _items(
         block = blocks.get(log.id)
         substitution = substitutions.get(log.id)
         lesson_finished = execution_allowed(moment, lesson.ends_at)
-        if log.status == "REVOKED":
-            status_value = "REVOKED"
-            operational_state = OP_STATE_REVOKED
-        elif log.decision == "GIVEN" or log.status == "COMPLETED":
-            status_value = "GIVEN"
-            operational_state = OP_STATE_GIVEN
-        elif log.decision == "SUBSTITUTED":
-            status_value = "SUBSTITUTED"
-            operational_state = OP_STATE_SUBSTITUTED
-        elif log.decision == "GAP":
-            status_value = "GAP"
-            operational_state = OP_STATE_GAP
-        else:
-            status_value = "GAP"
-            operational_state = OP_STATE_OPEN
+        status_value, operational_state = _log_state(log)
+        members = joint_members.get(lesson.stable_key, [])
+        joint_lesson = None
+        if len(members) > 1:
+            joint_lesson = {
+                "classes": [
+                    {
+                        "class_id": member["class_id"],
+                        "class_name": member["class_name"],
+                        "operational_state": member["operational_state"],
+                        "status": member["status"],
+                        "version": member["log"].revision if member["log"] else None,
+                        "id": member["log"].id if member["log"] else None,
+                    }
+                    for member in members
+                ]
+            }
         substitute_completed = (
             block is not None
             and block.execution_status == models.OperationalBlockExecutionStatus.COMPLETED
@@ -547,6 +654,9 @@ async def _items(
                 "ends_at": lesson.ends_at,
                 "can_complete": can_complete,
                 "blocked_reason": blocked_reason,
+                # WBS 5.2 (J13): joint lesson grouping for the occurrences page.
+                "joint_lesson": joint_lesson,
+                "_group_key": lesson.stable_key,
                 # Internal context used by the commands; the response model drops it.
                 "lesson_db_id": lesson.id,
                 "assignment_db_id": assignment.id,
@@ -625,10 +735,23 @@ async def list_occurrences(
     items = await _items(
         db, organization_id, context, class_id=class_id, date_from=date_from, date_to=date_to
     )
-    filtered = [item for item in items if _matches_status(item, status_filter)]
+    # A joint lesson is one card. Filter first, then collapse the sibling logs to
+    # the stable first line (min lesson id) so any matching class keeps the
+    # card, while the per-class state travels inside ``joint_lesson`` (J13).
+    seen_groups: set[str] = set()
+    grouped: list[dict] = []
+    for item in items:
+        if not _matches_status(item, status_filter):
+            continue
+        group_key = item.pop("_group_key", None)
+        if group_key is not None:
+            if group_key in seen_groups:
+                continue
+            seen_groups.add(group_key)
+        grouped.append(item)
     return {
-        "items": filtered[skip : skip + limit],
-        "total": len(filtered),
+        "items": grouped[skip : skip + limit],
+        "total": len(grouped),
         "limit": limit,
         "offset": skip,
     }
@@ -647,6 +770,7 @@ async def _find_item(
     match = next((item for item in items if item["id"] == occurrence_id), None)
     if match is None:
         return None
+    match.pop("_group_key", None)
     return match, context[0], context[1]
 
 
@@ -871,6 +995,194 @@ def _substitution_exclusion(code: str, message: str, setup: str) -> dict:
     return {"code": code, "message": message, "setup": setup}
 
 
+async def _class_ids_for_item(
+    db: AsyncSession,
+    organization_id: int,
+    context: tuple[models.SchedulerSchoolYear, SchedulerVersionV1, ZoneInfo],
+    item: Mapping,
+) -> tuple[int, ...]:
+    """Member classes of the item's logical lesson, ``item`` class for plain ones."""
+    lesson = await db.get(SchedulerLessonV1, item["lesson_db_id"])
+    if lesson is None:
+        return (item["class_id"],)
+    year, version, _ = context
+    members = (
+        await _joint_members_for_keys(db, organization_id, year.id, version.id, {lesson.stable_key})
+    ).get(lesson.stable_key, [])
+    class_ids = tuple(sorted(member["class_id"] for member in members))
+    return class_ids or (item["class_id"],)
+
+
+async def _link_class_rows(
+    db: AsyncSession, organization_id: int, subject_id: int, class_ids: Sequence[int]
+) -> list:
+    rows = await db.execute(
+        select(models.ClassSubjectLink.id, models.ClassSubjectLink.class_id)
+        .join(
+            models.Class,
+            and_(
+                models.Class.organization_id == organization_id,
+                models.Class.id == models.ClassSubjectLink.class_id,
+            ),
+        )
+        .where(
+            models.ClassSubjectLink.organization_id == organization_id,
+            models.ClassSubjectLink.subject_id == subject_id,
+            models.ClassSubjectLink.class_id.in_(sorted(set(class_ids))),
+            models.ClassSubjectLink.grade_level == models.Class.grade_level,
+        )
+    )
+    return rows.all()
+
+
+async def _joint_group_modules(db: AsyncSession, organization_id: int, group_id: int) -> set[int]:
+    rows = await db.scalars(
+        select(models.joint_lesson_group_module.c.module_id).where(
+            models.joint_lesson_group_module.c.organization_id == organization_id,
+            models.joint_lesson_group_module.c.group_id == group_id,
+        )
+    )
+    return set(rows.all())
+
+
+async def _joint_group_for_classes(
+    db: AsyncSession, organization_id: int, subject_id: int, class_ids: Sequence[int]
+) -> int | None:
+    """A joint group of the subject with exactly these member classes (J14)."""
+    link_rows = await _link_class_rows(db, organization_id, subject_id, class_ids)
+    link_class = {row.id: row.class_id for row in link_rows}
+    if not link_class:
+        return None
+    member_rows = (
+        await db.execute(
+            select(
+                models.joint_lesson_group_member.c.group_id,
+                models.joint_lesson_group_member.c.class_subject_link_id,
+            ).where(
+                models.joint_lesson_group_member.c.organization_id == organization_id,
+                models.joint_lesson_group_member.c.class_subject_link_id.in_(list(link_class)),
+            )
+        )
+    ).all()
+    groups: dict[int, set[int]] = defaultdict(set)
+    for group_id, link_id in member_rows:
+        groups[group_id].add(link_class[link_id])
+    target = set(class_ids)
+    for group_id, classes in groups.items():
+        if classes != target:
+            continue
+        group = await db.get(models.JointLessonGroup, group_id)
+        if (
+            group is not None
+            and group.organization_id == organization_id
+            and group.subject_id == subject_id
+        ):
+            return group_id
+    return None
+
+
+async def _joint_group_containing_class(
+    db: AsyncSession, organization_id: int, subject_id: int, class_id: int
+) -> int | None:
+    """A joint group of the subject that contains this class (J15)."""
+    link_rows = await _link_class_rows(db, organization_id, subject_id, (class_id,))
+    link_class = {row.id: row.class_id for row in link_rows}
+    if not link_class:
+        return None
+    member_rows = (
+        await db.execute(
+            select(models.joint_lesson_group_member.c.group_id).where(
+                models.joint_lesson_group_member.c.organization_id == organization_id,
+                models.joint_lesson_group_member.c.class_subject_link_id.in_(list(link_class)),
+            )
+        )
+    ).all()
+    for (group_id,) in member_rows:
+        group = await db.get(models.JointLessonGroup, group_id)
+        if (
+            group is not None
+            and group.organization_id == organization_id
+            and group.subject_id == subject_id
+        ):
+            return group_id
+    return None
+
+
+async def _next_residual_is_joint(
+    db: AsyncSession,
+    organization_id: int,
+    year_id: int,
+    subject_id: int,
+    class_id: int,
+    joint_module_ids: set[int],
+) -> bool:
+    """True when the class's next unit with missing minutes is a joint module."""
+    assignment = await db.scalar(
+        select(CurricularAssignment).where(
+            CurricularAssignment.organization_id == organization_id,
+            CurricularAssignment.school_year_id == year_id,
+            CurricularAssignment.class_id == class_id,
+            CurricularAssignment.subject_id == subject_id,
+        )
+    )
+    if assignment is None:
+        return False
+    planning, executed = await load_planning_requirements(db, organization_id, [assignment.id])
+    modules = planning.get(assignment.id, ())
+    completed = executed.get(assignment.id, {})
+    target = next(
+        (
+            module.module_id
+            for module in modules
+            if completed.get(module.module_id, 0) < module.required_minutes
+        ),
+        None,
+    )
+    return target is not None and target in joint_module_ids
+
+
+async def _joint_residual_minutes(
+    db: AsyncSession,
+    organization_id: int,
+    year_id: int,
+    subject_id: int,
+    class_ids: Sequence[int],
+    joint_module_ids: set[int],
+) -> int:
+    """Joint residual of the group: requirement minus the joint progress (J14)."""
+    assignments = (
+        await db.scalars(
+            select(CurricularAssignment).where(
+                CurricularAssignment.organization_id == organization_id,
+                CurricularAssignment.school_year_id == year_id,
+                CurricularAssignment.class_id.in_(sorted(set(class_ids))),
+                CurricularAssignment.subject_id == subject_id,
+            )
+        )
+    ).all()
+    if not assignments:
+        return 0
+    planning, executed = await load_planning_requirements(
+        db, organization_id, [assignment.id for assignment in assignments]
+    )
+    required: dict[int, int] = {}
+    for assignment in assignments:
+        for module in planning.get(assignment.id, ()):
+            if module.module_id in joint_module_ids:
+                required.setdefault(module.module_id, module.required_minutes)
+    progress = {
+        module_id: max(
+            (executed.get(assignment.id, {}).get(module_id, 0) for assignment in assignments),
+            default=0,
+        )
+        for module_id in joint_module_ids
+    }
+    return sum(
+        max(0, required.get(module_id, 0) - progress.get(module_id, 0))
+        for module_id in joint_module_ids
+    )
+
+
 async def _substitute_exclusions(
     db: AsyncSession,
     organization_id: int,
@@ -913,22 +1225,47 @@ async def _substitute_exclusions(
                 "teacher_unknown", "O docente não pertence a esta organização.", "teacher"
             )
         ]
-    assignment = await db.scalar(
-        select(CurricularAssignment).where(
-            CurricularAssignment.organization_id == organization_id,
-            CurricularAssignment.school_year_id == year.id,
-            CurricularAssignment.class_id == item["class_id"],
-            CurricularAssignment.subject_id == subject_id,
-        )
-    )
-    if assignment is None or assignment.teacher_id != teacher_id:
-        return [
-            _substitution_exclusion(
-                "not_assigned",
-                "O docente não está associado a esta turma e disciplina no ano letivo.",
-                "assignment",
+    class_ids = await _class_ids_for_item(db, organization_id, context, item)
+    if len(class_ids) == 1:
+        assignment = await db.scalar(
+            select(CurricularAssignment).where(
+                CurricularAssignment.organization_id == organization_id,
+                CurricularAssignment.school_year_id == year.id,
+                CurricularAssignment.class_id == item["class_id"],
+                CurricularAssignment.subject_id == subject_id,
             )
-        ]
+        )
+        if assignment is None or assignment.teacher_id != teacher_id:
+            return [
+                _substitution_exclusion(
+                    "not_assigned",
+                    "O docente não está associado a esta turma e disciplina no ano letivo.",
+                    "assignment",
+                )
+            ]
+    else:
+        member_assignments = (
+            await db.scalars(
+                select(CurricularAssignment).where(
+                    CurricularAssignment.organization_id == organization_id,
+                    CurricularAssignment.school_year_id == year.id,
+                    CurricularAssignment.class_id.in_(class_ids),
+                    CurricularAssignment.subject_id == subject_id,
+                )
+            )
+        ).all()
+        by_class = {row.class_id: row for row in member_assignments}
+        if len(by_class) != len(class_ids) or any(
+            row.teacher_id != teacher_id for row in by_class.values()
+        ):
+            return [
+                _substitution_exclusion(
+                    "not_assigned",
+                    "O docente não está associado a estas turmas e disciplina no ano letivo.",
+                    "assignment",
+                )
+            ]
+        assignment = by_class[class_ids[0]]
     exclusions: list[dict] = []
     availability = await db.scalar(
         select(models.Availability.score).where(
@@ -972,6 +1309,17 @@ async def _substitute_exclusions(
                 "availability",
             )
         )
+    member_log_ids = [
+        member["log"].id
+        for member in (
+            await _joint_members_for_keys(
+                db, organization_id, year.id, version.id, {lesson.stable_key}
+            )
+        ).get(lesson.stable_key, [])
+        if member["log"] is not None
+    ]
+    if item["id"] not in member_log_ids:
+        member_log_ids.append(item["id"])
     block_conflict = await db.scalar(
         select(models.OperationalScheduleBlock.id)
         .where(
@@ -981,12 +1329,12 @@ async def _substitute_exclusions(
             models.OperationalScheduleBlock.timeslot_id == item["timeslot_id"],
             or_(
                 models.OperationalScheduleBlock.source_v1_lesson_log_id.is_(None),
-                models.OperationalScheduleBlock.source_v1_lesson_log_id != item["id"],
+                models.OperationalScheduleBlock.source_v1_lesson_log_id.not_in(member_log_ids),
             ),
             or_(
                 models.OperationalScheduleBlock.teacher_id == teacher_id,
                 models.OperationalScheduleBlock.room_id == lesson.room_id,
-                models.OperationalScheduleBlock.class_id == item["class_id"],
+                models.OperationalScheduleBlock.class_id.in_(class_ids),
             ),
         )
         .limit(1)
@@ -1009,25 +1357,90 @@ async def _substitute_exclusions(
                 "room",
             )
         )
-    modules = await _requirements(db, organization_id, assignment.id)
-    if not modules:
-        exclusions.append(
-            _substitution_exclusion(
-                "no_modules", "A disciplina substituta não tem módulos configurados.", "capacity"
-            )
+    if len(class_ids) == 1:
+        # J15: a single-class substitute cannot give a subject the class is
+        # taking jointly, or the other classes would fall behind.
+        joint_group_id = await _joint_group_containing_class(
+            db, organization_id, subject_id, item["class_id"]
         )
-    else:
-        executed = await load_executed_minutes(db, organization_id, [assignment.id])
-        try:
-            frontier_credit(modules, executed.get(assignment.id, {}), lesson.credit_minutes)
-        except ValueError:
+        if joint_group_id is not None:
+            joint_modules = await _joint_group_modules(db, organization_id, joint_group_id)
+            if await _next_residual_is_joint(
+                db, organization_id, year.id, subject_id, item["class_id"], joint_modules
+            ):
+                exclusions.append(
+                    _substitution_exclusion(
+                        "joint_in_progress",
+                        "A turma tem esta disciplina em conjunto. "
+                        "A substituição deixaria as outras turmas para trás.",
+                        "assignment",
+                    )
+                )
+        # Planning view: a retired module is closed, so it never counts as
+        # substitute capacity.
+        requirements, executed_by_assignment = await load_planning_requirements(
+            db, organization_id, [assignment.id]
+        )
+        modules = requirements.get(assignment.id, ())
+        if not modules:
             exclusions.append(
                 _substitution_exclusion(
-                    "no_capacity",
-                    "A disciplina substituta não tem minutos curriculares disponíveis.",
+                    "no_modules",
+                    "A disciplina substituta não tem módulos configurados.",
                     "capacity",
                 )
             )
+        else:
+            executed = executed_by_assignment.get(assignment.id, {})
+            try:
+                frontier_credit(modules, executed, lesson.credit_minutes)
+            except ValueError:
+                exclusions.append(
+                    _substitution_exclusion(
+                        "no_capacity",
+                        "A disciplina substituta não tem minutos curriculares disponíveis.",
+                        "capacity",
+                    )
+                )
+        return exclusions
+    # J14: a joint substitute gives another subject jointly to the same classes.
+    joint_group_id = await _joint_group_for_classes(db, organization_id, subject_id, class_ids)
+    if joint_group_id is None:
+        exclusions.append(
+            _substitution_exclusion(
+                "joint_classes_mismatch",
+                "O docente não dá esta disciplina em conjunto a estas turmas.",
+                "assignment",
+            )
+        )
+        return exclusions
+    joint_modules = await _joint_group_modules(db, organization_id, joint_group_id)
+    next_flags = [
+        await _next_residual_is_joint(
+            db, organization_id, year.id, subject_id, class_id, joint_modules
+        )
+        for class_id in class_ids
+    ]
+    if not next_flags or not all(next_flags):
+        exclusions.append(
+            _substitution_exclusion(
+                "joint_not_in_progress",
+                "As turmas não estão na parte conjunta desta disciplina.",
+                "assignment",
+            )
+        )
+        return exclusions
+    residual = await _joint_residual_minutes(
+        db, organization_id, year.id, subject_id, class_ids, joint_modules
+    )
+    if residual < lesson.credit_minutes:
+        exclusions.append(
+            _substitution_exclusion(
+                "no_capacity",
+                "A disciplina substituta não tem minutos curriculares disponíveis.",
+                "capacity",
+            )
+        )
     return exclusions
 
 
@@ -1212,7 +1625,10 @@ async def _plan_substitution(
     )
     if assignment is None:
         raise _error(422, "Disciplina substituta inválida para esta turma.")
-    modules = await _requirements(db, organization_id, assignment.id)
+    planning, _ = await load_planning_requirements(db, organization_id, [assignment.id])
+    modules = planning.get(assignment.id, ())
+    if not modules:
+        raise _error(422, "A disciplina substituta não tem módulos configurados.")
     lesson = await db.get(SchedulerLessonV1, item["lesson_db_id"])
     if lesson is None:
         raise _error(404, OCCURRENCE_WITHOUT_LESSON)
@@ -1261,11 +1677,145 @@ async def update_occurrence(
     decided_by_membership_id: int | None = None,
     now_utc: datetime | None = None,
 ) -> dict:
+    """Register an occurrence decision, optionally across member classes (J13)."""
     moment = now_utc or datetime.now(UTC)
     found = await _find_item(db, organization_id, occurrence_id, moment)
     if found is None:
         raise _error(404, OCCURRENCE_NOT_FOUND)
     item, year, version = found
+    # Lock the school-year state row before any mutable log row (state -> logs).
+    await lock_school_year_state(db, organization_id, year.id)
+    target = payload.status.value
+    if target == "SUBSTITUTED" and not payload.class_ids:
+        # A joint substitution always covers every member class (J13): auto the
+        # group instead of silently planning a single class.
+        lesson = await db.get(SchedulerLessonV1, item["lesson_db_id"])
+        if lesson is not None:
+            members = (
+                await _joint_members_for_keys(
+                    db, organization_id, year.id, version.id, {lesson.stable_key}
+                )
+            ).get(lesson.stable_key, [])
+            if len(members) > 1:
+                payload = payload.model_copy(
+                    update={"class_ids": [member["class_id"] for member in members]}
+                )
+    if payload.class_ids:
+        return await _decide_joint(
+            db,
+            organization_id,
+            occurrence_id,
+            payload,
+            item,
+            year,
+            version,
+            moment,
+            decided_by_membership_id,
+        )
+    return await _decide_line(
+        db,
+        organization_id,
+        occurrence_id,
+        payload,
+        item,
+        year,
+        version,
+        moment,
+        decided_by_membership_id,
+    )
+
+
+async def _decide_joint(
+    db: AsyncSession,
+    organization_id: int,
+    occurrence_id: int,
+    payload: schemas.LessonOccurrenceUpdate,
+    item: Mapping,
+    year: models.SchedulerSchoolYear,
+    version: SchedulerVersionV1,
+    moment: datetime,
+    decided_by_membership_id: int | None,
+) -> dict:
+    """Apply one decision to the selected member classes of a joint lesson.
+
+    ``class_ids`` must name member classes and the payload version references
+    the clicked line. ``SUBSTITUTED`` applies to every member and requires every
+    member to be a pending occurrence, matching an absent teacher (J13). The
+    sibling logs are locked by ``id`` before any decision, so a failure never
+    leaves a partial set of decisions.
+    """
+    target = payload.status.value
+    if target == "REVOKED":
+        raise _error(422, "Use o cancelamento para reverter a ocorrência.")
+    lesson = await db.get(SchedulerLessonV1, item["lesson_db_id"])
+    if lesson is None:
+        raise _error(404, OCCURRENCE_WITHOUT_LESSON)
+    members = (
+        await _joint_members_for_keys(db, organization_id, year.id, version.id, {lesson.stable_key})
+    ).get(lesson.stable_key, [])
+    if len(members) <= 1:
+        raise _error(422, "A aula indicada não é conjunta.")
+    member_class_ids = {member["class_id"] for member in members}
+    selected = list(dict.fromkeys(payload.class_ids or []))
+    if any(class_id not in member_class_ids for class_id in selected):
+        raise _error(422, "Uma turma indicada não pertence a esta aula conjunta.")
+    # Lock every sibling log by ``id`` and refresh its facts before validating.
+    locked_logs = await _lock_member_logs(
+        db, organization_id, (member["log"].id for member in members if member["log"] is not None)
+    )
+    clicked = locked_logs.get(item["id"])
+    if clicked is None or clicked.revision != payload.version:
+        raise _error(409, "OCCURRENCE_STALE_VERSION")
+    for member in members:
+        member["log"] = locked_logs.get(member["log"].id) if member["log"] is not None else None
+    if target == "SUBSTITUTED":
+        if set(selected) != member_class_ids:
+            raise _error(422, "Uma substituição conjunta aplica-se a todas as turmas.")
+        for member in members:
+            member_log = member["log"]
+            if member_log is None or member_log.status != "OCCURRENCE" or member_log.decision:
+                raise _error(
+                    409,
+                    "Todas as turmas têm de estar com ocorrência pendente para substituir.",
+                )
+    for member in members:
+        if member["class_id"] in selected and member["log"] is None:
+            raise _error(409, "A turma indicada não tem ocorrência para decidir.")
+    for member in members:
+        if member["class_id"] not in selected:
+            continue
+        member_log = member["log"]
+        if member_log is None:
+            raise _error(409, "A turma indicada não tem ocorrência para decidir.")
+        line_found = await _find_item(db, organization_id, member_log.id, moment)
+        if line_found is None:
+            raise _error(404, OCCURRENCE_NOT_FOUND)
+        line_item, line_year, line_version = line_found
+        await _decide_line(
+            db,
+            organization_id,
+            member_log.id,
+            payload.model_copy(update={"class_ids": None, "version": member_log.revision}),
+            line_item,
+            line_year,
+            line_version,
+            moment,
+            decided_by_membership_id,
+        )
+    return await get_occurrence(db, organization_id, occurrence_id, moment)
+
+
+async def _decide_line(
+    db: AsyncSession,
+    organization_id: int,
+    occurrence_id: int,
+    payload: schemas.LessonOccurrenceUpdate,
+    item: Mapping,
+    year: models.SchedulerSchoolYear,
+    version: SchedulerVersionV1,
+    moment: datetime,
+    decided_by_membership_id: int | None,
+) -> dict:
     if item["status"] == "REVOKED":
         raise _error(409, "Ocorrência já revertida")
     log = await db.scalar(
@@ -1322,6 +1872,7 @@ async def update_occurrence(
             now_utc=moment,
             planning_relevant=True,
             allow_decision_override=True,
+            include_siblings=False,
         )
         # record_lesson_log already advanced the revision.
         log.decision = "GIVEN"
@@ -1417,6 +1968,8 @@ async def cancel_occurrence(
     if found is None:
         raise _error(404, OCCURRENCE_NOT_FOUND)
     item, year, _ = found
+    # Lock the school-year state row before any mutable log row (state -> logs).
+    await lock_school_year_state(db, organization_id, year.id)
     log = await db.scalar(
         select(SchedulerLessonLogV1)
         .where(

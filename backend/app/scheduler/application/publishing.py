@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.scheduler.domain.candidate import (
+    Assignment,
     CandidateSchedule,
     PlanningSnapshot,
     ScheduledLesson,
@@ -76,6 +77,14 @@ def _same_position(left: ScheduledLesson, right: ScheduledLesson) -> bool:
     )
 
 
+def _class_entries(assignment: Assignment) -> list[dict[str, Any]]:
+    """One diff row per member class; joint rows also list every sibling class."""
+    class_ids = list(assignment.class_ids)
+    if len(class_ids) == 1:
+        return [{"class_id": class_ids[0]}]
+    return [{"class_id": class_id, "joint_class_ids": class_ids} for class_id in class_ids]
+
+
 def build_diff(snapshot: PlanningSnapshot, candidate: CandidateSchedule) -> dict[str, Any]:
     """Physical changes and modular projection updates against the baseline."""
     assignments = {row.assignment_id: row for row in snapshot.assignments}
@@ -107,72 +116,77 @@ def build_diff(snapshot: PlanningSnapshot, candidate: CandidateSchedule) -> dict
             continue
         if source is None:
             counts["added"] += 1
-            physical.append(
-                {
-                    "change_type": "ADDED",
-                    "lesson_id": lesson.lesson_id,
-                    "class_id": assignment.class_id,
-                    "subject_id": assignment.subject_id,
-                    "before": None,
-                    "after": _lesson_summary(lesson),
-                }
-            )
+            for entry in _class_entries(assignment):
+                physical.append(
+                    {
+                        "change_type": "ADDED",
+                        "lesson_id": lesson.lesson_id,
+                        "subject_id": assignment.subject_id,
+                        **entry,
+                        "before": None,
+                        "after": _lesson_summary(lesson),
+                    }
+                )
             continue
         unmatched.remove(source)
         before = _lesson_summary(source)
         after = _lesson_summary(lesson)
         if _lesson_position(source) != _lesson_position(lesson):
             counts["moved"] += 1
-            physical.append(
-                {
-                    "change_type": "MOVED",
-                    "lesson_id": source.lesson_id,
-                    "class_id": assignment.class_id,
-                    "subject_id": assignment.subject_id,
-                    "before": before,
-                    "after": after,
-                }
-            )
+            for entry in _class_entries(assignment):
+                physical.append(
+                    {
+                        "change_type": "MOVED",
+                        "lesson_id": source.lesson_id,
+                        "subject_id": assignment.subject_id,
+                        **entry,
+                        "before": before,
+                        "after": after,
+                    }
+                )
         elif source.room_id != lesson.room_id:
             counts["room_changed"] += 1
-            physical.append(
-                {
-                    "change_type": "ROOM_CHANGED",
-                    "lesson_id": source.lesson_id,
-                    "class_id": assignment.class_id,
-                    "subject_id": assignment.subject_id,
-                    "before": before,
-                    "after": after,
-                }
-            )
+            for entry in _class_entries(assignment):
+                physical.append(
+                    {
+                        "change_type": "ROOM_CHANGED",
+                        "lesson_id": source.lesson_id,
+                        "subject_id": assignment.subject_id,
+                        **entry,
+                        "before": before,
+                        "after": after,
+                    }
+                )
         before_slices = _slices_summary(source)
         after_slices = _slices_summary(lesson)
         if before_slices != after_slices:
             counts["modular_updates"] += 1
-            modular.append(
-                {
-                    "lesson_id": lesson.lesson_id,
-                    "class_id": assignment.class_id,
-                    "subject_id": assignment.subject_id,
-                    "before": before_slices,
-                    "after": after_slices,
-                }
-            )
+            for entry in _class_entries(assignment):
+                modular.append(
+                    {
+                        "lesson_id": lesson.lesson_id,
+                        "subject_id": assignment.subject_id,
+                        **entry,
+                        "before": before_slices,
+                        "after": after_slices,
+                    }
+                )
     for lesson in sorted(unmatched, key=lambda row: (row.period.start_utc, row.lesson_id)):
         assignment = assignments.get(lesson.assignment_id)
         if assignment is None:
             continue
         counts["removed"] += 1
-        physical.append(
-            {
-                "change_type": "REMOVED",
-                "lesson_id": lesson.lesson_id,
-                "class_id": assignment.class_id,
-                "subject_id": assignment.subject_id,
-                "before": _lesson_summary(lesson),
-                "after": None,
-            }
-        )
+        for entry in _class_entries(assignment):
+            physical.append(
+                {
+                    "change_type": "REMOVED",
+                    "lesson_id": lesson.lesson_id,
+                    "subject_id": assignment.subject_id,
+                    **entry,
+                    "before": _lesson_summary(lesson),
+                    "after": None,
+                }
+            )
     physical.sort(key=lambda row: (row["class_id"], row["subject_id"], row["lesson_id"]))
     modular.sort(key=lambda row: (row["class_id"], row["subject_id"], row["lesson_id"]))
     return {
@@ -212,15 +226,27 @@ def plan_recovery_allocations(
     )
     if set(ordered_claims) != set(snapshot.open_debt_minutes):
         raise ValueError("Claim order must list exactly the open debt claims.")
-    used_by_lesson: dict[int, int] = {}
+    used_by_lesson: dict[tuple[int, int | None], int] = {}
     reservations: list[RecoveryAllocation] = []
     for claim_id in ordered_claims:
         assignment_id = snapshot.claim_assignments[claim_id]
+        claim_class = snapshot.claim_classes.get(claim_id)
+        if claim_class is None:
+            owner = assignments.get(assignment_id)
+            claim_class = owner.class_ids[0] if owner is not None else None
         remaining = snapshot.open_debt_minutes[claim_id]
         for lesson in lessons_by_assignment.get(assignment_id, ()):
             if remaining <= 0:
                 break
-            capacity = lesson.credit_minutes - used_by_lesson.get(lesson.lesson_id, 0)
+            member_classes = (
+                lesson.class_ids
+                if lesson.class_ids is not None
+                else assignments[assignment_id].class_ids
+            )
+            if claim_class is not None and claim_class not in member_classes:
+                continue
+            used = used_by_lesson.get((lesson.lesson_id, claim_class), 0)
+            capacity = lesson.credit_minutes - used
             if lesson.lesson_id in protected_ids or is_physically_protected(
                 snapshot, lesson.period
             ):
@@ -237,7 +263,7 @@ def plan_recovery_allocations(
             if capacity <= 0:
                 continue
             take = min(remaining, capacity)
-            used_by_lesson[lesson.lesson_id] = used_by_lesson.get(lesson.lesson_id, 0) + take
+            used_by_lesson[(lesson.lesson_id, claim_class)] = used + take
             remaining -= take
             reservations.append(
                 RecoveryAllocation(snapshot.active_version_id, lesson.lesson_id, claim_id, take)

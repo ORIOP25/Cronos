@@ -306,6 +306,55 @@ def _validate_accountability(
             raise ValueError("A recovery reservation references an unknown debt claim.")
 
 
+def _validate_precedences(
+    assignments: Mapping[int, Assignment],
+    precedences: tuple[tuple[int, int], ...],
+) -> None:
+    """Precedence edges must reference known units and form a DAG (WBS 2.3.2)."""
+    if type(precedences) is not tuple:
+        raise ValueError("Precedences must be a tuple of unit pairs.")
+    edges: dict[int, list[int]] = {}
+    for edge in precedences:
+        if type(edge) is not tuple or len(edge) != 2:
+            raise ValueError("Each precedence must be a pair of unit identifiers.")
+        source, target = edge
+        if source not in assignments or target not in assignments:
+            raise ValueError("A precedence references an unknown unit.")
+        if source == target:
+            raise ValueError("A unit cannot precede itself.")
+        edges.setdefault(source, []).append(target)
+    visiting: set[int] = set()
+    visited: set[int] = set()
+
+    def _walk(node: int) -> None:
+        visiting.add(node)
+        for following in edges.get(node, ()):
+            if following in visiting:
+                raise ValueError("Unit precedences must not contain cycles.")
+            if following not in visited:
+                _walk(following)
+        visiting.discard(node)
+        visited.add(node)
+
+    for node in assignments:
+        if node not in visited:
+            _walk(node)
+
+
+def _validate_claim_classes(
+    assignments: Mapping[int, Assignment],
+    claim_assignments: Mapping[int, int],
+    claim_classes: Mapping[int, int],
+) -> None:
+    """Each debt claim may name the class it belongs to (WBS 2.3.2)."""
+    for claim_id, class_id in claim_classes.items():
+        if claim_id not in claim_assignments:
+            raise ValueError("A debt claim class references an unknown claim.")
+        assignment = assignments[claim_assignments[claim_id]]
+        if class_id not in assignment.class_ids:
+            raise ValueError("A debt claim class does not belong to its unit.")
+
+
 def _unavailability_days(
     rows: tuple[Unavailability, ...],
 ) -> Mapping[tuple[str, int, date], tuple[Unavailability, ...]]:
@@ -373,18 +422,32 @@ class Unavailability:
 
 @dataclass(frozen=True)
 class Assignment:
+    """One planning unit: a class or a joint group of classes (WBS 2.3.1).
+
+    ``class_ids`` is the sorted, non-empty tuple of member classes. A unit with
+    one class plans exactly as before; a joint unit occupies every member class.
+    """
+
     assignment_id: int
-    class_id: int
+    class_ids: tuple[int, ...]
     subject_id: int
     teacher_id: int
     eligible_room_ids: frozenset[int]
     modules: tuple[ModuleRequirement, ...]
 
     def __post_init__(self) -> None:
-        for name in ("assignment_id", "class_id", "subject_id", "teacher_id"):
+        for name in ("assignment_id", "subject_id", "teacher_id"):
             value = getattr(self, name)
             if type(value) is not int or value <= 0:
                 raise ValueError(f"{name} must be a positive integer.")
+        class_ids = tuple(self.class_ids)
+        if not class_ids:
+            raise ValueError("An assignment needs at least one class.")
+        if any(type(class_id) is not int or class_id <= 0 for class_id in class_ids):
+            raise ValueError("Class IDs must be positive integers.")
+        if tuple(sorted(class_ids)) != class_ids or len(set(class_ids)) != len(class_ids):
+            raise ValueError("Class IDs must be sorted and distinct.")
+        object.__setattr__(self, "class_ids", class_ids)
         if not self.eligible_room_ids or any(
             type(room_id) is not int or room_id <= 0 for room_id in self.eligible_room_ids
         ):
@@ -411,7 +474,7 @@ class ScheduledLesson:
     slices: tuple[ModuleSlice, ...]
     source_lesson_id: int | None = None
     teacher_id: int | None = None
-    class_id: int | None = None
+    class_ids: tuple[int, ...] | None = None
 
     def __post_init__(self) -> None:
         if type(self.lesson_id) is not int or self.lesson_id <= 0:
@@ -436,10 +499,19 @@ class ScheduledLesson:
             raise ValueError("Curricular credit cannot exceed physical duration.")
         if type(self.slices) is not tuple:
             raise ValueError("Slices must be a tuple.")
-        for name in ("source_lesson_id", "teacher_id", "class_id"):
+        for name in ("source_lesson_id", "teacher_id"):
             value = getattr(self, name)
             if value is not None and (type(value) is not int or value <= 0):
                 raise ValueError(f"{name} must be a positive integer when present.")
+        if self.class_ids is not None:
+            class_ids = tuple(self.class_ids)
+            if not class_ids or any(
+                type(class_id) is not int or class_id <= 0 for class_id in class_ids
+            ):
+                raise ValueError("class_ids must hold positive integers when present.")
+            if tuple(sorted(class_ids)) != class_ids or len(set(class_ids)) != len(class_ids):
+                raise ValueError("class_ids must be sorted and distinct.")
+            object.__setattr__(self, "class_ids", class_ids)
 
 
 @dataclass(frozen=True)
@@ -463,6 +535,8 @@ class PlanningSnapshot:
     reservations: tuple[RecoveryAllocation, ...] = ()
     open_debt_minutes: Mapping[int, int] = field(default_factory=dict)
     claim_assignments: Mapping[int, int] = field(default_factory=dict)
+    precedences: tuple[tuple[int, int], ...] = ()
+    claim_classes: Mapping[int, int] = field(default_factory=dict)
     active_version_id: int | None = None
     lunch_rule: LunchRule | None = None
     reserved_lesson_ids: frozenset[int] = frozenset()
@@ -539,9 +613,13 @@ class PlanningSnapshot:
         _validate_accountability(
             assignments, self.claim_assignments, self.open_debt_minutes, self.reservations
         )
+        _validate_precedences(assignments, self.precedences)
+        _validate_claim_classes(assignments, self.claim_assignments, self.claim_classes)
         object.__setattr__(self, "executed_minutes", _frozen_nested(self.executed_minutes))
         object.__setattr__(self, "open_debt_minutes", _frozen_flat(self.open_debt_minutes))
         object.__setattr__(self, "claim_assignments", _frozen_flat(self.claim_assignments))
+        object.__setattr__(self, "precedences", tuple(self.precedences))
+        object.__setattr__(self, "claim_classes", _frozen_flat(self.claim_classes))
         object.__setattr__(self, "assignments", tuple(self.assignments))
         object.__setattr__(self, "protected_lessons", tuple(self.protected_lessons))
         object.__setattr__(self, "baseline_lessons", tuple(self.baseline_lessons))

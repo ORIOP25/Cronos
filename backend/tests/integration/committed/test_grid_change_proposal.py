@@ -21,7 +21,7 @@ from app.scheduler.infrastructure.models import (
 from app.scheduler.infrastructure.proposals import approve_proposal
 from app.scheduler.infrastructure.queries import current_proposal
 from app.services import grid_change_service, grid_version_service, settings_service
-from tests._support.db_fixtures import create_teacher_profile
+from tests._support.db_fixtures import create_teacher_profile, select_all_subject_modules
 from tests._support.scheduler_v1 import V1Seed, add_version, seed_generatable_school
 
 API = app_settings.API_V1_STR
@@ -444,6 +444,13 @@ async def _seed_v1_configuration_for_admin_org(db_session) -> models.Organizatio
     )
     db_session.add(assignment)
     await db_session.flush()
+    link = models.ClassSubjectLink(
+        organization_id=organization.id,
+        class_id=class_.id,
+        subject_id=subject.id,
+        grade_level=class_.grade_level,
+        teacher_id=teacher.id,
+    )
     db_session.add_all(
         (
             CurricularRequirement(
@@ -453,6 +460,7 @@ async def _seed_v1_configuration_for_admin_org(db_session) -> models.Organizatio
                 sequence=module.order + 1,
                 required_minutes=100,
             ),
+            link,
             models.Timeslot(
                 organization_id=organization.id,
                 day_of_week=0,
@@ -470,23 +478,13 @@ async def _seed_v1_configuration_for_admin_org(db_session) -> models.Organizatio
             ),
         )
     )
-    link = models.ClassSubjectLink(
+    await db_session.flush()
+    await select_all_subject_modules(
+        db_session,
         organization_id=organization.id,
-        class_id=class_.id,
+        class_subject_link_id=link.id,
         subject_id=subject.id,
-        grade_level=class_.grade_level,
-        teacher_id=teacher.id,
     )
-    db_session.add(link)
-    await db_session.flush()
-    await db_session.execute(
-        models.class_subject_module.insert().values(
-            organization_id=organization.id,
-            class_subject_link_id=link.id,
-            module_id=module.id,
-        )
-    )
-    await db_session.flush()
     await db_session.commit()
     return organization
 

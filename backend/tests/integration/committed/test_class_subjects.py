@@ -571,4 +571,5 @@ class TestClassSubjectModuleSelectionQueryBudget:
         many = await self._statement_count(multi_class_id, 1)
 
         assert single == many
-        assert many <= 5
+        # Five batched reads plus one constant joint-group read for the badge.
+        assert many <= 6

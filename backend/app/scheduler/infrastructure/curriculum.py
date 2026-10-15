@@ -110,6 +110,7 @@ async def sync_curricular_projection(
                 f"A turma {class_name} tem a disciplina "
                 f"{subject_names.get(link.subject_id, link.subject_id)} sem módulos "
                 "selecionados. Remova a disciplina ou selecione pelo menos um módulo.",
+                public_context={"class_id": link.class_id, "subject_id": link.subject_id},
             )
         live[(link.class_id, link.subject_id)] = (subject_modules, selected_ids)
 

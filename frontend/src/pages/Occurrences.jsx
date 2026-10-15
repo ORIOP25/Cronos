@@ -158,6 +158,63 @@ const getOperationalState = (occurrence) => {
   return statusMap[occurrence.status] ?? 'OPEN_PENDING'
 }
 
+const jointLessonClasses = (occurrence) => occurrence?.joint_lesson?.classes ?? []
+const isJointOccurrence = (occurrence) => jointLessonClasses(occurrence).length > 1
+const jointAllPending = (occurrence) => (
+  jointLessonClasses(occurrence).every((item) => (item.operational_state ?? 'OPEN_PENDING') === 'OPEN_PENDING')
+)
+
+// ---------------------------------------------------------------------------
+// Cartão de turmas de uma aula conjunta com ações por turma
+// ---------------------------------------------------------------------------
+const JointLessonClasses = ({ occurrence, canDecide, isDeciding, onClassDecision }) => {
+  const classes = jointLessonClasses(occurrence)
+  if (classes.length <= 1) return null
+  return (
+    <div className="small">
+      <div className="fw-semibold">
+        Aula conjunta · {occurrence.subject_name ?? '—'} · {classes.map((item) => item.class_name).join(', ')}
+      </div>
+      {classes.map((item) => {
+        const state = item.operational_state ?? 'OPEN_PENDING'
+        const isPendingClass = state === 'OPEN_PENDING'
+        return (
+          <div key={item.class_id} className="d-flex flex-wrap align-items-center gap-2 mt-1">
+            <span>{item.class_name}</span>
+            <CBadge color={OPERATIONAL_STATE_COLORS[state] ?? 'secondary'}>
+              {OPERATIONAL_STATE_LABELS[state] ?? state}
+            </CBadge>
+            {canDecide && isPendingClass && (
+              <>
+                <CButton
+                  size="sm"
+                  color="success"
+                  variant="outline"
+                  aria-label={`Dada ${item.class_name}`}
+                  disabled={isDeciding}
+                  onClick={() => onClassDecision(item, 'GIVEN')}
+                >
+                  Dada
+                </CButton>
+                <CButton
+                  size="sm"
+                  color="danger"
+                  variant="outline"
+                  aria-label={`Furo ${item.class_name}`}
+                  disabled={isDeciding}
+                  onClick={() => onClassDecision(item, 'GAP')}
+                >
+                  Furo
+                </CButton>
+              </>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 // ---------------------------------------------------------------------------
 // Modal de edição de ocorrência
 // ---------------------------------------------------------------------------
@@ -171,6 +228,7 @@ const EditOccurrenceModal = ({
   subjectById,
   errorMessage,
   allowedDecisions,
+  classIds,
 }) => {
   const [decisionTime] = useState(Date.now)
   const lessonNotFinished = occurrence.ends_at && Date.parse(occurrence.ends_at) > decisionTime
@@ -272,6 +330,7 @@ const EditOccurrenceModal = ({
       version: occurrence.version,
       substituteTeacherId: status === 'SUBSTITUTED' ? selectedRecommendationData?.teacher_id ?? null : null,
       substituteSubjectId: status === 'SUBSTITUTED' ? selectedRecommendationData?.subject_id ?? null : null,
+      classIds,
     })
   }
 
@@ -530,6 +589,8 @@ const OccurrenceHistoryCards = ({
   revertingId,
   onDecide,
   onRevert,
+  onClassDecision,
+  isDeciding,
 }) => (
   <div className="occurrence-history__cards">
     {occurrences.map((occ) => {
@@ -551,6 +612,16 @@ const OccurrenceHistoryCards = ({
               <div className="small">
                 {occ.class_name ?? '—'} · {occ.subject_name ?? '—'}
               </div>
+              {isJointOccurrence(occ) && (
+                <div className="mt-2">
+                  <JointLessonClasses
+                    occurrence={occ}
+                    canDecide={canDecide}
+                    isDeciding={isDeciding}
+                    onClassDecision={(item, status) => onClassDecision(occ, item, status)}
+                  />
+                </div>
+              )}
             </div>
             <CBadge color={OPERATIONAL_STATE_COLORS[operationalState] ?? 'secondary'}>
               <CIcon icon={OPERATIONAL_STATE_ICONS[operationalState] ?? cilClock} className="me-1" />
@@ -584,7 +655,7 @@ const OccurrenceHistoryCards = ({
           <div className="d-flex gap-1 mt-2">
             {isUndecided && canDecide && (
               <CButton color="primary" size="sm" variant="outline" onClick={() => onDecide(occ)}>
-                Decidir
+                {isJointOccurrence(occ) ? 'Decidir para todas' : 'Decidir'}
               </CButton>
             )}
             {(isDecided || isRevokedV1) && canRevert && (
@@ -753,6 +824,28 @@ const OccurrencesPanel = ({
     }))
   }
 
+  const decideClass = (occurrence, classItem, status) => {
+    if (!canDecide) return
+    // The backend group operation takes the version of the clicked line. Send
+    // the target class's own row id with its own version. The card representative
+    // is only a safe fallback when the class entry has no own id (tutorial/mocks),
+    // and then the card version is used consistently.
+    const hasOwnRow = classItem.id != null
+    updateMutation.mutate({
+      id: hasOwnRow ? classItem.id : occurrence.id,
+      status,
+      version: hasOwnRow ? classItem.version : occurrence.version,
+      classIds: [classItem.class_id],
+    }, attemptScope.guard({
+      onSuccess: () => toast.success('Decisão registada.'),
+      onError: (error) => {
+        const message = buildUpdateErrorMessage(error)
+        if (isApiErrorTransient(error)) toast.error(message)
+        else setSaveErrorMessage(message)
+      },
+    }))
+  }
+
   if (isLoading) {
     return (
       <div className="text-center p-4 d-flex justify-content-center align-items-center gap-2">
@@ -785,12 +878,17 @@ const OccurrencesPanel = ({
           occurrence={editingOccurrence}
           onClose={closeEditModal}
           onSave={handleSave}
-           onRevert={canRevert ? () => { handleRevert(editingOccurrence) } : null}
+          onRevert={canRevert ? () => { handleRevert(editingOccurrence) } : null}
           isSaving={updateMutation.isPending || cancelMutation.isPending}
           teacherById={teacherById}
-           subjectById={subjectById}
-           errorMessage={saveErrorMessage}
-           allowedDecisions={isTutorial ? ['SUBSTITUTED'] : undefined}
+          subjectById={subjectById}
+          errorMessage={saveErrorMessage}
+          allowedDecisions={isTutorial
+            ? ['SUBSTITUTED']
+            : (isJointOccurrence(editingOccurrence) && !jointAllPending(editingOccurrence) ? ['GIVEN', 'GAP'] : undefined)}
+          classIds={isJointOccurrence(editingOccurrence)
+            ? jointLessonClasses(editingOccurrence).map((item) => item.class_id)
+            : undefined}
         />
       )}
       <ConfirmationModal
@@ -864,7 +962,16 @@ const OccurrencesPanel = ({
               <CTableDataCell className="fw-semibold">
                 {formatDate(occ.date)}{timeRange ? `, ${timeRange}` : ''}
               </CTableDataCell>
-              <CTableDataCell className="fw-semibold">{classLabel}</CTableDataCell>
+              <CTableDataCell className="fw-semibold">
+                {isJointOccurrence(occ) ? (
+                  <JointLessonClasses
+                    occurrence={occ}
+                    canDecide={canDecide}
+                    isDeciding={updateMutation.isPending}
+                    onClassDecision={(item, status) => decideClass(occ, item, status)}
+                  />
+                ) : classLabel}
+              </CTableDataCell>
               <CTableDataCell>{subjectLabel}</CTableDataCell>
               <CTableDataCell>
                 <CBadge color={OPERATIONAL_STATE_COLORS[operationalState] ?? 'secondary'}>
@@ -886,7 +993,7 @@ const OccurrencesPanel = ({
                 <div className="d-flex gap-1 justify-content-end">
                   {isUndecided && canDecide && (
                     <CButton color="primary" size="sm" variant="outline" onClick={() => openEditModal(occ)} data-tutorial-target="decision-open">
-                      Decidir
+                      {isJointOccurrence(occ) ? 'Decidir para todas' : 'Decidir'}
                     </CButton>
                   )}
                   {(isDecided || isRevokedV1) && canRevert && (
@@ -965,6 +1072,8 @@ const OccurrencesPanel = ({
           revertingId={revertingId}
           onDecide={openEditModal}
           onRevert={handleRevert}
+          onClassDecision={decideClass}
+          isDeciding={updateMutation.isPending}
         />
         )}
         </div>
