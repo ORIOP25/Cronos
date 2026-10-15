@@ -69,6 +69,46 @@ test('calendar action fits tablet and desktop; mobile debt cards stay inside the
   expect(revertedDebts.total_hours_owed).toBe(0)
 })
 
+test('the team screen exposes the school-presence rule and its CSV model without writing', async ({ page }) => {
+  await goTo(page, '/members')
+  await expectRouteReady(page, '/members')
+
+  // The prepared E2E teacher is the active member with a teacher profile. The
+  // button is the only way the direction reaches the presence rule, so opening
+  // it against the real API is the observable journey under test.
+  const availabilityButton = page.getByRole('button', { name: 'Editar disponibilidade', exact: true }).first()
+  await expect(availabilityButton).toBeVisible({ timeout: 30_000 })
+  const presenceRequest = page.waitForResponse((response) => (
+    response.url().includes('/presence')
+    && response.request().method() === 'GET'
+  ))
+  await availabilityButton.click()
+  const presenceResponse = await presenceRequest
+  expect(presenceResponse.status()).toBe(200)
+
+  const dialog = page.getByRole('dialog')
+  await expect(dialog.getByRole('heading', { name: 'Presença na escola' })).toBeVisible()
+  await expect(dialog.getByText('Vale para todas as grelhas e anos letivos.')).toBeVisible()
+  await expect(dialog.getByRole('radio', { name: 'Sim', exact: true })).toBeVisible()
+  await expect(dialog.getByRole('radio', { name: 'Não', exact: true })).toBeVisible()
+  // The rule is enabled only after the saved value loads; the field stays
+  // visible but disabled while the request is in flight or fails.
+  const minimumHours = dialog.getByLabel('Mínimo de horas por presença')
+  await expect(minimumHours).toBeVisible()
+  await expect(minimumHours).toBeEnabled()
+  await expect(dialog.getByText(/Uma presença é a manhã ou a tarde/)).toBeVisible()
+
+  // Read-only: close without saving or editing any field.
+  await dialog.getByRole('button', { name: 'Fechar', exact: true }).click()
+  await expect(dialog).toBeHidden()
+
+  await goTo(page, '/imports')
+  await expect(page.getByRole('heading', { name: 'Importar dados' })).toBeVisible()
+  const presenceCard = page.locator('.card').filter({ hasText: 'Presença dos professores' })
+  await expect(presenceCard).toBeVisible()
+  await expect(presenceCard.getByRole('button', { name: 'Descarregar modelo' })).toBeVisible()
+})
+
 test('creating a course preserves the filled initial class without Add class', async ({ page }) => {
   await goTo(page, '/courses')
   await page.getByRole('button', { name: 'Novo Curso' }).click()
