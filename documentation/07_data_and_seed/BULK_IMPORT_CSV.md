@@ -13,8 +13,9 @@ Cada ficheiro pode ter até 1 MB.
 ## Modelos oficiais
 
 Os modelos estão disponíveis em `/api/v1/imports/templates/{resource}`.
-Cada modelo usa ponto e vírgula, CRLF, BOM e uma linha de exemplo.
+Cada modelo fixo usa ponto e vírgula, CRLF, BOM e uma linha de exemplo.
 Substitua ou apague a linha de exemplo antes de importar.
+Os dois modelos de disponibilidade são a exceção: são gerados a partir dos dados da escola e não têm linha de exemplo; sem dados trazem só o cabeçalho.
 
 Um conjunto completo de exemplo, com 48 turmas e 16 cursos, está em [`sample_import_48_classes/`](sample_import_48_classes/).
 Use-o para testar a importação num ambiente descartável.
@@ -27,6 +28,7 @@ Use-o para testar a importação num ambiente descartável.
 | Professores e competências | `Cronos_ProfessoresECompetencias_Template.csv` | `Nome do professor;Email do professor;Nome da disciplina` |
 | Atribuições | `Cronos_Atribuicoes_Template.csv` | `Sigla do curso;Nome da turma;Nome da disciplina;Email do professor` |
 | Disponibilidade das turmas | `Cronos_DisponibilidadeTurmas_Template.csv` | `Sigla do curso;Nome da turma;Dia` e uma coluna por hora de início |
+| Disponibilidade dos professores | `Cronos_DisponibilidadeProfessores_Template.csv` | `Nome do professor;Email do professor;Dia` e uma coluna por hora de início |
 
 Os cabeçalhos devem manter nomes, ordem e quantidade.
 Os modelos antigos, com cabeçalhos em inglês, deixam de ser aceites.
@@ -52,7 +54,7 @@ Os códigos internos `lab`, `gym` e `art` não são aceites no ficheiro.
 ## Disponibilidade das turmas
 
 A secção `Disponibilidade das turmas` atualiza a disponibilidade semanal das turmas.
-O modelo é dinâmico: a função pura `render_class_availability_template` monta-o a partir da grelha visível, das turmas não arquivadas e dos níveis guardados.
+O modelo é dinâmico: a função pura `render_availability_template` monta-o a partir da grelha visível, das turmas não arquivadas e dos níveis guardados.
 
 - As colunas fixas são `Sigla do curso`, `Nome da turma` e `Dia`.
 - Cada coluna seguinte é uma hora de início distinta da grelha visível, por ordem.
@@ -67,13 +69,41 @@ Um dia aceita o nome com ou sem `-feira`, acentos e maiúsculas.
 As horas aceitam `H:MM`, `HH:MM` e `HH:MM:SS`.
 
 A validação recusa cada situação com a sua mensagem.
-As mensagens exatas e as regras de cabeçalho estão em `backend/app/services/bulk_import_policy.py` (`_validate_class_availability` e `_parse_class_availability_file`).
+As mensagens exatas e as regras de cabeçalho estão em `backend/app/services/bulk_import_policy.py` (`_validate_availability` e `_parse_availability_file`).
 O campo do erro numa célula é o título da coluna, por exemplo `08:30`.
 Uma turma pode existir ou vir no mesmo lote, no ficheiro de Cursos e turmas.
 
 Cada turma do ficheiro fica com a grelha inteira do ficheiro. As turmas ausentes ficam iguais.
 O `commit` aplica as grelhas depois de criar cursos, turmas e atribuições.
 `created_counts["class_availability"]` conta as turmas atualizadas.
+
+## Disponibilidade dos professores
+
+A secção `Disponibilidade dos professores` atualiza a disponibilidade semanal dos professores.
+O modelo é dinâmico: a função pura `render_availability_template` monta-o a partir da grelha visível, dos professores ativos e dos níveis guardados.
+
+- As colunas fixas são `Nome do professor`, `Email do professor` e `Dia`.
+- Cada coluna seguinte é uma hora de início distinta da grelha visível, por ordem.
+- Há uma linha por professor ativo e por dia com blocos, ordenadas por nome sem distinguir maiúsculas, email e dia.
+- Cada célula traz o nível atual; uma linha em falta conta como Neutro.
+- Uma hora sem bloco nesse dia fica com a célula vazia.
+
+O email identifica o professor, sem distinguir maiúsculas; o nome só serve para ler o ficheiro e não é validado.
+Um professor arquivado ou sem a capacidade de professor dá erro; retire a linha ou reative-o na Equipa.
+Um professor novo pode vir no mesmo lote, no ficheiro de Professores e competências.
+
+Cada professor do ficheiro fica com a grelha inteira do ficheiro. Os professores ausentes ficam iguais.
+O `commit` aplica as grelhas dos professores depois das grelhas das turmas, pela função `teacher_service.set_teacher_availability`.
+`created_counts["teacher_availability"]` conta os professores atualizados.
+
+## Comparação e pré-visualização
+
+As linhas de disponibilidade ficam fora do limite de 100 itens da pré-visualização.
+Cada item traz `changed_blocks`: o número de blocos da versão visível em que o nível novo difere do guardado.
+Um nível em falta conta como Neutro nos dois lados.
+As turmas aparecem por `changed_blocks` decrescente, depois sigla e turma.
+Os professores aparecem por `changed_blocks` decrescente, depois nome sem distinguir maiúsculas e email.
+Uma grelha toda em `Impossível` dá o aviso `all_blocks_impossible`; a importação continua.
 
 ## Pedido e respostas
 

@@ -19,6 +19,7 @@ from app.services import (
     member_service,
     room_service,
     subject_service,
+    teacher_service,
 )
 from app.services.bulk_import_policy import (
     CLASS_AVAILABILITY,
@@ -36,6 +37,7 @@ from app.services.bulk_import_policy import (
     ImportSnapshot,
     ParsedResourceFile,
     ValidationResult,
+    _email,
     parse_resource_file,
     render_availability_template,
     render_template,
@@ -491,6 +493,30 @@ async def commit_import(
             changed_by_membership_id=current_admin.membership_id,
         )
         created_counts[CLASS_AVAILABILITY] += 1
+
+    # Teacher grids are written last, once per teacher, through the same service the
+    # availability window uses (I04). Every visible block gets a level; a block
+    # absent from the file stays NEUTRAL.
+    existing_teacher_ids = {_email(item.email): item.id for item in snapshot.teachers}
+    for item in result.teacher_availability:
+        teacher_id = teacher_ids.get(item.teacher_email) or existing_teacher_ids[item.teacher_email]
+        payload = [
+            schemas.AvailabilitySelfCreate(
+                timeslot_id=timeslot.id,
+                score=models.PreferenceLevel(
+                    item.scores.get(timeslot.id, models.PreferenceLevel.NEUTRAL.value)
+                ),
+            )
+            for timeslot in snapshot.timeslots
+        ]
+        await teacher_service.set_teacher_availability(
+            db,
+            teacher_id,
+            payload,
+            organization_id,
+            changed_by_membership_id=current_admin.membership_id,
+        )
+        created_counts[TEACHER_AVAILABILITY] += 1
 
     await db.flush()
     return schemas.BulkImportCommitResponse(
