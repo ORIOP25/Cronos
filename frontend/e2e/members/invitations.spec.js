@@ -9,6 +9,7 @@ import {
   expectRouteReady,
 } from '../utils/clerk-helpers.js'
 import { createE2eRunKey, E2E_BASE_URL } from '../utils/e2e-config.js'
+import { revokePendingInvitation } from '../utils/clerk-invitation-cleanup.js'
 
 test.use({ storageState: '.auth/admin.json' })
 
@@ -227,17 +228,12 @@ test.describe.serial('Member invitations — real Clerk', () => {
           }
           await client.users.deleteUser(user.id)
         }
-        const currentInvitation = await client.organizations.getOrganizationInvitation({
+        await revokePendingInvitation(client, {
           organizationId,
           invitationId: createdInvitation.clerk_invitation_id,
+          email,
+          requestingUserId: adminUserId,
         })
-        if (currentInvitation.status === 'pending') {
-          await client.organizations.revokeOrganizationInvitation({
-            organizationId,
-            invitationId: createdInvitation.clerk_invitation_id,
-            requestingUserId: adminUserId,
-          })
-        }
       } catch (error) {
         failures.push(error)
       }

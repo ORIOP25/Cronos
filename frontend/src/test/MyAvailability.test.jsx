@@ -15,6 +15,7 @@ const TIMESLOTS = [
 
 const mocks = vi.hoisted(() => ({
   save: vi.fn(),
+  presence: vi.fn(),
   timeslots: { data: [], isLoading: false, error: null },
   availability: { data: [], isLoading: false, error: null },
 }))
@@ -32,17 +33,25 @@ vi.mock('../features/catalog/data', () => ({
 
 vi.mock('../features/operations/data', () => ({
   useMyAvailability: () => mocks.availability,
+  useMyPresence: () => mocks.presence(),
   useSaveAvailability: () => ({
     isPending: false,
     mutateAsync: mocks.save,
   }),
 }))
 
+const DEFAULT_PRESENCE = { lunch_required: true, minimum_hours: null, max_gap_hours: null }
+
 describe('MyAvailability', () => {
   beforeEach(() => {
     mocks.save.mockReset()
     mocks.timeslots = { data: TIMESLOTS, isLoading: false, error: null }
     mocks.availability = { data: [{ timeslot_id: 1, score: 2 }], isLoading: false, error: null }
+    mocks.presence.mockReset().mockReturnValue({
+      data: DEFAULT_PRESENCE,
+      isLoading: false,
+      isError: false,
+    })
     resetClerkState()
   })
 
@@ -164,5 +173,54 @@ describe('MyAvailability', () => {
     expect(screen.getByText(/1 bloco alterado/i)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /segunda, 08:00/i })).toHaveAccessibleName(/Neutro/)
     expect(screen.getByRole('button', { name: /guardar disponibilidade/i })).toBeEnabled()
+  })
+
+  it('hides the presence card for the default rule', () => {
+    renderWithProviders(<MyAvailability />)
+
+    expect(screen.queryByRole('note')).not.toBeInTheDocument()
+  })
+
+  it('shows the direction rule as read-only text when lunch is dispensed and a minimum is set', () => {
+    mocks.presence.mockReturnValue({
+      data: { lunch_required: false, minimum_hours: 3, max_gap_hours: 1 },
+      isLoading: false,
+      isError: false,
+    })
+    renderWithProviders(<MyAvailability />)
+
+    const card = screen.getByRole('note', { name: /regra de presença/i })
+    expect(card).toHaveTextContent(
+      'A direção definiu: hora de almoço dispensada; mínimo de 3 horas por presença; furo máximo de 1 hora.',
+    )
+    expect(within(card).queryByRole('spinbutton')).not.toBeInTheDocument()
+    expect(within(card).queryByRole('textbox')).not.toBeInTheDocument()
+    expect(within(card).queryByRole('button')).not.toBeInTheDocument()
+  })
+
+  it('shows lunch obrigatória when the rule keeps lunch and sets a minimum', () => {
+    mocks.presence.mockReturnValue({
+      data: { lunch_required: true, minimum_hours: 4, max_gap_hours: 2 },
+      isLoading: false,
+      isError: false,
+    })
+    renderWithProviders(<MyAvailability />)
+
+    expect(screen.getByRole('note', { name: /regra de presença/i })).toHaveTextContent(
+      'A direção definiu: hora de almoço obrigatória; mínimo de 4 horas por presença; furo máximo de 2 horas.',
+    )
+  })
+
+  it('uses the singular for one hour', () => {
+    mocks.presence.mockReturnValue({
+      data: { lunch_required: true, minimum_hours: 1, max_gap_hours: 1 },
+      isLoading: false,
+      isError: false,
+    })
+    renderWithProviders(<MyAvailability />)
+
+    expect(screen.getByRole('note', { name: /regra de presença/i })).toHaveTextContent(
+      'A direção definiu: hora de almoço obrigatória; mínimo de 1 hora por presença; furo máximo de 1 hora.',
+    )
   })
 })

@@ -6,9 +6,25 @@ import AvailabilityGrid from '../components/AvailabilityGrid'
 import AvailabilityToolbar from '../components/AvailabilityToolbar'
 import { useCurrentMember } from '../features/members/data'
 import { useTimeslots } from '../features/catalog/data'
-import { useMyAvailability, useSaveAvailability } from '../features/operations/data'
+import { useMyAvailability, useMyPresence, useSaveAvailability } from '../features/operations/data'
 import { useAttemptScope } from '../hooks/useAttemptScope'
 import { useAvailabilityDraft } from '../hooks/useAvailabilityDraft'
+
+// The teacher sees the direction rule only when it differs from the default
+// (lunch required, no minimum). It is plain text: no editing controls (D13).
+const isNonDefaultPresence = (presence) => Boolean(presence)
+  && (presence.lunch_required === false || presence.minimum_hours != null)
+
+const hoursLabel = (value) => `${value} hora${value === 1 ? '' : 's'}`
+
+const describePresenceRule = (presence) => {
+  const parts = [`hora de almoço ${presence.lunch_required ? 'obrigatória' : 'dispensada'}`]
+  if (presence.minimum_hours != null) {
+    parts.push(`mínimo de ${hoursLabel(presence.minimum_hours)} por presença`)
+    parts.push(`furo máximo de ${hoursLabel(presence.max_gap_hours)}`)
+  }
+  return `A direção definiu: ${parts.join('; ')}.`
+}
 
 const mapAvailabilityApiMessage = (err, context) => {
   const status = err?.response?.status
@@ -23,6 +39,7 @@ export default function MyAvailability({ readOnly = false, allowedActions, warnO
   const teacherId = currentMember?.teacher_id
   const timeslotsQuery = useTimeslots()
   const availabilityQuery = useMyAvailability({ enabled: Boolean(teacherId) })
+  const presenceQuery = useMyPresence({ enabled: Boolean(teacherId) })
   const saveMutation = useSaveAvailability()
   const attemptScope = useAttemptScope()
   const isTutorial = Array.isArray(allowedActions)
@@ -68,6 +85,11 @@ export default function MyAvailability({ readOnly = false, allowedActions, warnO
   return (
     <div data-tutorial-target="availability-workspace">
       <PageHeader preTitle="Professor" title="Minha Disponibilidade" description="Escolha uma ferramenta e pinte os blocos. Pode usar rato, toque ou teclado." />
+      {isNonDefaultPresence(presenceQuery.data) && (
+        <div className="border rounded p-3 mb-3" role="note" aria-label="Regra de presença">
+          <p className="mb-0">{describePresenceRule(presenceQuery.data)}</p>
+        </div>
+      )}
       <AvailabilityToolbar
         selectedScore={draft.selectedScore}
         onSelect={draft.setSelectedScore}

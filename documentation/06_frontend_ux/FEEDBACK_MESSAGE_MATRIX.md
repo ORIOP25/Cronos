@@ -33,6 +33,10 @@ Other client responses stay in context.
 | Save class availability | Success | — | Toast, 4 s | `ClassAvailabilityModal` | — |
 | Save class availability | Transient failure | Network, 429, 5xx | Toast, 6 s | `ClassAvailabilityModal` | Draft stays, retry |
 | Save class availability | Server block | `bad_request`, `duplicate_timeslot` | Banner in the modal | `ClassAvailabilityModal` | Fix the grid |
+| Save teacher presence and grid | Partial failure | — | Banner in the modal naming the unsaved part | `TeacherAvailabilityModal` | Fix or retry the unsaved part |
+| Save teacher presence | Server block | `bad_request` and others | Banner in the modal | `TeacherAvailabilityModal` | Fix the rule |
+| Load teacher presence | Failure | — | Banner with retry | `TeacherPresenceSection` | Retry |
+| Validate teacher presence | Invalid integer or unpaired fields | Local validator | Field feedback and banner | `TeacherPresenceSection` | Fix the value |
 | Apply class availability to other classes | Success | — | Toast, 4 s | `ClassAvailabilityModal` | — |
 | Apply class availability to other classes | Server block | `bad_request`, `resource_not_found` | Banner in the modal | `ClassAvailabilityModal` | Fix the selection |
 | Apply class availability to other classes | Transient failure | Network, 429, 5xx | Toast, 6 s | `ClassAvailabilityModal` | Retry |
