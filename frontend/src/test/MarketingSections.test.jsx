@@ -32,6 +32,7 @@ describe('public marketing sections', () => {
     expect(screen.getByText('Consulte alterações')).toBeInTheDocument()
     expect(screen.getByText('Registe a aula')).toBeInTheDocument()
     expect(screen.getByText('Acompanhe UFCDs')).toBeInTheDocument()
+    expect(screen.getByText('Marque cada bloco como Preferencial, Neutro, Evitar ou Impossível.')).toBeInTheDocument()
     expect(screen.getAllByRole('link', { name: 'Pedir demonstração' }).every((link) => link.getAttribute('href') === '/contacto')).toBe(true)
   })
 
@@ -58,6 +59,7 @@ describe('public marketing sections', () => {
     const tabs = screen.getAllByRole('tab', { name: /preparar|lecionar|acompanhar/i })
     expect(tabs).toHaveLength(3)
     expect(tabs[0]).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByText('Cada docente marca cada bloco da grelha como Preferencial, Neutro, Evitar ou Impossível.')).toBeInTheDocument()
     fireEvent.keyDown(tabs[0], { key: 'ArrowRight' })
     expect(tabs[1]).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByRole('heading', { name: 'A aula começa no bloco certo' })).toBeInTheDocument()

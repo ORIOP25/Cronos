@@ -9,7 +9,7 @@ export const teacherWorkflowMoments = [
     id: 'prepare',
     label: 'Preparar',
     title: 'As preferências são definidas pelo professor',
-    text: 'Cada docente indica na grelha quando prefere, evita ou não pode lecionar.',
+    text: 'Cada docente marca cada bloco da grelha como Preferencial, Neutro, Evitar ou Impossível.',
     points: ['Escolha cada nível de preferência.', 'Altere apenas os blocos necessários.', 'Guarde a grelha quando estiver pronta.'],
     result: 'A disponibilidade entra no planeamento sem trocas de ficheiros.',
   },

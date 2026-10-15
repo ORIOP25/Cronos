@@ -34,6 +34,7 @@ In accordance with ASD-STE100, technical concepts have single approved terms. Po
 | **Professor competente** | Competent teacher | Active teacher assigned to a subject with the required competency. |
 | **Disponibilidade** | Availability | Teacher availability score used to determine whether a generated assignment is possible. |
 | **Disponibilidade da turma** | Class availability | Weekly level per class block (Preferencial, Neutro, Evitar, Impossível) that excludes or penalizes periods in generation; a missing row means Neutro. |
+| **Nível de disponibilidade** | Availability level | One of the four levels per weekly block: Preferencial, Neutro, Evitar, Impossível. A missing row means Neutro. |
 
 ## Technical Terms and Abbreviations
 

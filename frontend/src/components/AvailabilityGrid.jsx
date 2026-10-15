@@ -88,7 +88,12 @@ export default function AvailabilityGrid({ timeslots = [], availabilityMap, onCh
             <div className="availability-grid__time">{time}</div>
             {model.days.map((day) => {
               const slot = model.slotByKey.get(`${day}:${time}`)
-              if (!slot) return <div className="availability-grid__empty" key={`${day}-${time}`} aria-label="Bloco indisponível">—</div>
+              if (!slot) return (
+                <div className="availability-grid__empty" key={`${day}-${time}`}>
+                  <span className="visually-hidden">Sem bloco</span>
+                  <span aria-hidden="true">—</span>
+                </div>
+              )
               const dayLabel = DAY_LABELS[day] ?? `Dia ${day + 1}`
               const score = getScore(slot.id)
               const preference = PREFERENCE_LEVELS[score]

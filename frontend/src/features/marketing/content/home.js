@@ -53,7 +53,7 @@ export const teacherScheduleHub = {
   title: 'O dia do professor começa no horário',
   body: 'O professor define as suas preferências, consulta alterações confirmadas, regista cada aula e acompanha o progresso das UFCDs.',
   actions: [
-    { id: 'preferences', title: 'Defina preferências', text: 'Indique quando prefere, evita ou não pode lecionar.' },
+    { id: 'preferences', title: 'Defina preferências', text: 'Marque cada bloco como Preferencial, Neutro, Evitar ou Impossível.' },
     { id: 'changes', title: 'Consulte alterações', text: 'Veja a versão ativa e saiba o que mudou.' },
     { id: 'lesson', title: 'Registe a aula', text: 'Escreva o sumário, sinalize ocorrências e submeta a semana.' },
     { id: 'progress', title: 'Acompanhe UFCDs', text: 'Consulte o progresso das turmas que leciona.' },

@@ -21,6 +21,7 @@ vi.mock('../features/catalog/data', () => ({
     data: [
       { id: 1, day_of_week: 0, start_time: '08:00:00' },
       { id: 2, day_of_week: 1, start_time: '08:00:00' },
+      { id: 3, day_of_week: 0, start_time: '09:00:00' },
     ],
     isLoading: false,
   }),
@@ -69,6 +70,15 @@ describe('MyAvailability', () => {
 
     const firstSlot = screen.getByRole('button', { name: /segunda, 08:00/i })
     expect(firstSlot).not.toHaveClass('is-focused')
+  })
+
+  it('hides an empty block behind an accessible label instead of a bare dash', () => {
+    renderWithProviders(<MyAvailability />)
+
+    const emptyLabel = screen.getByText('Sem bloco')
+    expect(emptyLabel).toHaveClass('visually-hidden')
+    expect(emptyLabel.parentElement).toHaveClass('availability-grid__empty')
+    expect(within(emptyLabel.parentElement).getByText('—')).toHaveAttribute('aria-hidden', 'true')
   })
 
   it('confirms a saved draft with a toast and clears the pending changes', async () => {

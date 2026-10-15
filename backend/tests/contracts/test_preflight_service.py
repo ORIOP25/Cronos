@@ -1190,6 +1190,37 @@ async def test_preflight_blocks_a_class_whose_blocks_are_all_impossible(db_sessi
     assert blockers[0].route == f"/courses/{course.id}/classes/{school_class.id}"
 
 
+async def test_preflight_blocks_a_teacher_whose_blocks_are_all_impossible(db_session):
+    org, _school_class, _course, link, slots = await _seed_class_availability_preflight(
+        db_session, suffix="teacherallimpossible"
+    )
+    teacher = await db_session.get(models.Teacher, link.teacher_id)
+    for slot in slots:
+        db_session.add(
+            models.Availability(
+                organization_id=org.id,
+                teacher_id=teacher.id,
+                timeslot_id=slot.id,
+                score=models.PreferenceLevel.IMPOSSIBLE.value,
+            )
+        )
+    await db_session.flush()
+
+    report = await PreflightService(db_session).evaluate(
+        organization_id=org.id, resolve_fingerprint=False
+    )
+
+    blockers = [issue for issue in report.issues if issue.code == "MISSING_TEACHER_AVAILABILITY"]
+    assert len(blockers) == 1
+    assert blockers[0].severity == "BLOCKER"
+    assert blockers[0].route == "/members"
+    assert blockers[0].message == (
+        f"Professores com todos os blocos marcados como Impossível: {teacher.name}. "
+        "Marque pelo menos um bloco como Neutro, Evitar ou Preferencial em "
+        "Equipa > Editar disponibilidade."
+    )
+
+
 async def test_preflight_class_availability_requires_every_block_and_an_assigned_teacher(
     db_session,
 ):

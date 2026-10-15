@@ -1277,7 +1277,7 @@ async def _substitute_exclusions(
     if availability is not None and availability < 0:
         exclusions.append(
             _substitution_exclusion(
-                "unavailable", "Candidato indisponível para o período.", "availability"
+                "unavailable", "O professor marcou este bloco como Impossível.", "availability"
             )
         )
     schedule_conflict = await db.scalar(
