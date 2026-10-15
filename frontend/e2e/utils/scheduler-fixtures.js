@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process'
 import { expect } from '@playwright/test'
 import {
   expectRouteReady,
@@ -334,6 +335,69 @@ export async function seedJointAcceptanceInputs(page) {
     classes: classes.map((classroom) => ({ id: classroom.id, name: classroom.name })),
     sharedModuleIds,
     separateModuleIds,
+  }
+}
+
+// The Compose project the runner owns for this run: a generated local project or
+// the one an external (CI) run already exports. Nothing else may reach the seed.
+const RESERVED_E2E_COMPOSE_PROJECT = /^cronos-(?:test|ci)-/
+
+/**
+ * Move the first published joint lesson of the E2E Joint fixture into the past
+ * so the acceptance journey can log it and decide its gap. The test-only build
+ * runs inside the backend container the caller owns. The project and file come
+ * from the runner environment, are validated against the reserved prefixes and
+ * are never guessed or printed. Any guard failure exits non-zero and this
+ * helper fails closed without a fallback.
+ */
+export async function seedEndedJointLesson(page) {
+  const settings = await apiRequest(page, 'GET', '/school/settings/')
+  const organizationId = settings?.organization_id
+  const clerkOrgId = await page.evaluate(() => window.Clerk?.organization?.id ?? null)
+  const project = process.env.E2E_COMPOSE_PROJECT_NAME ?? ''
+  const composeFile = process.env.E2E_COMPOSE_FILE ?? ''
+  if (!organizationId) throw new Error('The E2E school settings did not expose organization_id.')
+  if (!clerkOrgId) throw new Error('window.Clerk.organization.id is required to guard the joint seed.')
+  if (!composeFile) throw new Error('E2E_COMPOSE_FILE is required to run the joint seed.')
+  if (!RESERVED_E2E_COMPOSE_PROJECT.test(project)) {
+    throw new Error(`Refusing to seed joint history outside a reserved E2E Compose project: ${project || '(unset)'}`)
+  }
+  const result = spawnSync('docker', [
+    'compose', '-f', composeFile, '-p', project, 'exec', '-T', 'backend',
+    'python', 'scripts/seed_e2e_joint_history.py',
+    '--organization-id', String(organizationId),
+    '--expected-clerk-org-id', clerkOrgId,
+  ], { encoding: 'utf8' })
+  if (result.error) throw result.error
+  if (result.status !== 0) {
+    throw new Error(`seed_e2e_joint_history exited ${result.status}: ${result.stderr?.trim() || result.stdout?.trim()}`)
+  }
+  const lastLine = (result.stdout ?? '').trim().split(/\r?\n/).filter(Boolean).at(-1)
+  if (!lastLine) throw new Error('seed_e2e_joint_history returned no JSON result.')
+  const history = JSON.parse(lastLine)
+  if (!history.school_date || !Array.isArray(history.lesson_ids) || history.lesson_ids.length < 2) {
+    throw new Error(`seed_e2e_joint_history returned an unexpected result: ${lastLine}`)
+  }
+  return history
+}
+
+/**
+ * Undo the joint group this journey created. Once a member class has executed a
+ * joint module the product refuses the undo (J19), so the group stays and the
+ * disposable test stack removes it; the refusal is reported instead of forced.
+ */
+export async function deleteJointGroup(page, classId) {
+  const subjects = await apiRequest(page, 'GET', `/classes/${classId}/subjects`)
+  const groupId = subjects.subjects.find((subject) => subject.joint_group)?.joint_group?.id
+  if (!groupId) return 'absent'
+  try {
+    await apiRequest(page, 'DELETE', `/joint-lesson-groups/${groupId}`)
+    return 'deleted'
+  } catch (error) {
+    if (/failed: 409\b/.test(error?.message ?? '') && error.message.includes('JOINT_MODULE_STARTED')) {
+      return 'started'
+    }
+    throw error
   }
 }
 

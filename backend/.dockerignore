@@ -7,5 +7,6 @@
 !scripts/e2e_clerk_state.py
 !scripts/prepare_e2e_clerk_state.py
 !scripts/cleanup_e2e_clerk_invitations.py
+!scripts/seed_e2e_joint_history.py
 !scripts/__init__.py
 !scripts/privacy.py
