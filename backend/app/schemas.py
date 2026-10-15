@@ -146,8 +146,12 @@ class TeacherPresence(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     lunch_required: bool = True
-    minimum_hours: int | None = Field(default=None, description="Mínimo de horas por presença")
-    max_gap_hours: int | None = Field(default=None, description="Furo máximo dentro da presença")
+    minimum_hours: Annotated[int, Field(strict=True)] | None = Field(
+        default=None, description="Mínimo de horas por presença"
+    )
+    max_gap_hours: Annotated[int, Field(strict=True)] | None = Field(
+        default=None, description="Furo máximo dentro da presença"
+    )
 
     @model_validator(mode="after")
     def validate_presence(self):
