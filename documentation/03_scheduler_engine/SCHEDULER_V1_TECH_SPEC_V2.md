@@ -416,10 +416,11 @@ Generation also evaluates recoverability after cancellation of the last planned 
 Preserve incumbents outside solver objects and record stage scopes, bounds, certificates, and termination reasons.
 Finite round exhaustion and safety interruption remain honest termination reasons.
 
-With `SCHEDULER_V1_STOP_AT_FIRST_COMPLETE=True`, recovery uses budgeted constructive search.
+With `SCHEDULER_V1_STOP_AT_FIRST_COMPLETE=True`, recovery starts with budgeted constructive search.
 It compares retaining valid published positions with a dense reconstruction of editable future lessons.
 Both candidates use the global evaluator and independent validation. Neither receives an optimality certificate.
-Failure to construct a complete candidate returns `INCONCLUSIVE`, never proven infeasibility.
+If both constructions fail, placement search uses the remaining budget and stops at the first complete candidate.
+If placement finds no complete candidate, recovery returns `INCONCLUSIVE`, never proven infeasibility.
 With the setting false, master/detail recovery remains available.
 
 Recovery respects calendars, lunch, availability, room eligibility, preferences, and corrected execution.

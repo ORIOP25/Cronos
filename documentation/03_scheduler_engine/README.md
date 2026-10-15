@@ -34,7 +34,8 @@ One retains valid published positions and fills missing credit at the earliest a
 The other rebuilds the editable future using the published weekly reference and parallel curricular progress.
 The global recovery vector chooses between completion impact, disruption, gaps and preferences.
 Both candidates use current calendar, teacher availability, room eligibility and manually corrected execution.
-The default route avoids annual placement models and claims no optimality certificate.
+If both constructions fail, placement search uses the remaining safety budget and stops at the first complete candidate.
+The default route claims no optimality certificate.
 Disabling `SCHEDULER_V1_STOP_AT_FIRST_COMPLETE` retains the existing master/detail optimization route.
 
 Operational history. Logged `COMPLETED` and `OCCURRENCE` lessons remain visible across published versions.

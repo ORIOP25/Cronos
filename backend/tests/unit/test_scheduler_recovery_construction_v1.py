@@ -203,3 +203,35 @@ def test_recovery_orders_a_successor_after_its_predecessor():
         row.period.start_utc for row in candidate.lessons if row.assignment_id == 2
     )
     assert successor_start >= source_end
+
+
+@pytest.mark.parametrize("blocked_class", [1, 2])
+def test_joint_availability_repair_moves_other_lessons_to_free_the_only_shared_period(
+    blocked_class,
+):
+    periods = tuple(period(day) for day in range(4))
+    separate = assignment(1, 1, 1, {1}, 120)
+    joint = replace(assignment(2, 1, 2, {2}, 60), class_ids=(1, 2))
+    baseline = (
+        lesson(10, 2, periods[0], 2),
+        lesson(11, 1, periods[1], 1),
+        lesson(12, 1, periods[2], 1, offset=60),
+    )
+    _, result = recover(
+        periods,
+        [separate, joint],
+        baseline,
+        unavailable=(
+            Unavailability(UnavailableResource.CLASS, blocked_class, periods[0]),
+            Unavailability(UnavailableResource.TEACHER, 1, periods[0]),
+            Unavailability(UnavailableResource.TEACHER, 2, periods[2]),
+            Unavailability(UnavailableResource.TEACHER, 2, periods[3]),
+        ),
+    )
+
+    assert positions(result.candidate) == {
+        (2, periods[1], 2),
+        (1, periods[2], 1),
+        (1, periods[3], 1),
+    }
+    assert result.evidence.stop_reason == "FALLBACK_UNRESTRICTED"
