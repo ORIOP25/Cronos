@@ -14,7 +14,7 @@ export function OpeningStep({ values, fieldErrors, onChange }) {
           <TimeField
             id="opening_time"
             label="Hora de Abertura da Escola *"
-            value={values.opening_time || '08:30'}
+            value={values.opening_time || '09:00'}
             error={fieldErrors.opening_time}
             onChange={(value) => onChange('opening_time', value)}
           />
@@ -24,7 +24,7 @@ export function OpeningStep({ values, fieldErrors, onChange }) {
           <TimeField
             id="closing_time"
             label="Hora de Encerramento da Escola *"
-            value={values.closing_time || '17:30'}
+            value={values.closing_time || '18:00'}
             error={fieldErrors.closing_time}
             onChange={(value) => onChange('closing_time', value)}
           />

@@ -15,7 +15,7 @@ export function SlotDurationStep({ values, fieldErrors, onChange }) {
             name="slot_duration_minutes"
             min={15}
             max={120}
-            value={values.slot_duration_minutes ?? 50}
+            value={values.slot_duration_minutes ?? 60}
             invalid={Boolean(fieldErrors.slot_duration_minutes)}
             aria-describedby="slot_duration_minutes-unit slot_duration_minutes-feedback"
             onChange={(e) => onChange('slot_duration_minutes', Number(e.target.value))}

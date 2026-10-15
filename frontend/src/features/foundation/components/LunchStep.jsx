@@ -14,7 +14,7 @@ export function LunchStep({ values, fieldErrors, onChange }) {
           <TimeField
             id="lunch_window_start"
             label="Início da Janela de Almoço *"
-            value={values.lunch_window_start || '12:30'}
+            value={values.lunch_window_start || '12:00'}
             error={fieldErrors.lunch_window_start}
             onChange={(value) => onChange('lunch_window_start', value)}
           />

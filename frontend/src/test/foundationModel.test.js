@@ -19,6 +19,54 @@ import {
 } from '../features/foundation/foundationModel'
 
 describe('foundationModel', () => {
+  it('proposes the new default grid and generates eight lessons (R21)', () => {
+    expect(initialFoundationDraftValues).toMatchObject({
+      opening_time: '09:00',
+      closing_time: '18:00',
+      slot_duration_minutes: 60,
+      break_duration_minutes: 5,
+      lunch_window_start: '12:00',
+      lunch_window_end: '14:00',
+      lunch_min_duration_minutes: 60,
+    })
+
+    expect(buildDailyTimeslots(initialFoundationDraftValues).map(({ start, end }) => `${start}-${end}`)).toEqual([
+      '09:00-10:00',
+      '10:05-11:05',
+      '11:10-12:10',
+      '12:15-13:15',
+      '13:20-14:20',
+      '14:25-15:25',
+      '15:30-16:30',
+      '16:35-17:35',
+    ])
+  })
+
+  it('keeps a configured grid when the server draft provides it', () => {
+    const state = foundationReducer(initialFoundationState, {
+      type: 'INIT_FROM_SERVER',
+      payload: {
+        version: 1,
+        current_step: 3,
+        data: {
+          opening_time: '08:30',
+          closing_time: '17:30',
+          slot_duration_minutes: 50,
+          break_duration_minutes: 10,
+          lunch_window_start: '12:30',
+        },
+      },
+    })
+
+    expect(state.values).toMatchObject({
+      opening_time: '08:30',
+      closing_time: '17:30',
+      slot_duration_minutes: 50,
+      break_duration_minutes: 10,
+      lunch_window_start: '12:30',
+    })
+  })
+
   it.each(['2025-09-14', '2026-08-01'])('rejects preferred end %s outside the school period', (preferredEnd) => {
     expect(validateFoundationStep(STEP_PERIOD, {
       ...initialFoundationDraftValues,
@@ -98,6 +146,8 @@ describe('foundationModel', () => {
       ...initialFoundationDraftValues,
       opening_time: '8:30',
       closing_time: '10:30',
+      slot_duration_minutes: 50,
+      break_duration_minutes: 10,
     })
     expect(slots.map(({ start, end }) => `${start}-${end}`)).toEqual(['08:30-09:20', '09:30-10:20'])
   })
@@ -381,7 +431,13 @@ describe('foundationModel', () => {
     })
 
     it('keeps legacy payloads uniform when overrides are absent or empty', () => {
-      const legacy = { ...initialFoundationDraftValues, opening_time: '08:00', closing_time: '10:00' }
+      const legacy = {
+        ...initialFoundationDraftValues,
+        opening_time: '08:00',
+        closing_time: '10:00',
+        slot_duration_minutes: 50,
+        break_duration_minutes: 10,
+      }
       const withoutField = buildDailyTimeslots(legacy)
       expect(withoutField.map(({ start, end }) => `${start}-${end}`)).toEqual([
         '08:00-08:50',
