@@ -1682,3 +1682,30 @@ async def test_teacher_presence_template_excludes_archived_teachers(
     assert response.status_code == 200
     lines = response.content.decode("utf-8-sig").splitlines()
     assert all("archived.presence@example.invalid" not in line for line in lines)
+
+
+async def test_teacher_presence_template_excludes_active_members_without_teacher_capability(
+    async_client: AsyncClient, clerk_admin_headers: dict, db_session: AsyncSession
+):
+    organization_id = await _org_id(db_session)
+    teacher = await create_teacher_profile(
+        db_session, organization_id=organization_id, name="Sem Capacidade"
+    )
+    membership = await db_session.get(
+        models.OrganizationMembership, teacher.organization_membership_id
+    )
+    account = await db_session.get(models.User, membership.account_id)
+    account.email = "sem.capacidade@example.invalid"
+    membership.lifecycle_status = models.MembershipLifecycleStatus.active
+    membership.can_admin = True
+    membership.can_teach = False
+    membership.teacher_access_mode = None
+    await db_session.commit()
+
+    response = await async_client.get(
+        f"{API}/imports/templates/teacher_presence", headers=clerk_admin_headers
+    )
+
+    assert response.status_code == 200
+    lines = response.content.decode("utf-8-sig").splitlines()
+    assert all("sem.capacidade@example.invalid" not in line for line in lines)

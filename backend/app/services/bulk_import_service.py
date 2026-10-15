@@ -169,8 +169,10 @@ async def _teacher_presence_template(db: AsyncSession, organization_id: int) -> 
             .join(models.User, models.User.id == models.OrganizationMembership.account_id)
             .where(
                 models.Teacher.organization_id == organization_id,
+                models.OrganizationMembership.organization_id == organization_id,
                 models.OrganizationMembership.lifecycle_status
                 == models.MembershipLifecycleStatus.active,
+                models.OrganizationMembership.can_teach.is_(True),
             )
         )
     ).all()
