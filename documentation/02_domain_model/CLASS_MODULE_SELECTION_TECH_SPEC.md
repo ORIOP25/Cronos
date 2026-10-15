@@ -5,7 +5,7 @@
 Este documento especifica a seleção de módulos por turma.
 Define decisões de produto, modelo de dados, contratos, regras do motor, plano TDD e critérios de aceitação.
 
-**Estado:** proposto. A implementação ainda não começou.
+**Estado:** em implementação. A implementação local e a verificação de app estão concluídas; a aceitação completa e a entrega estão pendentes.
 **Data:** 14 de outubro de 2026.
 **Base observada:** branch `main` no commit `4773d76`.
 **Origem:** item 1 dos pedidos da escola piloto, reunião de 13 de outubro de 2026.

@@ -36,6 +36,17 @@ describe('tutorial v3 local API adapter', () => {
     expect(classSubjects.subjects).toEqual(expect.arrayContaining([
       expect.objectContaining({ subject_id: 1, teacher_id: 1 }),
     ]))
+    const programming = classSubjects.subjects.find((subject) => subject.subject_id === 1)
+    expect(programming.modules.length).toBeGreaterThan(0)
+    expect(programming.modules.every((module) => module.selected === true)).toBe(true)
+    expect(programming.joint_group).toBeNull()
+    expect(programming.modules[0]).toMatchObject({
+      id: expect.any(Number),
+      name: expect.any(String),
+      hours_total: expect.any(Number),
+      order: expect.any(Number),
+      selected: true,
+    })
     expect((await runtime.request('/classes/1/available-subjects')).data).toEqual([])
     expect((await runtime.request('/classes/subjects/1/eligible-teachers')).data).toEqual([
       expect.objectContaining({ id: 1, subject_ids: [1] }),

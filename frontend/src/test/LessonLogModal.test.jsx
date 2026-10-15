@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import LessonLogModal from '../components/LessonLogModal'
 import { renderWithProviders } from './testUtils'
@@ -51,8 +51,7 @@ describe('LessonLogModal permissions', () => {
     expect(document.querySelector('[data-rht-toaster]')).toBeEmptyDOMElement()
   })
 
-  it('renders a submitted tutorial week as consultation-only', () => {
-    render(
+  it('renders a submitted tutorial week as consultation-only', () => {    render(
       <LessonLogModal
         onClose={vi.fn()}
         isAdmin
@@ -78,5 +77,77 @@ describe('LessonLogModal permissions', () => {
     expect(screen.queryByRole('button', { name: 'Guardar alterações' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Reabrir Semana' })).not.toBeInTheDocument()
     expect(mutations.upsert).not.toHaveBeenCalled()
+  })
+
+  it('shows the joint present classes and sends absent_class_ids', async () => {
+    mutations.upsert.mockResolvedValueOnce({})
+    renderWithProviders(
+      <LessonLogModal
+        onClose={vi.fn()}
+        slot={{
+          date: '2025-09-16',
+          lesson_log_status: 'PENDING',
+          week_timesheet_status: 'OPEN',
+          timeslot: { end_time: '09:00:00' },
+          timesheet_id: 1,
+          scheduler_lesson_id: 2,
+          is_past: true,
+          class_infos: [
+            { id: 11, name: '10.º MKT', lesson_log_status: 'COMPLETED', lesson_db_id: 101 },
+            { id: 12, name: '10.º MAS', lesson_log_status: 'OCCURRENCE', lesson_db_id: 102 },
+          ],
+        }}
+      />,
+      { withToaster: true },
+    )
+
+    const mkt = screen.getByLabelText('10.º MKT')
+    const mas = screen.getByLabelText('10.º MAS')
+    expect(mkt).toBeChecked()
+    expect(mas).not.toBeChecked()
+    expect(screen.getByText(/ocorrência pendente/i)).toBeInTheDocument()
+
+    // The last present class cannot be unchecked.
+    fireEvent.click(mkt)
+    expect(mkt).toBeChecked()
+
+    fireEvent.click(screen.getByRole('button', { name: /aula dada/i }))
+
+    await waitFor(() => expect(mutations.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      schedulerLessonId: 2,
+      payload: expect.objectContaining({ status: 'COMPLETED', absent_class_ids: [12] }),
+    })))
+  })
+
+  it('preserves the absent sibling when reopening a completed joint lesson', async () => {
+    mutations.upsert.mockResolvedValueOnce({})
+    renderWithProviders(
+      <LessonLogModal
+        onClose={vi.fn()}
+        slot={{
+          date: '2025-09-16',
+          lesson_log_status: 'COMPLETED',
+          week_timesheet_status: 'OPEN',
+          timeslot: { end_time: '09:00:00' },
+          timesheet_id: 1,
+          scheduler_lesson_id: 2,
+          is_past: true,
+          class_infos: [
+            { id: 11, name: '10.º MKT', lesson_log_status: 'COMPLETED', lesson_db_id: 101 },
+            { id: 12, name: '10.º MAS', lesson_log_status: 'OCCURRENCE', lesson_db_id: 102 },
+          ],
+        }}
+      />,
+      { withToaster: true },
+    )
+
+    expect(screen.getByLabelText('10.º MKT')).toBeChecked()
+    expect(screen.getByLabelText('10.º MAS')).not.toBeChecked()
+
+    fireEvent.click(screen.getByRole('button', { name: /guardar altera/i }))
+
+    await waitFor(() => expect(mutations.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      payload: expect.objectContaining({ status: 'COMPLETED', absent_class_ids: [12] }),
+    })))
   })
 })

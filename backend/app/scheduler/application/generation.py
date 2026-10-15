@@ -32,6 +32,7 @@ from app.scheduler.domain.candidate_validation import (
     validate_candidate,
 )
 from app.scheduler.domain.capacity import aggregate_capacity_check, residual_minutes
+from app.scheduler.domain.diagnostics import diagnose_joint_isolation
 from app.scheduler.domain.quality import (
     InitialQualityMetrics,
     SearchEvidence,
@@ -111,7 +112,10 @@ def recovery_assessment(
         snapshot,
         unavailable=(
             *snapshot.unavailable,
-            Unavailability(UnavailableResource.CLASS, assignment.class_id, target.period),
+            *(
+                Unavailability(UnavailableResource.CLASS, class_id, target.period)
+                for class_id in assignment.class_ids
+            ),
             Unavailability(UnavailableResource.TEACHER, assignment.teacher_id, target.period),
         ),
     )
@@ -163,6 +167,20 @@ def generate_complete(
             )
     capacity = aggregate_capacity_check(snapshot, periods)
     if capacity.proven_infeasible:
+        isolation = diagnose_joint_isolation(snapshot, periods)
+        if isolation is not None:
+            return GenerationResult(
+                OUTCOME_INFEASIBLE,
+                None,
+                message=isolation.message,
+                evidence=SearchEvidence(
+                    objective_scope="JOINT_UNIT_CAPACITY",
+                    stages=(),
+                    certified_stages=0,
+                    stop_reason=isolation.code.value,
+                ),
+                wall_time_seconds=monotonic() - started,
+            )
         details = ", ".join(
             f"assignment {assignment_id}: {minutes} minute(s)"
             for assignment_id, minutes in sorted(capacity.deficits.items())

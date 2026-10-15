@@ -459,3 +459,146 @@ async def test_class_subject_requirements_include_scheduler_inputs_and_ignore_ot
         models.ScheduleGenerationStrategy.COMPLETE_GENERATION,
     )
     assert after_irrelevant_event.value == first.value
+
+
+async def test_fingerprint_adds_joint_groups_only_when_present(db_session):
+    organization = models.Organization(name="Joint Fingerprint", plan_status="active")
+    db_session.add(organization)
+    await db_session.flush()
+    school_year = models.SchedulerSchoolYear(
+        organization_id=organization.id,
+        label="2025/2026",
+        start_date=date(2025, 9, 1),
+        hard_end_date=date(2026, 7, 15),
+        timezone="Europe/Lisbon",
+    )
+    course = models.Course(organization_id=organization.id, name="CJ", abbreviation="CJ")
+    subject = models.Subject(
+        organization_id=organization.id,
+        name="Português",
+        required_room_type=models.RoomType.normal,
+    )
+    db_session.add_all([school_year, course, subject])
+    await db_session.flush()
+    db_session.add(
+        models.SchedulerSchoolYearState(
+            organization_id=organization.id,
+            school_year_id=school_year.id,
+        )
+    )
+    teacher = await create_teacher_profile(
+        db_session, organization_id=organization.id, subject_ids=[subject.id]
+    )
+    module = models.Module(
+        organization_id=organization.id,
+        subject_id=subject.id,
+        name="M1",
+        required_minutes=60,
+        order=0,
+    )
+    second_module = models.Module(
+        organization_id=organization.id,
+        subject_id=subject.id,
+        name="M2",
+        required_minutes=60,
+        order=1,
+    )
+    db_session.add_all([module, second_module])
+    await db_session.flush()
+    links = []
+    for index in range(2):
+        class_ = models.Class(
+            organization_id=organization.id,
+            course_id=course.id,
+            name=f"Turma {index}",
+            size=18,
+            grade_level=10,
+            start_year=2025,
+            end_year=2028,
+        )
+        db_session.add(class_)
+        await db_session.flush()
+        link = models.ClassSubjectLink(
+            organization_id=organization.id,
+            class_id=class_.id,
+            subject_id=subject.id,
+            grade_level=10,
+            teacher_id=teacher.id,
+        )
+        db_session.add(link)
+        await db_session.flush()
+        await db_session.execute(
+            models.class_subject_module.insert().values(
+                [
+                    {
+                        "organization_id": organization.id,
+                        "class_subject_link_id": link.id,
+                        "module_id": module.id,
+                    },
+                    {
+                        "organization_id": organization.id,
+                        "class_subject_link_id": link.id,
+                        "module_id": second_module.id,
+                    },
+                ]
+            )
+        )
+        links.append(link)
+    await db_session.commit()
+
+    service = SchedulerFingerprintService(db_session)
+    without_group = await service.generation_input_fingerprint(
+        organization.id,
+        school_year.id,
+        models.ScheduleGenerationStrategy.COMPLETE_GENERATION,
+    )
+    assert "joint_lesson_groups" not in without_group.snapshot
+
+    group = models.JointLessonGroup(organization_id=organization.id, subject_id=subject.id)
+    db_session.add(group)
+    await db_session.flush()
+    await db_session.execute(
+        models.joint_lesson_group_member.insert().values(
+            [
+                {
+                    "organization_id": organization.id,
+                    "group_id": group.id,
+                    "class_subject_link_id": link.id,
+                }
+                for link in links
+            ]
+        )
+    )
+    await db_session.execute(
+        models.joint_lesson_group_module.insert().values(
+            organization_id=organization.id, group_id=group.id, module_id=module.id
+        )
+    )
+    await db_session.flush()
+
+    with_group = await service.generation_input_fingerprint(
+        organization.id,
+        school_year.id,
+        models.ScheduleGenerationStrategy.COMPLETE_GENERATION,
+    )
+    assert with_group.snapshot["joint_lesson_groups"] == [
+        {
+            "subject_id": subject.id,
+            "class_ids": sorted(link.class_id for link in links),
+            "module_ids": [module.id],
+        }
+    ]
+    assert with_group.value != without_group.value
+
+    await db_session.execute(
+        models.joint_lesson_group_module.insert().values(
+            organization_id=organization.id, group_id=group.id, module_id=second_module.id
+        )
+    )
+    await db_session.flush()
+    changed = await service.generation_input_fingerprint(
+        organization.id,
+        school_year.id,
+        models.ScheduleGenerationStrategy.COMPLETE_GENERATION,
+    )
+    assert changed.value != with_group.value

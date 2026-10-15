@@ -134,7 +134,7 @@ def test_audit_satisfied_demand_returns_complete_without_new_lessons(protected):
     assert result.candidate.lessons == target.protected_lessons
 
 
-@pytest.mark.parametrize("override", [{"teacher_id": 99}, {"class_id": 99}])
+@pytest.mark.parametrize("override", [{"teacher_id": 99}, {"class_ids": (99,)}])
 def test_audit_validator_rejects_unassigned_resources(override):
     when = period(0)
     target = snapshot((when,))
@@ -557,7 +557,11 @@ def test_audit_full_vector_is_invariant_to_entity_and_period_permutations():
     renamed = replace(
         base,
         assignments=tuple(
-            replace(row, assignment_id=row.assignment_id + 10, class_id=row.class_id + 10)
+            replace(
+                row,
+                assignment_id=row.assignment_id + 10,
+                class_ids=tuple(class_id + 10 for class_id in row.class_ids),
+            )
             for row in base.assignments
         ),
     )

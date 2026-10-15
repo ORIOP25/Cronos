@@ -279,6 +279,20 @@ async def get_teacher_progress(
     if not links:
         return []
 
+    # 1b. Seleção de módulos das ligações, numa única consulta adicional.
+    selection_rows = await db.execute(
+        select(
+            models.class_subject_module.c.class_subject_link_id,
+            models.class_subject_module.c.module_id,
+        ).where(
+            models.class_subject_module.c.organization_id == organization_id,
+            models.class_subject_module.c.class_subject_link_id.in_([link.id for link in links]),
+        )
+    )
+    selected_by_link: dict[int, set[int]] = {}
+    for link_id, module_id in selection_rows.all():
+        selected_by_link.setdefault(link_id, set()).add(module_id)
+
     # 2. Agrupar links por turma
     classes_map: dict[int, dict] = {}
     class_ids = set()
@@ -334,7 +348,11 @@ async def get_teacher_progress(
         progress_map_for_class = {
             module_id: p for (c_id, module_id), p in progress_map.items() if c_id == link.class_id
         }
-        subject_data = _build_subject_with_progress(link.subject, progress_map_for_class)
+        selected = selected_by_link.get(link.id, set())
+        selected_modules = [module for module in link.subject.modules if module.id in selected]
+        subject_data = _build_subject_with_progress(
+            link.subject, progress_map_for_class, selected_modules
+        )
         classes_map[link.class_id]["subjects"].append(subject_data)
 
     # 5. Ordenar disciplinas alfabeticamente dentro de cada turma

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Callable
+from datetime import datetime
 from fractions import Fraction
 from time import monotonic
 
@@ -52,13 +53,18 @@ def _next_module(modules, cursor: dict[int, int]) -> int | None:
 def _flow_selection(
     options: list[tuple[Assignment, tuple[int, ...]]],
 ) -> list[tuple[Assignment, int]] | None:
-    """Match resources; validate each selected subject's actual room domain."""
+    """Match resources; validate each selected subject's actual room domain.
+
+    The flow model assumes a unit occupies one class. A joint unit falls back to
+    the small CP-SAT repair in :func:`_select_period` (WBS 3.3.1).
+    """
+    if any(len(row.class_ids) != 1 for row, _rooms in options):
+        return None
     rooms_by_class: dict[int, tuple[int, ...]] = {}
     rooms_by_assignment = {row.assignment_id: rooms for row, rooms in options}
     for assignment, rooms in options:
-        rooms_by_class[assignment.class_id] = tuple(
-            dict.fromkeys((*rooms_by_class.get(assignment.class_id, ()), *rooms))
-        )
+        class_id = assignment.class_ids[0]
+        rooms_by_class[class_id] = tuple(dict.fromkeys((*rooms_by_class.get(class_id, ()), *rooms)))
     flow = min_cost_flow.SimpleMinCostFlow()
     nodes: dict[tuple, int] = {}
 
@@ -79,7 +85,10 @@ def _flow_selection(
     assignment_arcs = []
     for rank, (assignment, _rooms) in enumerate(options):
         arc = flow.add_arc_with_capacity_and_unit_cost(
-            node("teacher", assignment.teacher_id), node("class", assignment.class_id), 1, rank
+            node("teacher", assignment.teacher_id),
+            node("class", assignment.class_ids[0]),
+            1,
+            rank,
         )
         assignment_arcs.append((assignment, arc))
     room_arcs = {
@@ -100,8 +109,8 @@ def _flow_selection(
             assignment,
             next(
                 room
-                for room in rooms_by_class[assignment.class_id]
-                if flow.flow(room_arcs[(assignment.class_id, room)])
+                for room in rooms_by_class[assignment.class_ids[0]]
+                if flow.flow(room_arcs[(assignment.class_ids[0], room)])
             ),
         )
         for assignment, arc in assignment_arcs
@@ -128,14 +137,14 @@ def _select_period(
     rooms: set[int] = set()
     for assignment, available in options:
         room = next((value for value in available if value not in rooms), None)
-        if assignment.class_id in classes or assignment.teacher_id in teachers or room is None:
+        if classes & set(assignment.class_ids) or assignment.teacher_id in teachers or room is None:
             continue
         selected.append((assignment, room))
-        classes.add(assignment.class_id)
+        classes.update(assignment.class_ids)
         teachers.add(assignment.teacher_id)
         rooms.add(room)
     upper = min(
-        len({row.class_id for row, _ in options}),
+        len({class_id for row, _ in options for class_id in row.class_ids}),
         len({row.teacher_id for row, _ in options}),
         len({room for _, available in options for room in available}),
     )
@@ -149,20 +158,25 @@ def _select_period(
     # ponytail: resolve only this period, without annual placement variables.
     # A construction dead end still falls back to the existing complete search.
     model = cp_model.CpModel()
-    choices: dict[tuple[int, int, int], tuple[Assignment, cp_model.IntVar]] = {}
+    choices: dict[tuple, tuple[Assignment, cp_model.IntVar]] = {}
     resource_choices: dict[tuple[str, int], list] = defaultdict(list)
     preferred = {(row.assignment_id, room) for row, room in selected}
     terms = []
     count_weight = len(options) ** 2 + 1
     for rank, (assignment, available) in enumerate(options):
         for room in available:
-            key = (assignment.class_id, assignment.teacher_id, room)
+            key = (assignment.class_ids, assignment.teacher_id, room)
             # Identical resource choices retain the highest-priority subject.
             if key in choices:
                 continue
             variable = model.NewBoolVar(f"choice_{assignment.assignment_id}_{room}")
             choices[key] = (assignment, variable)
-            for kind, identity in zip(("class", "teacher", "room"), key, strict=True):
+            identities = [
+                ("teacher", assignment.teacher_id),
+                ("room", room),
+                *(("class", class_id) for class_id in assignment.class_ids),
+            ]
+            for kind, identity in identities:
                 resource_choices[(kind, identity)].append(variable)
             terms.append((count_weight + len(options) - rank) * variable)
             model.AddHint(variable, int((assignment.assignment_id, room) in preferred))
@@ -227,39 +241,43 @@ def construct_schedule(
         for row in weekly_reference.lessons:
             assignment = assignments.get(row.assignment_id)
             if assignment is not None:
-                weekly_pattern.setdefault(
-                    (
-                        assignment.class_id,
-                        row.period.school_date.weekday(),
-                        row.period.start_local,
-                        row.period.end_local,
-                    ),
-                    (row.assignment_id, row.room_id),
-                )
+                for class_id in assignment.class_ids:
+                    weekly_pattern.setdefault(
+                        (
+                            class_id,
+                            row.period.school_date.weekday(),
+                            row.period.start_local,
+                            row.period.end_local,
+                        ),
+                        (row.assignment_id, row.room_id),
+                    )
     used_ids = {row.lesson_id for row in snapshot.protected_lessons} | set(
         snapshot.reserved_lesson_ids
     )
     started_classes = {
-        row.class_id
+        class_id
         for identity, row in assignments.items()
         if remaining[identity] < required[identity]
+        for class_id in row.class_ids
     }
 
     def occupy(assignment: Assignment, period: Period, room: int, teacher: int) -> None:
-        weekly_pattern.setdefault(
-            (
-                assignment.class_id,
-                period.school_date.weekday(),
-                period.start_local,
-                period.end_local,
-            ),
-            (assignment.assignment_id, room),
-        )
-        for kind, identity in (
-            ("class", assignment.class_id),
+        for class_id in assignment.class_ids:
+            weekly_pattern.setdefault(
+                (
+                    class_id,
+                    period.school_date.weekday(),
+                    period.start_local,
+                    period.end_local,
+                ),
+                (assignment.assignment_id, room),
+            )
+        identities = [
             ("teacher", teacher),
             ("room", room),
-        ):
+            *(("class", class_id) for class_id in assignment.class_ids),
+        ]
+        for kind, identity in identities:
             busy[(kind, identity, period.school_date)].append(period)
             if kind != "room":
                 occupancy[(kind, identity, period.school_date)].append(_local_interval(period))
@@ -271,6 +289,22 @@ def construct_schedule(
         )
         for module_slice in lesson.slices:
             cursor[lesson.assignment_id][module_slice.module_id] += module_slice.credit_minutes
+
+    predecessors: dict[int, list[int]] = defaultdict(list)
+    for source, target in snapshot.precedences:
+        predecessors[target].append(source)
+    last_end: dict[int, datetime] = {}
+    for lesson in snapshot.protected_lessons:
+        current = last_end.get(lesson.assignment_id)
+        if current is None or lesson.period.end_utc > current:
+            last_end[lesson.assignment_id] = lesson.period.end_utc
+
+    def ready(identity: int, period: Period) -> bool:
+        """All predecessor units are finished before the period (WBS 3.3.2)."""
+        return all(
+            remaining[source] <= 0 and last_end.get(source, period.start_utc) <= period.start_utc
+            for source in predecessors.get(identity, ())
+        )
 
     options_by_period: dict[Period, list[Assignment]] = defaultdict(list)
     room_pressure: dict[int, Fraction] = defaultdict(Fraction)
@@ -286,7 +320,8 @@ def construct_schedule(
         eligible = eligible_periods(snapshot, assignment, canonical)
         for period in eligible:
             options_by_period[period].append(assignment)
-        class_remaining[assignment.class_id] += remaining[identity]
+        for class_id in assignment.class_ids:
+            class_remaining[class_id] += remaining[identity]
         teacher_remaining[assignment.teacher_id] += remaining[identity]
         for room in assignment.eligible_room_ids:
             room_pressure[room] += Fraction(remaining[identity], len(assignment.eligible_room_ids))
@@ -298,13 +333,24 @@ def construct_schedule(
             deadline is not None and monotonic() >= deadline
         ):
             return None
-        active = [row for row in options_by_period[period] if remaining[row.assignment_id] > 0]
+        active = [
+            row
+            for row in options_by_period[period]
+            if remaining[row.assignment_id] > 0 and ready(row.assignment_id, period)
+        ]
         if not active:
             continue
         preceding_end = preceding_ends.get(
             (period.school_date.weekday(), period.start_local, period.end_local)
         )
         signature = (period.school_date.weekday(), period.start_local, period.end_local)
+
+        def weekly_preferred(assignment: Assignment, current_signature: tuple):
+            for class_id in assignment.class_ids:
+                preferred = weekly_pattern.get((class_id, *current_signature))
+                if preferred is not None:
+                    return preferred
+            return None
 
         def priority(
             assignment: Assignment,
@@ -313,7 +359,7 @@ def construct_schedule(
             current_signature: tuple = signature,
         ):
             identity = assignment.assignment_id
-            preferred = weekly_pattern.get((assignment.class_id, *current_signature))
+            preferred = weekly_preferred(assignment, current_signature)
             repeats = preferred is not None and preferred[0] == identity
             adjacent = sum(
                 any(
@@ -321,12 +367,12 @@ def construct_schedule(
                     for _start, end in occupancy[(kind, resource, current_period.school_date)]
                 )
                 for kind, resource in (
-                    ("class", assignment.class_id),
+                    *(("class", class_id) for class_id in assignment.class_ids),
                     ("teacher", assignment.teacher_id),
                 )
             )
             return (
-                assignment.class_id in started_classes,
+                any(class_id in started_classes for class_id in assignment.class_ids),
                 initial_remaining[identity] != remaining[identity],
                 Fraction(
                     required[identity]
@@ -338,7 +384,7 @@ def construct_schedule(
                 preferred is None,
                 not repeats,
                 -teacher_remaining[assignment.teacher_id],
-                -class_remaining[assignment.class_id],
+                -sum(class_remaining[class_id] for class_id in assignment.class_ids),
                 len(assignment.eligible_room_ids),
                 identity,
             )
@@ -346,12 +392,12 @@ def construct_schedule(
         options = []
         for assignment in sorted(active, key=priority):
             identity = assignment.assignment_id
-            preferred = weekly_pattern.get((assignment.class_id, *signature))
+            preferred = weekly_preferred(assignment, signature)
             preferred_room = (
                 preferred[1] if preferred is not None and preferred[0] == identity else None
             )
             keys = (
-                ("class", assignment.class_id, period.school_date),
+                *(("class", class_id, period.school_date) for class_id in assignment.class_ids),
                 ("teacher", assignment.teacher_id, period.school_date),
             )
             if any(period.overlaps(occupied) for key in keys for occupied in busy[key]):
@@ -400,9 +446,13 @@ def construct_schedule(
                 ScheduledLesson(lesson_id, identity, period, room, credit, tuple(slices))
             )
             remaining[identity] -= credit
-            class_remaining[assignment.class_id] -= credit
+            for class_id in assignment.class_ids:
+                class_remaining[class_id] -= credit
+                started_classes.add(class_id)
             teacher_remaining[assignment.teacher_id] -= credit
-            started_classes.add(assignment.class_id)
+            current_end = last_end.get(identity)
+            if current_end is None or period.end_utc > current_end:
+                last_end[identity] = period.end_utc
             occupy(assignment, period, room, assignment.teacher_id)
         if not any(remaining.values()):
             break

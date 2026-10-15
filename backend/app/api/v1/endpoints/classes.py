@@ -162,7 +162,7 @@ async def add_class_subject(
     response_model=schemas.ClassSubjectsListRead,
     responses={404: {"description": CLASS_NOT_FOUND_MSG}, 400: {"description": "Bad Request"}},
 )
-async def update_class_subject_teacher(
+async def update_class_subject(
     class_id: int,
     subject_id: int,
     payload: schemas.ClassSubjectUpdate,
@@ -170,15 +170,16 @@ async def update_class_subject_teacher(
     current_user: deps.AdminActor,
 ):
     """
-    Atribui ou altera o professor de uma disciplina da turma.
+    Atribui ou altera o professor e/ou substitui a seleção de módulos.
 
     Validações:
     - Associação turma/disciplina existe
     - Se teacher_id não é null, professor tem competência na disciplina
+    - module_ids substitui a seleção; uma lista vazia é válida
 
     Enviar teacher_id=null para remover a atribuição.
     """
-    await class_service.update_class_subject_teacher(
+    await class_service.update_class_subject(
         db,
         class_id,
         subject_id,

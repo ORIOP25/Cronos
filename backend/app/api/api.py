@@ -10,6 +10,7 @@ from app.api.v1.endpoints import (
     foundation,
     health,
     imports,
+    joint_lesson_groups,
     legal,
     members,
     occurrences,
@@ -40,6 +41,11 @@ api_router.include_router(imports.router, prefix="/imports", tags=["Importação
 api_router.include_router(teachers.router, prefix="/teachers", tags=["Teacher self-service/domain"])
 api_router.include_router(classes.router, prefix="/classes", tags=["Turmas"])
 api_router.include_router(subjects.router, prefix="/subjects", tags=["Disciplinas"])
+api_router.include_router(
+    joint_lesson_groups.router,
+    prefix="/joint-lesson-groups",
+    tags=["Aulas Conjuntas"],
+)
 api_router.include_router(rooms.router, prefix="/rooms", tags=["Salas"])
 api_router.include_router(timeslots.router, prefix="/timeslots", tags=["timeslots"])
 api_router.include_router(scheduler.router, prefix="/scheduler", tags=["Scheduler"])

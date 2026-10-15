@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import date, time, timedelta
 
 from app.scheduler.domain.candidate import SchedulingStrategy
@@ -140,3 +141,30 @@ def test_excluding_every_distribution_proves_infeasibility():
     )
 
     assert plan.status == STATUS_INFEASIBLE
+
+
+def test_a_successor_gets_no_quota_before_its_predecessor_week():
+    week0 = (ORIGIN, time(9), time(10))
+    week1 = (NEXT_WEEK, time(9), time(10))
+    base = build_snapshot(
+        FixtureSpec(
+            strategy=SchedulingStrategy.COMPLETE_GENERATION,
+            origin=ORIGIN,
+            preferred_end_date=date(2026, 10, 30),
+            hard_end_date=date(2026, 11, 30),
+            timezone_name=TZ,
+            grid_slots=((0, time(9), time(10)),),
+            periods=(week0, week1),
+            assignments=(
+                AssignmentSpec(1, 7, (60,), (500,)),
+                AssignmentSpec(2, 8, (60,), (501,)),
+            ),
+            unavailable=(("teacher", 7, week0),),
+        )
+    )
+    snapshot = replace(base, precedences=((1, 2),))
+
+    plan = plan_annual_quotas(snapshot, _periods(week0, week1), time_limit_seconds=5)
+
+    assert plan.status == STATUS_FEASIBLE
+    assert all(owner != 2 or week == 1 for owner, week, _duration in plan.distribution.counts)

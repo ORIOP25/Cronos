@@ -1450,6 +1450,47 @@ class GridChangePendingResponse(BaseModel):
 # ==========================================
 
 
+class JointLessonGroupClassRead(BaseModel):
+    """Uma turma membro de uma aula conjunta"""
+
+    class_id: int
+    class_name: str
+    course_abbreviation: str | None = None
+    grade_level: int
+
+
+class JointLessonGroupRead(BaseModel):
+    """Aula conjunta devolvida pela API de configuração"""
+
+    id: int
+    subject_id: int
+    subject_name: str
+    teacher_id: int | None = None
+    classes: list[JointLessonGroupClassRead] = []
+    module_ids: list[int] = []
+
+
+class JointLessonGroupWrite(BaseModel):
+    """Criação ou substituição de uma aula conjunta"""
+
+    subject_id: int | None = Field(None, description="Só no POST")
+    class_ids: list[int] = Field(..., min_length=1)
+    module_ids: list[int] = []
+    teacher_id: int = Field(..., gt=0, description="Professor competente na disciplina")
+
+
+class JointCandidateRead(BaseModel):
+    """Turma candidata a entrar numa aula conjunta"""
+
+    class_id: int
+    class_name: str
+    course_abbreviation: str | None = None
+    grade_level: int
+    teacher_id: int | None = None
+    selected_module_ids: list[int] = []
+    started_module_ids: list[int] = []
+
+
 class ClassSubjectCreate(BaseModel):
     """Adicionar uma disciplina a uma turma (para o grade_level atual)"""
 
@@ -1457,15 +1498,29 @@ class ClassSubjectCreate(BaseModel):
 
 
 class ClassSubjectUpdate(BaseModel):
-    """Atribuir ou alterar professor de uma disciplina da turma"""
+    """Atribuir professor e/ou substituir a seleção de módulos da disciplina"""
 
     teacher_id: int | None = Field(
         None, description="ID do professor (null para remover atribuição)"
     )
+    module_ids: list[int] | None = Field(
+        None, description="Lista completa de módulos marcados (substitui a seleção)"
+    )
+
+
+class ClassSubjectModuleRead(BaseModel):
+    """Módulo de uma disciplina da turma, com o estado de seleção"""
+
+    id: int
+    name: str
+    code: str | None = None
+    hours_total: float
+    order: int
+    selected: bool
 
 
 class ClassSubjectRead(BaseModel):
-    """Disciplina da turma com professor atribuído"""
+    """Disciplina da turma com professor atribuído e módulos selecionados"""
 
     id: int
     subject_id: int
@@ -1474,6 +1529,8 @@ class ClassSubjectRead(BaseModel):
     grade_level: int
     teacher_id: int | None = None
     teacher_name: str | None = None
+    modules: list[ClassSubjectModuleRead] = []
+    joint_group: JointLessonGroupRead | None = None
 
 
 class ClassSubjectsListRead(BaseModel):
@@ -1501,6 +1558,23 @@ class EligibleTeacherRead(BaseModel):
 # ==========================================
 
 DESC_OCCURRENCE_STATUS = "Estado da ocorrência: GIVEN | GAP | SUBSTITUTED"
+
+
+class JointLessonClassStateRead(BaseModel):
+    """Per-class state of a joint lesson occurrence (J13)."""
+
+    class_id: int
+    class_name: str
+    operational_state: str | None = None
+    status: str | None = None
+    version: int | None = None
+    id: int | None = None
+
+
+class JointLessonStateRead(BaseModel):
+    """Member classes of a joint lesson with their operational state (J13)."""
+
+    classes: list[JointLessonClassStateRead] = []
 
 
 class LessonOccurrenceRead(BaseModel):
@@ -1548,6 +1622,8 @@ class LessonOccurrenceRead(BaseModel):
     ends_at: datetime | None = None
     can_complete: bool = False
     blocked_reason: str | None = None
+    # WBS 5.2 (J13): joint lesson per-class state.
+    joint_lesson: JointLessonStateRead | None = None
 
     model_config = model_config
 
@@ -1569,6 +1645,10 @@ class LessonOccurrenceUpdate(BaseModel):
     )
     substitute_subject_id: int | None = Field(
         None, gt=0, description="ID da disciplina dada pelo substituto"
+    )
+    # WBS 5.2 (J13): decide several member classes of a joint lesson at once.
+    class_ids: list[int] | None = Field(
+        None, description="Turmas da aula conjunta a decidir; por omissão só a linha indicada."
     )
 
     model_config = ConfigDict(extra="forbid")
@@ -1711,6 +1791,17 @@ class WeekClassInfo(BaseModel):
     name: str
 
 
+class WeekClassLessonInfo(BaseModel):
+    """One member class of a joint lesson in the weekly view (J17)."""
+
+    id: int
+    name: str
+    lesson_log_status: LessonLogStatus | None = None
+    lesson_db_id: int | None = None
+    operational_block_id: int | None = None
+    substitute_execution_status: str | None = None
+
+
 class TeacherScheduleHorizonRead(BaseModel):
     """Metadados mínimos para a visão semanal do professor autenticado."""
 
@@ -1776,6 +1867,9 @@ class WeekSlotRead(BaseModel):
     ends_at: datetime | None = None
     can_complete: bool = False
     blocked_reason: str | None = None
+    # WBS 5.7 (J17): joint lesson weekly view.
+    joint_classes: list[WeekClassInfo] = Field(default_factory=list)
+    class_infos: list[WeekClassLessonInfo] = Field(default_factory=list)
 
 
 # ==========================================
@@ -1789,6 +1883,8 @@ class LessonLogCreate(BaseModel):
     status: LessonLogStatus
     summary: str | None = Field(None, max_length=2000, description="Sumário da aula (opcional)")
     notes: str | None = Field(None, max_length=1000, description="Notas livres (opcional)")
+    # WBS 5.3.4: member classes absent when concluding a joint substitution.
+    absent_class_ids: list[int] = Field(default_factory=list)
 
 
 class LessonLogRead(BaseModel):
@@ -2136,6 +2232,16 @@ class SchedulerV1LessonLogRequest(BaseModel):
     status: Literal["COMPLETED", "OCCURRENCE"]
     summary: str | None = Field(None, max_length=2000)
     notes: str | None = Field(None, max_length=1000)
+    # Joint lesson only: member classes that did not attend (J12).
+    absent_class_ids: list[int] = Field(default_factory=list)
+
+
+class LessonLogClassRead(BaseModel):
+    """Per-class outcome of a joint lesson registration (J12)."""
+
+    class_id: int
+    status: str
+    credited_minutes: int = 0
 
 
 class SchedulerV1LessonLogResponse(BaseModel):
@@ -2143,3 +2249,5 @@ class SchedulerV1LessonLogResponse(BaseModel):
     status: str
     credited_minutes: int = 0
     debt_minutes: int = 0
+    revision: int = 1
+    classes: list[LessonLogClassRead] = Field(default_factory=list)

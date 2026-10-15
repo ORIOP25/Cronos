@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping, Sequence, Set
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
@@ -132,3 +132,53 @@ def frontier_credit(
     if remaining > 0:
         raise ValueError("Not enough residual curricular minutes for the credit.")
     return tuple(credits)
+
+
+def joint_frontier_credit(
+    modules: Sequence[ModuleRequirement],
+    completed_by_class: Mapping[int, Mapping[int, int]],
+    minutes: int,
+) -> tuple[ModuleCredit, ...]:
+    """Sequential credit over the joint progress, equal for every class (WBS 5.3.1).
+
+    The joint progress of a module is the largest executed count across the
+    member classes. The credit follows the strict sequence over that frontier,
+    so every present class receives the same module credit and it never exceeds
+    the residual of any member class.
+    """
+    if not completed_by_class:
+        raise ValueError("Joint credit needs at least one class.")
+    progress = {
+        module.module_id: max(
+            completed.get(module.module_id, 0) for completed in completed_by_class.values()
+        )
+        for module in modules
+    }
+    return frontier_credit(modules, progress, minutes)
+
+
+def close_retired_modules(
+    modules: Sequence[ModuleRequirement],
+    retired: Set[int],
+    completed: Mapping[int, int],
+) -> tuple[tuple[ModuleRequirement, ...], dict[int, int]]:
+    """Planning view: a retired module is closed at its executed minutes.
+
+    A planned module keeps its catalogue requirement. A retired module with
+    executed minutes is closed at those minutes, so it receives no new credit
+    and no future lesson. A retired module without executed minutes leaves the
+    planning view. The returned minutes are limited to the modules that remain.
+    """
+    planned: list[ModuleRequirement] = []
+    closed_completed: dict[int, int] = {}
+    for module in modules:
+        executed = completed.get(module.module_id, 0)
+        if module.module_id in retired:
+            if executed <= 0:
+                continue
+            planned.append(ModuleRequirement(module.module_id, module.sequence, executed))
+            closed_completed[module.module_id] = executed
+            continue
+        planned.append(module)
+        closed_completed[module.module_id] = executed
+    return tuple(planned), closed_completed

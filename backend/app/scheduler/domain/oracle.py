@@ -82,12 +82,13 @@ def _fixed_periods(
     by_class: list[Period] = []
     by_teacher: list[Period] = []
     by_room: dict[int, list[Period]] = defaultdict(list)
+    member_classes = set(assignment.class_ids)
     for lesson in snapshot.protected_lessons:
         owner = snapshot.assignment_for(lesson.assignment_id)
         if owner is None:
             continue
         by_room[lesson.room_id].append(lesson.period)
-        if owner.class_id == assignment.class_id:
+        if member_classes & set(owner.class_ids):
             by_class.append(lesson.period)
         teacher = lesson.teacher_id if lesson.teacher_id is not None else owner.teacher_id
         if teacher == assignment.teacher_id:
@@ -104,11 +105,8 @@ def _overlaps(period: Period, fixed: list[Period]) -> bool:
 def _unavailable_overlap(
     snapshot: PlanningSnapshot, assignment: Assignment, period: Period, room_id: int
 ) -> bool:
-    resources = {
-        ("class", assignment.class_id),
-        ("teacher", assignment.teacher_id),
-        ("room", room_id),
-    }
+    resources = {("teacher", assignment.teacher_id), ("room", room_id)}
+    resources.update(("class", class_id) for class_id in assignment.class_ids)
     return any(
         (row.resource_type.value, row.resource_id) in resources and row.overlaps(period)
         for row in snapshot.unavailable
@@ -127,7 +125,10 @@ def _eligible_pairs(
             period.timezone_name != snapshot.timezone_name
             or period.school_date < snapshot.origin
             or period.school_date > snapshot.hard_end_date
-            or snapshot.blocked_on(assignment.class_id, period.school_date)
+            or any(
+                snapshot.blocked_on(class_id, period.school_date)
+                for class_id in assignment.class_ids
+            )
             or is_physically_protected(snapshot, period)
             or not any(slot.matches(period) for slot in snapshot.grid_slots)
             or _overlaps(period, by_class)
@@ -267,10 +268,11 @@ def oracle_objective(snapshot: PlanningSnapshot, candidate: CandidateSchedule) -
         assignment = snapshot.assignment_for(lesson.assignment_id)
         if assignment is None:
             continue
-        previous = completion.get(assignment.class_id)
-        if previous is None or lesson.period.school_date > previous:
-            completion[assignment.class_id] = lesson.period.school_date
-    class_ids = sorted({row.class_id for row in snapshot.assignments})
+        for class_id in assignment.class_ids:
+            previous = completion.get(class_id)
+            if previous is None or lesson.period.school_date > previous:
+                completion[class_id] = lesson.period.school_date
+    class_ids = sorted({class_id for row in snapshot.assignments for class_id in row.class_ids})
     for class_id in class_ids:
         completion.setdefault(class_id, snapshot.origin)
     return tuple(

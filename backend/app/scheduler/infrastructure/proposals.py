@@ -8,6 +8,7 @@ the current data is marked STALE and never approved silently.
 
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass, replace
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -233,56 +234,71 @@ async def persist_proposal(
     )
     db.add(version)
     await db.flush()
-    lesson_db_ids: dict[int, int] = {}
-    lesson_assignments: dict[int, int] = {}
+    unit_key_by_id = {unit_id: key for key, unit_id in bundle.unit_keys.items()}
+    accounting_by_unit_class = {
+        (unit_id, bundle.accounting_classes[payer]): payer
+        for unit_id, payers in bundle.unit_accounting.items()
+        for payer in payers
+        if payer in bundle.accounting_classes
+    }
+    # One persisted row per accounting (per-class) assignment. A joint unit
+    # writes one sister per member class, all sharing the stable key, the unit
+    # key, the physical interval and the slices (WBS 3.8.1). No synthetic unit
+    # id is ever written as an assignment foreign key.
+    lesson_rows: dict[tuple[int, int | None], int] = {}
     for lesson in candidate.lessons:
-        source_db_id = None
-        if lesson.source_lesson_id is not None:
-            source_db_id = bundle.base_lesson_ids.get(lesson.source_lesson_id)
-        elif lesson.lesson_id in bundle.base_lesson_ids:
-            source_db_id = bundle.base_lesson_ids[lesson.lesson_id]
-        row = SchedulerLessonV1(
-            organization_id=organization_id,
-            school_year_id=state.school_year_id,
-            version_id=version.id,
-            assignment_id=lesson.assignment_id,
-            stable_key=str(lesson.lesson_id),
-            school_date=lesson.period.school_date,
-            starts_at=lesson.period.start_utc,
-            ends_at=lesson.period.end_utc,
-            room_id=lesson.room_id,
-            physical_minutes=lesson.period.duration_minutes,
-            credit_minutes=lesson.credit_minutes,
-            source_lesson_id=source_db_id,
+        accounting_ids = bundle.unit_accounting.get(lesson.assignment_id) or (lesson.assignment_id,)
+        unit_key = unit_key_by_id.get(lesson.assignment_id)
+        if unit_key is None:
+            raise ValueError("A candidate lesson lost its teaching-unit key during persistence.")
+        source_identity = (
+            lesson.source_lesson_id if lesson.source_lesson_id is not None else lesson.lesson_id
         )
-        db.add(row)
-        await db.flush()
-        lesson_db_ids[lesson.lesson_id] = row.id
-        lesson_assignments[lesson.lesson_id] = lesson.assignment_id
-    for lesson in candidate.lessons:
-        for slice_ in lesson.slices:
-            db.add(
-                SchedulerLessonSliceV1(
-                    organization_id=organization_id,
-                    school_year_id=state.school_year_id,
-                    lesson_id=lesson_db_ids[lesson.lesson_id],
-                    module_id=slice_.module_id,
-                    offset_minutes=slice_.offset_minutes,
-                    minutes=slice_.credit_minutes,
-                )
+        for accounting_id in accounting_ids:
+            class_id = bundle.accounting_classes.get(accounting_id)
+            row = SchedulerLessonV1(
+                organization_id=organization_id,
+                school_year_id=state.school_year_id,
+                version_id=version.id,
+                assignment_id=accounting_id,
+                stable_key=str(lesson.lesson_id),
+                school_date=lesson.period.school_date,
+                starts_at=lesson.period.start_utc,
+                ends_at=lesson.period.end_utc,
+                room_id=lesson.room_id,
+                physical_minutes=lesson.period.duration_minutes,
+                credit_minutes=lesson.credit_minutes,
+                source_lesson_id=bundle.base_lesson_classes.get(source_identity, {}).get(class_id),
+                teaching_unit_key=unit_key,
             )
+            db.add(row)
+            await db.flush()
+            lesson_rows[(lesson.lesson_id, class_id)] = row.id
+    for lesson in candidate.lessons:
+        for (identity, _class_id), row_id in lesson_rows.items():
+            if identity != lesson.lesson_id:
+                continue
+            for slice_ in lesson.slices:
+                db.add(
+                    SchedulerLessonSliceV1(
+                        organization_id=organization_id,
+                        school_year_id=state.school_year_id,
+                        lesson_id=row_id,
+                        module_id=slice_.module_id,
+                        offset_minutes=slice_.offset_minutes,
+                        minutes=slice_.credit_minutes,
+                    )
+                )
     await _carry_consumed_lessons(
         db,
         organization_id=organization_id,
         school_year_id=state.school_year_id,
         previous_version_id=job.base_version_id,
         new_version_id=version.id,
-        candidate_identities=set(lesson_db_ids),
-        assignments={row.assignment_id: row for row in bundle.snapshot.assignments},
-        executed=bundle.snapshot.executed_minutes,
+        candidate_identities={identity for identity, _class_id in lesson_rows},
+        bundle=bundle,
         zone=ZoneInfo(bundle.snapshot.timezone_name),
-        lesson_db_ids=lesson_db_ids,
-        lesson_assignments=lesson_assignments,
+        lesson_rows=lesson_rows,
         now_utc=now_utc,
     )
     claim_ids = sorted(bundle.snapshot.open_debt_minutes)
@@ -300,18 +316,34 @@ async def persist_proposal(
                 )
             ).all()
         )
+    candidate_by_lesson = {lesson.lesson_id: lesson for lesson in candidate.lessons}
     for allocation in plan_recovery_allocations(
         bundle.snapshot, candidate, claim_order=claim_order
     ):
-        lesson_db_id = lesson_db_ids.get(allocation.lesson_id)
-        if lesson_db_id is None:
+        candidate_lesson = candidate_by_lesson.get(allocation.lesson_id)
+        if candidate_lesson is None:
+            raise ValueError("A recovery reservation lost its lesson during persistence.")
+        unit_id = candidate_lesson.assignment_id
+        claim_class = bundle.snapshot.claim_classes.get(allocation.claim_id)
+        if claim_class is None:
+            unit = next(
+                (row for row in bundle.snapshot.assignments if row.assignment_id == unit_id),
+                None,
+            )
+            if unit is not None and len(unit.class_ids) == 1:
+                claim_class = unit.class_ids[0]
+        if claim_class is None:
+            raise ValueError("A joint recovery reservation needs its claim class.")
+        lesson_db_id = lesson_rows.get((allocation.lesson_id, claim_class))
+        accounting_id = accounting_by_unit_class.get((unit_id, claim_class))
+        if lesson_db_id is None or accounting_id is None:
             raise ValueError("A recovery reservation lost its lesson during persistence.")
         db.add(
             SchedulerRecoveryReservationV1(
                 organization_id=organization_id,
                 school_year_id=state.school_year_id,
                 version_id=version.id,
-                assignment_id=lesson_assignments[allocation.lesson_id],
+                assignment_id=accounting_id,
                 lesson_id=lesson_db_id,
                 debt_id=allocation.claim_id,
                 minutes=allocation.minutes,
@@ -417,6 +449,17 @@ async def _validate_pending_grid(db, organization_id, job, proposal, now_utc):
             )
 
 
+def _unit_context(bundle: SnapshotBundle) -> dict:
+    """Unit-key/class/accounting maps that collapse published sister rows."""
+    return {
+        "unit_keys": bundle.unit_keys,
+        "class_ids_by_unit": {
+            row.assignment_id: row.class_ids for row in bundle.snapshot.assignments
+        },
+        "accounting_classes": bundle.accounting_classes,
+    }
+
+
 async def _validate_approval_candidate(
     db, organization_id, proposal, job, version, now_utc, current_active
 ):
@@ -437,12 +480,14 @@ async def _validate_approval_candidate(
             "As condições do horário mudaram. Gere uma nova proposta.",
             context={"proposal_status": "STALE", "configuration_code": exc.code},
         ) from exc
-    lessons, _, _ = await load_version_lessons(
+    context = _unit_context(bundle)
+    version_lessons = await load_version_lessons(
         db,
         organization_id,
         proposal.school_year_id,
         version,
         ZoneInfo(bundle.snapshot.timezone_name),
+        **context,
     )
     try:
         consumed, plannable = await split_version_history(
@@ -450,7 +495,7 @@ async def _validate_approval_candidate(
             organization_id,
             proposal.school_year_id,
             version,
-            lessons,
+            version_lessons.lessons,
             {row.assignment_id: row for row in bundle.snapshot.assignments},
             bundle.snapshot.executed_minutes,
             now_utc=now_utc,
@@ -472,6 +517,7 @@ async def _validate_approval_candidate(
         previous_version_id=current_active,
         consumed=consumed,
         zone=ZoneInfo(bundle.snapshot.timezone_name),
+        **context,
     )
     report = validate_candidate(bundle.snapshot, CandidateSchedule(plannable))
     if not report.valid:
@@ -651,17 +697,16 @@ async def _carry_consumed_lessons(
     previous_version_id: int | None,
     new_version_id: int,
     candidate_identities: set[int],
-    assignments,
-    executed,
+    bundle: SnapshotBundle,
     zone: ZoneInfo,
-    lesson_db_ids: dict[int, int],
-    lesson_assignments: dict[int, int],
+    lesson_rows: dict[tuple[int, int | None], int],
     now_utc: datetime,
 ) -> None:
     """Copy executed and missed history under the stable identity.
 
-    Logged history stays outside planned credit. The new version retains its
-    physical positions, original slices and operational logs.
+    Logged history stays outside planned credit. Every row of a joint sister
+    set is copied as its own row so the whole group keeps all its classes'
+    occupancy, even when the classes logged different states.
     """
     if previous_version_id is None:
         return
@@ -674,59 +719,82 @@ async def _carry_consumed_lessons(
     )
     if previous is None:
         return
-    lessons, _, _ = await load_version_lessons(db, organization_id, school_year_id, previous, zone)
+    context = _unit_context(bundle)
+    version_lessons = await load_version_lessons(
+        db, organization_id, school_year_id, previous, zone, **context
+    )
     consumed, _ = await split_version_history(
         db,
         organization_id,
         school_year_id,
         previous,
-        lessons,
-        assignments,
-        executed,
+        version_lessons.lessons,
+        {row.assignment_id: row for row in bundle.snapshot.assignments},
+        bundle.snapshot.executed_minutes,
         now_utc=now_utc,
     )
-    old_db_ids = {
-        row.stable_key: row.id
-        for row in (
-            await db.scalars(
-                select(SchedulerLessonV1).where(
-                    SchedulerLessonV1.organization_id == organization_id,
-                    SchedulerLessonV1.school_year_id == school_year_id,
-                    SchedulerLessonV1.version_id == previous_version_id,
-                )
-            )
-        ).all()
+    consumed_identities = {
+        lesson.lesson_id for lesson in consumed if lesson.lesson_id not in candidate_identities
     }
-    for lesson in consumed:
-        if lesson.lesson_id in candidate_identities:
+    if not consumed_identities:
+        return
+    previous_rows = (
+        await db.scalars(
+            select(SchedulerLessonV1)
+            .where(
+                SchedulerLessonV1.organization_id == organization_id,
+                SchedulerLessonV1.school_year_id == school_year_id,
+                SchedulerLessonV1.version_id == previous_version_id,
+            )
+            .order_by(SchedulerLessonV1.id)
+        )
+    ).all()
+    previous_ids = [row.id for row in previous_rows]
+    slices_by_db_id: dict[int, list[SchedulerLessonSliceV1]] = defaultdict(list)
+    if previous_ids:
+        for slice_row in (
+            await db.scalars(
+                select(SchedulerLessonSliceV1)
+                .where(
+                    SchedulerLessonSliceV1.organization_id == organization_id,
+                    SchedulerLessonSliceV1.school_year_id == school_year_id,
+                    SchedulerLessonSliceV1.lesson_id.in_(previous_ids),
+                )
+                .order_by(SchedulerLessonSliceV1.id)
+            )
+        ).all():
+            slices_by_db_id[slice_row.lesson_id].append(slice_row)
+    for row in previous_rows:
+        identity = version_lessons.identity_by_db_id.get(row.id)
+        if identity is None or identity not in consumed_identities:
             continue
-        row = SchedulerLessonV1(
+        new_row = SchedulerLessonV1(
             organization_id=organization_id,
             school_year_id=school_year_id,
             version_id=new_version_id,
-            assignment_id=lesson.assignment_id,
-            stable_key=str(lesson.lesson_id),
-            school_date=lesson.period.school_date,
-            starts_at=lesson.period.start_utc,
-            ends_at=lesson.period.end_utc,
-            room_id=lesson.room_id,
-            physical_minutes=lesson.period.duration_minutes,
-            credit_minutes=lesson.credit_minutes,
-            source_lesson_id=old_db_ids.get(str(lesson.lesson_id)),
+            assignment_id=row.assignment_id,
+            stable_key=row.stable_key,
+            school_date=row.school_date,
+            starts_at=row.starts_at,
+            ends_at=row.ends_at,
+            room_id=row.room_id,
+            physical_minutes=row.physical_minutes,
+            credit_minutes=row.credit_minutes,
+            source_lesson_id=row.id,
+            teaching_unit_key=row.teaching_unit_key,
         )
-        db.add(row)
+        db.add(new_row)
         await db.flush()
-        lesson_db_ids[lesson.lesson_id] = row.id
-        lesson_assignments[lesson.lesson_id] = lesson.assignment_id
-        for slice_ in lesson.slices:
+        lesson_rows[(identity, bundle.accounting_classes.get(row.assignment_id))] = new_row.id
+        for slice_row in slices_by_db_id.get(row.id, ()):
             db.add(
                 SchedulerLessonSliceV1(
                     organization_id=organization_id,
                     school_year_id=school_year_id,
-                    lesson_id=row.id,
-                    module_id=slice_.module_id,
-                    offset_minutes=slice_.offset_minutes,
-                    minutes=slice_.credit_minutes,
+                    lesson_id=new_row.id,
+                    module_id=slice_row.module_id,
+                    offset_minutes=slice_row.offset_minutes,
+                    minutes=slice_row.minutes,
                 )
             )
 
@@ -739,6 +807,9 @@ async def _check_consumed_history(
     previous_version_id: int | None,
     consumed,
     zone: ZoneInfo,
+    unit_keys=None,
+    class_ids_by_unit=None,
+    accounting_classes=None,
 ) -> None:
     """Operational history must match the previous version exactly.
 
@@ -766,9 +837,18 @@ async def _check_consumed_history(
             "A versão publicada anterior desapareceu.",
             context={"proposal_status": "STALE"},
         )
-    previous_lessons, _, _ = await load_version_lessons(
-        db, organization_id, school_year_id, previous, zone
-    )
+    previous_lessons = (
+        await load_version_lessons(
+            db,
+            organization_id,
+            school_year_id,
+            previous,
+            zone,
+            unit_keys=unit_keys,
+            class_ids_by_unit=class_ids_by_unit,
+            accounting_classes=accounting_classes,
+        )
+    ).lessons
     previous_by_identity = {lesson.lesson_id: lesson for lesson in previous_lessons}
 
     def _slices(lesson) -> tuple:
@@ -815,6 +895,7 @@ async def _repoint_lesson_logs(
                 SchedulerLessonV1.id,
                 SchedulerLessonV1.version_id,
                 SchedulerLessonV1.stable_key,
+                SchedulerLessonV1.assignment_id,
             ).where(
                 SchedulerLessonV1.organization_id == organization_id,
                 SchedulerLessonV1.school_year_id == school_year_id,
@@ -822,16 +903,16 @@ async def _repoint_lesson_logs(
             )
         )
     ).all()
-    previous: dict[str, int] = {}
-    current: dict[str, int] = {}
-    for lesson_id, version_id, stable_key in rows:
+    previous: dict[tuple[str, int], int] = {}
+    current: dict[tuple[str, int], int] = {}
+    for lesson_id, version_id, stable_key, assignment_id in rows:
         if version_id == previous_version_id:
-            previous[stable_key] = lesson_id
+            previous.setdefault((stable_key, assignment_id), lesson_id)
         else:
-            current[stable_key] = lesson_id
+            current[(stable_key, assignment_id)] = lesson_id
     moved = 0
-    for stable_key, new_id in current.items():
-        old_id = previous.get(stable_key)
+    for key, new_id in current.items():
+        old_id = previous.get(key)
         if old_id is None or old_id == new_id:
             continue
         result = await db.execute(

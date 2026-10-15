@@ -346,6 +346,50 @@ describe('WeekGrid (Ponto 8.1)', () => {
   })
 })
 
+describe('WeekGrid joint lessons', () => {
+  it('labels a class-view joint lesson with the other classes', () => {
+    const jointSlot = {
+      ...baseSlot,
+      joint_classes: [{ id: 12, name: '10.º MAS' }],
+    }
+
+    render(
+      <WeekGrid
+        slots={[jointSlot]}
+        isLoading={false}
+        baseTimeslots={[jointSlot.timeslot]}
+        weekStart="2026-04-20"
+      />,
+    )
+
+    expect(screen.getByText(/Programação · em conjunto com 10\.º MAS/)).toBeInTheDocument()
+    expect(screen.getByRole('gridcell', { name: /em conjunto com 10\.º MAS/ })).toBeInTheDocument()
+  })
+
+  it('shows one block with every class in the teacher view', () => {
+    const jointSlot = {
+      ...baseSlot,
+      class_info: undefined,
+      class_infos: [
+        { class_id: 11, class_name: '10.º MKT' },
+        { class_id: 12, class_name: '10.º MAS' },
+      ],
+    }
+
+    render(
+      <WeekGrid
+        slots={[jointSlot]}
+        isLoading={false}
+        baseTimeslots={[jointSlot.timeslot]}
+        weekStart="2026-04-20"
+      />,
+    )
+
+    expect(screen.getByText('10.º MKT + 10.º MAS')).toBeInTheDocument()
+    expect(screen.getByRole('gridcell', { name: /10\.º MKT \+ 10\.º MAS/ })).toBeInTheDocument()
+  })
+})
+
 describe('WeekGrid (W07.3 grid versions)', () => {
   const mondaySlot = {
     ...baseSlot,

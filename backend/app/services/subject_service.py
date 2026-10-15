@@ -138,6 +138,13 @@ async def _delete_removed_modules(
     ids_to_delete = set(existing_modules.keys()) - incoming_ids
     if not ids_to_delete:
         return
+    joint_module_ids = await resource_removal.joint_module_ids(db, organization_id, ids_to_delete)
+    if joint_module_ids:
+        raise AppError(
+            kind="conflict",
+            code="resource_in_use",
+            detail="O módulo pertence a uma aula conjunta.",
+        )
     referenced = await db.scalar(
         select(models.ProgressLedgerEntry.id)
         .where(

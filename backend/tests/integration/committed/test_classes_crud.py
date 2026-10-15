@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models
 from app.config import settings
+from tests._support.db_fixtures import select_all_subject_modules
 
 API = settings.API_V1_STR
 
@@ -231,6 +232,13 @@ class TestClassesCRUD:
             organization_id=org_id,
         )
         db_session.add(link)
+        await db_session.flush()
+        await select_all_subject_modules(
+            db_session,
+            organization_id=org_id,
+            class_subject_link_id=link.id,
+            subject_id=subject.id,
+        )
         await db_session.flush()
 
         entry = models.ProgressLedgerEntry(

@@ -37,6 +37,9 @@ CONFIRMATION_REQUIRED_MESSAGE = (
 STALE_MESSAGE = "As aulas afetadas mudaram desde a pré-visualização. Repita a pré-visualização."
 MISSING_SCHOOL_YEAR_MESSAGE = "Configure o ano letivo antes de criar fluxos de estágio."
 INTERNSHIP_FLOW_OCCURRENCE_REASON = "Aula retirada por fluxo de estágio"
+# J18: a joint lesson leaves for every class; each class gets its own reason.
+INTERNSHIP_BLOCKED_NOTE = "Turma em estágio"
+INTERNSHIP_JOINT_NOTE = "Aula conjunta retirada por estágio de {class_name}"
 
 
 class InternshipFlowError(RuntimeError):
@@ -351,11 +354,32 @@ async def remove_affected_blocks(
 ) -> None:
     if not lessons:
         return
+    # A joint lesson leaves the schedule as a whole: withdraw every sibling so
+    # no class keeps a lesson the others lost (J18).
+    affected = (
+        select(SchedulerLessonV1.version_id, SchedulerLessonV1.stable_key)
+        .where(
+            SchedulerLessonV1.organization_id == organization_id,
+            SchedulerLessonV1.id.in_([lesson.lesson_id for lesson in lessons]),
+        )
+        .subquery()
+    )
+    sibling_lessons = (
+        select(SchedulerLessonV1.id)
+        .join(
+            affected,
+            and_(
+                SchedulerLessonV1.version_id == affected.c.version_id,
+                SchedulerLessonV1.stable_key == affected.c.stable_key,
+            ),
+        )
+        .where(SchedulerLessonV1.organization_id == organization_id)
+    )
     await db.execute(
         update(SchedulerLessonLogV1)
         .where(
             SchedulerLessonLogV1.organization_id == organization_id,
-            SchedulerLessonLogV1.lesson_id.in_([lesson.lesson_id for lesson in lessons]),
+            SchedulerLessonLogV1.lesson_id.in_(sibling_lessons),
         )
         .values(withdrawn_at=datetime.now(UTC))
     )
@@ -410,6 +434,85 @@ async def _stable_impact(
     raise InternshipFlowStale(STALE_MESSAGE)
 
 
+async def _sibling_members(
+    db: AsyncSession, organization_id: int, lesson: SchedulerLessonV1 | None
+) -> list[dict]:
+    """Member classes of one logical lesson, ordered by lesson id."""
+    if lesson is None:
+        return []
+    rows = (
+        await db.execute(
+            select(SchedulerLessonV1.id, CurricularAssignment.class_id, models.Class.name)
+            .join(
+                CurricularAssignment,
+                and_(
+                    CurricularAssignment.organization_id == SchedulerLessonV1.organization_id,
+                    CurricularAssignment.school_year_id == SchedulerLessonV1.school_year_id,
+                    CurricularAssignment.id == SchedulerLessonV1.assignment_id,
+                ),
+            )
+            .join(
+                models.Class,
+                and_(
+                    models.Class.organization_id == organization_id,
+                    models.Class.id == CurricularAssignment.class_id,
+                ),
+            )
+            .where(
+                SchedulerLessonV1.organization_id == organization_id,
+                SchedulerLessonV1.version_id == lesson.version_id,
+                SchedulerLessonV1.stable_key == lesson.stable_key,
+            )
+            .order_by(SchedulerLessonV1.id)
+        )
+    ).all()
+    return [{"lesson_id": row.id, "class_id": row.class_id, "class_name": row.name} for row in rows]
+
+
+async def _record_joint_internship_occurrence(
+    db: AsyncSession,
+    organization_id: int,
+    affected: AffectedLesson,
+    log: SchedulerLessonLogV1,
+    members: list[dict],
+    changed_by_membership_id: int,
+) -> None:
+    """Withdraw a joint lesson for every class, one reason per class (J18)."""
+    blocked_name = next(
+        (member["class_name"] for member in members if member["class_id"] == affected.class_id),
+        None,
+    )
+    for member in members:
+        member_log = await db.scalar(
+            select(SchedulerLessonLogV1)
+            .where(
+                SchedulerLessonLogV1.organization_id == organization_id,
+                SchedulerLessonLogV1.lesson_id == member["lesson_id"],
+            )
+            .with_for_update()
+        )
+        if member_log is None:
+            continue
+        if member["class_id"] == affected.class_id:
+            member_log.notes = INTERNSHIP_BLOCKED_NOTE
+        else:
+            member_log.notes = INTERNSHIP_JOINT_NOTE.format(
+                class_name=blocked_name or affected.class_id
+            )
+    await db.flush()
+    await occurrences_v1.update_occurrence(
+        db,
+        organization_id,
+        log.id,
+        schemas.LessonOccurrenceUpdate(
+            status=models.LessonOccurrenceStatus.GAP,
+            version=log.revision,
+            class_ids=[member["class_id"] for member in members],
+        ),
+        decided_by_membership_id=changed_by_membership_id,
+    )
+
+
 async def _record_internship_occurrences(
     db: AsyncSession,
     organization_id: int,
@@ -438,6 +541,13 @@ async def _record_internship_occurrences(
                 SchedulerLessonLogV1.lesson_id == lesson.lesson_id,
             )
         )
+        lesson_row = await db.get(SchedulerLessonV1, lesson.lesson_id)
+        members = await _sibling_members(db, organization_id, lesson_row)
+        if len(members) > 1:
+            await _record_joint_internship_occurrence(
+                db, organization_id, lesson, log, members, changed_by_membership_id
+            )
+            continue
         await occurrences_v1.update_occurrence(
             db,
             organization_id,

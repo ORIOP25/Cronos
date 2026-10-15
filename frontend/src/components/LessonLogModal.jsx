@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { toast } from 'react-hot-toast'
 import { Link } from 'react-router-dom'
 import {
@@ -8,6 +8,7 @@ import {
   CModalBody,
   CModalFooter,
   CButton,
+  CFormCheck,
   CFormTextarea,
   CBadge,
   CSpinner,
@@ -41,6 +42,37 @@ const LessonLogModal = ({ onClose, slot, isAdmin = false, readOnly = false, allo
   const isTutorial = Array.isArray(allowedActions)
   const canEditTimesheet = !readOnly && !isTutorial
 
+  const jointClasses = useMemo(() => {
+    if (Array.isArray(slot?.class_infos) && slot.class_infos.length > 0) {
+      return slot.class_infos.map((item) => ({
+        id: item.class_id ?? item.id,
+        name: item.class_name ?? item.name,
+        status: item.lesson_log_status ?? item.status,
+      }))
+    }
+    if (Array.isArray(slot?.joint_classes) && slot.joint_classes.length > 0) {
+      const list = []
+      if (slot.class_info) list.push({ id: slot.class_info.id, name: slot.class_info.name })
+      for (const item of slot.joint_classes) list.push({ id: item.id, name: item.name })
+      return list
+    }
+    return []
+  }, [slot])
+  const isJointLesson = jointClasses.length > 1
+  const [absentClassIds, setAbsentClassIds] = useState(() => (
+    jointClasses.filter((item) => item.status === 'OCCURRENCE').map((item) => item.id)
+  ))
+
+  const handlePresentToggle = (classId) => {
+    setAbsentClassIds((previous) => {
+      const next = previous.includes(classId)
+        ? previous.filter((id) => id !== classId)
+        : [...previous, classId]
+      if (next.length >= jointClasses.length) return previous
+      return next
+    })
+  }
+
   const MAX_SUMMARY_LENGTH = 2000
   const MAX_NOTES_LENGTH = 1000
 
@@ -48,11 +80,15 @@ const LessonLogModal = ({ onClose, slot, isAdmin = false, readOnly = false, allo
     if (!canCreateOccurrence || (isTutorial && status !== 'OCCURRENCE')) return
     const attempt = attemptScope.capture()
     setErrorMessage('')
+    const payload = { status, summary, notes }
+    if (isJointLesson && status !== 'OCCURRENCE') {
+      payload.absent_class_ids = absentClassIds
+    }
     try {
       await upsertLogMutation.mutateAsync({
         operationalBlockId: slot.operational_block_id,
         schedulerLessonId: slot.scheduler_lesson_id,
-        payload: { status, summary, notes },
+        payload,
       })
       if (!attemptScope.isCurrent(attempt)) return
       onClose()
@@ -225,6 +261,32 @@ const LessonLogModal = ({ onClose, slot, isAdmin = false, readOnly = false, allo
               Aula registada. Semana {slot.week_timesheet_status === 'SUBMITTED' ? 'submetida' : 'aprovada'} — modo de consulta.
             </FeedbackBanner>
           </div>
+        )}
+
+        {/* Turmas presentes numa aula conjunta */}
+        {isJointLesson && (
+          <fieldset className="mb-3">
+            <legend className="h6">Turmas presentes</legend>
+            {jointClasses.map((item) => {
+              const present = !absentClassIds.includes(item.id)
+              return (
+                <div key={item.id}>
+                  <CFormCheck
+                    id={`joint-present-${item.id}`}
+                    label={item.name}
+                    checked={present}
+                    disabled={!canEditForm}
+                    onChange={() => handlePresentToggle(item.id)}
+                  />
+                  {!present && (
+                    <div className="text-muted ms-4" style={{ fontSize: '0.8rem' }}>
+                      A turma fica com uma ocorrência pendente. A direção decide a falta.
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </fieldset>
         )}
 
         {/* Lesson log form */}

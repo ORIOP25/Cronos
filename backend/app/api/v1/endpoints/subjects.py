@@ -2,7 +2,7 @@ from fastapi import APIRouter
 
 from app import schemas
 from app.api import deps
-from app.services import subject_service
+from app.services import joint_lesson_service, subject_service
 
 router = APIRouter()
 
@@ -15,6 +15,29 @@ async def read_subjects(
 ):
     # Qualquer utilizador autenticado pode ver a lista de disciplinas
     return await subject_service.get_subjects_by_org(db, current_user.organization_id)
+
+
+# --- 1b. Turmas candidatas a uma aula conjunta ---
+@router.get(
+    "/{subject_id}/joint-candidates",
+    response_model=list[schemas.JointCandidateRead],
+)
+async def get_joint_candidates(
+    subject_id: int,
+    class_id: int,
+    db: deps.DbSession,
+    current_user: deps.AdminActor,
+    group_id: int | None = None,
+    include_source: bool = False,
+):
+    return await joint_lesson_service.get_joint_candidates(
+        db,
+        subject_id,
+        class_id,
+        current_user.organization_id,
+        group_id=group_id,
+        include_source=include_source,
+    )
 
 
 # --- 2. Criar Disciplina ---

@@ -125,13 +125,18 @@ def _v1_week_operational_blocks(
     )
 
 
-def _tally_slot(item: dict, status: str | None) -> None:
+def _tally_logical_slot(item: dict, statuses: list[str | None]) -> None:
+    """Count one logical lesson once, even when it has several siblings (J16).
+
+    A joint lesson is registered only when every sibling has a record. The
+    completed and occurrence flags follow the whole group.
+    """
     item["total_slots"] += 1
-    if status in ("COMPLETED", "OCCURRENCE"):
+    if statuses and all(status in ("COMPLETED", "OCCURRENCE") for status in statuses):
         item["registered_slots"] += 1
-    if status == "COMPLETED":
+    if statuses and all(status == "COMPLETED" for status in statuses):
         item["completed_slots"] += 1
-    if status == "OCCURRENCE":
+    if any(status == "OCCURRENCE" for status in statuses):
         item["occurrence_slots"] += 1
 
 
@@ -153,17 +158,31 @@ def _v1_slot_counts(
         for teacher_id in teacher_ids
     }
     if teacher_ids:
-        for teacher_id, _lesson, lesson_log in _v1_week_lessons(
+        # Siblings of a joint lesson share ``(version_id, stable_key)``; they
+        # are one teacher-hour and one slot (J16).
+        lesson_groups: dict[tuple[int, str], list] = {}
+        for teacher_id, lesson, lesson_log in _v1_week_lessons(
             db, organization_id, year_id, version, teacher_ids, week_start_date
         ):
-            _tally_slot(counts[teacher_id], None if lesson_log is None else lesson_log.status)
-        for block, _lesson, lesson_log in _v1_week_operational_blocks(
+            lesson_groups.setdefault((lesson.version_id, lesson.stable_key), []).append(
+                (teacher_id, lesson_log)
+            )
+        for members in lesson_groups.values():
+            teacher_id = members[0][0]
+            _tally_logical_slot(
+                counts[teacher_id],
+                [None if log is None else log.status for _t, log in members],
+            )
+        block_groups: dict[tuple[int, str], list] = {}
+        for block, lesson, lesson_log in _v1_week_operational_blocks(
             db, organization_id, year_id, teacher_ids, week_start_date
         ):
-            _tally_slot(
-                counts[block.teacher_id],
-                None if lesson_log is None else lesson_log.status.value,
+            block_groups.setdefault((lesson.version_id, lesson.stable_key), []).append(
+                (block.teacher_id, None if lesson_log is None else lesson_log.status.value)
             )
+        for members in block_groups.values():
+            teacher_id = members[0][0]
+            _tally_logical_slot(counts[teacher_id], [status for _t, status in members])
     return counts
 
 
@@ -254,27 +273,43 @@ def _submit_v1_week(
             kind="bad_request", code="bad_request", detail="Sem aulas planeadas nesta semana."
         )
     now = datetime.now(UTC)
+    lesson_groups: dict[tuple[int, str], list] = {}
     for _teacher_id, lesson, lesson_log in rows:
+        lesson_groups.setdefault((lesson.version_id, lesson.stable_key), []).append(
+            (lesson, lesson_log)
+        )
+    for members in lesson_groups.values():
+        lesson, _log = members[0]
         if lesson.ends_at > now:
             raise AppError(
                 kind="bad_request",
                 code="bad_request",
                 detail=FUTURE_LESSON_MESSAGE,
             )
-        if lesson_log is None or lesson_log.status == "REVOKED":
+        # A joint lesson is registered only when every sibling has a record.
+        if any(log is None or log.status == "REVOKED" for _lesson, log in members):
             raise AppError(
                 kind="bad_request",
                 code="bad_request",
                 detail=UNRESOLVED_LESSON_MESSAGE,
             )
+    block_groups: dict[tuple[int, str], list] = {}
     for _block, lesson, lesson_log in blocks:
+        block_groups.setdefault((lesson.version_id, lesson.stable_key), []).append(
+            (lesson, lesson_log)
+        )
+    for members in block_groups.values():
+        lesson, _log = members[0]
         if lesson.ends_at > now:
             raise AppError(
                 kind="bad_request",
                 code="bad_request",
                 detail=FUTURE_LESSON_MESSAGE,
             )
-        if lesson_log is None or lesson_log.status != models.LessonLogStatus.COMPLETED:
+        if any(
+            log is None or log.status != models.LessonLogStatus.COMPLETED
+            for _lesson, log in members
+        ):
             raise AppError(
                 kind="bad_request",
                 code="bad_request",

@@ -55,7 +55,7 @@ def snapshot(periods, minutes=60, count=1, **kwargs):
         assignments=tuple(
             Assignment(
                 i,
-                i,
+                (i,),
                 i,
                 i,
                 frozenset({i}),

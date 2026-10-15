@@ -27,6 +27,10 @@ Apply these rules to each resource:
    constraints and class or course links.
 5. Keep the course rule. Remove current classes first. Archive a course whose
    classes are archived.
+6. Block a resource used by a joint lesson. A class/subject link in a
+   `joint_lesson_group_member`, a member class, and a `joint_lesson_group_module`
+   return HTTP 409 with the `resource_in_use` code. See
+   [Professional Education](../02_domain_model/PROFESSIONAL_EDUCATION.md).
 
 ## HTTP contract
 

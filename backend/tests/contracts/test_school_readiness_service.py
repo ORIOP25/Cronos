@@ -8,7 +8,11 @@ from app.services.availability_matrix_service import (
     AvailabilityMatrixRepairService,
 )
 from app.services.school_readiness_service import SchoolReadinessService
-from tests._support.db_fixtures import create_org_and_user, create_teacher_profile
+from tests._support.db_fixtures import (
+    create_org_and_user,
+    create_teacher_profile,
+    select_all_subject_modules,
+)
 
 pytestmark = pytest.mark.postgresql
 
@@ -136,14 +140,20 @@ async def test_readiness_evaluates_teachers_before_class_subject_links(db_sessio
     assert teacher_report.issues[0].code == "TEACHER_ASSIGNMENT_REQUIRED"
     assert teacher_report.issues[0].route == "/courses"
 
-    db_session.add(
-        models.ClassSubjectLink(
-            organization_id=organization.id,
-            class_id=school_class.id,
-            subject_id=subject.id,
-            grade_level=10,
-            teacher_id=None,
-        )
+    link = models.ClassSubjectLink(
+        organization_id=organization.id,
+        class_id=school_class.id,
+        subject_id=subject.id,
+        grade_level=10,
+        teacher_id=None,
+    )
+    db_session.add(link)
+    await db_session.flush()
+    await select_all_subject_modules(
+        db_session,
+        organization_id=organization.id,
+        class_subject_link_id=link.id,
+        subject_id=subject.id,
     )
     await db_session.flush()
 
@@ -319,6 +329,13 @@ async def test_readiness_counts_scheduler_only_teacher_assignment(db_session):
     )
     db_session.add(link)
     await db_session.flush()
+    await select_all_subject_modules(
+        db_session,
+        organization_id=organization.id,
+        class_subject_link_id=link.id,
+        subject_id=subject.id,
+    )
+    await db_session.flush()
 
     service = SchoolReadinessService(db_session)
     competency_only_report = await service.evaluate_bases(organization.id)
@@ -441,6 +458,13 @@ async def test_readiness_mixed_and_fully_impossible_availability(db_session):
         end_time=time(10, 20),
     )
     db_session.add_all([slot1, slot2])
+    await db_session.flush()
+    await select_all_subject_modules(
+        db_session,
+        organization_id=organization.id,
+        class_subject_link_id=link.id,
+        subject_id=subject.id,
+    )
     await db_session.flush()
 
     # Availability from another tenant must never participate in this report.
@@ -610,15 +634,14 @@ async def test_readiness_requires_an_active_compatible_room(db_session):
         name="Professor Sala",
         subject_ids=[subject.id],
     )
-    db_session.add(
-        models.ClassSubjectLink(
-            organization_id=organization.id,
-            class_id=school_class.id,
-            subject_id=subject.id,
-            grade_level=school_class.grade_level,
-            teacher_id=teacher.id,
-        )
+    link = models.ClassSubjectLink(
+        organization_id=organization.id,
+        class_id=school_class.id,
+        subject_id=subject.id,
+        grade_level=school_class.grade_level,
+        teacher_id=teacher.id,
     )
+    db_session.add(link)
     db_session.add(
         models.Timeslot(
             organization_id=organization.id,
@@ -626,6 +649,13 @@ async def test_readiness_requires_an_active_compatible_room(db_session):
             start_time=time(8, 30),
             end_time=time(9, 20),
         )
+    )
+    await db_session.flush()
+    await select_all_subject_modules(
+        db_session,
+        organization_id=organization.id,
+        class_subject_link_id=link.id,
+        subject_id=subject.id,
     )
     await db_session.flush()
 
@@ -644,3 +674,122 @@ async def test_readiness_requires_an_active_compatible_room(db_session):
 
     assert active_report.depth == 6
     assert "COMPATIBLE_ROOM_REQUIRED" not in {issue.code for issue in active_report.issues}
+
+
+@pytest.mark.asyncio
+async def test_readiness_invalid_joint_member_blocks_the_group(db_session):
+    organization, _ = await create_org_and_user(
+        db_session,
+        clerk_user_id="readiness-joint-user",
+        clerk_org_id="readiness-joint-org",
+    )
+    course = models.Course(organization_id=organization.id, name="Curso J", abbreviation="CJ")
+    subject = models.Subject(organization_id=organization.id, name="Português")
+    room = models.Room(
+        organization_id=organization.id,
+        name="Sala J",
+        capacity=40,
+        type=models.RoomType.normal,
+    )
+    db_session.add_all([course, subject, room])
+    await db_session.flush()
+    school_year = models.SchedulerSchoolYear(
+        organization_id=organization.id,
+        label="2025/2026",
+        start_date=date(2025, 9, 1),
+        hard_end_date=date(2026, 6, 30),
+        is_active=True,
+    )
+    db_session.add(school_year)
+    await db_session.flush()
+    db_session.add(
+        models.SchedulerSchoolYearState(
+            organization_id=organization.id,
+            school_year_id=school_year.id,
+            school_year_publication_state=models.SchoolYearPublicationState.UNPUBLISHED,
+            scheduler_state_version=1,
+        )
+    )
+    module = models.Module(
+        organization_id=organization.id,
+        subject_id=subject.id,
+        name="M1",
+        required_minutes=60,
+        order=0,
+    )
+    db_session.add(module)
+    db_session.add(
+        models.Timeslot(
+            organization_id=organization.id,
+            day_of_week=0,
+            start_time=time(8, 30),
+            end_time=time(9, 20),
+        )
+    )
+    await db_session.flush()
+    teacher = await create_teacher_profile(
+        db_session, organization_id=organization.id, subject_ids=[subject.id]
+    )
+    links = []
+    for index in range(2):
+        school_class = models.Class(
+            organization_id=organization.id,
+            course_id=course.id,
+            name=f"Turma {index}",
+            size=18,
+            grade_level=10,
+            start_year=2025,
+            end_year=2028,
+        )
+        db_session.add(school_class)
+        await db_session.flush()
+        link = models.ClassSubjectLink(
+            organization_id=organization.id,
+            class_id=school_class.id,
+            subject_id=subject.id,
+            grade_level=10,
+            teacher_id=teacher.id,
+        )
+        db_session.add(link)
+        await db_session.flush()
+        await select_all_subject_modules(
+            db_session,
+            organization_id=organization.id,
+            class_subject_link_id=link.id,
+            subject_id=subject.id,
+        )
+        links.append(link)
+    group = models.JointLessonGroup(organization_id=organization.id, subject_id=subject.id)
+    db_session.add(group)
+    await db_session.flush()
+    await db_session.execute(
+        models.joint_lesson_group_member.insert().values(
+            [
+                {
+                    "organization_id": organization.id,
+                    "group_id": group.id,
+                    "class_subject_link_id": link.id,
+                }
+                for link in links
+            ]
+        )
+    )
+    await db_session.execute(
+        models.joint_lesson_group_module.insert().values(
+            organization_id=organization.id, group_id=group.id, module_id=module.id
+        )
+    )
+    await db_session.flush()
+
+    service = SchoolReadinessService(db_session)
+    ready = await service.evaluate_bases(organization.id)
+    assert ready.depth == 6
+    assert ready.complete is True
+
+    links[1].teacher_id = None
+    await db_session.flush()
+
+    invalid = await service.evaluate_bases(organization.id)
+    assert invalid.depth == 6
+    assert invalid.complete is False
+    assert "JOINT_GROUP_INCOMPLETE" in {issue.code for issue in invalid.issues}

@@ -322,15 +322,14 @@ async def test_populated_dashboard_skips_fingerprints_with_bounded_queries(db_se
     )
     db_session.add_all([course, subject, room])
     await db_session.flush()
-    db_session.add(
-        models.Module(
-            organization_id=organization.id,
-            subject_id=subject.id,
-            name="Módulo Populado",
-            required_minutes=60,
-            order=0,
-        )
+    module = models.Module(
+        organization_id=organization.id,
+        subject_id=subject.id,
+        name="Módulo Populado",
+        required_minutes=60,
+        order=0,
     )
+    db_session.add(module)
 
     teachers = []
     classes = []
@@ -365,6 +364,19 @@ async def test_populated_dashboard_skips_fingerprints_with_bounded_queries(db_se
             )
         )
     db_session.add_all(links)
+    await db_session.commit()
+    await db_session.execute(
+        models.class_subject_module.insert().values(
+            [
+                {
+                    "organization_id": organization.id,
+                    "class_subject_link_id": link.id,
+                    "module_id": module.id,
+                }
+                for link in links
+            ]
+        )
+    )
     await db_session.commit()
 
     async def fail_if_called(*_args, **_kwargs):

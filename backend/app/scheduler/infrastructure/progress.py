@@ -23,6 +23,7 @@ from app.scheduler.domain.demand import (
     ExecutionEntry,
     ModuleCredit,
     append_execution,
+    close_retired_modules,
     completed_by_module,
     remaining_minutes,
 )
@@ -714,27 +715,21 @@ async def settle_open_debt(
     total = sum(open_debt.values())
     if total == 0:
         return 0
-    executed = (await load_executed_minutes(db, organization_id, [assignment_id])).get(
-        assignment_id, {}
+    # Planning view: a retired module is closed at its executed minutes and
+    # never receives new credit from the year-reset settlement.
+    requirements, executed_by_assignment = await load_planning_requirements(
+        db, organization_id, [assignment_id]
     )
-    requirement_rows = (
-        await db.execute(
-            select(CurricularRequirement.module_id, CurricularRequirement.required_minutes)
-            .where(
-                CurricularRequirement.organization_id == organization_id,
-                CurricularRequirement.assignment_id == assignment_id,
-            )
-            .order_by(CurricularRequirement.sequence)
-        )
-    ).all()
+    modules = requirements.get(assignment_id, ())
+    executed = executed_by_assignment.get(assignment_id, {})
     credits: list[ModuleCredit] = []
     remaining = total
-    for module_id, required_minutes in requirement_rows:
-        available = required_minutes - int(executed.get(module_id, 0))
+    for module in modules:
+        available = module.required_minutes - int(executed.get(module.module_id, 0))
         if available <= 0:
             continue
         taken = min(remaining, available)
-        credits.append(ModuleCredit(module_id, taken))
+        credits.append(ModuleCredit(module.module_id, taken))
         remaining -= taken
         if remaining == 0:
             break
@@ -1031,6 +1026,67 @@ async def load_executed_minutes(
         entries = _entries_from_rows(by_assignment.get(assignment_id, []), credits_by_execution)
         executed[assignment_id] = completed_by_module(modules, entries)
     return executed
+
+
+async def load_planning_requirements(
+    db: AsyncSession,
+    organization_id: int,
+    assignment_ids: Sequence[int],
+) -> tuple[
+    dict[int, tuple[ModuleRequirement, ...]],
+    dict[int, dict[int, int]],
+]:
+    """Planning view per assignment: retired modules closed at executed minutes.
+
+    Every requirement row, including ``planned = false``, reproduces the
+    history through ``completed_by_module`` with the catalogue minutes. The
+    retired rows are then closed by :func:`close_retired_modules`, so the
+    planning order and the executed minutes only cover the modules that remain.
+    """
+    identifiers = sorted(set(assignment_ids))
+    if not identifiers:
+        return {}, {}
+    requirement_rows = (
+        await db.execute(
+            select(
+                CurricularRequirement.assignment_id,
+                CurricularRequirement.module_id,
+                CurricularRequirement.sequence,
+                CurricularRequirement.required_minutes,
+                CurricularRequirement.planned,
+            )
+            .where(
+                CurricularRequirement.organization_id == organization_id,
+                CurricularRequirement.assignment_id.in_(identifiers),
+            )
+            .order_by(CurricularRequirement.assignment_id, CurricularRequirement.sequence)
+        )
+    ).all()
+    modules_by_assignment: dict[int, list[ModuleRequirement]] = defaultdict(list)
+    retired_by_assignment: dict[int, set[int]] = defaultdict(set)
+    for assignment_id, module_id, sequence, required_minutes, planned in requirement_rows:
+        modules_by_assignment[assignment_id].append(
+            ModuleRequirement(module_id, sequence, required_minutes)
+        )
+        if not planned:
+            retired_by_assignment[assignment_id].add(module_id)
+    completed = await load_executed_minutes(db, organization_id, identifiers)
+    planning: dict[int, tuple[ModuleRequirement, ...]] = {}
+    planning_completed: dict[int, dict[int, int]] = {}
+    for assignment_id in identifiers:
+        modules = modules_by_assignment.get(assignment_id, [])
+        if not modules:
+            planning[assignment_id] = ()
+            planning_completed[assignment_id] = {}
+            continue
+        closed, closed_completed = close_retired_modules(
+            modules,
+            retired_by_assignment.get(assignment_id, set()),
+            completed.get(assignment_id, {}),
+        )
+        planning[assignment_id] = closed
+        planning_completed[assignment_id] = closed_completed
+    return planning, planning_completed
 
 
 async def load_open_debt(

@@ -100,6 +100,23 @@ def period_from_dict(data: list[Any]) -> Period:
     )
 
 
+def _classes_token(class_ids: tuple[int, ...] | None) -> Any:
+    """One class keeps the legacy scalar so a school without joints keeps its digest."""
+    if class_ids is None:
+        return None
+    if len(class_ids) == 1:
+        return class_ids[0]
+    return list(class_ids)
+
+
+def _classes_from_token(token: Any) -> tuple[int, ...] | None:
+    if token is None:
+        return None
+    if isinstance(token, int):
+        return (token,)
+    return tuple(token)
+
+
 def lesson_to_dict(lesson: ScheduledLesson) -> list[Any]:
     return [
         lesson.lesson_id,
@@ -110,7 +127,7 @@ def lesson_to_dict(lesson: ScheduledLesson) -> list[Any]:
         sorted([row.module_id, row.offset_minutes, row.credit_minutes] for row in lesson.slices),
         lesson.source_lesson_id,
         lesson.teacher_id,
-        lesson.class_id,
+        _classes_token(lesson.class_ids),
     ]
 
 
@@ -124,7 +141,7 @@ def lesson_from_dict(data: list[Any]) -> ScheduledLesson:
         slices=tuple(ModuleSlice(data[0], row[0], row[1], row[2]) for row in data[5]),
         source_lesson_id=data[6],
         teacher_id=data[7],
-        class_id=data[8],
+        class_ids=_classes_from_token(data[8]),
     )
 
 
@@ -148,6 +165,38 @@ def _unavailability_from_dict(data: list[Any]) -> Unavailability:
     return Unavailability(UnavailableResource(data[0]), data[1], period_from_dict(data[2]))
 
 
+def _assignment_to_dict(row: Assignment) -> dict[str, Any]:
+    """A single-class unit keeps the legacy scalar so its digest does not move."""
+    payload: dict[str, Any] = {
+        "assignment_id": row.assignment_id,
+        "subject_id": row.subject_id,
+        "teacher_id": row.teacher_id,
+        "eligible_room_ids": sorted(row.eligible_room_ids),
+        "modules": [
+            [module.module_id, module.sequence, module.required_minutes] for module in row.modules
+        ],
+    }
+    if len(row.class_ids) == 1:
+        payload["class_id"] = row.class_ids[0]
+    else:
+        payload["class_ids"] = list(row.class_ids)
+    return payload
+
+
+def _assignment_from_dict(row: Mapping[str, Any]) -> Assignment:
+    class_ids = tuple(row["class_ids"]) if "class_ids" in row else (row["class_id"],)
+    return Assignment(
+        assignment_id=row["assignment_id"],
+        class_ids=class_ids,
+        subject_id=row["subject_id"],
+        teacher_id=row["teacher_id"],
+        eligible_room_ids=frozenset(row["eligible_room_ids"]),
+        modules=tuple(
+            ModuleRequirement(module[0], module[1], module[2]) for module in row["modules"]
+        ),
+    )
+
+
 def snapshot_to_dict(snapshot: PlanningSnapshot) -> dict[str, Any]:
     """Complete snapshot payload, sufficient to revalidate a stored candidate."""
     payload: dict[str, Any] = {
@@ -160,20 +209,7 @@ def snapshot_to_dict(snapshot: PlanningSnapshot) -> dict[str, Any]:
             [slot.day_of_week, time_token(slot.start_local), time_token(slot.end_local)]
             for slot in snapshot.grid_slots
         ],
-        "assignments": [
-            {
-                "assignment_id": row.assignment_id,
-                "class_id": row.class_id,
-                "subject_id": row.subject_id,
-                "teacher_id": row.teacher_id,
-                "eligible_room_ids": sorted(row.eligible_room_ids),
-                "modules": [
-                    [module.module_id, module.sequence, module.required_minutes]
-                    for module in row.modules
-                ],
-            }
-            for row in snapshot.assignments
-        ],
+        "assignments": [_assignment_to_dict(row) for row in snapshot.assignments],
         "executed_minutes": [
             [assignment_id, sorted([module_id, minutes] for module_id, minutes in rows.items())]
             for assignment_id, rows in sorted(snapshot.executed_minutes.items())
@@ -212,6 +248,12 @@ def snapshot_to_dict(snapshot: PlanningSnapshot) -> dict[str, Any]:
         }
     if snapshot.reserved_lesson_ids:
         payload["reserved_lesson_ids"] = sorted(snapshot.reserved_lesson_ids)
+    if snapshot.precedences:
+        payload["precedences"] = [list(edge) for edge in snapshot.precedences]
+    if snapshot.claim_classes:
+        payload["claim_classes"] = sorted(
+            [claim_id, class_id] for claim_id, class_id in snapshot.claim_classes.items()
+        )
     return payload
 
 
@@ -226,19 +268,7 @@ def snapshot_from_dict(data: Mapping[str, Any]) -> PlanningSnapshot:
             GridSlot(row[0], time.fromisoformat(row[1]), time.fromisoformat(row[2]))
             for row in data["grid_slots"]
         ),
-        assignments=tuple(
-            Assignment(
-                assignment_id=row["assignment_id"],
-                class_id=row["class_id"],
-                subject_id=row["subject_id"],
-                teacher_id=row["teacher_id"],
-                eligible_room_ids=frozenset(row["eligible_room_ids"]),
-                modules=tuple(
-                    ModuleRequirement(module[0], module[1], module[2]) for module in row["modules"]
-                ),
-            )
-            for row in data["assignments"]
-        ),
+        assignments=tuple(_assignment_from_dict(row) for row in data["assignments"]),
         executed_minutes={
             assignment_id: {module_id: minutes for module_id, minutes in rows}
             for assignment_id, rows in data["executed_minutes"]
@@ -262,6 +292,8 @@ def snapshot_from_dict(data: Mapping[str, Any]) -> PlanningSnapshot:
         claim_assignments={
             claim_id: assignment_id for claim_id, assignment_id in data.get("claim_assignments", ())
         },
+        precedences=tuple(tuple(edge) for edge in data.get("precedences", ())),
+        claim_classes={claim_id: class_id for claim_id, class_id in data.get("claim_classes", ())},
         active_version_id=data.get("active_version_id"),
         reserved_lesson_ids=frozenset(data.get("reserved_lesson_ids", ())),
         lunch_rule=(

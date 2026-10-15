@@ -72,13 +72,15 @@ export const useUpdateOccurrence = () => {
   const orgId = useOrganization().organization?.id
 
   return useMutation({
-    mutationFn: async ({ id, status, version, substituteTeacherId, substituteSubjectId }) => {
-      return apiClient.patch(`/occurrences/${id}`, {
+    mutationFn: async ({ id, status, version, substituteTeacherId, substituteSubjectId, classIds }) => {
+      const payload = {
         status,
         version,
         substitute_teacher_id: substituteTeacherId ?? null,
         substitute_subject_id: substituteSubjectId ?? null,
-      })
+      }
+      if (classIds !== undefined) payload.class_ids = classIds
+      return apiClient.patch(`/occurrences/${id}`, payload)
     },
     onSuccess: () => {
       void invalidateOrgQueries(queryClient, orgId, ['occurrences', 'debts', 'weekSchedule', 'classes', 'substitute-recommendations', 'substitute-diagnostics', 'dashboard', 'teacher-progress', 'my-timesheet', 'timesheets'])

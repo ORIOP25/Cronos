@@ -7,6 +7,7 @@ const hooks = vi.hoisted(() => ({
   debts: vi.fn(),
   occurrences: vi.fn(),
   cancel: vi.fn(),
+  update: vi.fn(),
 }))
 
 vi.mock('../features/operations/data', () => ({
@@ -17,7 +18,7 @@ vi.mock('../features/operations/data', () => ({
   useSubstituteRecommendations: () => ({
     data: [{ rank: 1, teacher_id: 2, teacher_name: 'Prof.ª Maria Santos', subject_id: 2, subject_name: 'Matemática' }],
   }),
-  useUpdateOccurrence: () => ({ isPending: false, mutate: vi.fn() }),
+  useUpdateOccurrence: () => ({ isPending: false, mutate: hooks.update }),
 }))
 
 vi.mock('../features/catalog/data', () => ({
@@ -32,6 +33,7 @@ vi.mock('../features/members/data', () => ({
 describe('Occurrences active tab ownership', () => {
   beforeEach(() => {
     hooks.cancel.mockReset()
+    hooks.update.mockReset()
     hooks.debts.mockReset().mockReturnValue({ data: { items: [] }, isLoading: false, isError: false })
     hooks.occurrences.mockReset().mockReturnValue({ data: { items: [] }, isLoading: false, isError: false })
   })
@@ -187,5 +189,115 @@ describe('Occurrences active tab ownership', () => {
       expect(screen.getAllByText('Horas em dívida').length).toBeGreaterThan(0)
       expect(screen.getByRole('cell', { name: '2 h' })).toBeInTheDocument()
     })
+  })
+
+  it('groups a joint lesson and decides each class with its own row id and version', async () => {
+    hooks.occurrences.mockReturnValue({
+      data: {
+        items: [{
+          id: 101,
+          date: '2026-10-12',
+          subject_name: 'Português',
+          status: 'GAP',
+          operational_state: 'OPEN_PENDING',
+          version: 2,
+          joint_lesson: {
+            classes: [
+              { class_id: 11, class_name: '10.º MKT', id: 101, status: 'GAP', operational_state: 'OPEN_PENDING', version: 2 },
+              { class_id: 12, class_name: '10.º MAS', id: 102, status: 'OCCURRENCE', operational_state: 'OPEN_PENDING', version: 1 },
+            ],
+          },
+        }],
+      },
+      isLoading: false,
+      isError: false,
+    })
+
+    renderWithRouter(<Occurrences />, { initialEntries: ['/absences'] })
+
+    expect(await screen.findByText(/Aula conjunta · Português · 10\.º MKT, 10\.º MAS/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Decidir para todas' })).toBeInTheDocument()
+
+    // Deciding the representative class bumps its revision; the sibling must
+    // still be decided with its own row id and version (no false STALE 409).
+    fireEvent.click(screen.getByRole('button', { name: 'Furo 10.º MKT' }))
+    expect(hooks.update).toHaveBeenNthCalledWith(
+      1,
+      { id: 101, status: 'GAP', version: 2, classIds: [11] },
+      expect.any(Object),
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Furo 10.º MAS' }))
+    expect(hooks.update).toHaveBeenNthCalledWith(
+      2,
+      { id: 102, status: 'GAP', version: 1, classIds: [12] },
+      expect.any(Object),
+    )
+  })
+
+  it('falls back to the card row consistently when a class has no own id', async () => {
+    hooks.occurrences.mockReturnValue({
+      data: {
+        items: [{
+          id: 30,
+          date: '2026-10-12',
+          subject_name: 'Português',
+          status: 'GAP',
+          operational_state: 'OPEN_PENDING',
+          version: 5,
+          joint_lesson: {
+            classes: [
+              { class_id: 11, class_name: '10.º MKT', operational_state: 'OPEN_PENDING' },
+              { class_id: 12, class_name: '10.º MAS', operational_state: 'OPEN_PENDING' },
+            ],
+          },
+        }],
+      },
+      isLoading: false,
+      isError: false,
+    })
+
+    renderWithRouter(<Occurrences />, { initialEntries: ['/absences'] })
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Furo 10.º MAS' }))
+
+    expect(hooks.update).toHaveBeenCalledWith(
+      { id: 30, status: 'GAP', version: 5, classIds: [12] },
+      expect.any(Object),
+    )
+  })
+
+  it('decides all joint classes from the modal with the representative row version', async () => {
+    hooks.occurrences.mockReturnValue({
+      data: {
+        items: [{
+          id: 101,
+          date: '2026-10-12',
+          subject_name: 'Português',
+          status: 'GAP',
+          operational_state: 'OPEN_PENDING',
+          version: 2,
+          joint_lesson: {
+            classes: [
+              { class_id: 11, class_name: '10.º MKT', id: 101, operational_state: 'OPEN_PENDING', version: 2 },
+              { class_id: 12, class_name: '10.º MAS', id: 102, operational_state: 'OPEN_PENDING', version: 1 },
+            ],
+          },
+        }],
+      },
+      isLoading: false,
+      isError: false,
+    })
+
+    renderWithRouter(<Occurrences />, { initialEntries: ['/absences'] })
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Decidir para todas' }))
+    fireEvent.click(screen.getByLabelText(/confirmo esta decisão operacional/i))
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar decisão' }))
+
+    expect(hooks.update).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 101, status: 'GAP', version: 2, classIds: [11, 12] }),
+      expect.any(Object),
+    )
   })
 })

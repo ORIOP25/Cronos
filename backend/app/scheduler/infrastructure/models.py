@@ -15,6 +15,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    event,
     true,
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -103,6 +104,10 @@ class CurricularRequirement(Base):
     module_id: Mapped[int] = mapped_column(Integer, nullable=False)
     sequence: Mapped[int] = mapped_column(Integer, nullable=False)
     required_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
+    # False marks a retired module that keeps executed history.
+    planned: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=true()
+    )
 
     __table_args__ = (
         ForeignKeyConstraint(
@@ -385,6 +390,7 @@ class SchedulerLessonV1(Base):
     physical_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
     credit_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
     source_lesson_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    teaching_unit_key: Mapped[str] = mapped_column(String(80), nullable=False)
 
     __table_args__ = (
         ForeignKeyConstraint(
@@ -436,7 +442,12 @@ class SchedulerLessonV1(Base):
             "id",
             name="uq_scheduler_lesson_v1_assignment_id",
         ),
-        UniqueConstraint("version_id", "stable_key", name="uq_scheduler_lesson_v1_stable_key"),
+        UniqueConstraint(
+            "version_id",
+            "stable_key",
+            "assignment_id",
+            name="uq_scheduler_lesson_v1_stable_key",
+        ),
         CheckConstraint("ends_at > starts_at", name="ck_scheduler_lesson_v1_interval"),
         CheckConstraint("physical_minutes > 0", name="ck_scheduler_lesson_v1_physical"),
         CheckConstraint(
@@ -456,6 +467,17 @@ class SchedulerLessonV1(Base):
             "school_date",
         ),
     )
+
+
+@event.listens_for(SchedulerLessonV1, "before_insert")
+def _default_teaching_unit_key(mapper, connection, target) -> None:
+    """Default a lesson to its assignment unit without a persistent placeholder.
+
+    Joint-lesson constructors may pass an explicit ``S``/``J``/``D`` key; plain
+    lessons omit it and inherit ``A:{assignment_id}`` here.
+    """
+    if not target.teaching_unit_key:
+        target.teaching_unit_key = f"A:{target.assignment_id}"
 
 
 class SchedulerLessonSliceV1(Base):

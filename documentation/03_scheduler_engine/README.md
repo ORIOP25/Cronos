@@ -15,7 +15,7 @@ The composition root is `backend/app/scheduler/composition.py`. It exposes two u
 - `generate_schedule` (CompleteGeneration) builds a first, complete annual schedule.
 - `repair_published_schedule` (AdaptiveRecovery) repairs an already published schedule after real execution, debt or planning changes.
 
-The domain (`backend/app/scheduler/domain/`) is pure: no ORM, HTTP, Celery, CP-SAT or ambient clock. Infrastructure (`infrastructure/`) holds CP-SAT models, persistence, the queue and task dispatch. The independent validator `candidate_validation.py` recomputes every invariant from the snapshot and the materialized candidate; it never consults solver variables. `VALIDATOR_VERSION` is `v4` and enforces 21 typed violation codes.
+The domain (`backend/app/scheduler/domain/`) is pure: no ORM, HTTP, Celery, CP-SAT or ambient clock. Infrastructure (`infrastructure/`) holds CP-SAT models, persistence, the queue and task dispatch. The independent validator `candidate_validation.py` recomputes every invariant from the snapshot and the materialized candidate; it never consults solver variables. Its version and typed violation codes are owned by [`candidate_validation.py`](../../backend/app/scheduler/domain/candidate_validation.py).
 
 ## Key behaviors
 
@@ -45,6 +45,10 @@ Planning a recovery never settles debt; actual execution does.
 Future logged history reserves its class, teacher and room intervals during search and independent validation.
 History remains outside planned credit. Approval cannot add a lesson over those reserved intervals.
 Snapshots exclude recovery reservations for closed debt claims. Persisted versions retain their original reservation history.
+
+Class module selection. `infrastructure/curriculum.py` `sync_curricular_projection` projects one `curricular_requirement` per selected module of each class/subject link, with `sequence = module.order + 1`. A module deselected with execution credits keeps a `planned = false` row; a module deselected without credits is deleted. An active link (teacher assigned, in range and not archived) without a selected module raises `CLASS_SUBJECT_WITHOUT_MODULES`. `infrastructure/progress.py` `load_planning_requirements` loads every row, reproduces the history with the catalogue minutes, and applies `close_retired_modules`: a retired module with executed minutes is closed at those minutes and receives no new credit. The snapshot, dashboard, grid changes and progress readers use this planning view.
+
+Joint lessons. `domain/teaching_units.py` `build_teaching_units` splits class assignments into teaching units: an unsplit `A` unit, separate-segment `S` units, shared joint-segment `J` units, and per-class deficit `D` units. Joint modules credit every member class with the joint progress, and a class behind gets a `D` unit whose requirement is that progress. Units carry strict stage-to-stage precedences, per-member eligibility and a shared room. Construction (`infrastructure/constructive.py`) and recovery (`infrastructure/recovery_construction.py`) only start a unit after its predecessors finish. A `D` unit is an ordinary residual unit and uses the same priority every open debt uses; it needs no `teaching_unit_key` on the snapshot. A single joint unit left without any eligible shared period is diagnosed as `JOINT_NO_COMMON_TIME` in `domain/diagnostics.py`; complete generation carries the code on the result stop reason and the diagnostic message, and the search outcome uses the same message. General infeasibility, cancellations and interrupted searches keep their generic diagnosis. `lab/typology.py` `build_joint_typology_fixture` builds the joint family (general subjects shared, technical subjects separate).
 
 Compact resource exclusivity. `infrastructure/placement_model.py` `_add_resource_exclusivity` adds at most one option per resource and period with `AddAtMostOne`, grouped by equal interval. It merges only partially overlapping groups and never groups that overlap only through transitivity, so the ends of an overlap chain stay available. It is used for class, teacher and room exclusivity and during room optimization. This replaced pairwise constraints to avoid `OOM`.
 
@@ -84,6 +88,7 @@ Endpoints under `/api/v1/scheduler` (`backend/app/api/v1/endpoints/scheduler.py`
 The retained `backend/app/scheduler/lab/` modules build deterministic minimal, scale, annual, recovery, and typology fixtures.
 Unit tests use those fixtures to verify the actual engine and independent validator.
 Historical campaign commands, JSON corpora, matrix reports, and stored-candidate revalidation tools were removed.
+The joint family (`lab/typology.py` `build_joint_typology_fixture`) shares the general subjects of each course and keeps the technical subjects separate. Its `backend/tests/unit/test_joint_lesson_lab.py` pilot runs the constructive route against the no-joint peer at 48 classes.
 
 Run maintained checks through the root runner:
 

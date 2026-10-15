@@ -81,7 +81,7 @@ def build_scale_fixture(
         assignments.append(
             Assignment(
                 assignment_id=class_id,
-                class_id=class_id,
+                class_ids=(class_id,),
                 subject_id=1000 + class_id,
                 teacher_id=teacher_id,
                 eligible_room_ids=frozenset({room_id}),

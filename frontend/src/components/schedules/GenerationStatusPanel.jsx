@@ -80,16 +80,24 @@ const GenerationStatusPanel = ({ jobId }) => {
     )
   }
   if (TERMINAL_STATUSES.has(status)) {
-    const roomBlocked = job.stop_reason === 'NO_ELIGIBLE_ROOM'
+    const isStaleLike = status === 'CANCELLED' || status === 'STALE'
+    const jobCodes = [job.result_code, job.stop_reason]
+    const roomBlocked = jobCodes.includes('NO_ELIGIBLE_ROOM') || jobCodes.includes('JOINT_ROOM_CAPACITY')
+    const jointNoCommonTime = jobCodes.includes('JOINT_NO_COMMON_TIME')
     return (
       <div className="mb-4" data-testid="generation-terminal">
-        <FeedbackBanner tone={status === 'CANCELLED' || status === 'STALE' ? 'warning' : 'danger'}>
+        <FeedbackBanner tone={isStaleLike ? 'warning' : 'danger'}>
           <strong>{STATUS_LABELS[status] || 'Estado da geração indisponível'}</strong>
           {' '}
           {roomBlocked ? (
             <>
               Existem turmas sem sala compatível com o tipo e a lotação.{' '}
               <Link to="/rooms">Abrir Salas</Link> para corrigir e voltar a gerar.
+            </>
+          ) : jointNoCommonTime && !isStaleLike ? (
+            <>
+              As turmas da aula conjunta não têm horas livres em comum. Reveja as disponibilidades das turmas e do professor.{' '}
+              <Link to="/config">Abrir Configuração</Link>.
             </>
           ) : (TERMINAL_MESSAGES[status] || '')}
         </FeedbackBanner>

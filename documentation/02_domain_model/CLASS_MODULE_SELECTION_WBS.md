@@ -5,11 +5,25 @@
 Este documento decompõe a implementação do [Tech Spec — Módulos por Turma](CLASS_MODULE_SELECTION_TECH_SPEC.md) em pacotes de trabalho.
 Define entregáveis, testes iniciais, dependências, critérios de conclusão e a ordem de execução.
 
-**Estado:** proposto. Nenhum pacote começou.
+**Estado:** em implementação. A implementação local e a verificação de app estão concluídas; a aceitação completa e a entrega estão pendentes.
 **Data:** 14 de outubro de 2026.
 
 O tech spec é dono das decisões, dos contratos e dos cenários de teste.
 Este documento não repete essas regras. Cada pacote indica a secção do spec que aplica.
+
+## Estado de execução
+
+Verificação contra a árvore de trabalho, em 15 de outubro de 2026.
+O código local e os testes não dispensam a verificação independente final.
+
+| Categoria | Estado local |
+| :--- | :--- |
+| 2 — Servidor e motor | Implementação local e testes. Ver [class_service.py](../../backend/app/services/class_service.py), [curriculum.py](../../backend/app/scheduler/infrastructure/curriculum.py) e [0002_class_subject_modules.py](../../backend/alembic/versions/0002_class_subject_modules.py). |
+| 3 — Ecrãs | Implementação local e testes. Ver `frontend/src/pages/ClassSubjects.jsx` e os testes em `frontend/src/test/`. |
+| Verificação independente final | Verificação local e verificação do projeto app concluídas; as restantes verificações de navegador e a CI não correram agora. Ver [Command Reference](../00_getting_started/COMMAND_REFERENCE.md) e [scripts/test.mjs](../../scripts/test.mjs). |
+| Percurso e2e (project app) | Verificado com `node scripts/test.mjs e2e --project app`, incluindo os percursos de seleção de módulos e de aulas conjuntas e as regressões de operação, geração e QA; registo `e2e-app.xml` em `.test-artifacts/`. Os restantes projetos e a CI não correram agora. |
+| Aceitação manual | Pendente. Os quatro passos manuais da secção de verificação não estão todos executados como percurso completo. Ver [Verification Procedure](CLASS_MODULE_SELECTION_TECH_SPEC.md#verification-procedure). |
+| Entrega (PR, CI e publicação) | Não realizada. |
 
 ## Intended Reader
 

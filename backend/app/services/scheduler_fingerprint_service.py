@@ -262,6 +262,31 @@ class SchedulerFingerprintService:
             else []
         )
         module_ids = {row.id for row in module_rows}
+        selected_module_rows = (
+            (
+                await self._db.execute(
+                    select(
+                        models.ClassSubjectLink.class_id,
+                        models.ClassSubjectLink.subject_id,
+                        models.ClassSubjectLink.grade_level,
+                        models.class_subject_module.c.module_id,
+                    )
+                    .select_from(models.class_subject_module)
+                    .join(
+                        models.ClassSubjectLink,
+                        models.ClassSubjectLink.id
+                        == models.class_subject_module.c.class_subject_link_id,
+                    )
+                    .where(
+                        models.class_subject_module.c.organization_id == organization_id,
+                        models.ClassSubjectLink.organization_id == organization_id,
+                        models.ClassSubjectLink.class_id.in_(class_ids),
+                    )
+                )
+            ).all()
+            if class_ids
+            else []
+        )
         progress_rows = (
             (
                 await self._db.execute(
@@ -286,6 +311,70 @@ class SchedulerFingerprintService:
             if class_ids and module_ids
             else []
         )
+        joint_group_rows = (
+            await self._db.execute(
+                select(
+                    models.JointLessonGroup.id,
+                    models.JointLessonGroup.subject_id,
+                )
+                .where(models.JointLessonGroup.organization_id == organization_id)
+                .order_by(models.JointLessonGroup.id)
+            )
+        ).all()
+        joint_lesson_groups: list[dict] = []
+        if joint_group_rows:
+            group_ids = [row.id for row in joint_group_rows]
+            joint_class_rows = (
+                await self._db.execute(
+                    select(
+                        models.joint_lesson_group_member.c.group_id,
+                        models.ClassSubjectLink.class_id,
+                    )
+                    .join(
+                        models.ClassSubjectLink,
+                        models.ClassSubjectLink.id
+                        == models.joint_lesson_group_member.c.class_subject_link_id,
+                    )
+                    .where(
+                        models.joint_lesson_group_member.c.organization_id == organization_id,
+                        models.joint_lesson_group_member.c.group_id.in_(group_ids),
+                    )
+                    .order_by(
+                        models.joint_lesson_group_member.c.group_id,
+                        models.ClassSubjectLink.class_id,
+                    )
+                )
+            ).all()
+            joint_module_rows = (
+                await self._db.execute(
+                    select(
+                        models.joint_lesson_group_module.c.group_id,
+                        models.joint_lesson_group_module.c.module_id,
+                    )
+                    .where(
+                        models.joint_lesson_group_module.c.organization_id == organization_id,
+                        models.joint_lesson_group_module.c.group_id.in_(group_ids),
+                    )
+                    .order_by(
+                        models.joint_lesson_group_module.c.group_id,
+                        models.joint_lesson_group_module.c.module_id,
+                    )
+                )
+            ).all()
+            classes_by_group: dict[int, list[int]] = {}
+            for group_id, class_id in joint_class_rows:
+                classes_by_group.setdefault(group_id, []).append(class_id)
+            modules_by_group: dict[int, list[int]] = {}
+            for group_id, module_id in joint_module_rows:
+                modules_by_group.setdefault(group_id, []).append(module_id)
+            joint_lesson_groups = [
+                {
+                    "subject_id": row.subject_id,
+                    "class_ids": classes_by_group.get(row.id, []),
+                    "module_ids": modules_by_group.get(row.id, []),
+                }
+                for row in joint_group_rows
+            ]
 
         versions = await grid_version_service.list_grid_versions(self._db, organization_id)
         included = [
@@ -553,6 +642,23 @@ class SchedulerFingerprintService:
                     ),
                 )
             ],
+            "class_subject_modules": [
+                {
+                    "class_id": row.class_id,
+                    "subject_id": row.subject_id,
+                    "grade_level": row.grade_level,
+                    "module_id": row.module_id,
+                }
+                for row in sorted(
+                    selected_module_rows,
+                    key=lambda row: (
+                        row.class_id,
+                        row.subject_id,
+                        row.grade_level,
+                        row.module_id,
+                    ),
+                )
+            ],
             "teacher_availability": [
                 {
                     "teacher_id": row.teacher_id,
@@ -589,5 +695,8 @@ class SchedulerFingerprintService:
                 )
             ],
         }
+
+        if joint_lesson_groups:
+            snapshot["joint_lesson_groups"] = joint_lesson_groups
 
         return canonical_json_value(snapshot)

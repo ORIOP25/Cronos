@@ -179,11 +179,12 @@ def _teacher_for(lesson: ScheduledLesson, assignment: Assignment) -> int:
 def _is_dispreferred(
     snapshot: PlanningSnapshot, assignment: Assignment, lesson: ScheduledLesson
 ) -> bool:
-    for resource_type, resource_id in (
-        (UnavailableResource.CLASS, assignment.class_id),
+    resources = [
         (UnavailableResource.TEACHER, _teacher_for(lesson, assignment)),
         (UnavailableResource.ROOM, lesson.room_id),
-    ):
+    ]
+    resources.extend((UnavailableResource.CLASS, class_id) for class_id in assignment.class_ids)
+    for resource_type, resource_id in resources:
         if any(
             row.overlaps(lesson.period)
             for row in snapshot.soft_unavailable_on(
@@ -201,7 +202,9 @@ def measure_initial_quality(
     if type(snapshot) is not PlanningSnapshot or type(candidate) is not CandidateSchedule:
         raise ValueError("Quality measurement needs a snapshot and a candidate schedule.")
     assignments = {row.assignment_id: row for row in snapshot.assignments}
-    completion_dates = {row.class_id: snapshot.origin for row in snapshot.assignments}
+    completion_dates = {
+        class_id: snapshot.origin for row in snapshot.assignments for class_id in row.class_ids
+    }
     teacher_days: dict[tuple[int, date], set[int]] = defaultdict(set)
     class_days: dict[tuple[int, date], set[int]] = defaultdict(set)
     rooms: dict[tuple[int, int], set[int]] = defaultdict(set)
@@ -210,17 +213,19 @@ def measure_initial_quality(
         assignment = assignments.get(lesson.assignment_id)
         if assignment is None:
             raise ValueError("The candidate references an assignment outside the snapshot.")
-        previous = completion_dates.get(assignment.class_id, lesson.period.school_date)
-        completion_dates[assignment.class_id] = max(previous, lesson.period.school_date)
         position = _slot_position(snapshot.grid_slots, lesson.period)
+        for class_id in assignment.class_ids:
+            previous = completion_dates.get(class_id, lesson.period.school_date)
+            completion_dates[class_id] = max(previous, lesson.period.school_date)
+            if position is not None:
+                class_days[(class_id, lesson.period.school_date)].add(position)
+            rooms[(class_id, assignment.subject_id)].add(lesson.room_id)
         if position is not None:
             teacher_days[(_teacher_for(lesson, assignment), lesson.period.school_date)].add(
                 position
             )
-            class_days[(assignment.class_id, lesson.period.school_date)].add(position)
         if _is_dispreferred(snapshot, assignment, lesson):
             preference_cost += lesson.period.duration_minutes
-        rooms[(assignment.class_id, assignment.subject_id)].add(lesson.room_id)
     return InitialQualityMetrics(
         completion_dates=MappingProxyType(dict(sorted(completion_dates.items()))),
         teacher_gap_minutes=_gap_minutes(snapshot.grid_slots, teacher_days),

@@ -130,7 +130,8 @@ def _availability_minutes(
         for (week, _duration), rows in groups.items():
             for period in rows:
                 row = (period.start_utc, period.end_utc, period.duration_minutes)
-                available[("class", assignment.class_id, week)].add(row)
+                for class_id in assignment.class_ids:
+                    available[("class", class_id, week)].add(row)
                 available[("teacher", assignment.teacher_id, week)].add(row)
                 for room_id in assignment.eligible_room_ids:
                     room_available[(room_id, week)].add(row)
@@ -154,10 +155,11 @@ class _HintCapacity:
     used_room: dict[tuple[int, int], int]
 
     def headroom(self, assignment, week: int, duration: int) -> bool:
-        if self.used[("class", assignment.class_id, week)] + duration > self.available.get(
-            ("class", assignment.class_id, week), 0
-        ):
-            return False
+        for class_id in assignment.class_ids:
+            if self.used[("class", class_id, week)] + duration > self.available.get(
+                ("class", class_id, week), 0
+            ):
+                return False
         if self.used[("teacher", assignment.teacher_id, week)] + duration > self.available.get(
             ("teacher", assignment.teacher_id, week), 0
         ):
@@ -172,7 +174,8 @@ class _HintCapacity:
 
     def reserve(self, assignment, week: int, duration: int, times: int) -> None:
         minutes = duration * times
-        self.used[("class", assignment.class_id, week)] += minutes
+        for class_id in assignment.class_ids:
+            self.used[("class", class_id, week)] += minutes
         self.used[("teacher", assignment.teacher_id, week)] += minutes
         if len(assignment.eligible_room_ids) == 1:
             room_id = next(iter(assignment.eligible_room_ids))
@@ -346,8 +349,9 @@ def _add_quota_variables(model, demands, deadline, start):
             waste[key] = model.NewIntVar(0, duration - 1, f"u_{key}")
             model.Add(q[key] >= final[key])
             model.Add(waste[key] <= (duration - 1) * final[key])
-            load_terms[("class", assignment.class_id, week)].append(duration * q[key])
             load_terms[("teacher", assignment.teacher_id, week)].append(duration * q[key])
+            for class_id in assignment.class_ids:
+                load_terms[("class", class_id, week)].append(duration * q[key])
             room_set_terms[(assignment.eligible_room_ids, week)].append(duration * q[key])
         keys = sorted((assignment.assignment_id, week, duration) for week, duration in groups)
         model.Add(sum(final[key] for key in keys) == 1)
@@ -420,6 +424,25 @@ def _exclude_quota_distributions(model, q, final, excluded):
             model.Add(sum(matches) <= len(matches) - 1)
 
 
+def _add_precedence_quota_constraints(model, snapshot, q, last_week_by_assignment):
+    """No quota of a successor before its predecessor's last week (WBS 3.5).
+
+    The same week stays allowed: strict precedence already orders the lessons
+    inside a week through the linear placement constraint.
+    """
+    for source, target in snapshot.precedences:
+        source_last = last_week_by_assignment.get(source)
+        if source_last is None:
+            continue
+        for (owner, week, duration), variable in q.items():
+            if owner != target:
+                continue
+            after = model.NewBoolVar(f"prec_{source}_{target}_{week}_{duration}")
+            model.Add(week >= source_last).OnlyEnforceIf(after)
+            model.Add(week <= source_last - 1).OnlyEnforceIf(after.Not())
+            model.Add(variable == 0).OnlyEnforceIf(after.Not())
+
+
 def plan_annual_quotas(
     snapshot: PlanningSnapshot,
     periods: tuple[Period, ...],
@@ -465,6 +488,7 @@ def plan_annual_quotas(
         terms = load_terms.get(key)
         if terms:
             model.Add(sum(terms) <= minutes)
+    _add_precedence_quota_constraints(model, snapshot, q, last_week_by_assignment)
     room_set_constraints = _impose_room_set_capacity(model, room_set_terms, room_minutes)
 
     _add_quota_hints(

@@ -30,7 +30,7 @@ MeuProjeto/
 │   ├── workflows/                # ci.yml and deploy-check.yml
 │   └── dependabot.yml            # Automated dependency update configuration
 ├── backend/                      # Python FastAPI application
-│   ├── alembic/                  # Single baseline: 0001_scheduler_v1_baseline
+│   ├── alembic/                  # Linear chain from the frozen 0001_scheduler_v1_baseline
 │   ├── app/                      # Backend application source
 │   │   ├── api/                  # API routers (v1 endpoints)
 │   │   ├── contact/              # Contact service, ports, and provider gateways

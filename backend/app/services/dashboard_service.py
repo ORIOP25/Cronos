@@ -434,7 +434,8 @@ def _get_class_progress(
         .outerjoin(
             CurricularRequirement,
             (CurricularRequirement.assignment_id == CurricularAssignment.id)
-            & (CurricularRequirement.organization_id == organization_id),
+            & (CurricularRequirement.organization_id == organization_id)
+            & (CurricularRequirement.planned.is_(True)),
         )
         .outerjoin(
             ledger,

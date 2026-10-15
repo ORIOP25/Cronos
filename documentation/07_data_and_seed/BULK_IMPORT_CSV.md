@@ -31,6 +31,10 @@ Os cabeçalhos devem manter nomes, ordem e quantidade.
 Os modelos antigos, com cabeçalhos em inglês, deixam de ser aceites.
 Valores entre aspas podem conter vírgulas ou ponto e vírgula.
 
+Uma linha de Atribuições cria a ligação turma–disciplina e marca todos os módulos da disciplina (D03).
+O CSV não escolhe módulos por turma.
+Depois da importação, ajuste a seleção em `/courses/:courseId/classes/:classId/subjects`.
+
 ## Tipos de sala
 
 Salas e disciplinas aceitam estes valores, sem distinguir maiúsculas ou acentos:

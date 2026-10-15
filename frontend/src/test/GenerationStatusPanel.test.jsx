@@ -113,4 +113,79 @@ describe('GenerationStatusPanel', () => {
 
     expect(screen.getByRole('link', { name: /abrir salas/i })).toHaveAttribute('href', '/rooms')
   })
+
+  it('explains a joint lesson with no common free time from result_code', () => {
+    useScheduleTaskStatus.mockReturnValue({
+      data: { status: 'INFEASIBLE', result_code: 'JOINT_NO_COMMON_TIME' },
+      isLoading: false,
+    })
+
+    render(
+      <MemoryRouter>
+        <GenerationStatusPanel jobId={22} />
+      </MemoryRouter>,
+    )
+
+    expect(screen.getByText(/não têm horas livres em comum/i)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /abrir configuração/i })).toHaveAttribute('href', '/config')
+  })
+
+  it('explains a joint lesson with no common free time from stop_reason', () => {
+    useScheduleTaskStatus.mockReturnValue({
+      data: { status: 'FAILED', stop_reason: 'JOINT_NO_COMMON_TIME' },
+      isLoading: false,
+    })
+
+    render(
+      <MemoryRouter>
+        <GenerationStatusPanel jobId={23} />
+      </MemoryRouter>,
+    )
+
+    expect(screen.getByText(/não têm horas livres em comum/i)).toBeInTheDocument()
+  })
+
+  it('keeps the generic infeasible message without a joint code', () => {
+    useScheduleTaskStatus.mockReturnValue({ data: { status: 'INFEASIBLE' }, isLoading: false })
+
+    render(
+      <MemoryRouter>
+        <GenerationStatusPanel jobId={24} />
+      </MemoryRouter>,
+    )
+
+    expect(screen.getByText(/Reveja disponibilidades, salas, professor atribuído ou datas/)).toBeInTheDocument()
+    expect(screen.queryByText(/não têm horas livres em comum/i)).not.toBeInTheDocument()
+  })
+
+  it('keeps the stale message when the data changed during generation', () => {
+    useScheduleTaskStatus.mockReturnValue({
+      data: { status: 'STALE', stop_reason: 'JOINT_NO_COMMON_TIME' },
+      isLoading: false,
+    })
+
+    render(
+      <MemoryRouter>
+        <GenerationStatusPanel jobId={26} />
+      </MemoryRouter>,
+    )
+
+    expect(screen.getByText(/Os dados da escola mudaram durante a geração/)).toBeInTheDocument()
+    expect(screen.queryByText(/não têm horas livres em comum/i)).not.toBeInTheDocument()
+  })
+
+  it('points to rooms when a joint lesson lacks a compatible room', () => {
+    useScheduleTaskStatus.mockReturnValue({
+      data: { status: 'FAILED', stop_reason: 'JOINT_ROOM_CAPACITY' },
+      isLoading: false,
+    })
+
+    render(
+      <MemoryRouter>
+        <GenerationStatusPanel jobId={25} />
+      </MemoryRouter>,
+    )
+
+    expect(screen.getByRole('link', { name: /abrir salas/i })).toHaveAttribute('href', '/rooms')
+  })
 })

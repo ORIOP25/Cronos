@@ -73,6 +73,9 @@ Use `integration` for local database proof.
 The E2E inputs are `VITE_CLERK_PUBLISHABLE_KEY` (`pk_test_`), `CLERK_SECRET_KEY` (`sk_test_`), `E2E_CLERK_ADMIN_EMAIL`, and `E2E_CLERK_TEACHER_EMAIL`.
 Every email must end with `+clerk_test@example.com`.
 Never use live Clerk keys for tests.
+The runner reads them from the shell, then fills any missing Clerk input from `~/.cronos/e2e.env` (or the file named by `CRONOS_E2E_ENV_FILE`).
+That one file serves every worktree, because each worktree has its own gitignored `.env`.
+Write plain `NAME=value` lines. `loadE2eEnvFile` in `scripts/test.mjs` loads only `CLERK_SECRET_KEY`, `VITE_CLERK_PUBLISHABLE_KEY`, and `E2E_CLERK_*` names.
 
 ### Frontend package scripts
 

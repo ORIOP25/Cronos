@@ -59,7 +59,15 @@ class SchoolReadinessService:
             & subject_alias.is_archived.is_(False)
             & (link_alias.grade_level == class_alias.grade_level)
             & exists(
-                select(1).where(
+                select(1)
+                .select_from(models.class_subject_module)
+                .join(
+                    models.Module,
+                    models.Module.id == models.class_subject_module.c.module_id,
+                )
+                .where(
+                    models.class_subject_module.c.organization_id == organization_id,
+                    models.class_subject_module.c.class_subject_link_id == link_alias.id,
                     models.Module.organization_id == organization_id,
                     models.Module.subject_id == link_alias.subject_id,
                     models.Module.required_minutes > 0,
@@ -105,6 +113,70 @@ class SchoolReadinessService:
                 membership_alias.organization_id == organization_id,
                 membership_alias.lifecycle_status == models.MembershipLifecycleStatus.active,
                 membership_alias.can_teach.is_(True),
+            )
+        )
+
+        # A joint group is valid only when every member link is valid. The check
+        # is folded into the aggregate query so the dashboard budget is unchanged.
+        joint_link = aliased(models.ClassSubjectLink)
+        joint_class = aliased(models.Class)
+        joint_subject = aliased(models.Subject)
+        joint_teacher = aliased(models.Teacher)
+        joint_membership = aliased(models.OrganizationMembership)
+        joint_member = aliased(models.joint_lesson_group_member)
+        joint_valid_member = (
+            (joint_link.organization_id == organization_id)
+            & (joint_class.organization_id == organization_id)
+            & (joint_subject.organization_id == organization_id)
+            & joint_class.is_archived.is_(False)
+            & joint_subject.is_archived.is_(False)
+            & (joint_link.grade_level == joint_class.grade_level)
+            & joint_link.teacher_id.is_not(None)
+            & exists(
+                select(1)
+                .select_from(joint_teacher)
+                .join(
+                    joint_membership,
+                    joint_membership.id == joint_teacher.organization_membership_id,
+                )
+                .where(
+                    joint_teacher.organization_id == organization_id,
+                    joint_teacher.id == joint_link.teacher_id,
+                    joint_membership.organization_id == organization_id,
+                    joint_membership.lifecycle_status == models.MembershipLifecycleStatus.active,
+                    joint_membership.can_teach.is_(True),
+                )
+            )
+            & exists(
+                select(1)
+                .select_from(models.class_subject_module)
+                .join(
+                    models.Module,
+                    models.Module.id == models.class_subject_module.c.module_id,
+                )
+                .where(
+                    models.class_subject_module.c.organization_id == organization_id,
+                    models.class_subject_module.c.class_subject_link_id == joint_link.id,
+                    models.Module.organization_id == organization_id,
+                    models.Module.subject_id == joint_link.subject_id,
+                    models.Module.required_minutes > 0,
+                )
+            )
+        )
+        joint_invalid = exists(
+            select(1)
+            .select_from(joint_member)
+            .join(
+                models.JointLessonGroup,
+                models.JointLessonGroup.id == joint_member.c.group_id,
+            )
+            .join(joint_link, joint_link.id == joint_member.c.class_subject_link_id)
+            .join(joint_class, joint_class.id == joint_link.class_id)
+            .join(joint_subject, joint_subject.id == joint_link.subject_id)
+            .where(
+                joint_member.c.organization_id == organization_id,
+                models.JointLessonGroup.organization_id == organization_id,
+                ~joint_valid_member,
             )
         )
         compatible_room = exists(
@@ -175,6 +247,7 @@ class SchoolReadinessService:
                 .join(subject_alias, subject_alias.id == link_alias.subject_id)
                 .where(compatible_link & possible_timeslot)
             ).label("teacher_availability"),
+            joint_invalid.label("joint_invalid"),
         )
         facts = (await self._db.execute(facts_query)).one()._mapping
 
@@ -190,6 +263,20 @@ class SchoolReadinessService:
             if not facts[fact_name]:
                 break
             depth += 1
+
+        joint_issues: list[schemas.PreflightIssue] = []
+        if depth == len(STEPS_METADATA) and facts["joint_invalid"]:
+            joint_issues.append(
+                schemas.PreflightIssue(
+                    code="JOINT_GROUP_INCOMPLETE",
+                    severity="BLOCKER",
+                    message=(
+                        "Uma aula conjunta tem ligações inválidas. Corrija as "
+                        "disciplinas das turmas ou desfaça a junção."
+                    ),
+                    route="/courses",
+                )
+            )
 
         step_routes: dict[str, str] = {}
         if depth in (3, 4):
@@ -212,7 +299,8 @@ class SchoolReadinessService:
                             message="Defina o ano letivo ativo antes de gerar.",
                             route="/config",
                         )
-                    ],
+                    ]
+                    + joint_issues,
                     step_routes=step_routes,
                 )
             if resolve_fingerprint:
@@ -226,7 +314,7 @@ class SchoolReadinessService:
 
         return self._build_response(
             depth,
-            [],
+            joint_issues,
             fingerprint=fingerprint,
             step_routes=step_routes,
         )

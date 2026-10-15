@@ -51,7 +51,7 @@ def _snapshot(**overrides) -> PlanningSnapshot:
         "assignments": (
             Assignment(
                 assignment_id=1,
-                class_id=1,
+                class_ids=(1,),
                 subject_id=10,
                 teacher_id=100,
                 eligible_room_ids=frozenset({500}),
@@ -150,7 +150,7 @@ def test_validator_accepts_when_a_continuous_break_exists():
         assignments=(
             Assignment(
                 assignment_id=1,
-                class_id=1,
+                class_ids=(1,),
                 subject_id=10,
                 teacher_id=100,
                 eligible_room_ids=frozenset({500}),

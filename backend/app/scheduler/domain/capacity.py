@@ -74,10 +74,9 @@ def is_physically_protected(snapshot: PlanningSnapshot, period: Period) -> bool:
 
 
 def _is_unavailable(snapshot: PlanningSnapshot, assignment: Assignment, period: Period) -> bool:
-    for resource_type, resource_id in (
-        (UnavailableResource.CLASS, assignment.class_id),
-        (UnavailableResource.TEACHER, assignment.teacher_id),
-    ):
+    resources = [(UnavailableResource.TEACHER, assignment.teacher_id)]
+    resources.extend((UnavailableResource.CLASS, class_id) for class_id in assignment.class_ids)
+    for resource_type, resource_id in resources:
         if any(
             row.overlaps(period)
             for row in snapshot.hard_unavailable_on(resource_type, resource_id, period.school_date)
@@ -113,13 +112,18 @@ def available_rooms(
 
 
 def fixed_periods(snapshot: PlanningSnapshot, assignment: Assignment) -> tuple[Period, ...]:
-    """Periods already occupied by protected lessons for the same resources."""
+    """Periods already occupied by protected lessons for the same resources.
+
+    A unit clashes with a protected lesson when they share the unit, any member
+    class or the teacher (WBS 2.3.3).
+    """
+    member_classes = set(assignment.class_ids)
     return tuple(
         lesson.period
         for lesson in snapshot.protected_lessons
         if lesson.assignment_id == assignment.assignment_id
-        or (snapshot.assignment_for(lesson.assignment_id) or assignment).class_id
-        == assignment.class_id
+        or member_classes
+        & set((snapshot.assignment_for(lesson.assignment_id) or assignment).class_ids)
         or (
             (
                 lesson.teacher_id
@@ -159,7 +163,10 @@ def eligible_periods(
             period.timezone_name != snapshot.timezone_name
             or period.school_date < snapshot.origin
             or period.school_date > limit
-            or snapshot.blocked_on(assignment.class_id, period.school_date)
+            or any(
+                snapshot.blocked_on(class_id, period.school_date)
+                for class_id in assignment.class_ids
+            )
             or is_physically_protected(snapshot, period)
             or not any(slot.matches(period) for slot in snapshot.grid_slots)
             or _is_unavailable(snapshot, assignment, period)

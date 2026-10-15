@@ -110,6 +110,10 @@ async def subject_in_use(db: AsyncSession, organization_id: int, subject_id: int
                 models.OperationalScheduleBlock.subject_id == subject_id,
                 models.OperationalScheduleBlock.status == _ACTIVE_OPERATIONAL,
             ),
+            select(models.JointLessonGroup.id).where(
+                models.JointLessonGroup.organization_id == organization_id,
+                models.JointLessonGroup.subject_id == subject_id,
+            ),
         ],
     )
 
@@ -185,8 +189,33 @@ async def class_in_use(db: AsyncSession, organization_id: int, class_id: int) ->
                 models.OperationalScheduleBlock.class_id == class_id,
                 models.OperationalScheduleBlock.status == _ACTIVE_OPERATIONAL,
             ),
+            select(models.joint_lesson_group_member.c.class_subject_link_id)
+            .join(
+                models.ClassSubjectLink,
+                models.ClassSubjectLink.id
+                == models.joint_lesson_group_member.c.class_subject_link_id,
+            )
+            .where(
+                models.joint_lesson_group_member.c.organization_id == organization_id,
+                models.ClassSubjectLink.organization_id == organization_id,
+                models.ClassSubjectLink.class_id == class_id,
+            ),
         ],
     )
+
+
+async def joint_module_ids(db: AsyncSession, organization_id: int, module_ids) -> set[int]:
+    """Modules that belong to a joint lesson group and cannot be removed."""
+    identifiers = list(module_ids)
+    if not identifiers:
+        return set()
+    rows = await db.execute(
+        select(models.joint_lesson_group_module.c.module_id).where(
+            models.joint_lesson_group_module.c.organization_id == organization_id,
+            models.joint_lesson_group_module.c.module_id.in_(identifiers),
+        )
+    )
+    return {row[0] for row in rows.all()}
 
 
 async def class_has_history(db: AsyncSession, organization_id: int, class_id: int) -> bool:

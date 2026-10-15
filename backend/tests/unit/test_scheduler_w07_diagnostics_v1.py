@@ -11,6 +11,7 @@ from app.scheduler.domain.diagnostics import (
     EvidenceKind,
     diagnose_capacity,
     diagnose_inconclusive,
+    diagnose_joint_no_common_time,
 )
 from tests.unit.test_scheduler_w04_w05_regressions_v1 import period, snapshot
 
@@ -69,3 +70,12 @@ def test_recovery_uses_the_hard_limit_and_flags_the_excess():
     diagnoses = diagnose_capacity(target, periods)
 
     assert diagnoses == ()
+
+
+def test_joint_no_common_time_names_the_classes_and_discipline():
+    diagnosis = diagnose_joint_no_common_time("Português", ("10.º MKT", "10.º MAS"))
+
+    assert diagnosis.code is DiagnosisCode.JOINT_NO_COMMON_TIME
+    assert diagnosis.evidence_kind is EvidenceKind.PROVEN_SCOPE
+    assert "10.º MKT, 10.º MAS" in diagnosis.message
+    assert "Português" in diagnosis.message

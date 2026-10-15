@@ -10,6 +10,7 @@ from app.scheduler.domain.candidate import (
     ScheduledLesson,
     SchedulingStrategy,
 )
+from app.scheduler.domain.candidate_validation import validate_candidate
 from app.scheduler.domain.oracle import (
     OracleBudgetExceededError,
     enumerate_candidates,
@@ -53,7 +54,7 @@ def _snapshot(*assignments: Assignment, **overrides) -> PlanningSnapshot:
 
 def test_oracle_finds_the_only_complete_placement():
     snapshot = _snapshot(
-        Assignment(1, 1, 10, 100, frozenset({500}), (ModuleRequirement(1, 1, 100),))
+        Assignment(1, (1,), 10, 100, frozenset({500}), (ModuleRequirement(1, 1, 100),))
     )
 
     result = enumerate_candidates(snapshot, PERIODS)
@@ -67,7 +68,7 @@ def test_oracle_finds_the_only_complete_placement():
 
 def test_oracle_proves_infeasibility_on_a_minimal_instance():
     snapshot = _snapshot(
-        Assignment(1, 1, 10, 100, frozenset({500}), (ModuleRequirement(1, 1, 200),))
+        Assignment(1, (1,), 10, 100, frozenset({500}), (ModuleRequirement(1, 1, 200),))
     )
 
     result = enumerate_candidates(snapshot, PERIODS)
@@ -78,7 +79,7 @@ def test_oracle_proves_infeasibility_on_a_minimal_instance():
 
 def test_oracle_chooses_the_earliest_completion():
     snapshot = _snapshot(
-        Assignment(1, 1, 10, 100, frozenset({500}), (ModuleRequirement(1, 1, 50),))
+        Assignment(1, (1,), 10, 100, frozenset({500}), (ModuleRequirement(1, 1, 50),))
     )
 
     result = enumerate_candidates(snapshot, PERIODS)
@@ -92,8 +93,8 @@ def test_oracle_chooses_the_earliest_completion():
 
 def test_oracle_filters_combinations_that_conflict_on_a_shared_teacher():
     snapshot = _snapshot(
-        Assignment(1, 1, 10, 100, frozenset({500}), (ModuleRequirement(1, 1, 50),)),
-        Assignment(2, 2, 20, 100, frozenset({501}), (ModuleRequirement(2, 1, 50),)),
+        Assignment(1, (1,), 10, 100, frozenset({500}), (ModuleRequirement(1, 1, 50),)),
+        Assignment(2, (2,), 20, 100, frozenset({501}), (ModuleRequirement(2, 1, 50),)),
     )
 
     result = enumerate_candidates(snapshot, PERIODS)
@@ -108,7 +109,7 @@ def test_oracle_filters_combinations_that_conflict_on_a_shared_teacher():
 def test_oracle_accepts_a_fully_protected_witness_without_duplicating_it():
     protected = ScheduledLesson(1, 1, _period(MONDAY), 500, 60, (ModuleSlice(1, 1, 0, 60),))
     snapshot = _snapshot(
-        Assignment(1, 1, 10, 100, frozenset({500}), (ModuleRequirement(1, 1, 60),)),
+        Assignment(1, (1,), 10, 100, frozenset({500}), (ModuleRequirement(1, 1, 60),)),
         protected_lessons=(protected,),
     )
 
@@ -121,7 +122,7 @@ def test_oracle_accepts_a_fully_protected_witness_without_duplicating_it():
 def test_oracle_subtracts_half_protected_credit_before_enumerating():
     protected = ScheduledLesson(1, 1, _period(MONDAY), 500, 60, (ModuleSlice(1, 1, 0, 60),))
     snapshot = _snapshot(
-        Assignment(1, 1, 10, 100, frozenset({500}), (ModuleRequirement(1, 1, 120),)),
+        Assignment(1, (1,), 10, 100, frozenset({500}), (ModuleRequirement(1, 1, 120),)),
         protected_lessons=(protected,),
     )
 
@@ -150,7 +151,7 @@ def test_oracle_raises_an_explicit_budget_limit_not_infeasibility():
         for start, end in ((time(9), time(10)), (time(10), time(11)))
     )
     snapshot = _snapshot(
-        Assignment(1, 1, 10, 100, frozenset({500, 501}), (ModuleRequirement(1, 1, 30),)),
+        Assignment(1, (1,), 10, 100, frozenset({500, 501}), (ModuleRequirement(1, 1, 30),)),
         grid_slots=grid,
     )
 
@@ -160,7 +161,7 @@ def test_oracle_raises_an_explicit_budget_limit_not_infeasibility():
 
 def test_oracle_matches_a_manually_derived_minimum():
     snapshot = _snapshot(
-        Assignment(1, 1, 10, 100, frozenset({500}), (ModuleRequirement(1, 1, 50),))
+        Assignment(1, (1,), 10, 100, frozenset({500}), (ModuleRequirement(1, 1, 50),))
     )
 
     best = optimal_candidate(snapshot, PERIODS)
@@ -171,3 +172,17 @@ def test_oracle_matches_a_manually_derived_minimum():
     assert [
         (row.module_id, row.offset_minutes, row.credit_minutes) for row in best.lessons[0].slices
     ] == [(1, 0, 50)]
+
+
+def test_oracle_accepts_a_joint_unit_and_respects_its_precedence():
+    joint = Assignment(1, (1, 2), 10, 100, frozenset({500}), (ModuleRequirement(1, 1, 50),))
+    successor = Assignment(2, (2,), 10, 100, frozenset({500}), (ModuleRequirement(2, 1, 50),))
+    snapshot = _snapshot(joint, successor, precedences=((1, 2),))
+
+    best = optimal_candidate(snapshot, PERIODS)
+
+    assert best is not None
+    assert validate_candidate(snapshot, best).valid
+    joint_lesson = next(lesson for lesson in best.lessons if lesson.assignment_id == 1)
+    successor_lesson = next(lesson for lesson in best.lessons if lesson.assignment_id == 2)
+    assert successor_lesson.period.start_utc >= joint_lesson.period.end_utc

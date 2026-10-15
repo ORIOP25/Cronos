@@ -21,7 +21,7 @@ from app.scheduler.domain.projection import ModuleRequirement, ModuleSlice
 GRID = (GridSlot(0, time(9, 0), time(9, 50)), GridSlot(1, time(9, 0), time(9, 50)))
 ASSIGNMENT = Assignment(
     assignment_id=1,
-    class_id=1,
+    class_ids=(1,),
     subject_id=1,
     teacher_id=1,
     eligible_room_ids=frozenset({1}),

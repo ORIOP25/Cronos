@@ -1,8 +1,11 @@
 import importlib.util
 from pathlib import Path
 
+import pytest
+
 VERSIONS = Path(__file__).resolve().parents[2] / "alembic" / "versions"
 BASELINE = VERSIONS / "0001_scheduler_v1_baseline.py"
+BASELINE_REVISION = "0001_scheduler_v1_baseline"
 
 
 def _load_migration(path: Path, module_name: str):
@@ -14,10 +17,68 @@ def _load_migration(path: Path, module_name: str):
     return migration
 
 
-def test_migration_history_has_one_frozen_baseline():
-    assert sorted(VERSIONS.glob("*.py")) == [BASELINE]
+def _revision_chain(paths) -> dict[str, object]:
+    chain: dict[str, object] = {}
+    for path in paths:
+        migration = _load_migration(path, f"migration_{path.stem}")
+        assert migration.revision not in chain, f"duplicate revision {migration.revision}"
+        chain[migration.revision] = migration.down_revision
+    return chain
+
+
+def _assert_linear_chain(chain: dict[str, object], baseline_revision: str) -> None:
+    """Require one linear chain from a frozen baseline root to a single head.
+
+    A revision with a tuple ``down_revision`` is a merge. Two revisions that
+    share the same parent are a branch. Both break the contract in
+    CONTRIBUTING.md, so this raises ``AssertionError`` for them.
+    """
+    assert baseline_revision in chain, f"missing frozen baseline {baseline_revision}"
+    assert chain[baseline_revision] is None, "the frozen baseline must be the root"
+    children: dict[str, list[str]] = {}
+    for revision, down_revision in chain.items():
+        assert not isinstance(down_revision, (tuple, list)), f"{revision} merges multiple parents"
+        if revision == baseline_revision:
+            continue
+        assert down_revision in chain, f"{revision} references unknown parent {down_revision!r}"
+        children.setdefault(down_revision, []).append(revision)
+    for parent, branches in children.items():
+        assert len(branches) == 1, f"{parent} branches into {sorted(branches)}"
+    assert len(children) == len(chain) - 1, "the revision graph is disconnected"
+
+
+def test_migration_history_is_one_linear_chain_from_the_frozen_baseline():
+    chain = _revision_chain(sorted(VERSIONS.glob("*.py")))
+    _assert_linear_chain(chain, BASELINE_REVISION)
+
+
+def test_linear_chain_validation_accepts_a_single_chain():
+    _assert_linear_chain(
+        {BASELINE_REVISION: None, "0002_class_subject_modules": BASELINE_REVISION},
+        BASELINE_REVISION,
+    )
+
+
+def test_linear_chain_validation_rejects_a_branch():
+    with pytest.raises(AssertionError, match="branches"):
+        _assert_linear_chain(
+            {BASELINE_REVISION: None, "a": BASELINE_REVISION, "b": BASELINE_REVISION},
+            BASELINE_REVISION,
+        )
+
+
+def test_linear_chain_validation_rejects_a_merge():
+    with pytest.raises(AssertionError, match="merges"):
+        _assert_linear_chain(
+            {BASELINE_REVISION: None, "a": BASELINE_REVISION, "b": (BASELINE_REVISION, "a")},
+            BASELINE_REVISION,
+        )
+
+
+def test_frozen_baseline_is_present_and_unchanged():
+    assert BASELINE.exists()
     baseline = _load_migration(BASELINE, "baseline_migration")
-    assert baseline.revision == "0001_scheduler_v1_baseline"
+    assert baseline.revision == BASELINE_REVISION
     assert baseline.down_revision is None
     source = BASELINE.read_text(encoding="utf-8")
     for forbidden in ("app.models", "Base.metadata", "create_all", "drop_all"):

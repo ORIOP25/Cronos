@@ -314,6 +314,118 @@ class ClassSubjectLink(Base):
     )
 
 
+# Módulos selecionados numa ligação turma-disciplina (chave grade_level).
+# Uma linha representa um módulo marcado na Checklist de Módulos.
+class_subject_module = Table(
+    "class_subject_module",
+    Base.metadata,
+    Column(
+        "organization_id",
+        ForeignKey(FK_ORG_ID, ondelete="CASCADE"),
+        nullable=False,
+        primary_key=True,
+    ),
+    Column("class_subject_link_id", Integer, nullable=False, primary_key=True),
+    Column("module_id", Integer, nullable=False, primary_key=True),
+    ForeignKeyConstraint(
+        ["organization_id", "class_subject_link_id"],
+        ["class_subject_link.organization_id", "class_subject_link.id"],
+        name="fk_class_subject_module_link_org",
+        ondelete="CASCADE",
+    ),
+    ForeignKeyConstraint(
+        ["organization_id", "module_id"],
+        ["module.organization_id", "module.id"],
+        name="fk_class_subject_module_module_org",
+        ondelete="CASCADE",
+    ),
+    Index("ix_class_subject_module_organization_id", "organization_id"),
+    Index(
+        "ix_class_subject_module_organization_id_module_id",
+        "organization_id",
+        "module_id",
+    ),
+)
+
+
+# Junção de aulas conjuntas: disciplina, turmas membro e módulos conjuntos.
+# Uma ligação turma-disciplina pertence, no máximo, a uma junção (J04).
+class JointLessonGroup(Base):
+    __tablename__ = "joint_lesson_group"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    organization_id: Mapped[int] = mapped_column(
+        ForeignKey(FK_ORG_ID, ondelete="CASCADE"), nullable=False, index=True
+    )
+    subject_id: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id", "subject_id"],
+            ["subject.organization_id", "subject.id"],
+            name="fk_joint_lesson_group_subject_org",
+        ),
+        UniqueConstraint("organization_id", "id", name="uq_joint_lesson_group_org_id"),
+    )
+
+
+# Turmas membro de uma junção. PK (organization_id, class_subject_link_id) garante J04.
+joint_lesson_group_member = Table(
+    "joint_lesson_group_member",
+    Base.metadata,
+    Column(
+        "organization_id",
+        ForeignKey(FK_ORG_ID, ondelete="CASCADE"),
+        nullable=False,
+        primary_key=True,
+    ),
+    Column("group_id", Integer, nullable=False),
+    Column("class_subject_link_id", Integer, nullable=False, primary_key=True),
+    ForeignKeyConstraint(
+        ["organization_id", "group_id"],
+        ["joint_lesson_group.organization_id", "joint_lesson_group.id"],
+        name="fk_joint_lesson_group_member_group_org",
+        ondelete="CASCADE",
+    ),
+    ForeignKeyConstraint(
+        ["organization_id", "class_subject_link_id"],
+        ["class_subject_link.organization_id", "class_subject_link.id"],
+        name="fk_joint_lesson_group_member_link_org",
+    ),
+    Index(
+        "ix_joint_lesson_group_member_organization_id_group_id",
+        "organization_id",
+        "group_id",
+    ),
+)
+
+
+# Módulos conjuntos de uma junção. PK (organization_id, group_id, module_id).
+joint_lesson_group_module = Table(
+    "joint_lesson_group_module",
+    Base.metadata,
+    Column(
+        "organization_id",
+        ForeignKey(FK_ORG_ID, ondelete="CASCADE"),
+        nullable=False,
+        primary_key=True,
+    ),
+    Column("group_id", Integer, nullable=False, primary_key=True),
+    Column("module_id", Integer, nullable=False, primary_key=True),
+    ForeignKeyConstraint(
+        ["organization_id", "group_id"],
+        ["joint_lesson_group.organization_id", "joint_lesson_group.id"],
+        name="fk_joint_lesson_group_module_group_org",
+        ondelete="CASCADE",
+    ),
+    ForeignKeyConstraint(
+        ["organization_id", "module_id"],
+        ["module.organization_id", "module.id"],
+        name="fk_joint_lesson_group_module_module_org",
+    ),
+)
+
+
 class Availability(Base):
     __tablename__ = "availability"
 
