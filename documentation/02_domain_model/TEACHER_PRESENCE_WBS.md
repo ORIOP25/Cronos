@@ -21,7 +21,7 @@ O spec aprovado pelo responsável de produto. Base `main` em `e787aa5`, Alembic 
 | :--- | :--- | :--- | :--- |
 | PR 0 | spec e WBS | proposto | — |
 | PR 1 | S1 | por iniciar | — |
-| PR 2 | S2–S7 | por iniciar | — |
+| PR 2 | S2–S7 | em curso; S2 concluído | — |
 | PR 3 | S8–S9 | por iniciar | — |
 | PR 4 | S10 | por iniciar | — |
 

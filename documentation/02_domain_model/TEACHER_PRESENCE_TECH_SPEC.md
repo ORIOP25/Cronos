@@ -5,7 +5,7 @@
 O administrador define, por professor, se ele tem de ter hora de almoço, um mínimo de horas por presença e um furo máximo.
 O motor nunca gera nem repara um horário que quebre estas regras.
 
-**Estado:** proposto, à espera de aprovação do responsável de produto.
+**Estado:** aprovado pelo responsável de produto (pedido de implementação de 15 de outubro de 2026).
 **Base:** `main` em `e787aa5`, Alembic `0004_joint_lesson_groups`.
 **Origem:** item 5 dos pedidos da escola piloto (reunião de 13 de outubro de 2026). Decisões fechadas com o responsável de produto em 15 de outubro de 2026.
 A execução vive no [WBS](TEACHER_PRESENCE_WBS.md).
