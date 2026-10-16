@@ -428,7 +428,7 @@ def test_generation_inconclusive_with_minimum_teachers_reports_the_presence_hint
     periods = (period(0), period(1))
     target = replace(
         snapshot(periods, minutes=60),
-        teacher_presence=(TeacherPresenceRule(1, True, 180, 60),),
+        teacher_presence=(TeacherPresenceRule(1, True, 60, 60),),
     )
 
     def search(*args, **kwargs):
@@ -446,7 +446,7 @@ def test_generation_failed_with_minimum_teachers_reports_the_presence_hint():
     periods = (period(0), period(1))
     target = replace(
         snapshot(periods, minutes=60),
-        teacher_presence=(TeacherPresenceRule(1, True, 180, 60),),
+        teacher_presence=(TeacherPresenceRule(1, True, 60, 60),),
     )
 
     def search(*args, **kwargs):

@@ -30,6 +30,7 @@ from app.scheduler.domain.diagnostics import (
     diagnose_baseline_stale,
     diagnose_capacity,
     diagnose_failure,
+    diagnose_impossible_teacher_presence,
     diagnose_inconclusive,
     diagnose_invalid_input,
     diagnose_protected_availability,
@@ -165,6 +166,18 @@ def repair_schedule(
             message="Hard availability conflicts with protected published lessons.",
             baseline=baseline_assessment,
             diagnoses=_with_presence_hint(snapshot, protected_conflicts),
+            budget=budget,
+            wall_time_seconds=monotonic() - started,
+        )
+    presence_conflict = diagnose_impossible_teacher_presence(snapshot, periods)
+    if presence_conflict is not None:
+        charge(BudgetPhase.CONSTRUCTION)
+        return RepairResult(
+            OUTCOME_INFEASIBLE,
+            None,
+            message=presence_conflict.message,
+            baseline=baseline_assessment,
+            diagnoses=_with_presence_hint(snapshot, (presence_conflict,)),
             budget=budget,
             wall_time_seconds=monotonic() - started,
         )

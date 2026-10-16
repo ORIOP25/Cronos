@@ -8,6 +8,8 @@ exemption) and the enumerative-oracle objective.
 from dataclasses import replace
 from datetime import date, time
 
+import pytest
+
 from app.scheduler.domain.calendar import normalize_period
 from app.scheduler.domain.candidate import (
     Assignment,
@@ -34,6 +36,42 @@ TZ = "Europe/Lisbon"
 ORIGIN = date(2026, 9, 21)
 PREFERRED = date(2026, 10, 30)
 HARD_END = date(2026, 11, 30)
+
+
+@pytest.mark.parametrize("adaptive", [False, True])
+def test_impossible_teacher_presence_stops_before_constructing_any_solver_model(adaptive):
+    from app.scheduler.application.generation import generate_complete
+    from app.scheduler.application.recovery import repair_schedule
+    from tests.unit.test_scheduler_recovery_solver_v1 import POLICY
+
+    slots = (_slot(9), _slot(10))
+    periods = (_period(9), _period(10))
+    target = _snapshot(
+        slots=slots,
+        required_minutes=60,
+        teacher_presence=(TeacherPresenceRule(100, False, 720, 60),),
+    )
+
+    def unexpected_search(*_args, **_kwargs):
+        pytest.fail("Impossible presence must be detected before search allocates a model.")
+
+    if adaptive:
+        target = replace(target, strategy=SchedulingStrategy.ADAPTIVE_RECOVERY)
+        result = repair_schedule(
+            target, periods, CandidateSchedule(()), search=unexpected_search, policy=POLICY
+        )
+    else:
+        result = generate_complete(target, periods, search=unexpected_search)
+
+    assert result.outcome == "INFEASIBLE"
+    assert result.candidate is None
+    assert result.search_seconds == 0
+    proven = [row for row in result.diagnoses if row.code == "TEACHER_PRESENCE_IMPOSSIBLE"]
+    assert len(proven) == 1
+    assert proven[0].affected_teacher_ids == (100,)
+    assert proven[0].evidence_kind == "PROVEN_SCOPE"
+
+
 MONDAY = date(2026, 9, 21)
 
 LUNCH = LunchRule(window_start=time(12, 0), window_end=time(14, 0), minimum_minutes=60)

@@ -26,6 +26,7 @@ from app.scheduler.domain.eligibility import (
     EligibilityReason,
     generation_eligibility,
 )
+from app.scheduler.domain.teacher_presence import impossible_presence_teacher_ids
 from app.scheduler.infrastructure.curriculum import sync_curricular_projection
 from app.scheduler.infrastructure.models import (
     JOB_ACTIVE_STATUSES,
@@ -34,7 +35,7 @@ from app.scheduler.infrastructure.models import (
     SchedulerProposalV1,
 )
 from app.scheduler.infrastructure.progress import load_active_version_id
-from app.scheduler.infrastructure.snapshot import load_snapshot
+from app.scheduler.infrastructure.snapshot import SnapshotConfigurationError, load_snapshot
 
 EXECUTOR_LOCK_KEY = 109_438_846_303_891  # "cronos" as a bigint
 QUEUE_METADATA_SQL = text(
@@ -195,6 +196,34 @@ async def enqueue_generation(
             "scheduler_state_changed",
             "O horário foi alterado entretanto. Atualize a página e volte a tentar.",
             reasons=decision.reasons,
+        )
+    impossible_teacher_ids = impossible_presence_teacher_ids(bundle.snapshot, bundle.periods)
+    if impossible_teacher_ids:
+        teacher_rows = (
+            await db.execute(
+                select(
+                    models.Teacher.id, models.Teacher.name, models.Teacher.minimum_presence_hours
+                )
+                .where(
+                    models.Teacher.organization_id == organization_id,
+                    models.Teacher.id.in_(impossible_teacher_ids),
+                )
+                .order_by(models.Teacher.id)
+            )
+        ).all()
+        raise SnapshotConfigurationError(
+            "TEACHER_PRESENCE_IMPOSSIBLE",
+            "No available school day can accommodate the minimum teacher presence.",
+            public_context={
+                "teacher_issues": [
+                    {
+                        "teacher_id": row.id,
+                        "teacher_name": row.name,
+                        "minimum_presence_hours": row.minimum_presence_hours,
+                    }
+                    for row in teacher_rows
+                ]
+            },
         )
     job = SchedulerJobV1(
         organization_id=organization_id,

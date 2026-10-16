@@ -25,6 +25,8 @@ O spec aprovado pelo responsável de produto. Base `main` em `e787aa5`, Alembic 
 | PR 3 | S8–S9 | merged | [#148](https://github.com/ORIOP25/Cronos/pull/148) |
 | PR 4 | S10 | merged | [#149](https://github.com/ORIOP25/Cronos/pull/149) |
 
+Seguimento do QA: a pré-verificação passa a abranger a atualização de horários publicados e a admissão na fila rejeita mínimos comprovadamente impossíveis antes de criar o job. O motor repete a verificação antes da pesquisa. O cancelamento interrompe a pesquisa nativa, mantém o estado pendente na interface e preserva `CANCELLED` quando o worker termina após o pedido. A construção só verifica cancelamento nas suas fronteiras; instâncias grandes viáveis ainda podem esgotar memória. Ver [comportamentos e limitações do motor](../03_scheduler_engine/README.md#key-behaviors).
+
 Provas e limitações do PR 2, medidas na árvore de trabalho `teacher-presence-impl`:
 
 - S2–S7 estão implementados e provados; o PR 2 entrou em `main` no [#147](https://github.com/ORIOP25/Cronos/pull/147). O PR 1 (S1) entrou em `main` no [#146](https://github.com/ORIOP25/Cronos/pull/146). O PR 3 (S8–S9) entrou em `main` no [#148](https://github.com/ORIOP25/Cronos/pull/148). O PR 4 (S10) entrou em `main` no [#149](https://github.com/ORIOP25/Cronos/pull/149).

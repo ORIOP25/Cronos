@@ -15,7 +15,14 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
-from app.scheduler.domain.candidate import LunchRule, TeacherPresenceRule
+from app.scheduler.domain.calendar import Period
+from app.scheduler.domain.candidate import (
+    LunchRule,
+    PlanningSnapshot,
+    TeacherPresenceRule,
+    UnavailableResource,
+)
+from app.scheduler.domain.capacity import canonical_periods, residual_minutes
 
 
 @dataclass(frozen=True)
@@ -216,3 +223,47 @@ def teacher_can_have_presence(
             ):
                 return True
     return False
+
+
+def impossible_presence_teacher_ids(
+    snapshot: PlanningSnapshot, periods: tuple[Period, ...]
+) -> tuple[int, ...]:
+    """Prove a minimum cannot fit, using optimistic physical daily capacity.
+
+    Ignore competing classes, rooms and protected dates: excluding those here
+    could reject a mixed presence that legitimately counts protected lessons.
+    Teachers with no editable demand retain the protected-only exemption.
+    """
+    teachers_with_demand = {
+        row.teacher_id
+        for row in snapshot.assignments
+        if residual_minutes(snapshot, row.assignment_id) > 0
+    }
+    rules = [
+        rule
+        for rule in snapshot.teacher_presence
+        if rule.minimum_minutes is not None and rule.teacher_id in teachers_with_demand
+    ]
+    if not rules:
+        return ()
+    ordered = canonical_periods(periods)
+    impossible = []
+    for rule in rules:
+        days: dict[int, list[PresenceSlot]] = {}
+        for period in ordered:
+            possible = not any(
+                row.overlaps(period)
+                for row in snapshot.hard_unavailable_on(
+                    UnavailableResource.TEACHER, rule.teacher_id, period.school_date
+                )
+            )
+            days.setdefault(period.school_date.toordinal(), []).append(
+                PresenceSlot(
+                    period.start_local.hour * 60 + period.start_local.minute,
+                    period.end_local.hour * 60 + period.end_local.minute,
+                    possible,
+                )
+            )
+        if not teacher_can_have_presence(rule, days, lunch_rule=snapshot.lunch_rule):
+            impossible.append(rule.teacher_id)
+    return tuple(sorted(impossible))

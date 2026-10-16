@@ -23,6 +23,10 @@ Lunch break (mandatory). A configured lunch rule is a mandatory continuous break
 
 Teacher presence. An optional per-teacher rule sets a minimum of hours and a maximum gap per presence, split at a free lunch choice when lunch is required and otherwise over the whole day. The validator reports `TEACHER_PRESENCE_VIOLATION`; the exact model enforces the same rule, and the annual plan keeps an editable weekly load at zero or at least the minimum. The constructive and recovery routes prefer continuing an open presence of a teacher with a minimum and return only a validated candidate or `None`, so the exact search closes the gap. The 48-class fixture accepts optional presence rules (`lab/typology.py` `build_typology_fixture`).
 
+Presence admission. First generation and published-timetable updates both run prevalidation. Queue admission independently rejects `TEACHER_PRESENCE_IMPOSSIBLE` before creating a job when no available day can fit a teacher's minimum. The same pure check runs before either application use case starts search. It uses optimistic daily capacity, ignores competing resources and preserves the exemption for teachers with only protected demand; passing it does not prove feasibility. See [`impossible_presence_teacher_ids`](../../backend/app/scheduler/domain/teacher_presence.py).
+
+Cancellation. Native placement and room searches poll the cancellation request and call CP-SAT `StopSearch`. Construction checks cancellation at its boundaries. The interface keeps tracking the job and displays the pending cancellation until a terminal result arrives. If the worker disappears after a cancellation request, reconciliation records `CANCELLED`; an abandoned attempt without that request remains `FAILED / WORKER_STALLED`.
+
 Per-class module selection. The projection reads `class_subject_module` and plans only the selected modules of each class-subject link, with `sequence = module.order + 1`. An active link without a selected module fails the snapshot with `CLASS_SUBJECT_WITHOUT_MODULES`. A deselected module with execution credit stays as a `planned = false` requirement. The planning loaders treat the live selection as authoritative between generations, so a deselect or reselect applies before the next projection. They close a retired module at its executed minutes, so the ledger stays replayable. See `backend/app/scheduler/infrastructure/curriculum.py`, `progress.py`, and `backend/app/scheduler/domain/demand.py` `close_retired_modules`.
 
 Stability window. The stability window protects only an already-published schedule. The snapshot computes `protected_dates` only when an ACTIVE `SchedulerVersionV1` exists; a first generation has empty `protected_dates`. The window counts grid days, not calendar days, and always preserves executed and past lessons.
@@ -118,6 +122,7 @@ The `fast` profile skips it; the `e2e-runtime` CI job runs it.
 
 ## Current limitations
 
+- Large feasible presence instances can still exhaust worker memory. The admission check prevents building a model for a proven impossible minimum; it does not bound native solver memory or interrupt construction internally.
 - A generation that stops at the safety limit reports quality `NOT_MEASURED`; this is not proof of impossibility.
 - There is no rollback to a legacy engine; recovery uses only compatible v1 artifacts.
 - After a data reset, local identity is rebuilt on the first admin login through session bootstrap.
