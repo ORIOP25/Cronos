@@ -34,6 +34,7 @@ async def get_prevalidation(
         str | None,
         Query(description="Token de concorrência opcional para deteção de estado obsoleto."),
     ] = None,
+    strategy: models.ScheduleGenerationStrategy = models.ScheduleGenerationStrategy.COMPLETE_GENERATION,
 ):
     """Executa a pré-validação pura antes da geração de horários (zero writes)."""
     state_service = SchedulerStateService(db)
@@ -56,7 +57,7 @@ async def get_prevalidation(
     initial_report = await preflight_service.evaluate(
         organization_id=current_user.organization_id,
         school_year_id=active_school_year.id,
-        strategy=models.ScheduleGenerationStrategy.COMPLETE_GENERATION,
+        strategy=strategy,
     )
 
     if fingerprint is not None and fingerprint != initial_report.fingerprint:

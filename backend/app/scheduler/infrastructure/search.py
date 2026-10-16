@@ -474,8 +474,11 @@ def _joint_search(
             num_workers=num_workers,
             random_seed=random_seed,
             stop_at_first_complete=stop_at_first_complete,
+            should_cancel=should_cancel,
         )
         _merge_statistics(phase_totals, plan.statistics)
+        if plan.status == OUTCOME_CANCELLED or (should_cancel is not None and should_cancel()):
+            return _cancelled(start, "The request was cancelled during annual planning.")
         if plan.status == ANNUAL_INFEASIBLE:
             exhausted = True
             break

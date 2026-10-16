@@ -1,17 +1,24 @@
+from datetime import UTC, datetime
+
 import structlog
 from sqlalchemy import and_, func, or_
 from sqlalchemy import select as sa_select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models, schemas
-from app.scheduler.domain.candidate import LunchRule, TeacherPresenceRule
+from app.scheduler.domain.candidate import LunchRule, SchedulingStrategy, TeacherPresenceRule
 from app.scheduler.domain.constraint_policy import (
     RoomEligibilityReason,
     SchoolConstraintPolicy,
     assess_room_eligibility,
 )
-from app.scheduler.domain.teacher_presence import PresenceSlot, teacher_can_have_presence
+from app.scheduler.domain.teacher_presence import (
+    PresenceSlot,
+    impossible_presence_teacher_ids,
+    teacher_can_have_presence,
+)
 from app.scheduler.infrastructure.models import SchedulerProposalV1
+from app.scheduler.infrastructure.snapshot import SnapshotConfigurationError, load_snapshot
 from app.services import grid_version_service
 from app.services.availability_matrix_service import AvailabilityMatrixInspector
 from app.services.scheduler_fingerprint_service import SchedulerFingerprintService
@@ -888,15 +895,13 @@ class PreflightService:
 
         issues.extend(await _validate_class_availability(self.db, organization_id, timeslot_ids))
 
-        issues.extend(
-            await _validate_teacher_presence(
-                self.db,
-                organization_id,
-                resolved_grid.blocks,
-                teacher_ids,
-                lunch_rule,
-                teacher_rows,
-            )
+        presence_issues = await _validate_teacher_presence(
+            self.db,
+            organization_id,
+            resolved_grid.blocks,
+            teacher_ids,
+            lunch_rule,
+            teacher_rows,
         )
 
         if (
@@ -927,6 +932,42 @@ class PreflightService:
                         route="/schedules",
                     )
                 )
+
+        if (
+            strategy is models.ScheduleGenerationStrategy.ADAPTIVE_REPAIR
+            and presence_issues
+            and not any(issue.severity == "BLOCKER" for issue in issues)
+        ):
+            try:
+                bundle = await load_snapshot(
+                    self.db,
+                    organization_id,
+                    school_year_id=school_year_id,
+                    strategy=SchedulingStrategy.ADAPTIVE_RECOVERY,
+                    now_utc=datetime.now(UTC),
+                )
+            except SnapshotConfigurationError as exc:
+                issues.append(
+                    schemas.PreflightIssue(
+                        code=exc.code,
+                        severity="BLOCKER",
+                        message=str(exc),
+                        route=CONFIG_ROUTE,
+                    )
+                )
+            else:
+                impossible_ids = set(
+                    impossible_presence_teacher_ids(bundle.snapshot, bundle.periods)
+                )
+                presence_issues = await _validate_teacher_presence(
+                    self.db,
+                    organization_id,
+                    resolved_grid.blocks,
+                    teacher_ids & impossible_ids,
+                    lunch_rule,
+                    teacher_rows,
+                )
+        issues.extend(presence_issues)
 
         has_blocker = any(i.severity == "BLOCKER" for i in issues)
         has_warning = any(i.severity == "WARNING" for i in issues)

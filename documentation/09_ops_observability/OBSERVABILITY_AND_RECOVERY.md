@@ -68,7 +68,7 @@ Persisted job evidence supports tenant-scoped operational review without logging
 
 Jobs move from `QUEUED` through `RUNNING` and `VALIDATING` to `SUCCEEDED`, `CANCELLED`, `STALE`, `INFEASIBLE`, `INCONCLUSIVE` or `FAILED`. `QUEUED` age alone is an operational signal,
 not proof that a job was lost: recovery never fails a queued job without
-broker or worker evidence. The `scheduler.v1.supervise` task (every 60 seconds) fails a `RUNNING` or `VALIDATING` job whose heartbeat is older than `SCHEDULER_V1_ABANDONED_SECONDS` (default 120) as `FAILED` with result code `WORKER_STALLED`, and wakes the executor when work is queued and nothing runs.
+broker or worker evidence. The `scheduler.v1.supervise` task (every 60 seconds) closes a `RUNNING` or `VALIDATING` job whose heartbeat is older than `SCHEDULER_V1_ABANDONED_SECONDS` (default 120). A persisted cancellation request produces `CANCELLED`; otherwise the result is `FAILED` with result code `WORKER_STALLED`. The supervisor wakes the executor when work is queued and nothing runs.
 Provider and webhook states remain queryable through their persisted status fields.
 
 ## Failure Modes and Recovery

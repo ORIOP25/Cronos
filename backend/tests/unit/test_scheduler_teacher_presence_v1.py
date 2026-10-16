@@ -8,6 +8,8 @@ exemption) and the enumerative-oracle objective.
 from dataclasses import replace
 from datetime import date, time
 
+import pytest
+
 from app.scheduler.domain.calendar import normalize_period
 from app.scheduler.domain.candidate import (
     Assignment,
@@ -26,6 +28,7 @@ from app.scheduler.domain.candidate_validation import (
 from app.scheduler.domain.projection import ModuleRequirement, ModuleSlice
 from app.scheduler.domain.teacher_presence import (
     PresenceLesson,
+    impossible_presence_teacher_ids,
     lunch_options,
     teacher_day_complies,
 )
@@ -34,6 +37,42 @@ TZ = "Europe/Lisbon"
 ORIGIN = date(2026, 9, 21)
 PREFERRED = date(2026, 10, 30)
 HARD_END = date(2026, 11, 30)
+
+
+@pytest.mark.parametrize("adaptive", [False, True])
+def test_impossible_teacher_presence_stops_before_constructing_any_solver_model(adaptive):
+    from app.scheduler.application.generation import generate_complete
+    from app.scheduler.application.recovery import repair_schedule
+    from tests.unit.test_scheduler_recovery_solver_v1 import POLICY
+
+    slots = (_slot(9), _slot(10))
+    periods = (_period(9), _period(10))
+    target = _snapshot(
+        slots=slots,
+        required_minutes=60,
+        teacher_presence=(TeacherPresenceRule(100, False, 720, 60),),
+    )
+
+    def unexpected_search(*_args, **_kwargs):
+        pytest.fail("Impossible presence must be detected before search allocates a model.")
+
+    if adaptive:
+        target = replace(target, strategy=SchedulingStrategy.ADAPTIVE_RECOVERY)
+        result = repair_schedule(
+            target, periods, CandidateSchedule(()), search=unexpected_search, policy=POLICY
+        )
+    else:
+        result = generate_complete(target, periods, search=unexpected_search)
+
+    assert result.outcome == "INFEASIBLE"
+    assert result.candidate is None
+    assert result.search_seconds == 0
+    proven = [row for row in result.diagnoses if row.code == "TEACHER_PRESENCE_IMPOSSIBLE"]
+    assert len(proven) == 1
+    assert proven[0].affected_teacher_ids == (100,)
+    assert proven[0].evidence_kind == "PROVEN_SCOPE"
+
+
 MONDAY = date(2026, 9, 21)
 
 LUNCH = LunchRule(window_start=time(12, 0), window_end=time(14, 0), minimum_minutes=60)
@@ -104,6 +143,32 @@ def _lessons(*hours: int, credit: int = 60) -> tuple[ScheduledLesson, ...]:
 
 def _codes(report) -> set[ValidationViolationCode]:
     return {violation.code for violation in report.violations}
+
+
+def test_presence_capacity_does_not_combine_different_weekday_grids():
+    target = _snapshot(
+        slots=(_slot(9), GridSlot(1, time(10), time(11))),
+        required_minutes=60,
+        teacher_presence=(TeacherPresenceRule(100, False, 120, 0),),
+    )
+    # The raw calendar includes all slot signatures on each date. Only the
+    # matching weekday is a teaching opportunity, as in placement eligibility.
+    periods = tuple(
+        normalize_period(day, time(hour), time(hour + 1), TZ)
+        for day in (MONDAY, date(2026, 9, 22))
+        for hour in (9, 10)
+    )
+    assert impossible_presence_teacher_ids(target, periods) == (100,)
+
+
+def test_presence_capacity_exempts_a_teacher_with_only_protected_demand():
+    target = _snapshot(
+        slots=(_slot(9),),
+        required_minutes=60,
+        protected=_lessons(9),
+        teacher_presence=(TeacherPresenceRule(100, False, 720, 0),),
+    )
+    assert impossible_presence_teacher_ids(target, (_period(9),)) == ()
 
 
 # --- R04: the presence split by a free lunch choice --------------------------

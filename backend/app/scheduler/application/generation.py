@@ -35,6 +35,7 @@ from app.scheduler.domain.capacity import aggregate_capacity_check, residual_min
 from app.scheduler.domain.diagnostics import (
     Diagnosis,
     diagnose_capacity,
+    diagnose_impossible_teacher_presence,
     diagnose_joint_isolation,
     diagnose_teacher_presence_rules,
 )
@@ -179,6 +180,15 @@ def generate_complete(
                 None,
                 message="Executed or protected credit exceeds an assignment requirement.",
             )
+    presence_conflict = diagnose_impossible_teacher_presence(snapshot, periods)
+    if presence_conflict is not None:
+        return GenerationResult(
+            OUTCOME_INFEASIBLE,
+            None,
+            message=presence_conflict.message,
+            diagnoses=_with_presence_hint(snapshot, (presence_conflict,)),
+            wall_time_seconds=monotonic() - started,
+        )
     capacity = aggregate_capacity_check(snapshot, periods)
     if capacity.proven_infeasible:
         isolation = diagnose_joint_isolation(snapshot, periods)

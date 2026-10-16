@@ -21,6 +21,7 @@ from app.scheduler.domain.capacity import (
     eligible_periods,
     residual_minutes,
 )
+from app.scheduler.domain.teacher_presence import impossible_presence_teacher_ids
 
 
 class DiagnosisCode(StrEnum):
@@ -34,6 +35,7 @@ class DiagnosisCode(StrEnum):
     JOINT_NO_COMMON_TIME = "JOINT_NO_COMMON_TIME"
     PROTECTED_AVAILABILITY_CONFLICT = "PROTECTED_AVAILABILITY_CONFLICT"
     TEACHER_PRESENCE_RULES = "TEACHER_PRESENCE_RULES"
+    TEACHER_PRESENCE_IMPOSSIBLE = "TEACHER_PRESENCE_IMPOSSIBLE"
 
 
 class EvidenceKind(StrEnum):
@@ -271,6 +273,22 @@ def diagnose_failure(message: str) -> Diagnosis:
         message=message,
         scope="GLOBAL",
         suggestions=(REVIEW_SAFETY_LIMIT,),
+    )
+
+
+def diagnose_impossible_teacher_presence(
+    snapshot: PlanningSnapshot, periods: tuple[Period, ...]
+) -> Diagnosis | None:
+    teacher_ids = impossible_presence_teacher_ids(snapshot, periods)
+    if not teacher_ids:
+        return None
+    return Diagnosis(
+        code=DiagnosisCode.TEACHER_PRESENCE_IMPOSSIBLE,
+        evidence_kind=EvidenceKind.PROVEN_SCOPE,
+        message="No available school day can accommodate these teachers' minimum presence.",
+        scope="TEACHER_DAILY_CAPACITY",
+        affected_teacher_ids=teacher_ids,
+        suggestions=(REVIEW_AVAILABILITY,),
     )
 
 

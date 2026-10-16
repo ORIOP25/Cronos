@@ -49,6 +49,7 @@ import {
   useWeekSchedule,
 } from '../features/scheduling/data'
 import { useCompleteFoundation } from '../features/foundation/foundationData'
+import { usePrevalidation } from '../features/readiness/data'
 
 vi.mock('../apiClient', () => ({
   default: {
@@ -73,6 +74,13 @@ function createHarness() {
 }
 
 describe('vertical feature data hooks', () => {
+  it('separates generation prevalidation by strategy and sends it to the API', async () => {
+    const { queryClient, wrapper } = createHarness()
+    const hook = renderHook(() => usePrevalidation({ strategy: 'ADAPTIVE_REPAIR' }), { wrapper })
+    await waitFor(() => expect(hook.result.current.isSuccess).toBe(true))
+    expect(apiClient.get).toHaveBeenCalledWith('/readiness/prevalidation', { params: { strategy: 'ADAPTIVE_REPAIR' } })
+    expect(queryClient.getQueryData(['scheduler-prevalidation', 'org-a', 'ADAPTIVE_REPAIR'])).toEqual([])
+  })
   beforeEach(() => {
     resetClerkState()
     setClerkState({ orgId: 'org-a', isSignedIn: true, isLoaded: true })

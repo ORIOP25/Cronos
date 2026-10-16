@@ -304,3 +304,37 @@ def test_recovery_never_starts_fallback_placement_after_interruption(monkeypatch
 
     assert outcome.status == ("CANCELLED" if interruption == "cancellation" else "INCONCLUSIVE")
     assert outcome.candidate is None
+
+
+@pytest.mark.parametrize(
+    ("annual_status", "cancel_requested"),
+    [("CANCELLED", False), ("INFEASIBLE", True), ("INCONCLUSIVE", True), ("FEASIBLE", True)],
+)
+def test_scheduler_annual_cancellation_propagates_and_never_starts_fallback(
+    monkeypatch, annual_status, cancel_requested
+):
+    fixture = build_scale_fixture(6, seed=1)
+    cancelled = [False]
+
+    def should_cancel():
+        return cancelled[0]
+
+    def cancelled_plan(*args, **kwargs):
+        assert kwargs.get("should_cancel") is should_cancel
+        cancelled[0] = cancel_requested
+        return AnnualPlan(annual_status, None, None, None, 0, False, 0.0, {})
+
+    def unexpected_placement(*args, **kwargs):
+        raise AssertionError("Cancelled annual search must not start placement or fallback")
+
+    monkeypatch.setattr(search_module, "construct_schedule", _no_construction)
+    monkeypatch.setattr(search_module, "plan_annual_quotas", cancelled_plan)
+    monkeypatch.setattr(search_module, "solve_placement", unexpected_placement)
+    outcome = search_module.search_complete_schedule(
+        fixture.snapshot,
+        fixture.periods,
+        time_limit_seconds=10,
+        should_cancel=should_cancel,
+    )
+    assert outcome.status == "CANCELLED"
+    assert outcome.candidate is None

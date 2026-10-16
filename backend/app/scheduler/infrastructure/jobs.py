@@ -26,6 +26,7 @@ from app.scheduler.domain.eligibility import (
     EligibilityReason,
     generation_eligibility,
 )
+from app.scheduler.domain.teacher_presence import impossible_presence_teacher_ids
 from app.scheduler.infrastructure.curriculum import sync_curricular_projection
 from app.scheduler.infrastructure.models import (
     JOB_ACTIVE_STATUSES,
@@ -34,7 +35,7 @@ from app.scheduler.infrastructure.models import (
     SchedulerProposalV1,
 )
 from app.scheduler.infrastructure.progress import load_active_version_id
-from app.scheduler.infrastructure.snapshot import load_snapshot
+from app.scheduler.infrastructure.snapshot import SnapshotConfigurationError, load_snapshot
 
 EXECUTOR_LOCK_KEY = 109_438_846_303_891  # "cronos" as a bigint
 QUEUE_METADATA_SQL = text(
@@ -195,6 +196,34 @@ async def enqueue_generation(
             "scheduler_state_changed",
             "O horário foi alterado entretanto. Atualize a página e volte a tentar.",
             reasons=decision.reasons,
+        )
+    impossible_teacher_ids = impossible_presence_teacher_ids(bundle.snapshot, bundle.periods)
+    if impossible_teacher_ids:
+        teacher_rows = (
+            await db.execute(
+                select(
+                    models.Teacher.id, models.Teacher.name, models.Teacher.minimum_presence_hours
+                )
+                .where(
+                    models.Teacher.organization_id == organization_id,
+                    models.Teacher.id.in_(impossible_teacher_ids),
+                )
+                .order_by(models.Teacher.id)
+            )
+        ).all()
+        raise SnapshotConfigurationError(
+            "TEACHER_PRESENCE_IMPOSSIBLE",
+            "No available school day can accommodate the minimum teacher presence.",
+            public_context={
+                "teacher_issues": [
+                    {
+                        "teacher_id": row.id,
+                        "teacher_name": row.name,
+                        "minimum_presence_hours": row.minimum_presence_hours,
+                    }
+                    for row in teacher_rows
+                ]
+            },
         )
     job = SchedulerJobV1(
         organization_id=organization_id,
@@ -648,7 +677,7 @@ async def request_cancellation(
 async def reconcile_abandoned(
     db: AsyncSession, *, stale_after_seconds: int, now_utc: datetime
 ) -> int:
-    """Fail attempts whose process stopped without writing a terminal state."""
+    """Finish abandoned attempts, preserving an explicit cancellation request."""
     if stale_after_seconds <= 0:
         raise ValueError("The abandoned threshold must be positive.")
     threshold = now_utc - timedelta(seconds=stale_after_seconds)
@@ -674,9 +703,10 @@ async def reconcile_abandoned(
         if job.heartbeat_at is not None and job.heartbeat_at > threshold:
             await db.rollback()
             continue
-        job.status = "FAILED"
-        job.result_code = "WORKER_STALLED"
-        job.stop_reason = "WORKER_STALLED"
+        cancelled = job.cancellation_requested_at is not None
+        job.status = "CANCELLED" if cancelled else "FAILED"
+        job.result_code = "CANCELLED" if cancelled else "WORKER_STALLED"
+        job.stop_reason = job.result_code
         job.finished_at = now_utc
         await reject_grid_version_for_job(db, job.organization_id, job.grid_version_id)
         await db.commit()

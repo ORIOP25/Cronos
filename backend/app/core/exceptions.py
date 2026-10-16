@@ -44,6 +44,12 @@ PUBLIC_ERROR_CATALOG: dict[str, dict[str, Any]] = {
     "preflight_failed": {
         "message": "Não é possível iniciar a geração. Reveja os bloqueios indicados.",
     },
+    "TEACHER_PRESENCE_IMPOSSIBLE": {
+        "message": (
+            "O mínimo de presença de um professor não cabe em nenhum dia disponível. "
+            "Reveja o mínimo, o furo máximo ou a disponibilidade na Equipa."
+        ),
+    },
     "NO_ELIGIBLE_ROOM": {
         "message": (
             "Existem turmas sem sala compatível com o tipo e a lotação. "

@@ -13,7 +13,7 @@ from app import models
 from app.api import deps
 from app.main import app
 from app.scheduler.infrastructure.models import SchedulerJobV1
-from tests._support.scheduler_v1 import seed_generatable_school
+from tests._support.scheduler_v1 import add_version, seed_generatable_school
 
 pytestmark = pytest.mark.postgresql
 
@@ -78,6 +78,41 @@ async def test_generate_is_idempotent_for_the_same_click(
     assert {call[1] for call in dispatched_tasks} == {job_id}
     jobs = (await db_session.scalars(select(SchedulerJobV1))).all()
     assert len(jobs) == 1
+
+
+@pytest.mark.parametrize("published", [False, True])
+async def test_generate_blocks_impossible_teacher_presence_before_queueing(
+    async_client, db_session, dispatched_tasks, published
+):
+    seed = await _configured_school(db_session)
+    teacher = await db_session.get(models.Teacher, seed.assignment.teacher_id)
+    teacher_name = teacher.name
+    teacher.lunch_required = False
+    teacher.minimum_presence_hours = 12
+    teacher.maximum_presence_gap_hours = 1
+    if published:
+        version = await add_version(db_session, seed)
+        seed.state.active_schedule_version_id = str(version.id)
+        seed.state.school_year_publication_state = models.SchoolYearPublicationState.PUBLISHED
+    await db_session.commit()
+
+    response = await async_client.post(
+        "/api/v1/scheduler/generate",
+        json={"idempotency_key": "presence-block", "expected_input_revision": 0},
+        headers=HEADERS,
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "TEACHER_PRESENCE_IMPOSSIBLE"
+    assert response.json()["detail"]["context"]["teacher_issues"] == [
+        {
+            "teacher_id": teacher.id,
+            "teacher_name": teacher_name,
+            "minimum_presence_hours": 12,
+        }
+    ]
+    assert dispatched_tasks == []
+    assert (await db_session.scalars(select(SchedulerJobV1))).all() == []
 
 
 async def test_generate_commits_the_job_before_dispatching(async_client, db_session):
