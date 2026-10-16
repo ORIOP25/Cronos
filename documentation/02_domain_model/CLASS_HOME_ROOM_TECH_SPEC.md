@@ -67,20 +67,21 @@ A escola também precisa de distinguir salas próprias diferentes, por exemplo u
 
 | ID | Decisão |
 | :--- | :--- |
-| T01 | Tabela nova `room_type` (`id`, `organization_id`, `name` até 60 caracteres, `is_normal`, `is_archived`), com RLS forçado e `UNIQUE (organization_id, id)`. Índice único em `(organization_id, lower(name))` e índice único parcial em `organization_id` com `is_normal`. `room.room_type_id` e `subject.room_type_id` passam a `NOT NULL` com chave composta para `room_type (organization_id, id)`. O enum `RoomType` e as colunas `room.type` e `subject.required_room_type` saem. |
-| T02 | A migração `0006_room_types` cria os 4 tipos em cada escola e converte as salas e disciplinas. O `complete_foundation` cria os 4 tipos de forma idempotente, como já cria os fluxos de estágio. As rotas de recursos exigem a fundação concluída (`deps.py`), por isso nenhuma sala existe antes dos tipos. |
-| T03 | A comparação de nomes ignora maiúsculas e acentos com o `_fold` de `bulk_import_policy.py`, tornado público como `fold_text`. Criar um nome igual ao de um tipo arquivado restaura esse tipo. |
-| T04 | A migração `0007_class_home_room` acrescenta `class.home_room_id` (nulo), com chave composta para `room (organization_id, id)` (`uq_room_org_id` já existe). Sem ação em cascata: `resource_removal.remove_room_configuration` limpa a coluna na mesma transação. |
-| T05 | `assess_room_eligibility` recebe `home_room_ids`: as salas da turma das turmas da unidade com lugares para a soma dos alunos. Se o tipo da disciplina é Normal, juntam-se às salas do tipo (D12). Uma restrição `specific_room` continua a cortar o conjunto. O snapshot, a pré-verificação e a verificação de substituições usam esta função; a prontidão (`COMPATIBLE_ROOM`) reproduz a regra em SQL. |
-| T06 | `PlanningSnapshot.home_rooms` lista pares (`class_id`, `room_id`) só das salas válidas: ativas e com lugares para a turma (D13). `Assignment.needs_special_room` é verdadeiro quando o tipo da disciplina não é Normal. `snapshot_to_dict` só escreve `home_rooms` com pares e `needs_special_room` quando é verdadeiro, como `precedences`. |
-| T07 | Métricas novas em `InitialQualityMetrics`: `home_room_misses` e `avoidable_room_changes` (regras em [Motor](#motor)). Os vetores inicial e adaptativo ganham as duas, por esta ordem, entre `preference_cost` e `room_change_cost`. As salas ficam depois de todos os critérios de tempo (D03). `QUALITY_POLICY_VERSION` passa a `baseline-v2`. |
-| T08 | Uma mudança de sala justificada pela sala da turma custa 0 na perturbação adaptativa: a aula entra na sala da turma de uma das suas turmas, ou sai da sala da turma de outra turma. O diff continua a mostrá-la como "Sala alterada". Sem isto, o horário publicado ganharia sempre e a D10 nunca se aplicaria. |
-| T09 | Um passe de salas novo, `assign_rooms_by_period` em `backend/app/scheduler/infrastructure/room_assignment.py`, reatribui só `room_id` das aulas editáveis, período a período e por ordem cronológica, com o `min_cost_flow` do OR-Tools que `constructive.py` já usa. As horas e as identidades nunca mudam. |
-| T10 | O passe corre em todos os candidatos que não passam por `_optimize_rooms`: construção da geração, os dois candidatos da recuperação antes da comparação, e as colocações com uma só janela ou com paragem no primeiro completo. `_optimize_rooms` ganha os estágios novos. A seleção semanal em `construct_schedule` fica igual. |
-| T11 | Datas em que aulas editáveis se sobrepõem só em parte mantêm as salas da construção. ponytail: teto conhecido; só grelhas irregulares o atingem. |
-| T12 | `RoomRead.home_classes` lista as turmas ativas que têm a sala como sala da turma. Serve a lista de escolha (D05) e a confirmação de remoção (D09). |
-| T14 | No caminho exato, `_refine_room_positions` e o estágio de salas dentro do modelo só escolhem entre horários com os mesmos critérios de tempo; nunca trocam tempo por sala (D03). Os testes de oráculo de `test_scheduler_w05_audit.py` (vetor completo igual ao ótimo enumerado) têm de continuar verdes com os componentes novos. O S9 escolhe entre estender esses dois mecanismos ou limitar a certificação aos componentes que otimizam, e regista a escolha no pull request. Nenhum teste é apagado. |
-| T13 | O validador não muda (`VALIDATOR_VERSION` igual): a elegibilidade já vem de `eligible_room_ids`. Não há dados reais em produção: as conversões da migração não precisam de cuidados de dados. |
+| T01 | Tabela nova `room_type` (modelo `SchoolRoomType`): `id`, `organization_id`, `name` até 60 caracteres, `is_normal`, `is_archived`. RLS forçado, `UNIQUE (organization_id, id)`, índice único em `(organization_id, lower(name))` e índice único parcial em `organization_id` com `is_normal`. `room.room_type_id` e `subject.room_type_id` com chave composta para `room_type (organization_id, id)`. No fim do PR 1 são `NOT NULL` e o enum `RoomType`, `room.type` e `subject.required_room_type` saem. |
+| T02 | A migração `0006_room_types` é feita em dois tempos dentro do PR 1, antes do merge. O S1 cria a tabela, cria os 4 tipos em cada escola e preenche `room_type_id` a partir do enum, ainda nulo. O S4 edita a mesma migração: `NOT NULL` e remoção do enum. Cada slice fica verde sozinho. |
+| T03 | Uma só função, `ensure_initial_room_types`, cria os 4 tipos de forma idempotente (por `is_normal` e pelo nome dobrado). Usam-na `complete_foundation` e a fixture `create_test_user_and_org` de `backend/tests/_support/db_fixtures.py`, que cria escolas já com a fundação concluída. As rotas de recursos exigem a fundação concluída (`deps.py`). A tabela entra em `PRIVACY_TABLES` de `backend/scripts/privacy.py`. |
+| T04 | A comparação de nomes ignora maiúsculas e acentos com o `_fold` de `bulk_import_policy.py`, tornado público como `fold_text`. Criar um nome igual ao de um tipo arquivado restaura esse tipo. |
+| T05 | A migração `0007_class_home_room` acrescenta `class.home_room_id` (nulo), com chave composta para `room (organization_id, id)` (`uq_room_org_id` já existe na migração base). Sem ação em cascata: `resource_removal.remove_room_configuration` limpa a coluna na mesma transação. |
+| T06 | `assess_room_eligibility` recebe `home_room_ids`: as salas da turma das turmas da unidade com lugares para a soma dos alunos. Se o tipo da disciplina é Normal, juntam-se às salas do tipo (D12). Uma restrição `specific_room` continua a cortar o conjunto. O snapshot, a pré-verificação e a verificação de substituições usam esta função; a prontidão (`COMPATIBLE_ROOM`) reproduz a regra em SQL. |
+| T07 | `PlanningSnapshot.home_rooms` lista pares (`class_id`, `room_id`) só das salas válidas: ativas e com lugares para a turma (D13). `Assignment.needs_special_room` é verdadeiro quando o tipo da disciplina não é Normal. `snapshot_to_dict` só escreve `home_rooms` com pares e `needs_special_room` quando é verdadeiro, como `precedences`. |
+| T08 | `home_room_misses` e `avoidable_room_changes` são medidas de `backend/app/scheduler/domain/home_rooms.py`, publicadas nas métricas da proposta. Não entram nos vetores de qualidade: `quality.py`, `QUALITY_POLICY_VERSION` e os testes de oráculo de `test_scheduler_w05_audit.py` ficam iguais. A política de salas aplica-se no passo de salas (T10, T11). |
+| T09 | Uma mudança de sala justificada pela sala da turma custa 0 na perturbação adaptativa (`measure_recovery_quality`): a aula entra na sala da turma de uma das suas turmas, ou sai da sala da turma de outra turma. O diff continua a mostrá-la como "Sala alterada". Sem isto, a guarda do caminho exato recusaria sempre a D10. |
+| T10 | Um passe de salas novo, `assign_rooms_by_period` em `backend/app/scheduler/infrastructure/room_assignment.py`, reatribui só `room_id` das aulas editáveis, período a período e por ordem cronológica, com o `min_cost_flow` do OR-Tools que `constructive.py` já usa. As horas e as identidades nunca mudam. |
+| T11 | Rotas de produção (paragem no primeiro completo), passe sem guarda: o candidato da construção na geração, os dois candidatos da recuperação antes do `min` do vetor, e a colocação do recurso `_unrestricted_fallback`. Caminho exato, passe com guarda (só fica se o vetor de qualidade não piorar): depois de `_optimize_rooms` ou do estágio de salas no modelo, depois de `_stabilize_recovery`, e sobre o incumbente publicado de `_baseline_incumbent`. |
+| T12 | No caminho exato (desligado em produção), `_optimize_rooms`, `_room_continuity_expression` e `_refine_room_positions` não mudam. Escolhem, entre horários com os mesmos critérios de tempo, o que poupa salas por turma e disciplina; nunca trocam tempo por sala. ponytail: teto conhecido — aí, a sala da turma só ganha quando não piora o vetor certificado. |
+| T13 | Datas em que aulas editáveis se sobrepõem só em parte mantêm as salas da construção. ponytail: teto conhecido; só grelhas irregulares o atingem. |
+| T14 | `RoomRead.home_classes` lista as turmas ativas que têm a sala como sala da turma. Serve a lista de escolha (D05) e a confirmação de remoção (D09). Alterar a turma invalida também a lista de salas no frontend. |
+| T15 | O validador não muda (`VALIDATOR_VERSION` igual): a elegibilidade já vem de `eligible_room_ids`. Não há dados reais em produção: as conversões da migração não precisam de cuidados de dados. |
 
 ### Âmbito e fora de âmbito
 
@@ -110,53 +111,54 @@ Os tipos próprios evitam que uma aula de Química vá parar a uma sala de Infor
 
 | Ficheiro | Lê ou escreve | Slice |
 | :--- | :--- | :--- |
-| `backend/alembic/versions/0006_room_types.py` (novo) | tabela, RLS, conversão, remoção do enum | S1 |
-| `backend/app/models.py` | `RoomType` (passa a tabela), `Room.room_type_id`, `Subject.room_type_id` (S1); `Class.home_room_id` (S6) | S1, S6 |
-| `backend/app/schemas.py` | `RoomTypeRead`, `RoomTypeRef` (S1); `RoomBase`, `RoomCreate`, `RoomUpdate`, `RoomRead`, `SubjectBase`, `SubjectUpdate`, `SubjectRead`, `SubjectSimple`, `SubjectProgressRead`, `ClassSubjectRead`, `TeacherSubjectProgressRead` (S2); `ClassUpdateInCourse`, `ClassRead`, `ClassFullDetailRead`, `RoomRead.home_classes` (S6) | S1, S2, S6 |
-| `backend/app/services/room_type_service.py` (novo) | listar, criar, mudar o nome, remover, criar os 4 iniciais | S1 |
+| `backend/alembic/versions/0006_room_types.py` (novo) | tabela, RLS, tipos iniciais, `room_type_id` preenchido (S1); `NOT NULL` e remoção do enum (S4) | S1, S4 |
+| `backend/app/models.py` | `SchoolRoomType`, `room_type_id` nulos (S1); enum sai (S4); `Class.home_room_id` (S8) | S1, S4, S8 |
+| `backend/app/schemas.py` | `RoomTypeRead`, `RoomTypeRef` (S1); as nove utilizações do enum: a importação, `SubjectBase`, `SubjectUpdate`, `RoomBase`, `RoomUpdate`, `SubjectSimple`, `SubjectProgressRead`, `ClassSubjectRead`, `TeacherSubjectProgressRead` (S2); `ClassUpdateInCourse`, `ClassRead`, `ClassFullDetailRead`, `RoomRead.home_classes` (S8) | S1, S2, S8 |
+| `backend/app/services/room_type_service.py` (novo) | listar, criar, mudar o nome, remover, `ensure_initial_room_types` | S1 |
 | `backend/app/api/v1/endpoints/room_types.py` (novo), `backend/app/api/api.py` | rotas `/room-types` | S1 |
-| `backend/app/services/foundation_service.py` | `complete_foundation` cria os tipos iniciais | S1 |
-| `backend/app/services/resource_removal.py` | referências de tipos (S1); `remove_room_configuration` limpa `home_room_id` (S6) | S1, S6 |
-| `backend/app/services/bulk_import_policy.py` | `fold_text`, `normalize_room_type` por nome (S2); tipos novos e coluna "Sala da turma" (S11) | S2, S11 |
-| `backend/app/services/bulk_import_service.py` | `load_snapshot` com tipos (S2); criação de tipos e `home_room_id` no `commit_import` (S11) | S2, S11 |
-| `backend/app/services/room_service.py` | `_room_snapshot`, criar e alterar com `room_type_id` (S2); `home_classes` (S6) | S2, S6 |
+| `backend/app/services/foundation_service.py` | `complete_foundation` chama `ensure_initial_room_types` | S1 |
+| `backend/scripts/privacy.py` | `PRIVACY_TABLES` com `room_type` | S1 |
+| `backend/tests/_support/db_fixtures.py` | `create_test_user_and_org` cria os tipos iniciais | S1 |
+| `backend/app/services/resource_removal.py` | referências de tipos (S1); `remove_room_configuration` limpa `home_room_id` (S8) | S1, S8 |
+| `backend/app/services/bulk_import_policy.py` | `fold_text` (S1); tipo por nome (S2); tipos novos e coluna "Sala da turma" (S14) | S1, S2, S14 |
+| `backend/app/services/bulk_import_service.py` | `load_snapshot` com tipos, escrita de `room_type_id` (S2); criação de tipos e `home_room_id` (S14) | S2, S14 |
+| `backend/app/services/room_service.py` | `_room_snapshot`, escrita com `room_type_id` (S2); `home_classes` (S8) | S2, S8 |
 | `backend/app/services/subject_service.py` | snapshot e escrita com `room_type_id` | S2 |
-| `backend/app/services/class_service.py` | `room_type` nas disciplinas da turma (S2); `update_class_in_course`, `_class_demand_snapshot`, `get_class_full_details` (S6) | S2, S6 |
-| `backend/app/services/dashboard_service.py` | contagem de salas por nome de tipo | S2 |
-| `backend/tests/factories.py` | fábricas com `room_type_id` | S2 |
-| `backend/app/scheduler/infrastructure/snapshot.py` | `_build_assignments` por id e nome (S3); salas da turma e `needs_special_room` (S7) | S3, S7 |
-| `backend/app/services/preflight_service.py` | elegibilidade por id, mensagem com nome (S3); salas da turma (S7) | S3, S7 |
-| `backend/app/services/school_readiness_service.py` | `COMPATIBLE_ROOM` por id (S3); ramo da sala da turma (S7) | S3, S7 |
-| `backend/app/services/scheduler_fingerprint_service.py` | `room_type_id` em salas e disciplinas (S3); `home_room_id` em turmas (S6) | S3, S6 |
-| `backend/app/scheduler/infrastructure/occurrences.py` | verificação `room_mismatch` das substituições por id (S3) e com sala da turma (S7) | S3, S7 |
+| `backend/app/services/class_service.py` | `room_type` nas disciplinas da turma (S2); `update_class_in_course`, `_class_demand_snapshot`, `get_class_full_details` (S8) | S2, S8 |
+| `backend/app/services/course_service.py`, `backend/app/services/teacher_service.py` | carregamento antecipado do tipo da disciplina (`SubjectSimple`, `get_teacher_progress`) | S2 |
+| `backend/app/services/dashboard_service.py` | salas por nome de tipo | S2 |
+| `backend/tests/factories.py`, `backend/tests/_support/scheduler_v1.py`, `backend/tests/integration/committed/joint_lesson_support.py` | salas e disciplinas com `room_type_id` | S2, S4 |
+| `backend/app/scheduler/infrastructure/snapshot.py` | `_build_assignments` por id e nome (S3); salas da turma e `needs_special_room` (S9) | S3, S9 |
+| `backend/app/services/preflight_service.py` | elegibilidade por id, mensagem com nome (S3); salas da turma (S9) | S3, S9 |
+| `backend/app/services/school_readiness_service.py` | `COMPATIBLE_ROOM` por id (S3); ramo da sala da turma (S9) | S3, S9 |
+| `backend/app/services/scheduler_fingerprint_service.py` | `room_type_id` em salas e disciplinas (S3); `home_room_id` em turmas (S8) | S3, S8 |
+| `backend/app/scheduler/infrastructure/occurrences.py` | `room_mismatch` das substituições por id (S3) e com sala da turma (S9) | S3, S9 |
 | `backend/app/services/schedule_service.py` | validação de `specific_room` por id | S3 |
-| `backend/app/scheduler/domain/constraint_policy.py` | `assess_room_eligibility` com `home_room_ids` | S7 |
-| `backend/app/scheduler/domain/candidate.py` | `HomeRoom`, `PlanningSnapshot.home_rooms`, `Assignment.needs_special_room` | S7 |
-| `backend/app/scheduler/domain/serialization.py` | `snapshot_to_dict`, `snapshot_from_dict` | S7 |
-| `backend/app/scheduler/domain/home_rooms.py` (novo) | métricas, mudança justificada, chave de escolha de sala | S8 |
-| `backend/app/scheduler/domain/quality.py` | métricas, vetores, `QUALITY_POLICY_VERSION` | S8 |
-| `backend/app/scheduler/domain/recovery.py` | vetor adaptativo; custo 0 da mudança justificada (T08) | S8 |
-| `backend/app/scheduler/application/publishing.py` | `metrics` e `_apply_quality` | S8 |
-| `backend/app/scheduler/infrastructure/search.py` | `_flatten_vector` (S8); passe de salas nos candidatos rápidos (S9) | S8, S9 |
-| `backend/app/scheduler/infrastructure/room_assignment.py` (novo) | `assign_rooms_by_period` | S9 |
-| `backend/app/scheduler/infrastructure/placement_model.py` | `_optimize_rooms` com estágios novos; passe quando `_optimize_rooms` não corre | S9 |
-| `frontend/src/features/catalog/data.js` | `useRoomTypes` (S4); mutações de tipos (S5) | S4, S5 |
-| `frontend/src/components/Forms/RoomForm.jsx`, `SubjectForm.jsx` | escolha do tipo da escola | S4 |
-| `frontend/src/components/RoomTypeBadge.jsx`, `frontend/src/utils/presentation.js` | etiqueta neutra com o nome; `ROOM_TYPES` sai | S4 |
-| `frontend/src/pages/Rooms.jsx` | coluna Tipo (S4); botão "Tipos de sala" (S5); confirmação com turmas (S10) | S4, S5, S10 |
-| `frontend/src/pages/Subjects.jsx`, `ClassSubjects.jsx`, `ClassDetails.jsx` | etiqueta do tipo (S4); campo e cabeçalho da sala da turma em `ClassDetails.jsx` (S10) | S4, S10 |
-| `frontend/src/components/dashboard/ResourceCounts.jsx` | nomes dos tipos | S4 |
-| `frontend/src/utils/apiErrors.js` | mensagem de sala sem tipo compatível com `required_room_type_name` | S4 |
-| `frontend/src/features/imports/data.js` | ajuda dos tipos (S4); contagem "Tipos de sala novos" e coluna "Sala da turma" (S11) | S4, S11 |
-| `frontend/src/features/tutorial/tutorialApiAdapter.js`, `tutorialScenario.js` | dados fictícios no contrato novo | S4 |
-| `frontend/e2e/utils/scheduler-fixtures.js`, `frontend/e2e/scheduler/generation.spec.js`, `frontend/e2e/readiness/class-module-selection.spec.js` | tiram `type` e `required_room_type` | S4 |
-| `frontend/src/components/RoomTypesModal.jsx` (novo) | janela "Tipos de sala" | S5 |
-| `frontend/src/components/SmartTable.jsx` | `deleteMessage` aceita uma função da linha | S10 |
-| `frontend/src/components/schedules/DraftPanel.jsx` | "Mudanças de sala evitáveis" | S10 |
-| `documentation/07_data_and_seed/sample_import_48_classes/Cronos_CursosETurmas_Template.csv` | coluna nova vazia | S11 |
+| `backend/app/scheduler/domain/constraint_policy.py` | `assess_room_eligibility` com `home_room_ids` | S9 |
+| `backend/app/scheduler/domain/candidate.py`, `serialization.py` | `HomeRoom`, `PlanningSnapshot.home_rooms`, `Assignment.needs_special_room` | S9 |
+| `backend/app/scheduler/domain/home_rooms.py` (novo) | medidas, mudança justificada, chave de escolha de sala | S10 |
+| `backend/app/scheduler/domain/recovery.py` | custo 0 da mudança justificada (T09) | S10 |
+| `backend/app/scheduler/application/publishing.py` | `metrics` com as duas medidas | S10 |
+| `backend/app/scheduler/infrastructure/room_assignment.py` (novo) | `assign_rooms_by_period` | S11 |
+| `backend/app/scheduler/infrastructure/search.py` | passe nas rotas de produção (S11); guarda no caminho exato, depois de `_stabilize_recovery` e no incumbente publicado (S12) | S11, S12 |
+| `backend/app/scheduler/infrastructure/placement_model.py` | passe na colocação com paragem no primeiro completo (S11) e com guarda numa só janela (S12) | S11, S12 |
+| `frontend/src/features/catalog/data.js` | `useRoomTypes` (S5); mutações de tipos (S7); alterar a turma invalida as salas (S13) | S5, S7, S13 |
+| `frontend/src/components/Forms/RoomForm.jsx`, `SubjectForm.jsx` | escolha do tipo da escola | S5 |
+| `frontend/src/components/RoomTypeBadge.jsx`, `frontend/src/utils/presentation.js` | etiqueta neutra com o nome; `ROOM_TYPES` sai | S5 |
+| `frontend/src/pages/Rooms.jsx` | coluna Tipo (S5); botão "Tipos de sala" (S7); confirmação com turmas (S13) | S5, S7, S13 |
+| `frontend/src/pages/Subjects.jsx`, `ClassSubjects.jsx`, `ClassDetails.jsx` | etiqueta do tipo (S5); campo e cabeçalho da sala da turma em `ClassDetails.jsx` (S13) | S5, S13 |
+| `frontend/src/components/dashboard/ResourceCounts.jsx` | nomes dos tipos | S6 |
+| `frontend/src/utils/apiErrors.js` | `required_room_type_name` (S6); erros dos tipos (S7) | S6, S7 |
+| `frontend/src/features/imports/data.js` | ajuda dos tipos (S6); "Tipos de sala novos" e "Sala da turma" (S14) | S6, S14 |
+| `frontend/src/features/tutorial/tutorialApiAdapter.js`, `tutorialScenario.js` | dados fictícios no contrato novo | S6 |
+| `frontend/e2e/utils/scheduler-fixtures.js`, `frontend/e2e/scheduler/generation.spec.js`, `frontend/e2e/readiness/class-module-selection.spec.js` | tiram `type` e `required_room_type` | S6 |
+| `frontend/src/components/RoomTypesModal.jsx` (novo) | janela "Tipos de sala" | S7 |
+| `frontend/src/components/SmartTable.jsx` | `deleteMessage` aceita uma função da linha | S13 |
+| `frontend/src/components/schedules/DraftPanel.jsx` | "Mudanças de sala evitáveis" | S13 |
+| `documentation/07_data_and_seed/sample_import_48_classes/Cronos_CursosETurmas_Template.csv` | coluna nova vazia | S14 |
 
-`constructive.py` e `recovery_construction.py` não mudam: o passe de salas corre depois deles (T10).
-`candidate_validation.py` não muda (T13).
+`constructive.py`, `recovery_construction.py` e `quality.py` não mudam: o passe de salas corre depois da construção (T11) e as medidas novas ficam fora do vetor (T08).
+`candidate_validation.py` não muda (T15).
 
 ## Data or Request Flow
 
@@ -165,7 +167,7 @@ Os tipos próprios evitam que uma aula de Química vá parar a uma sala de Infor
 | Pedido | Quem | Resposta |
 | :--- | :--- | :--- |
 | `GET /api/v1/room-types/` | administrador | `200` com os tipos ativos: `id`, `name`, `is_normal`, `room_count`, `subject_count` (só objetos ativos) |
-| `POST /api/v1/room-types/` | administrador | `201` com o tipo; restaura um arquivado com o mesmo nome (T03) |
+| `POST /api/v1/room-types/` | administrador | `201` com o tipo; restaura um arquivado com o mesmo nome (T04) |
 | `PATCH /api/v1/room-types/{room_type_id}` | administrador | `200` com o tipo; só muda `name` |
 | `DELETE /api/v1/room-types/{room_type_id}` | administrador | `200` com `remove_effect` `archive` ou `hard_delete`, como `DELETE /rooms/{id}` |
 | `POST` e `PATCH /api/v1/rooms/` | administrador | `room_type_id` opcional; sem ele vale o tipo Normal |
@@ -206,9 +208,9 @@ Definições:
 - **Aula flexível:** `needs_special_room` falso.
 - **Falha de sala da turma:** por aula e por turma da unidade com sala `h`, quando `h` está em `eligible_room_ids` e a aula não está em `h`.
 - **Mudança evitável:** por turma e por dia, nas aulas ordenadas pelo início, cada par seguido de aulas flexíveis em salas diferentes.
-- **Mudança justificada (T08):** a aula entra na sala de uma das suas turmas, ou sai da sala de uma turma que não é sua.
+- **Mudança justificada (T09):** a aula entra na sala de uma das suas turmas, ou sai da sala de uma turma que não é sua.
 
-O passe `assign_rooms_by_period` (T09):
+O passe `assign_rooms_by_period` (T10):
 
 - Mantém as salas das aulas protegidas e respeita a ocupação fixa (`available_rooms`).
 - Para cada grupo de aulas com o mesmo dia, início e fim, faz um emparelhamento de custo mínimo entre aulas e salas livres. A sala atual de cada aula está sempre no domínio, por isso há sempre solução.
@@ -220,7 +222,7 @@ O passe `assign_rooms_by_period` (T09):
   5. sala habitual: numa aula flexível de turma sem sala, a sala flexível mais usada pela turma até ali; numa aula com sala própria, a sala mais usada pela turma nessa disciplina (D07).
 - Desempate pelo `room_id`, para ser determinístico.
 
-`_optimize_rooms` (caminho exato) otimiza por esta ordem: falhas de sala da turma, perturbação de sala (`room_cost`), mudanças evitáveis, preferências de sala, continuidade por turma e disciplina.
+No caminho exato, o passe só fica se o vetor de qualidade não piorar (T11, T12).
 
 ## Contracts and Invariants
 
@@ -241,13 +243,13 @@ O passe `assign_rooms_by_period` (T09):
 - I04: `home_room_id` aponta sempre para uma sala ativa da mesma escola.
 - I05: o passe de salas e os estágios de sala só mudam `room_id`. Datas, horas, identidades e créditos ficam iguais (D03).
 - I06: as aulas protegidas e as aulas dadas nunca mudam de sala.
-- I07: um snapshot sem salas da turma e sem disciplinas de sala própria tem o digest de hoje (T06).
-- I08: snapshot, pré-verificação, prontidão e substituições usam a mesma regra de elegibilidade (T05).
+- I07: um snapshot sem salas da turma e sem disciplinas de sala própria tem o digest de hoje (T07).
+- I08: snapshot, pré-verificação, prontidão e substituições usam a mesma regra de elegibilidade (T06).
 - I09: um horário de turmas sem sala e só com disciplinas Normais nunca piora em mudanças evitáveis por causa do passe.
 
 ## States and Transitions
 
-Um tipo de sala está ativo ou arquivado. Arquivar só acontece pela remoção (D17); criar com o mesmo nome restaura-o (T03).
+Um tipo de sala está ativo ou arquivado. Arquivar só acontece pela remoção (D17); criar com o mesmo nome restaura-o (T04).
 
 ## Failure Modes
 
@@ -275,7 +277,7 @@ Cada cenário é um teste que falha primeiro. Os caminhos sem pasta estão em `b
 | R01 | Identificadores | `PATCH` da turma com o id de um tipo em vez de uma sala, ou com sala de outra escola, devolve `404` e não grava. | `committed/test_classes_crud.py` |
 | R02 | Isolamento | Duas escolas: cada uma só lista os seus tipos; `room_type_id` de outra escola em sala ou disciplina dá `404`; o CSV não encontra tipos nem salas de outra escola. | `committed/test_room_types.py` (novo); `committed/test_bulk_import.py` |
 | R03 | Cadeia de migrações | `0006` converte `normal`, `lab`, `gym` e `art` em duas escolas, desce e sobe sem drift; `0007` sobe, desce e sobe. | `committed/test_room_type_migration.py` (novo); provas de migração |
-| R04 | Normal fixo | Mudar o nome ou remover Normal dá `409`; concluir a fundação duas vezes deixa 4 tipos e um só Normal. | `test_room_types.py`; `backend/tests/contracts/test_foundation_service.py` |
+| R04 | Normal fixo | Mudar o nome ou remover Normal dá `409`. A migração cria os tipos numa escola ainda sem fundação; concluir depois a fundação deixa 4 tipos e um só Normal; a escola da fixture de teste tem os 4 tipos. | `test_room_types.py`; `backend/tests/contracts/test_foundation_service.py`; `test_room_type_migration.py` |
 | R05 | Reversão | Remover um tipo só usado por uma sala arquivada arquiva-o; criar o mesmo nome restaura o mesmo id; um tipo sem uso é apagado; um tipo usado por uma sala ativa dá `409` com o nome. | `test_room_types.py` |
 | R06 | Nomes | "laboratorio" colide com "Laboratório"; mudar o nome para outro já existente dá `409`. | `test_room_types.py` |
 | R07 | Leitores do motor (tipos) | Uma disciplina "Oficina" com só salas "Oficina": snapshot, pré-verificação e prontidão concordam; mudar o tipo de uma sala muda o fingerprint e desatualiza a proposta. | `backend/tests/contracts/test_preflight_service.py`; `backend/tests/contracts/test_school_readiness_service.py`; `committed/test_scheduler_fingerprint_service.py` |
@@ -287,14 +289,14 @@ Cada cenário é um teste que falha primeiro. Os caminhos sem pasta estão em `b
 | R13 | Restrição específica | Com `specific_room` para outra sala, a sala da turma não entra no conjunto. | `test_scheduler_room_eligibility.py` |
 | R14 | Digest | Sem salas da turma e sem disciplinas de sala própria, o digest fixado não muda; com uma sala da turma, muda. | `test_scheduler_candidate_contracts.py` |
 | R15 | Métricas | Os dois exemplos de [Exemplos](#exemplos) dão os valores da tabela; uma aula conjunta conta para cada turma. | `test_scheduler_home_rooms_v1.py` (novo) |
-| R16 | Ordem (D03) | Entre dois horários, menos furos ganha a menos falhas de sala; com tempos iguais, menos falhas ganha. | `test_scheduler_initial_quality_v1.py`; `test_scheduler_adaptive_quality_v1.py` |
+| R16 | Ordem (D03) | No caminho exato, um passe que piora o vetor de qualidade é recusado e o resultado certificado fica. Os testes de oráculo de `test_scheduler_w05_audit.py` ficam iguais e verdes. | `test_scheduler_room_assignment_v1.py`; `test_scheduler_w05_audit.py` (sem alterações) |
 | R17 | Prioridade (D04) | A tem sala N1; B sem sala usou N1 de manhã; ambas com aula Normal à mesma hora: A fica em N1. Com A no Ginásio, B pode usar N1. | `test_scheduler_room_assignment_v1.py` (novo) |
 | R18 | Partilha (D05, D03) | A e B com N1 em aula ao mesmo tempo: uma fica em N1 e a outra usa a mesma alternativa nas aulas seguintes desse dia. | `test_scheduler_room_assignment_v1.py` |
 | R19 | Aula conjunta (D06) | A+B conjunta com N1 de A com lugares para todos: vai para N1; sem lugares: vai para outra sala. | `test_scheduler_room_assignment_v1.py` |
 | R20 | Sala própria (D07) | Programação da turma A fica no mesmo laboratório em todas as aulas quando está livre. | `test_scheduler_room_assignment_v1.py` |
-| R21 | Histórico (D10) | Com horário publicado, mudar a sala de A: a atualização muda as aulas futuras editáveis para a sala nova; as protegidas e as dadas ficam; a perturbação de sala vale 0 e o diff mostra "Sala alterada". Sem mudanças, a atualização mantém as salas publicadas. | `test_scheduler_recovery_construction_v1.py`; `test_scheduler_search_v1.py` |
+| R21 | Histórico (D10) | Com horário publicado, mudar a sala de A: a atualização muda as aulas futuras editáveis para a sala nova; as protegidas e as dadas ficam; a perturbação de sala vale 0 e o diff mostra "Sala alterada". Sem mudanças, a atualização mantém as salas publicadas. No caminho exato, o incumbente publicado também recebe a sala nova. | `test_scheduler_home_rooms_v1.py` (medida); `test_scheduler_recovery_construction_v1.py`, `test_scheduler_search_v1.py` (rotas) |
 | R22 | Horas intocáveis | O passe devolve as mesmas aulas, datas e horas; numa data com sobreposição parcial mantém as salas; o validador aceita o resultado. | `test_scheduler_room_assignment_v1.py` |
-| R23 | Rotas | Numa instância pequena com solução sem mudanças evitáveis: construção, recuperação, colocação com paragem no primeiro completo e `_optimize_rooms` chegam a 0. | `test_scheduler_search_fallback_v1.py`; `test_scheduler_generation_quality_v1.py` |
+| R23 | Rotas | Numa instância pequena com solução sem mudanças evitáveis: geração, recuperação e colocação com paragem no primeiro completo chegam a 0; o passe corre depois de `_stabilize_recovery`. | `test_scheduler_search_fallback_v1.py`; `test_scheduler_generation_quality_v1.py`; `test_scheduler_search_v1.py` |
 | R24 | Desempenho | A fixture de 48 turmas gera com o passe; o tempo do passe fica registado no pull request. | `test_scheduler_typology_v1.py` (`slow_solver`) |
 | R25 | CSV de tipos | "oficina" nas salas e "Oficina" nas disciplinas criam um só tipo; a pré-visualização lista-o; um nome arquivado é restaurado. | `test_bulk_import_policy.py`; `test_bulk_import.py` |
 | R26 | CSV da sala da turma | Sala do mesmo lote é aceite; desconhecida ou sem lugares dá erro com linha e coluna; vazia fica Automática. | `test_bulk_import_policy.py`; `test_bulk_import.py` |
@@ -302,12 +304,14 @@ Cada cenário é um teste que falha primeiro. Os caminhos sem pasta estão em `b
 | R28 | Proposta | O painel mostra "{N} mudanças de sala evitáveis" quando a métrica existe e esconde-a numa proposta desatualizada. | `frontend/src/test/DraftPanel.test.jsx` |
 | R29 | Orçamento de consultas | `GET /rooms/` com `home_classes` mantém o número de consultas fixado. | `committed/test_query_budgets.py` |
 | R30 | Janela de tipos | Normal sem ações; criar, mudar o nome e remover mostram as mensagens da tabela de falhas. | `frontend/src/test/RoomTypesModal.test.jsx` (novo) |
+| R31 | Isolamento | O registo de privacidade classifica `room_type`. | `test_rgpd_contracts.py` |
+| R32 | Isolamento | O teste de RLS insere uma sala com `room_type_id` de outra escola e continua a ser recusado pela política, não pela falta da coluna. | `backend/tests/contracts/test_rls_database_policies.py` |
 
 ## Coexistência
 
 - Base: `main` em `e787aa5`. Última revisão Alembic: `0004_joint_lesson_groups`. O [spec da presença dos professores](https://github.com/ORIOP25/Cronos/pull/142) reserva `0005_teacher_presence`. Este spec usa `0006_room_types` e `0007_class_home_room`. Se a `0005` não estiver em `main` quando o S1 começar, use o número livre seguinte e ajuste `down_revision`.
 - O item 5 (presença) muda `candidate.py`, `serialization.py`, `snapshot.py`, `placement_model.py`, `constructive.py`, `recovery_construction.py` e `schemas.py`. Comece o PR 3 depois do PR 2 dele entrar.
-- O item 4 ([CSV de preferências](https://github.com/ORIOP25/Cronos/pull/141)) e o item 5 mudam `bulk_import_policy.py`, `bulk_import_service.py`, `features/imports/data.js` e `BulkImport.jsx`. O S2 e o S11 fazem rebase depois deles.
+- O item 4 ([CSV de preferências](https://github.com/ORIOP25/Cronos/pull/141)) e o item 5 mudam `bulk_import_policy.py`, `bulk_import_service.py`, `features/imports/data.js` e `BulkImport.jsx`. O S2 e o S14 fazem rebase depois deles.
 - Os pull requests #129 e #130 só têm documentação e podem chocar no índice `documentation/02_domain_model/README.md`; quem entra depois resolve.
 - Ordem: PR 1; depois PR 2 e PR 3 em paralelo; depois PR 4 (ver o [WBS](CLASS_HOME_ROOM_WBS.md)).
 
@@ -326,14 +330,14 @@ Verificação manual depois do PR 4: dar a uma turma uma sala Normal e a outra u
 
 | Guia | O que muda | Slice |
 | :--- | :--- | :--- |
-| [Scheduler V1 Tech Spec](../03_scheduler_engine/SCHEDULER_V1_TECH_SPEC_V2.md) | elegibilidade com sala da turma, vetor de qualidade, passe de salas, mudança justificada | S7, S8, S9 |
-| [Scheduler Engine](../03_scheduler_engine/README.md) | parágrafo "Weekly pattern" e passe de salas | S9 |
-| [School Configuration](SCHOOL_CONFIGURATION.md) | tipos de sala da escola e sala da turma | S1, S6 |
-| [Data Model](../01_system_architecture/DATA_MODEL.md) | `room_type` e `class.home_room_id` | S1, S6 |
-| [API Reference](../05_backend_api/API_REFERENCE.md) | rotas `/room-types`, campos novos | S1, S2, S6 |
-| [Importação CSV](../07_data_and_seed/BULK_IMPORT_CSV.md) | secção "Tipos de sala" e coluna "Sala da turma" | S2, S11 |
-| [Glossary](../00_getting_started/GLOSSARY.md) | Tipo de sala, Sala da turma, Mudança de sala evitável | S1, S8 |
-| [Feedback Message Matrix](../06_frontend_ux/FEEDBACK_MESSAGE_MATRIX.md) | mensagens da tabela de falhas | S5, S10 |
+| [Scheduler V1 Tech Spec](../03_scheduler_engine/SCHEDULER_V1_TECH_SPEC_V2.md) | elegibilidade com sala da turma, medidas de sala, passe de salas, mudança justificada | S9, S10, S11, S12 |
+| [Scheduler Engine](../03_scheduler_engine/README.md) | parágrafo "Weekly pattern" e passe de salas | S11 |
+| [School Configuration](SCHOOL_CONFIGURATION.md) | tipos de sala da escola e sala da turma | S1, S8 |
+| [Data Model](../01_system_architecture/DATA_MODEL.md) | `room_type` e `class.home_room_id` | S1, S8 |
+| [API Reference](../05_backend_api/API_REFERENCE.md) | rotas `/room-types`, campos novos | S1, S2, S8 |
+| [Importação CSV](../07_data_and_seed/BULK_IMPORT_CSV.md) | secção "Tipos de sala" e coluna "Sala da turma" | S2, S14 |
+| [Glossary](../00_getting_started/GLOSSARY.md) | Tipo de sala, Sala da turma, Mudança de sala evitável | S1, S10 |
+| [Feedback Message Matrix](../06_frontend_ux/FEEDBACK_MESSAGE_MATRIX.md) | mensagens da tabela de falhas | S7, S13 |
 
 ## Source Map
 
