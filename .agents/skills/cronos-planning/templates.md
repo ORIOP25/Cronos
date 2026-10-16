@@ -48,8 +48,8 @@ Agentes que implementam e o responsável de produto.
 <Erros devolvidos, com código e mensagem visível.>
 
 ## Cenários de risco
-| ID | Perigo | Cenário (teste que falha primeiro) | Ficheiro de teste |
-| R01 | Escrita múltipla | Importar 2 dias mantém o primeiro | <path> |
+| ID | Perigo | Cenário (teste que falha primeiro) | Resultado exato esperado | Ficheiro de teste |
+| R01 | Escrita múltipla | Importar 2 dias | Os 2 dias ficam gravados | <path> |
 
 ## Coexistência
 <Branches e specs abertas nos mesmos ficheiros, ordem de merge, número da migração.>
@@ -69,23 +69,21 @@ Agentes que implementam e o responsável de produto.
 ## Purpose
 Decompõe o tech spec `<FEATURE>_TECH_SPEC.md` (com link) em slices verticais. As regras vivem no spec.
 
-## Estado
-| PR | Slices | Estado | Ligação |
-| PR 1 | S1–S3 | por iniciar | — |
-
 ## Slices
 | ID | PR | Comportamento | Write set | Teste primeiro | Prova | Depende | Tamanho |
-| S1 | PR 1 | <comportamento observável> | <ficheiros> | R01, R03 em <test file> | `integration -- -k <area>` | — | M |
+| S1 | PR 1 | Contratos partilhados: alterações aos ficheiros quentes | `schemas.py`, `models.py`, migração | R01 em <test file> | `fast --scope backend -- -k <area>` | — | M |
+| S2 | PR 1 | <comportamento observável> | <ficheiros> | R02, R03 em <test file> | `integration -- -k <area>` | S1 | M |
 
 ## Lanes
 | Lane | Slices | Ficheiros quentes |
-| A | S1 → S2 | `models.py` |
+| 0 | S1 | `schemas.py`, `models.py` |
+| A | S2 → S3 | — |
 | B | S4 | — |
-Os slices de lanes diferentes correm em paralelo, cada um na sua worktree.
+A lane 0 corre primeiro e sozinha. As outras lanes partem do seu commit e correm em paralelo, cada uma na sua worktree.
 
 ## Pull requests
-| PR | Merge sozinho porque | Prova local antes do PR |
-| PR 1 | <ex.: sem UI, campo novo com valor por omissão> | <profile> |
+| PR | Merge sozinho porque | Prova local antes do PR | Cenários E2E |
+| PR 1 | <ex.: sem UI, campo novo com valor por omissão> | <profile> | <título do teste ou "nenhum"> |
 
 ## Rastreabilidade
 | Decisão ou risco | Slices |

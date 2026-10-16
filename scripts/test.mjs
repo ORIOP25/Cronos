@@ -38,7 +38,7 @@ Commands:
   fast --scope backend|frontend|all [-- runner arguments]
   critical --scope backend
   integration [-- runner arguments]
-  e2e [--project public|auth|app|isolated|readonly|provider|capacity]
+  e2e [--project public|auth|app|isolated|readonly|provider|capacity] [-- Playwright arguments]
   capacity
   capacity-smoke
   all --scope backend|frontend|all
@@ -90,7 +90,7 @@ export function parseArgs(argv) {
   const separator = rest.indexOf('--')
   const options = separator === -1 ? rest : rest.slice(0, separator)
   const forwarded = separator === -1 ? [] : rest.slice(separator + 1)
-  if (forwarded.length && !['fast', 'integration'].includes(command)) {
+  if (forwarded.length && !['fast', 'integration', 'e2e'].includes(command)) {
     throw usageError(`Arguments after -- are not supported by ${command}.`)
   }
   const parsed = {
@@ -932,6 +932,15 @@ export async function cleanupOwnedResources(context, steps = OWNED_CLEANUP_STEPS
   return { code, failures }
 }
 
+// A filtered run is a TDD step. The unfiltered run and CI keep the contracts.
+export function integrationRunsContracts(forwarded = []) {
+  return forwarded.length === 0
+}
+
+export function e2eRunArgs(project, forwarded = []) {
+  return ['run', 'test:e2e', '--', ...(project ? ['--project', project] : []), ...forwarded]
+}
+
 async function runIntegration(forwarded = [], context, { coverage = false } = {}) {
   const preparationStartedAt = monotonicMs()
   const stack = await startTestStack(context)
@@ -960,6 +969,10 @@ async function runIntegration(forwarded = [], context, { coverage = false } = {}
       reportPath: integrationReport,
       workers: INTEGRATION_WORKERS,
     })
+    if (!integrationRunsContracts(forwarded)) {
+      console.log('[test] filtered run: infrastructure contracts skipped')
+      return
+    }
     const contractPrefix = coverage
       ? ['-m', 'pytest', '--cov=app', '--cov-branch', '--cov-report=', '--cov-fail-under=0', '--cov-append']
       : ['-m', 'pytest']
@@ -983,7 +996,7 @@ async function runIntegration(forwarded = [], context, { coverage = false } = {}
   }
 }
 
-async function runE2e(project, context, extraEnv = {}) {
+async function runE2e(project, context, extraEnv = {}, forwarded = []) {
   const externalStack = process.env.E2E_EXTERNAL_STACK === '1'
   // The bounded capacity gate keeps its own explicit concurrency.
   const e2eWorkers = project === 'capacity' ? 2 : E2E_WORKERS
@@ -996,8 +1009,7 @@ async function runE2e(project, context, extraEnv = {}) {
   }
   context.e2eWorkers = e2eWorkers
   addPhaseTime(context, 'preparation_ms', Math.round(monotonicMs() - preparationStartedAt))
-  const args = ['run', 'test:e2e', '--']
-  if (project) args.push('--project', project)
+  const args = e2eRunArgs(project, forwarded)
   const capacityEnv = project === 'capacity'
     ? {
         CAPACITY_ENABLED: '1',
@@ -1397,7 +1409,7 @@ export async function main(argv = process.argv.slice(2)) {
       case 'fast': await runFast(parsed.scope, parsed.forwarded, context); break
       case 'critical': await runCriticalBackend(context); break
       case 'integration': await runIntegration(parsed.forwarded, context); break
-      case 'e2e': await runE2e(parsed.project, context); break
+      case 'e2e': await runE2e(parsed.project, context, {}, parsed.forwarded); break
       case 'capacity': await runE2e('capacity', context); break
       case 'capacity-smoke':
         await runE2e('capacity', context, {

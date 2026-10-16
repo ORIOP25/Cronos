@@ -24,7 +24,8 @@ Also:
 - Inspect existing code, callers, tests, and conventions before editing.
 - Do not add abstractions, dependencies, configuration, or files without a concrete need.
 - Keep tests deterministic and focused on observable behavior.
-- After frontend changes, rebuild the local frontend container (`docker compose up -d --build frontend`) so it serves the latest build.
+- After frontend changes, rebuild the local stack from the worktree that holds the change, and tell the owner which branch and commit it serves.
+  See [Local stack in a worktree](documentation/00_getting_started/COMMAND_REFERENCE.md#local-stack-in-a-worktree).
 
 ## Skills
 

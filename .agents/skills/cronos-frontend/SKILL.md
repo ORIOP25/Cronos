@@ -25,8 +25,8 @@ Drop the tutorial props (`allowedActions`, `readOnly`, `data-tutorial-target`) u
 
 - `node scripts/test.mjs fast --scope frontend -- <test file>` during TDD.
 - `npm run verify:checks` in `frontend/` before the pull request.
-- `node scripts/test.mjs e2e --project <name>` for a changed user journey, when Clerk test inputs exist.
-- Rebuild the local container: `docker compose up -d --build frontend`.
+- `node scripts/test.mjs e2e --project <name> -- -g <test title>` for a changed user journey, when Clerk test inputs exist.
+- Rebuild the local stack from the worktree that holds the change. See [Local stack in a worktree](../../../documentation/00_getting_started/COMMAND_REFERENCE.md#local-stack-in-a-worktree).
 
 ## Boundaries
 
