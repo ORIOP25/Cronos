@@ -226,6 +226,8 @@ All paths below are relative to `/api/v1`.
 [`ScheduleGenerationStrategy`](../../backend/app/models.py). It defaults to
 `COMPLETE_GENERATION`; timetable updates request `ADAPTIVE_REPAIR` so the report
 matches the operation that will run.
+For adaptive repair, presence blockers use the snapshot's residual demand.
+Teachers with only protected or completed lessons retain their presence exemption.
 
 `GET /readiness/bases` returns exactly six cumulative public step codes, in this
 order: `ACTIVE_CLASSES`, `MODULES`, `TEACHERS`, `TEACHER_ASSIGNMENT`,
