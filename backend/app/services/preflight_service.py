@@ -956,7 +956,9 @@ class PreflightService:
                     )
                 )
             else:
-                impossible_ids = set(impossible_presence_teacher_ids(bundle.snapshot, bundle.periods))
+                impossible_ids = set(
+                    impossible_presence_teacher_ids(bundle.snapshot, bundle.periods)
+                )
                 presence_issues = await _validate_teacher_presence(
                     self.db,
                     organization_id,
