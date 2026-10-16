@@ -2,6 +2,13 @@ import { describe, expect, it } from 'vitest'
 import { getApiErrorCode, getApiErrorMessage, getApiErrorPresentation, isApiErrorTransient } from '../utils/apiErrors'
 
 describe('api error contract', () => {
+  it('names teachers with impossible presence using only validated business context', () => {
+    const error = { response: { status: 422, data: { detail: { code: 'TEACHER_PRESENCE_IMPOSSIBLE', message: 'technical solver details', context: { teacher_issues: [{ teacher_id: 7, teacher_name: 'Íris', minimum_presence_hours: 12 }] } } } } }
+    expect(getApiErrorPresentation(error).message).toContain('Íris: mínimo de 12 horas')
+    expect(getApiErrorPresentation(error).message).not.toContain('technical solver')
+    error.response.data.detail.context.teacher_issues[0].minimum_presence_hours = 13
+    expect(getApiErrorPresentation(error).message).not.toContain('Íris')
+  })
   it('uses the safe public message for a known code', () => {
     const error = {
       response: {

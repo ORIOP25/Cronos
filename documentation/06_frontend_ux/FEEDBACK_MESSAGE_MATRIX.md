@@ -37,6 +37,8 @@ Other client responses stay in context.
 | Save teacher presence | Server block | `bad_request` and others | Banner in the modal | `TeacherAvailabilityModal` | Fix the rule |
 | Load teacher presence | Failure | — | Banner with retry | `TeacherPresenceSection` | Retry |
 | Validate teacher presence | Invalid integer or unpaired fields | Local validator | Field feedback and banner | `TeacherPresenceSection` | Fix the value |
+| Generate or update a timetable | Impossible teacher presence | `TEACHER_PRESENCE_IMPOSSIBLE` | Banner naming affected teachers, with an Equipa link | `Schedules` | Fix the presence rule or availability |
+| Cancel generation | Request accepted, worker still stopping | `cancellation_requested` | Disabled “A cancelar…” button until a terminal result | `Schedules` | Wait for cancellation |
 | Apply class availability to other classes | Success | — | Toast, 4 s | `ClassAvailabilityModal` | — |
 | Apply class availability to other classes | Server block | `bad_request`, `resource_not_found` | Banner in the modal | `ClassAvailabilityModal` | Fix the selection |
 | Apply class availability to other classes | Transient failure | Network, 429, 5xx | Toast, 6 s | `ClassAvailabilityModal` | Retry |

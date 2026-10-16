@@ -16,13 +16,13 @@ export function invalidatePreparationQueries(queryClient, orgId) {
   ])
 }
 
-export function usePrevalidation({ enabled = true } = {}) {
+export function usePrevalidation({ enabled = true, strategy = 'COMPLETE_GENERATION' } = {}) {
   const apiClient = useApiClient()
   const orgId = useOrganization().organization?.id
   const { isLoaded } = useAuth()
   return useQuery({
-    queryKey: orgQueryKey('scheduler-prevalidation', orgId),
-    queryFn: async () => apiClient.get('/readiness/prevalidation'),
+    queryKey: orgQueryKey('scheduler-prevalidation', orgId, strategy),
+    queryFn: async () => apiClient.get('/readiness/prevalidation', { params: { strategy } }),
     enabled: Boolean(orgId) && isLoaded && enabled,
     ...DYNAMIC_OPTS,
   })

@@ -16,6 +16,7 @@ const PRESENTATIONS = {
   request_body_too_large: { title: 'Pedido demasiado grande', message: 'Reduza os dados enviados e tente novamente.' },
   preflight_failed: { title: 'A geração precisa de configuração', message: 'Reveja os bloqueios indicados antes de gerar o horário.' },
   NO_ELIGIBLE_ROOM: { title: 'Salas incompatíveis', message: 'Existem turmas sem sala compatível com o tipo e a lotação. Ajuste as salas e tente novamente.' },
+  TEACHER_PRESENCE_IMPOSSIBLE: { title: 'Presença na escola impossível', message: 'Existem professores cujo mínimo de presença não cabe nos blocos disponíveis. Reveja as regras e a disponibilidade na Equipa.' },
   generation_dispatch_failed: { title: 'Geração não iniciada', message: 'Não foi possível iniciar a geração do horário. Tente novamente.', retryable: true },
   CANCELED: { title: 'Geração cancelada', message: 'A geração foi cancelada. Pode iniciar uma nova geração.', retryable: true },
   TIMED_OUT: { title: 'Geração demorou demasiado', message: 'A geração excedeu o limite de cinco minutos. Os dados e o horário aprovado foram preservados.', retryable: true },
@@ -118,6 +119,15 @@ function formatRoomIssues(errorContext) {
   return `${lines.join('\n')}\nCorrija a lotação em Salas ou as regras de sala e tente novamente.`
 }
 
+function formatTeacherPresenceIssues(errorContext) {
+  const issues = Array.isArray(errorContext?.teacher_issues) ? errorContext.teacher_issues : []
+  const lines = issues.filter(issue => issue && isPositiveInt(issue.teacher_id)
+    && isText(issue.teacher_name) && isPositiveInt(issue.minimum_presence_hours)
+    && issue.minimum_presence_hours <= 12)
+    .map(issue => `${issue.teacher_name}: mínimo de ${issue.minimum_presence_hours} horas sem presença possível nos blocos disponíveis.`)
+  return lines.length ? `${lines.join('\n')}\nReveja as regras e a disponibilidade na Equipa.` : null
+}
+
 export function getApiErrorPresentation(error, context = 'generic') {
   const detail = detailOf(error)
   const detailObject = detail && typeof detail === 'object' && !Array.isArray(detail) ? detail : {}
@@ -131,6 +141,7 @@ export function getApiErrorPresentation(error, context = 'generic') {
   const knownCode = candidates.find((candidate) => PRESENTATIONS[candidate]) || 'unexpected_error'
   const copy = PRESENTATIONS[knownCode]
   const roomMessage = knownCode === 'NO_ELIGIBLE_ROOM' ? formatRoomIssues(detailObject.context) : null
+  const presenceMessage = knownCode === 'TEACHER_PRESENCE_IMPOSSIBLE' ? formatTeacherPresenceIssues(detailObject.context) : null
   const contextReason = detailObject.context?.reason
   // Only own keys count: inherited names such as __proto__ or toString must fall back.
   const reasonMessage = knownCode === 'bad_request' && Object.hasOwn(CONTEXT_REASON_MESSAGES, contextReason)
@@ -141,7 +152,7 @@ export function getApiErrorPresentation(error, context = 'generic') {
     title: isNetworkError(error) ? 'Ligação indisponível' : copy.title,
     message: isNetworkError(error)
       ? 'Não foi possível ligar. Verifique a ligação e tente novamente.'
-      : humanizeOperationalDetail(roomMessage || reasonMessage || copy.message),
+      : humanizeOperationalDetail(roomMessage || presenceMessage || reasonMessage || copy.message),
     reference: typeof detailObject.reference === 'string' ? detailObject.reference : responseRequestId(error),
     retryable: detailObject.retryable ?? copy.retryable ?? false,
     supportRequired: detailObject.support_required ?? copy.supportRequired ?? false,

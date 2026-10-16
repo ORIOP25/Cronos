@@ -222,6 +222,11 @@ All paths below are relative to `/api/v1`.
 | `GET` | `/readiness/prevalidation` | Active administrator | Check blockers and warnings before generation. |
 | `GET` | `/dashboard` | Active administrator | Read `PREPARATION` or `OPERATIONAL` dashboard data. |
 
+`GET /readiness/prevalidation` accepts the optional `strategy` query parameter from
+[`ScheduleGenerationStrategy`](../../backend/app/models.py). It defaults to
+`COMPLETE_GENERATION`; timetable updates request `ADAPTIVE_REPAIR` so the report
+matches the operation that will run.
+
 `GET /readiness/bases` returns exactly six cumulative public step codes, in this
 order: `ACTIVE_CLASSES`, `MODULES`, `TEACHERS`, `TEACHER_ASSIGNMENT`,
 `COMPATIBLE_ROOM`, and `TEACHER_AVAILABILITY`. `CLASS_SUBJECTS` and `TIMESLOTS`

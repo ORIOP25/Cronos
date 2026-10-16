@@ -200,16 +200,15 @@ const Schedules = ({ initialClassId = '', initialWeekStart, persistView = true, 
   const canGenerateNow = Boolean(eligibility?.can_generate && schoolYear?.preferred_end_date)
   const isFirstGeneration = schedulerStatus?.publication_state !== 'PUBLISHED'
 
-  // Pre-generation diagnosis: only complete generation validates room compatibility.
+  // Validate the same operation that the generator will run.
   const {
     data: prevalidation,
     isFetching: prevalidationLoading,
     isError: prevalidationError,
     refetch: refetchPrevalidation,
   } = usePrevalidation({
-    enabled: canGenerate
-      && Boolean(schedulerStatus)
-      && schedulerStatus?.default_strategy === 'COMPLETE_GENERATION',
+    enabled: canGenerate && Boolean(schedulerStatus),
+    strategy: schedulerStatus?.default_strategy === 'ADAPTIVE_RECOVERY' ? 'ADAPTIVE_REPAIR' : 'COMPLETE_GENERATION',
   })
   const prevalidationIssues = Array.isArray(prevalidation?.issues) ? prevalidation.issues : []
   const prevalidationBlocked = prevalidation?.status === 'BLOCKED'
@@ -337,7 +336,7 @@ const Schedules = ({ initialClassId = '', initialWeekStart, persistView = true, 
         setActiveJobId(detail.context.job_id)
         return
       }
-      if (detail?.code === 'scheduler_state_changed' || detail?.code === 'NO_ELIGIBLE_ROOM') {
+      if (['scheduler_state_changed', 'NO_ELIGIBLE_ROOM', 'TEACHER_PRESENCE_IMPOSSIBLE'].includes(detail?.code)) {
         void refetchSchedulerStatus()
         void refetchPrevalidation()
       }
@@ -376,10 +375,10 @@ const Schedules = ({ initialClassId = '', initialWeekStart, persistView = true, 
         toast.error('Não foi possível cancelar a geração. Tente novamente.')
       },
     }))
-    setActiveJobId(null)
   }
 
   const isGenerating = ['QUEUED', 'RUNNING', 'VALIDATING'].includes(jobData?.status)
+  const isCancelling = cancelGenerationMutation.isPending || Boolean(jobData?.cancellation_requested)
   const hasSelection = Boolean(classId || teacherId)
 
   const openCreateOccurrenceModal = (slot) => {
@@ -467,10 +466,10 @@ const Schedules = ({ initialClassId = '', initialWeekStart, persistView = true, 
                       color="danger"
                       variant="outline"
                       size="sm"
-                      disabled={cancelGenerationMutation.isPending}
+                      disabled={isCancelling}
                       onClick={handleCancelGeneration}
                     >
-                      {cancelGenerationMutation.isPending
+                      {isCancelling
                         ? <><CSpinner size="sm" className="me-1" />A cancelar…</>
                         : <><CIcon icon={cilBan} className="me-1" />Cancelar geração</>
                       }
@@ -490,8 +489,8 @@ const Schedules = ({ initialClassId = '', initialWeekStart, persistView = true, 
               <FailureState
                 variant="inline"
                 presentation={generationActionError}
-                navigationTo={generationActionError.code === 'NO_ELIGIBLE_ROOM' ? '/rooms' : undefined}
-                navigationLabel="Abrir Salas"
+                navigationTo={generationActionError.code === 'NO_ELIGIBLE_ROOM' ? '/rooms' : generationActionError.code === 'TEACHER_PRESENCE_IMPOSSIBLE' ? '/members' : undefined}
+                navigationLabel={generationActionError.code === 'TEACHER_PRESENCE_IMPOSSIBLE' ? 'Abrir Equipa' : 'Abrir Salas'}
               />
             </div>
           )}

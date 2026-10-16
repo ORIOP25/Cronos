@@ -15,6 +15,9 @@ const mocks = vi.hoisted(() => ({
   generate: vi.fn(),
   approve: vi.fn(),
   reject: vi.fn(),
+  cancel: vi.fn(),
+  prevalidationOptions: vi.fn(),
+  taskStatus: vi.fn(),
   schedulerStatusRefetch: vi.fn(),
   currentDraftRefetch: vi.fn(),
   weekRefetch: vi.fn(),
@@ -22,7 +25,7 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('../features/readiness/data', () => ({
-  usePrevalidation: () => mocks.prevalidation,
+  usePrevalidation: (options) => { mocks.prevalidationOptions(options); return mocks.prevalidation },
   invalidatePreparationQueries: vi.fn(),
 }))
 
@@ -36,8 +39,8 @@ vi.mock('../features/scheduling/data', () => ({
   useApproveDraft: () => ({ mutateAsync: mocks.approve, isPending: false }),
   useRejectDraft: () => ({ mutateAsync: mocks.reject, isPending: false }),
   useGenerateSchedule: () => ({ mutateAsync: mocks.generate, isPending: false }),
-  useScheduleTaskStatus: () => ({ data: mocks.jobData }),
-  useCancelScheduleTask: () => ({ mutate: vi.fn(), isPending: false }),
+  useScheduleTaskStatus: (jobId) => { mocks.taskStatus(jobId); return { data: mocks.jobData } },
+  useCancelScheduleTask: () => ({ mutate: mocks.cancel, isPending: false }),
   useWeekSchedule: () => ({
     data: [],
     isFetching: false,
@@ -101,6 +104,9 @@ describe('Schedules scheduler flow', () => {
     mocks.generate.mockReset()
     mocks.approve.mockReset()
     mocks.reject.mockReset()
+    mocks.cancel.mockReset()
+    mocks.prevalidationOptions.mockReset()
+    mocks.taskStatus.mockReset()
     mocks.schedulerStatusRefetch.mockReset()
     mocks.currentDraftRefetch.mockReset()
     mocks.weekRefetch.mockReset()
@@ -113,6 +119,49 @@ describe('Schedules scheduler flow', () => {
       isError: false,
       refetch: vi.fn(),
     }
+  })
+
+  it('checks teacher presence before updating a published timetable', () => {
+    mocks.status = proposalStatus({ publication_state: 'PUBLISHED', active_version_id: 5, default_strategy: 'ADAPTIVE_RECOVERY', pending_proposal: null })
+    mocks.prevalidation.data = { status: 'BLOCKED', issues: [{ code: 'TEACHER_PRESENCE_IMPOSSIBLE', message: 'Íris precisa de 12 horas.', route: '/members' }] }
+    renderPage()
+    expect(mocks.prevalidationOptions).toHaveBeenLastCalledWith({ enabled: true, strategy: 'ADAPTIVE_REPAIR' })
+    expect(screen.getByRole('button', { name: 'Atualizar horário' })).toBeDisabled()
+    expect(screen.getByRole('link', { name: /Íris precisa/i })).toHaveAttribute('href', '/members')
+  })
+
+  it('keeps a persisted cancellation request visible while the worker stops', () => {
+    mocks.status = proposalStatus({ active_job: { id: 9 }, pending_proposal: null })
+    mocks.jobData = { id: 9, status: 'RUNNING', cancellation_requested: true }
+    renderPage()
+    expect(screen.getByRole('button', { name: /A cancelar…/ })).toBeDisabled()
+  })
+
+  it('keeps tracking a newly started job after asking to cancel it', async () => {
+    mocks.status = proposalStatus({ pending_proposal: null })
+    mocks.generate.mockResolvedValue({ job: { id: 91 } })
+    const page = renderPage()
+    fireEvent.click(screen.getByRole('button', { name: 'Gerar horário' }))
+    fireEvent.click(await screen.findByRole('button', { name: /iniciar gera/i }))
+    await waitFor(() => expect(mocks.taskStatus).toHaveBeenLastCalledWith(91))
+    mocks.jobData = { id: 91, status: 'RUNNING', cancellation_requested: false }
+    page.rerender(<MemoryRouter><Schedules /></MemoryRouter>)
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar geração' }))
+    expect(mocks.cancel).toHaveBeenCalledWith(91, expect.any(Object))
+    expect(mocks.taskStatus).toHaveBeenLastCalledWith(91)
+  })
+
+  it('shows the teacher admission error and refreshes prevalidation', async () => {
+    mocks.status = proposalStatus({ pending_proposal: null })
+    mocks.generate.mockRejectedValue({ response: { status: 422, data: { detail: {
+      code: 'TEACHER_PRESENCE_IMPOSSIBLE', context: { teacher_issues: [{ teacher_id: 7, teacher_name: 'Íris', minimum_presence_hours: 12 }] },
+    } } } })
+    renderPage()
+    fireEvent.click(screen.getByRole('button', { name: 'Gerar horário' }))
+    fireEvent.click(await screen.findByRole('button', { name: /iniciar gera/i }))
+    expect(await screen.findByText(/Íris: mínimo de 12 horas/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Abrir Equipa' })).toHaveAttribute('href', '/members')
+    expect(mocks.prevalidation.refetch).toHaveBeenCalled()
   })
 
   it.each(['approve', 'reject'].flatMap(action => ['school', 'logout', 'unmount'].flatMap(change => ['transient', 'stale'].map(error => [action, change, error]))))(
