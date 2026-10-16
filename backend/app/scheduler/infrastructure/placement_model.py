@@ -17,8 +17,10 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 from collections.abc import Callable, Mapping, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
 from datetime import date
+from threading import Event
 from time import monotonic
 from typing import Any
 
@@ -1240,6 +1242,37 @@ def _extract_selections(state: _ScopeState, solver: cp_model.CpSolver) -> dict[i
     return selections
 
 
+def _solve_with_cancellation(
+    solver: cp_model.CpSolver,
+    model: cp_model.CpModel,
+    should_cancel: Callable[[], bool] | None,
+) -> int:
+    if should_cancel is None:
+        return solver.Solve(model)
+    if should_cancel():
+        return cp_model.UNKNOWN
+    finished = Event()
+
+    def solve():
+        try:
+            return solver.Solve(model)
+        finally:
+            finished.set()
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        result = executor.submit(solve)
+        try:
+            while not finished.wait(0.1):
+                if should_cancel():
+                    # Retry until termination: StopSearch can race native startup.
+                    solver.StopSearch()
+        finally:
+            while not finished.is_set():
+                solver.StopSearch()
+                finished.wait(0.1)
+        return result.result()
+
+
 def _solve_scope(
     state: _ScopeState,
     *,
@@ -1261,7 +1294,7 @@ def _solve_scope(
     def run_solve(stage: str):
         diagnostics.phase_started("PLACEMENT_SOLVE", window=window, stage=stage)
         started = monotonic()
-        result = solver.Solve(model)
+        result = _solve_with_cancellation(solver, model, should_cancel)
         diagnostics.phase_finished(
             "PLACEMENT_SOLVE",
             window=window,
@@ -1271,6 +1304,8 @@ def _solve_scope(
         )
         return result
 
+    if should_cancel is not None and should_cancel():
+        return STATUS_CANCELLED, None, records, "CANCELLED"
     pre_solve_budget = deadline - monotonic()
     if pre_solve_budget > MIN_STAGE_SECONDS:
         model.Minimize(0)
@@ -1283,6 +1318,8 @@ def _solve_scope(
             else min(pre_solve_budget, max(2.0, pre_solve_budget * 0.5))
         )
         pre_status = run_solve("FEASIBILITY")
+        if should_cancel is not None and should_cancel():
+            return STATUS_CANCELLED, None, records, "CANCELLED"
         if pre_status == cp_model.INFEASIBLE:
             return STATUS_INFEASIBLE, None, records, STOP_SAFETY
         if pre_status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
@@ -1307,6 +1344,8 @@ def _solve_scope(
             model.Minimize(expression)
             solver.parameters.max_time_in_seconds = remaining
             status = run_solve(name)
+            if should_cancel is not None and should_cancel():
+                return "CANCELLED"
             if status == cp_model.INFEASIBLE and selections is None:
                 return "INFEASIBLE"
             if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
@@ -1371,6 +1410,8 @@ def _solve_scope(
         model.Minimize(0)
         solver.parameters.max_time_in_seconds = remaining
         status = run_solve("FEASIBILITY")
+        if should_cancel is not None and should_cancel():
+            return STATUS_CANCELLED, None, records, "CANCELLED"
         if status == cp_model.INFEASIBLE:
             return STATUS_INFEASIBLE, None, records, STOP_SAFETY
         if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
@@ -1409,6 +1450,7 @@ def _optimize_rooms(
     deadline: float,
     num_workers: int,
     random_seed: int,
+    should_cancel: Callable[[], bool] | None = None,
     room_cost: Callable[[Assignment, Period, int], int] | None = None,
 ) -> tuple[CandidateSchedule, _StageRecord]:
     room_start = monotonic()
@@ -1565,7 +1607,7 @@ def _optimize_rooms(
             solver.parameters.max_time_in_seconds = remaining
             diagnostics.phase_started("ROOMS", stage=f"STAGE_{stage_index}")
             solve_start = monotonic()
-            status = solver.Solve(model)
+            status = _solve_with_cancellation(solver, model, should_cancel)
             diagnostics.phase_finished(
                 "ROOMS",
                 stage=f"STAGE_{stage_index}",
@@ -1901,7 +1943,18 @@ def solve_placement(
             num_workers=num_workers,
             random_seed=random_seed,
             room_cost=room_cost,
+            should_cancel=should_cancel,
         )
+        if should_cancel is not None and should_cancel():
+            return PlacementOutcome(
+                STATUS_CANCELLED,
+                None,
+                None,
+                monotonic() - start,
+                objective_scope,
+                statistics,
+                message="The request was cancelled during room optimization.",
+            )
         if room_record.value > 0 and deadline - monotonic() > MIN_STAGE_SECONDS:
             refined = _refine_room_positions(
                 snapshot, periods, candidate, deadline=deadline, quality_of=quality_of
