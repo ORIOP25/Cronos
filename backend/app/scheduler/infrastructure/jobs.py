@@ -677,7 +677,7 @@ async def request_cancellation(
 async def reconcile_abandoned(
     db: AsyncSession, *, stale_after_seconds: int, now_utc: datetime
 ) -> int:
-    """Fail attempts whose process stopped without writing a terminal state."""
+    """Finish abandoned attempts, preserving an explicit cancellation request."""
     if stale_after_seconds <= 0:
         raise ValueError("The abandoned threshold must be positive.")
     threshold = now_utc - timedelta(seconds=stale_after_seconds)
@@ -703,9 +703,10 @@ async def reconcile_abandoned(
         if job.heartbeat_at is not None and job.heartbeat_at > threshold:
             await db.rollback()
             continue
-        job.status = "FAILED"
-        job.result_code = "WORKER_STALLED"
-        job.stop_reason = "WORKER_STALLED"
+        cancelled = job.cancellation_requested_at is not None
+        job.status = "CANCELLED" if cancelled else "FAILED"
+        job.result_code = "CANCELLED" if cancelled else "WORKER_STALLED"
+        job.stop_reason = job.result_code
         job.finished_at = now_utc
         await reject_grid_version_for_job(db, job.organization_id, job.grid_version_id)
         await db.commit()

@@ -556,6 +556,32 @@ async def test_abandoned_attempt_is_failed_and_retried(db_session):
     assert retry.job.id != queued.job.id
 
 
+@pytest.mark.parametrize("phase", ["RUNNING", "VALIDATING"])
+async def test_abandoned_cancel_requested_attempt_remains_cancelled(db_session, phase):
+    seed = await _minimal_school(db_session)
+    await db_session.commit()
+    queued = await _enqueue(db_session, seed)
+    await db_session.commit()
+    assert await claim_next_job(db_session, now_utc=MOMENT) is not None
+
+    job = await db_session.get(SchedulerJobV1, queued.job.id)
+    job.status = phase
+    job.heartbeat_at = MOMENT - timedelta(hours=1)
+    await db_session.commit()
+    await request_cancellation(db_session, seed.organization.id, job.id, now_utc=MOMENT)
+
+    reconciled = await reconcile_abandoned(db_session, stale_after_seconds=60, now_utc=MOMENT)
+
+    assert reconciled == 1
+    await db_session.refresh(job)
+    assert job.status == "CANCELLED"
+    assert job.result_code == "CANCELLED"
+    assert job.stop_reason == "CANCELLED"
+    assert job.cancellation_requested_at == MOMENT
+    assert job.finished_at == MOMENT
+    assert await reconcile_abandoned(db_session, stale_after_seconds=60, now_utc=MOMENT) == 0
+
+
 async def test_cancellation_is_idempotent_in_each_phase(db_session):
     seed = await _minimal_school(db_session)
     await db_session.commit()
