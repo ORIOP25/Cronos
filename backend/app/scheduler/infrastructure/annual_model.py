@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import math
 from collections import defaultdict
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from datetime import date
 from time import monotonic
@@ -28,10 +28,12 @@ from app.scheduler.domain.calendar import Period
 from app.scheduler.domain.candidate import PlanningSnapshot
 from app.scheduler.domain.capacity import eligible_periods, residual_minutes
 from app.scheduler.infrastructure import diagnostics
+from app.scheduler.infrastructure.solver_cancellation import solve_with_cancellation
 
 STATUS_FEASIBLE = "FEASIBLE"
 STATUS_INFEASIBLE = "INFEASIBLE"
 STATUS_INCONCLUSIVE = "INCONCLUSIVE"
+STATUS_CANCELLED = "CANCELLED"
 PROVEN_SCOPE = "ANNUAL_QUOTA_RELAXATION"
 
 QuotaKey = tuple[int, int, int]
@@ -492,6 +494,7 @@ def plan_annual_quotas(
     num_workers: int = 1,
     random_seed: int = 1,
     stop_at_first_complete: bool = False,
+    should_cancel: Callable[[], bool] | None = None,
 ) -> AnnualPlan:
     """Plan a weekly quota distribution, excluding proven-infeasible ones."""
     if type(snapshot) is not PlanningSnapshot:
@@ -503,13 +506,26 @@ def plan_annual_quotas(
     start = monotonic()
     deadline = start + time_limit_seconds
 
+    def cancelled_plan(statistics):
+        diagnostics.phase_finished("ANNUAL", started_at=start, status=STATUS_CANCELLED)
+        return AnnualPlan(
+            STATUS_CANCELLED, None, None, None, 0, False, monotonic() - start, statistics
+        )
+
+    if should_cancel is not None and should_cancel():
+        return cancelled_plan({})
+
     demands = _quota_demands(snapshot, periods, deadline, start)
+    if should_cancel is not None and should_cancel():
+        return cancelled_plan({})
     if isinstance(demands, AnnualPlan):
         return demands
     build_start = monotonic()
     diagnostics.phase_started("ANNUAL")
     model = cp_model.CpModel()
     variables = _add_quota_variables(model, demands, deadline, start, snapshot)
+    if should_cancel is not None and should_cancel():
+        return cancelled_plan({})
     if isinstance(variables, AnnualPlan):
         return variables
     (
@@ -562,10 +578,20 @@ def plan_annual_quotas(
         "solve_ms": 0,
         "room_set_constraints": room_set_constraints,
     }
+    if should_cancel is not None and should_cancel():
+        return cancelled_plan(statistics)
+
+    def run_solve():
+        if should_cancel is not None and should_cancel():
+            return cp_model.UNKNOWN
+        return solve_with_cancellation(
+            lambda: solver.Solve(model), solver.StopSearch, should_cancel
+        )
+
     solve_start = monotonic()
     diagnostics.phase_started("ANNUAL", stage="LATEST_WEEK")
     solver.parameters.max_time_in_seconds = max(0.0, deadline - monotonic())
-    status = solver.Solve(model)
+    status = run_solve()
     diagnostics.phase_finished(
         "ANNUAL",
         stage="LATEST_WEEK",
@@ -573,6 +599,8 @@ def plan_annual_quotas(
         status=solver.StatusName(status),
     )
     statistics["solve_ms"] += int((monotonic() - solve_start) * 1000)
+    if should_cancel is not None and should_cancel():
+        return cancelled_plan(statistics)
     if status == cp_model.INFEASIBLE:
         diagnostics.phase_finished("ANNUAL", started_at=start, status=STATUS_INFEASIBLE)
         return AnnualPlan(
@@ -600,11 +628,13 @@ def plan_annual_quotas(
         solve_start = monotonic()
         diagnostics.phase_started("ANNUAL", stage="WASTE")
         solver.parameters.max_time_in_seconds = remaining_time
-        status = solver.Solve(model)
+        status = run_solve()
         diagnostics.phase_finished(
             "ANNUAL", stage="WASTE", started_at=solve_start, status=solver.StatusName(status)
         )
         statistics["solve_ms"] += int((monotonic() - solve_start) * 1000)
+        if should_cancel is not None and should_cancel():
+            return cancelled_plan(statistics)
         if status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
             counts = _counts(q, solver)
             finals = {

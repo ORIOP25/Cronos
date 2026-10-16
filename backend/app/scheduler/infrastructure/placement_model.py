@@ -17,10 +17,8 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 from collections.abc import Callable, Mapping, Sequence
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
 from datetime import date
-from threading import Event
 from time import monotonic
 from typing import Any
 
@@ -55,6 +53,7 @@ from app.scheduler.infrastructure.annual_model import (
     QuotaDistribution,
     week_index,
 )
+from app.scheduler.infrastructure.solver_cancellation import solve_with_cancellation
 
 STATUS_COMPLETE = "COMPLETE"
 STATUS_INFEASIBLE = "INFEASIBLE"
@@ -1247,30 +1246,9 @@ def _solve_with_cancellation(
     model: cp_model.CpModel,
     should_cancel: Callable[[], bool] | None,
 ) -> int:
-    if should_cancel is None:
-        return solver.Solve(model)
-    if should_cancel():
+    if should_cancel is not None and should_cancel():
         return cp_model.UNKNOWN
-    finished = Event()
-
-    def solve():
-        try:
-            return solver.Solve(model)
-        finally:
-            finished.set()
-
-    with ThreadPoolExecutor(max_workers=1) as executor:
-        result = executor.submit(solve)
-        try:
-            while not finished.wait(0.1):
-                if should_cancel():
-                    # Retry until termination: StopSearch can race native startup.
-                    solver.StopSearch()
-        finally:
-            while not finished.is_set():
-                solver.StopSearch()
-                finished.wait(0.1)
-        return result.result()
+    return solve_with_cancellation(lambda: solver.Solve(model), solver.StopSearch, should_cancel)
 
 
 def _solve_scope(
