@@ -246,7 +246,11 @@ def impossible_presence_teacher_ids(
     ]
     if not rules:
         return ()
-    ordered = canonical_periods(periods)
+    ordered = tuple(
+        period
+        for period in canonical_periods(periods)
+        if any(slot.matches(period) for slot in snapshot.grid_slots)
+    )
     impossible = []
     for rule in rules:
         days: dict[int, list[PresenceSlot]] = {}
