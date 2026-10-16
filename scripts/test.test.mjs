@@ -10,9 +10,11 @@ import {
   cleanupOwnedResources,
   criticalPytestArgs,
   displayArgs,
+  e2eRunArgs,
   e2eStackTargetIdentity,
   frontendFastArgs,
   frontendJunitEnv,
+  integrationRunsContracts,
   isOwnedResource,
   loadE2eEnvFile,
   parseArgs,
@@ -71,6 +73,21 @@ test('the fast backend run skips the slow solver test unless the caller selects 
   assert.deepEqual(backendFastArgs(), ['-m', 'not slow_solver'])
   assert.deepEqual(backendFastArgs(['-k', 'timesheet']), ['-m', 'not slow_solver', '-k', 'timesheet'])
   assert.deepEqual(backendFastArgs(['-m', 'slow_solver']), ['-m', 'slow_solver'])
+})
+
+test('a filtered integration run skips the infrastructure contracts', () => {
+  assert.equal(integrationRunsContracts([]), true)
+  assert.equal(integrationRunsContracts(['-k', 'occurrences']), false)
+})
+
+test('the e2e run forwards a scenario selection to Playwright', () => {
+  assert.deepEqual(parseArgs(['e2e', '--project', 'app', '--', '-g', 'imports a CSV']).forwarded, ['-g', 'imports a CSV'])
+  assert.deepEqual(e2eRunArgs(undefined, []), ['run', 'test:e2e', '--'])
+  assert.deepEqual(
+    e2eRunArgs('app', ['-g', 'imports a CSV']),
+    ['run', 'test:e2e', '--', '--project', 'app', '-g', 'imports a CSV'],
+  )
+  assert.throws(() => parseArgs(['capacity', '--', '-g', 'x']), /not supported by capacity/)
 })
 
 test('the fast frontend run selects every Vitest project, including dom-network data hooks', () => {

@@ -62,7 +62,7 @@ The 48-class correctness test `tests/unit/test_scheduler_typology_v1.py::test_fo
 It uses the production 900-second safety budget and stops at the first complete candidate.
 It validates curricular coverage and completion dates. Short optimization deadlines must not make correctness depend on host load.
 It carries the `slow_solver` marker. `fast` skips it, and the `e2e-runtime` CI job runs it by node id.
-Run it locally with `node scripts/test.mjs fast --scope backend -- -m slow_solver`.
+Run it locally only to diagnose a failure of that job: `node scripts/test.mjs fast --scope backend -- -m slow_solver`.
 During a TDD cycle, select the files you changed with `node scripts/test.mjs fast --scope backend -- -k <expression>`.
 
 ## Frontend suites

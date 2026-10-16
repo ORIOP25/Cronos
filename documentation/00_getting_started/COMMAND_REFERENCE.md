@@ -55,7 +55,9 @@ One reference prevents agents from following stale procedures.
 | Full corpus | `node scripts/test.mjs all --scope all` | Docker | Starts and removes a test stack | See [What each profile proves](#what-each-profile-proves). |
 | Timing baseline | `node scripts/test.mjs benchmark --profile fast` | `setup` | Repeats a profile | Median durations only. |
 
-Pass extra arguments only after `--`, and only to `fast` and `integration`.
+Pass extra arguments only after `--`, and only to `fast`, `integration`, and `e2e`.
+A filtered `integration` run (any argument after `--`) skips `backend/tests/contracts/`. The unfiltered run and CI run them.
+`e2e` forwards the arguments to Playwright, for example `-g <test title>` to run one scenario.
 With `--scope all`, `fast` forwards the same arguments to pytest and Vitest. Use one scope when you forward arguments.
 
 Examples:
@@ -64,6 +66,7 @@ Examples:
 node scripts/test.mjs fast --scope backend -- -k timesheet
 node scripts/test.mjs fast --scope frontend -- src/test/weekSubmission.test.js
 node scripts/test.mjs integration -- -k occurrences
+node scripts/test.mjs e2e -- -g "availability matrix"
 ```
 
 `critical` is designed for CI, where services and credentials come from the workflow.
@@ -119,12 +122,20 @@ The audits read `DATABASE_URL`, which is the RLS-bound `cronos_app` role. CI the
 7. Open `http://localhost:5173`.
 
 After a frontend change, run `docker compose up -d --build frontend` so the local container serves the new build.
+
+### Local stack in a worktree
+
+`docker-compose.yml` sets the project name `cronos` and fixed ports. One local stack runs at a time, and it serves the last checkout that built it.
+
+1. Copy `.env` and `backend/.env` from the main checkout into the worktree. The main checkout is the first line of `git worktree list`. Git ignores these files. Never commit or print them.
+2. Run `docker compose up -d --build` from the worktree that holds the change.
+3. Tell the owner which branch and commit the stack serves (`git log -1 --oneline`). The local `revision.json` does not identify the commit.
 For Vite hot reload, run `docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build`.
 
 ### Verification by change type
 
 Run the narrowest proof during the TDD cycle. Open a pull request for the full CI proof.
-`fast --scope backend` skips the tests marked `slow_solver`. Pass `-m slow_solver` to run them.
+`fast --scope backend` skips the tests marked `slow_solver`. The `e2e-runtime` CI job runs them. Pass `-m slow_solver` only to diagnose a failure of that job.
 
 | Change | Local proof before the pull request |
 | :--- | :--- |
@@ -134,8 +145,8 @@ Run the narrowest proof during the TDD cycle. Open a pull request for the full C
 | Migration | `integration`, then the migration drift and audit checks above. |
 | Tenant data or RLS | `integration`. Keep `test_rls_database_policies.py` and the tenant isolation tests green. |
 | Frontend component or hook | `fast --scope frontend -- <test file>`, then `npm run verify:checks`. |
-| Frontend route or user journey | The above, then `e2e --project <name>` when Clerk test inputs exist. |
-| Scheduler solver | `fast --scope backend -- -k scheduler`, then `fast --scope backend -- -m slow_solver` before the pull request. The second run can take several minutes. |
+| Frontend route or user journey | The above, then `e2e --project <name> -- -g <test title>` for the changed scenario when Clerk test inputs exist. Run the whole project once before the pull request. |
+| Scheduler solver | `fast --scope backend -- -k scheduler`. CI runs the `slow_solver` test in `e2e-runtime`. |
 | Scheduler jobs, proposals, or API | `integration -- -k scheduler`. CI does not run `test_scheduler_v1_api.py` or `test_scheduler_v1_lifecycle.py`. |
 | CI, runner, or scripts | `npm run test:scripts` in `frontend/`. |
 

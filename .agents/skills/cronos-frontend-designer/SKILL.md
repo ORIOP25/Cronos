@@ -29,7 +29,8 @@ Load `cronos-base`, `ponytail`, and `cronos-frontend` first.
 ## Done when
 
 - `npm run verify:checks` passes in `frontend/`.
-- The local frontend container is rebuilt with `docker compose up -d --build frontend`, and the changed screens are checked in the browser.
+- The local stack is rebuilt from the worktree that holds the change, and the changed screens are checked in the browser.
+  See [Local stack in a worktree](../../../documentation/00_getting_started/COMMAND_REFERENCE.md#local-stack-in-a-worktree).
 - The [Design System](../../../documentation/06_frontend_ux/DESIGN_SYSTEM.md) reflects any new token or pattern.
 
 ## Documentation
