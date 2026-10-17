@@ -21,6 +21,7 @@ from app.scheduler.domain.candidate import (
     Assignment,
     CandidateSchedule,
     GridSlot,
+    HomeRoom,
     LunchRule,
     PlanningSnapshot,
     ScheduledLesson,
@@ -181,6 +182,8 @@ def _assignment_to_dict(row: Assignment) -> dict[str, Any]:
         payload["class_id"] = row.class_ids[0]
     else:
         payload["class_ids"] = list(row.class_ids)
+    if row.needs_special_room:
+        payload["needs_special_room"] = True
     return payload
 
 
@@ -195,6 +198,7 @@ def _assignment_from_dict(row: Mapping[str, Any]) -> Assignment:
         modules=tuple(
             ModuleRequirement(module[0], module[1], module[2]) for module in row["modules"]
         ),
+        needs_special_room=row.get("needs_special_room", False),
     )
 
 
@@ -260,6 +264,8 @@ def snapshot_to_dict(snapshot: PlanningSnapshot) -> dict[str, Any]:
             [row.teacher_id, row.lunch_required, row.minimum_minutes, row.max_gap_minutes]
             for row in snapshot.teacher_presence
         ]
+    if snapshot.home_rooms:
+        payload["home_rooms"] = [[row.class_id, row.room_id] for row in snapshot.home_rooms]
     return payload
 
 
@@ -306,6 +312,7 @@ def snapshot_from_dict(data: Mapping[str, Any]) -> PlanningSnapshot:
             TeacherPresenceRule(row[0], row[1], row[2], row[3])
             for row in data.get("teacher_presence", ())
         ),
+        home_rooms=tuple(HomeRoom(row[0], row[1]) for row in data.get("home_rooms", ())),
         lunch_rule=(
             None
             if data.get("lunch_rule") is None

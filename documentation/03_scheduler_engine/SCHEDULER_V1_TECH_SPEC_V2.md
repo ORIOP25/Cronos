@@ -268,6 +268,16 @@ Partial lunch configuration produces `LUNCH_CONFIGURATION_INCOMPLETE`.
 Independent validation reports `LUNCH_BREAK_VIOLATION`.
 A teacher whose presence rule dispenses the lunch break is exempt from the lunch check; classes always keep the school lunch rule.
 
+### Class home room eligibility
+
+The eligible rooms `K[a]` of an assignment are the rooms of the subject's type that seat the unit's students (the sum for a joint unit). A Normal subject also takes the home rooms of the unit's classes that seat the unit, whatever their type. A `specific_room` restriction then cuts the set. `assess_room_eligibility` in `constraint_policy.py` decides this for the snapshot, the preflight and the joint preflight.
+
+- `PlanningSnapshot.home_rooms` lists `(class_id, room_id)` pairs only for home rooms that are active and seat their class. A class grown above its home room has no pair in the list.
+- `Assignment.needs_special_room` is true when the subject's type is not Normal.
+- `snapshot_to_dict` writes `home_rooms` and `needs_special_room` only when they carry data, so a snapshot without home rooms and without special-room subjects keeps its digest.
+- Readiness (`COMPATIBLE_ROOM`) reproduces the same rule in SQL for each class/subject link.
+- A substitution checks the lesson's room by type, or by a home room of its classes for a Normal substitute. It does not compare seats, as before.
+
 ### Teacher presence rules
 
 `domain/teacher_presence.py` holds the pure rules; `domain/candidate.py` carries

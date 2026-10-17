@@ -906,3 +906,100 @@ async def test_readiness_invalid_joint_member_blocks_the_group(db_session):
     assert invalid.depth == 6
     assert invalid.complete is False
     assert "JOINT_GROUP_INCOMPLETE" in {issue.code for issue in invalid.issues}
+
+
+async def test_readiness_accepts_a_normal_class_in_its_laboratory_home_room(db_session):
+    """❌ S9/R12: a prontidão reconhece a sala da turma como sala compatível (I08)."""
+    organization, _ = await create_org_and_user(
+        db_session,
+        clerk_user_id="readiness-home-room-user",
+        clerk_org_id="readiness-home-room-org",
+    )
+    normal_type = await db_session.scalar(
+        select(models.SchoolRoomType).where(
+            models.SchoolRoomType.organization_id == organization.id,
+            models.SchoolRoomType.is_normal.is_(True),
+        )
+    )
+    laboratory_type = await db_session.scalar(
+        select(models.SchoolRoomType).where(
+            models.SchoolRoomType.organization_id == organization.id,
+            models.SchoolRoomType.name == "Laboratório",
+        )
+    )
+    course = models.Course(organization_id=organization.id, name="Curso Casa", abbreviation="CC")
+    subject = models.Subject(
+        organization_id=organization.id,
+        name="Português Casa",
+        room_type_id=normal_type.id,
+    )
+    room = models.Room(
+        organization_id=organization.id,
+        name="L-03",
+        capacity=30,
+        room_type_id=laboratory_type.id,
+    )
+    db_session.add_all([course, subject, room])
+    await db_session.flush()
+
+    school_class = models.Class(
+        organization_id=organization.id,
+        course_id=course.id,
+        name="Turma Casa",
+        size=20,
+        grade_level=10,
+        start_year=2025,
+        end_year=2028,
+    )
+    module = models.Module(
+        organization_id=organization.id,
+        subject_id=subject.id,
+        name="Módulo Casa",
+        required_minutes=60,
+        order=0,
+    )
+    db_session.add_all([school_class, module])
+    await db_session.flush()
+
+    teacher = await create_teacher_profile(
+        db_session,
+        organization_id=organization.id,
+        name="Professora Casa",
+        subject_ids=[subject.id],
+    )
+    link = models.ClassSubjectLink(
+        organization_id=organization.id,
+        class_id=school_class.id,
+        subject_id=subject.id,
+        grade_level=school_class.grade_level,
+        teacher_id=teacher.id,
+    )
+    db_session.add(link)
+    db_session.add(
+        models.Timeslot(
+            organization_id=organization.id,
+            day_of_week=0,
+            start_time=time(8, 30),
+            end_time=time(9, 20),
+        )
+    )
+    await db_session.flush()
+    await db_session.execute(
+        models.class_subject_module.insert().values(
+            organization_id=organization.id,
+            class_subject_link_id=link.id,
+            module_id=module.id,
+        )
+    )
+    await db_session.flush()
+
+    service = SchoolReadinessService(db_session)
+    without_home_room = await service.evaluate_bases(organization.id)
+    assert without_home_room.depth == 4
+    assert without_home_room.issues[0].code == "COMPATIBLE_ROOM_REQUIRED"
+
+    school_class.home_room_id = room.id
+    await db_session.flush()
+    with_home_room = await service.evaluate_bases(organization.id)
+    assert with_home_room.depth == 6
+    assert "COMPATIBLE_ROOM_REQUIRED" not in {issue.code for issue in with_home_room.issues}

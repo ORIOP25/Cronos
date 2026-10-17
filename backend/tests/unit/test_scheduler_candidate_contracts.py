@@ -238,3 +238,29 @@ def test_joint_snapshot_roundtrip_keeps_classes_precedences_and_claims():
     assert restored.assignments[1].class_ids == (1, 2)
     assert restored.precedences == ((1, 2),)
     assert restored.claim_classes[7] == 2
+
+
+def test_home_rooms_and_special_room_subjects_serialize_only_when_present():
+    """❌ R14/I07: sem salas da turma nem disciplinas de sala própria, o digest não muda."""
+    from app.scheduler.domain.candidate import HomeRoom
+    from app.scheduler.domain.serialization import (
+        payload_digest,
+        snapshot_from_dict,
+        snapshot_to_dict,
+    )
+
+    plain = snapshot_to_dict(_snapshot())
+    with_home_room = _snapshot(home_rooms=(HomeRoom(class_id=1, room_id=500),))
+    special = _snapshot(assignments=(_assignment(needs_special_room=True),))
+
+    assert "home_rooms" not in plain
+    assert "needs_special_room" not in plain["assignments"][0]
+    home_payload = snapshot_to_dict(with_home_room)
+    assert home_payload["home_rooms"] == [[1, 500]]
+    assert payload_digest(home_payload) != payload_digest(plain)
+    assert snapshot_from_dict(home_payload).home_rooms == with_home_room.home_rooms
+
+    special_payload = snapshot_to_dict(special)
+    assert special_payload["assignments"][0]["needs_special_room"] is True
+    assert payload_digest(special_payload) != payload_digest(plain)
+    assert snapshot_from_dict(special_payload).assignments[0].needs_special_room is True

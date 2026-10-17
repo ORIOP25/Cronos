@@ -440,6 +440,8 @@ async def _validate_room_requirements(
                 models.Subject.name.label("subject_name"),
                 models.Subject.room_type_id.label("required_room_type_id"),
                 models.SchoolRoomType.name.label("required_room_type_name"),
+                models.SchoolRoomType.is_normal.label("required_room_type_is_normal"),
+                models.Class.home_room_id.label("class_home_room_id"),
                 models.joint_lesson_group_member.c.group_id.label("joint_group_id"),
             )
             .select_from(models.ClassSubjectLink)
@@ -478,6 +480,8 @@ async def _validate_room_requirements(
             required_room_type=row.required_room_type_id,
             required_capacity=row.class_size,
             allowed_room_ids=specific_rooms.get((row.class_id, row.subject_id)),
+            home_room_ids=_home_room_ids([row]),
+            subject_is_normal=row.required_room_type_is_normal,
         )
         if eligibility.reason is None:
             continue
@@ -502,6 +506,13 @@ async def _validate_room_requirements(
         )
     issues.extend(_joint_requirements_from_rows(rows, rooms, specific_rooms))
     return issues
+
+
+def _home_room_ids(members) -> list[int]:
+    """Home rooms of the classes in a link or joint unit (D12, D06)."""
+    return [
+        member.class_home_room_id for member in members if member.class_home_room_id is not None
+    ]
 
 
 def _joint_room_message(subject_name, class_names, room_type_name, required_capacity) -> str:
@@ -560,6 +571,8 @@ def _joint_requirements_from_rows(
             required_room_type=first.required_room_type_id,
             required_capacity=required_capacity,
             allowed_room_ids=allowed_room_ids,
+            home_room_ids=_home_room_ids(active),
+            subject_is_normal=first.required_room_type_is_normal,
         )
         if eligibility.reason is None:
             continue

@@ -1575,3 +1575,80 @@ async def test_preflight_reports_an_invalid_lunch_rule_instead_of_masking_it(db_
     assert blocker[0].route == "/config"
     assert "almoço" in blocker[0].message
     assert report.status == "BLOCKED"
+
+
+async def test_preflight_accepts_a_normal_class_in_its_laboratory_home_room(db_session):
+    """❌ S9/R12: a pré-verificação aceita Português na sala da turma de laboratório."""
+    org, _ = await create_org_and_user(
+        db_session,
+        clerk_user_id="preflight-home-room-user",
+        clerk_org_id="preflight-home-room-org",
+    )
+    normal_type = await db_session.scalar(
+        select(models.SchoolRoomType).where(
+            models.SchoolRoomType.organization_id == org.id,
+            models.SchoolRoomType.is_normal.is_(True),
+        )
+    )
+    laboratory_type = await db_session.scalar(
+        select(models.SchoolRoomType).where(
+            models.SchoolRoomType.organization_id == org.id,
+            models.SchoolRoomType.name == "Laboratório",
+        )
+    )
+    course = models.Course(organization_id=org.id, name="Curso Casa", abbreviation="CC")
+    subject = models.Subject(
+        organization_id=org.id,
+        name="Português",
+        room_type_id=normal_type.id,
+    )
+    db_session.add_all([course, subject])
+    await db_session.flush()
+    school_class = models.Class(
+        organization_id=org.id,
+        course_id=course.id,
+        name="Turma Casa",
+        size=20,
+        grade_level=10,
+        start_year=2025,
+        end_year=2028,
+    )
+    db_session.add(school_class)
+    await db_session.flush()
+    db_session.add(
+        models.Module(
+            organization_id=org.id,
+            subject_id=subject.id,
+            name="Módulo",
+            required_minutes=60,
+            order=0,
+        )
+    )
+    teacher = await create_teacher_profile(
+        db_session, organization_id=org.id, subject_ids=[subject.id]
+    )
+    db_session.add(
+        models.ClassSubjectLink(
+            organization_id=org.id,
+            class_id=school_class.id,
+            subject_id=subject.id,
+            grade_level=10,
+            teacher_id=teacher.id,
+        )
+    )
+    laboratory = models.Room(
+        organization_id=org.id,
+        name="L-03",
+        capacity=30,
+        room_type_id=laboratory_type.id,
+    )
+    db_session.add(laboratory)
+    await db_session.flush()
+
+    without_home_room = await _validate_room_requirements(db_session, org.id)
+    assert [issue.code for issue in without_home_room] == ["NO_ELIGIBLE_ROOM"]
+
+    school_class.home_room_id = laboratory.id
+    await db_session.flush()
+
+    assert await _validate_room_requirements(db_session, org.id) == []

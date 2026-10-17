@@ -34,6 +34,7 @@ from app.scheduler.domain.candidate import (
     Assignment,
     CandidateSchedule,
     GridSlot,
+    HomeRoom,
     LunchRule,
     PlanningSnapshot,
     ScheduledLesson,
@@ -250,7 +251,7 @@ async def load_snapshot(
     published_unit_keys = await _load_published_unit_keys(
         db, organization_id, year.id, active_version
     )
-    domain_assignments, unit_plan, executed = await _build_assignments(
+    domain_assignments, unit_plan, executed, home_rooms = await _build_assignments(
         db,
         organization_id,
         assignments,
@@ -341,6 +342,7 @@ async def load_snapshot(
             active_version_id=active_version.id if active_version is not None else None,
             lunch_rule=lunch_rule,
             teacher_presence=teacher_presence,
+            home_rooms=home_rooms,
             reserved_lesson_ids=frozenset(base_lesson_ids).difference(
                 lesson.lesson_id for lesson in baseline_lessons
             ),
@@ -1057,28 +1059,39 @@ async def _build_assignments(
     published_unit_keys: Set[str],
     *,
     constraints: SchoolConstraintPolicy,
-) -> tuple[tuple[Assignment, ...], TeachingUnitPlan, dict[int, dict[int, int]]]:
+) -> tuple[
+    tuple[Assignment, ...], TeachingUnitPlan, dict[int, dict[int, int]], tuple[HomeRoom, ...]
+]:
     """Build one domain unit per ``build_teaching_units`` unit (WBS 3.2.1-3.2.2)."""
-    class_sizes = {
-        class_id: (size, name)
-        for class_id, size, name in (
-            await db.execute(
-                select(models.Class.id, models.Class.size, models.Class.name).where(
-                    models.Class.organization_id == organization_id,
-                    models.Class.id.in_({row.class_id for row in assignments}),
-                )
+    class_rows = (
+        await db.execute(
+            select(
+                models.Class.id,
+                models.Class.size,
+                models.Class.name,
+                models.Class.home_room_id,
+            ).where(
+                models.Class.organization_id == organization_id,
+                models.Class.id.in_({row.class_id for row in assignments}),
             )
-        ).all()
+        )
+    ).all()
+    class_sizes = {class_id: (size, name) for class_id, size, name, _home in class_rows}
+    home_room_by_class = {
+        class_id: home_room_id
+        for class_id, _size, _name, home_room_id in class_rows
+        if home_room_id is not None
     }
     subject_types = {
-        subject_id: (room_type_id, room_type_name, name)
-        for subject_id, room_type_id, room_type_name, name in (
+        subject_id: (room_type_id, room_type_name, name, is_normal)
+        for subject_id, room_type_id, room_type_name, name, is_normal in (
             await db.execute(
                 select(
                     models.Subject.id,
                     models.Subject.room_type_id,
                     models.SchoolRoomType.name,
                     models.Subject.name,
+                    models.SchoolRoomType.is_normal,
                 )
                 .join(models.Subject.room_type)
                 .where(
@@ -1158,7 +1171,7 @@ async def _build_assignments(
             raise SnapshotConfigurationError(
                 "UNKNOWN_SUBJECT", "Uma atribuição curricular refere uma disciplina desconhecida."
             )
-        required_type_id, required_type_name, subject_name = subject
+        required_type_id, required_type_name, subject_name, subject_is_normal = subject
         if any(class_id not in class_sizes for class_id in unit.class_ids):
             raise SnapshotConfigurationError(
                 "UNKNOWN_CLASS", "Uma atribuição curricular refere uma turma desconhecida."
@@ -1180,6 +1193,12 @@ async def _build_assignments(
             required_room_type=required_type_id,
             required_capacity=required_capacity,
             allowed_room_ids=allowed,
+            home_room_ids=[
+                home_room_by_class[class_id]
+                for class_id in unit.class_ids
+                if class_id in home_room_by_class
+            ],
+            subject_is_normal=subject_is_normal,
         )
         if eligibility.reason is not None:
             issue: dict[str, object] = {
@@ -1204,6 +1223,7 @@ async def _build_assignments(
                 teacher_id=unit.teacher_id,
                 eligible_room_ids=eligibility.eligible_room_ids,
                 modules=unit.modules,
+                needs_special_room=not subject_is_normal,
             )
         )
     if room_issues:
@@ -1213,7 +1233,26 @@ async def _build_assignments(
             public_context={"room_issues": room_issues},
         )
     unit_executed = {unit.unit_id: dict(unit.executed_minutes) for unit in plan.units}
-    return tuple(result), plan, unit_executed
+    return (
+        tuple(result),
+        plan,
+        unit_executed,
+        _valid_home_rooms(home_room_by_class, class_sizes, rooms),
+    )
+
+
+def _valid_home_rooms(
+    home_room_by_class: Mapping[int, int],
+    class_sizes: Mapping[int, tuple[int, str]],
+    rooms: Sequence[tuple[int, int | None, int]],
+) -> tuple[HomeRoom, ...]:
+    """Home rooms that are active and seat their class (D13); the others are ignored."""
+    capacity_by_room = {room_id: capacity for room_id, _type_id, capacity in rooms}
+    return tuple(
+        HomeRoom(class_id=class_id, room_id=room_id)
+        for class_id, room_id in sorted(home_room_by_class.items())
+        if class_id in class_sizes and capacity_by_room.get(room_id, 0) >= class_sizes[class_id][0]
+    )
 
 
 async def _load_constraint_policy(db: AsyncSession, organization_id: int) -> SchoolConstraintPolicy:

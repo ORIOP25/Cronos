@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import structlog
-from sqlalchemy import and_, exists, select
+from sqlalchemy import and_, exists, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -184,7 +184,9 @@ class SchoolReadinessService:
                 ~joint_valid_member,
             )
         )
-        compatible_room = exists(
+        # Same rule as assess_room_eligibility: a room of the subject's type, or,
+        # for a Normal subject, the class's home room (D12), seating the class.
+        type_room = exists(
             select(1)
             .select_from(models.Room)
             .where(
@@ -195,6 +197,28 @@ class SchoolReadinessService:
             )
             .correlate(class_alias, subject_alias)
         )
+        home_room = exists(
+            select(1)
+            .select_from(models.Room)
+            .where(
+                models.Room.organization_id == organization_id,
+                models.Room.id == class_alias.home_room_id,
+                models.Room.capacity >= class_alias.size,
+                models.Room.is_archived.is_(False),
+            )
+            .correlate(class_alias)
+        )
+        normal_subject = exists(
+            select(1)
+            .select_from(models.SchoolRoomType)
+            .where(
+                models.SchoolRoomType.id == subject_alias.room_type_id,
+                models.SchoolRoomType.organization_id == organization_id,
+                models.SchoolRoomType.is_normal.is_(True),
+            )
+            .correlate(subject_alias)
+        )
+        compatible_room = or_(type_room, and_(normal_subject, home_room))
         compatible_link = competent_link & compatible_room
         possible_timeslot = exists(
             select(1)
