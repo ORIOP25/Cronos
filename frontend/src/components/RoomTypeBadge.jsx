@@ -1,9 +1,7 @@
 import { CBadge } from '@coreui/react'
-import { getRoomType } from '../utils/presentation'
 
-const RoomTypeBadge = ({ type }) => {
-  const metadata = getRoomType(type)
-  return <CBadge color={metadata.color} shape="rounded-pill" className={metadata.textClass}>{metadata.label}</CBadge>
+const RoomTypeBadge = ({ roomType }) => {
+  return <CBadge color="secondary" shape="rounded-pill">{roomType?.name || '—'}</CBadge>
 }
 
 export default RoomTypeBadge

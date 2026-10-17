@@ -145,6 +145,24 @@ describe('tutorial v3 domain', () => {
     expect(availabilityScenario.availability.slots[0].score).toBe(1)
   })
 
+  it('accepts school-defined room type names in the demo scenario', () => {
+    const subjectScenario = createTutorialScenario('curriculum')
+    const editedSubject = applyTutorialDemoAction(subjectScenario, {
+      type: TUTORIAL_ACTIONS.UPDATE_SUBJECT,
+      subjectId: 1,
+      data: { required_room_type: 'Oficina' },
+    })
+    const roomScenario = createTutorialScenario('rooms')
+    const editedRoom = applyTutorialDemoAction(roomScenario, {
+      type: TUTORIAL_ACTIONS.UPDATE_ROOM,
+      roomId: 1,
+      data: { name: 'Oficina 2', type: 'Oficina', capacity: 30 },
+    })
+
+    expect(editedSubject.subjects[0].roomType).toBe('OFICINA')
+    expect(editedRoom.rooms[0].type).toBe('OFICINA')
+  })
+
   it('models schedule, occurrence, substitution and recovery actions', () => {
     const schedule = createTutorialScenario('schedule')
     const generated = applyTutorialDemoAction(schedule, { type: TUTORIAL_ACTIONS.GENERATE_SCHEDULE })

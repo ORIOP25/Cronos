@@ -10,7 +10,7 @@ import {
   CRow,
 } from '@coreui/react'
 import { EMPTY_MODULE, normalizeModule } from '../../utils/subjectModules'
-import { ROOM_TYPES } from '../../utils/presentation'
+import { useRoomTypes } from '../../features/catalog/data'
 
 const SUBJECT_FEEDBACK_ID = 'subjectNameFeedback'
 const MODULES_FEEDBACK_ID = 'subjectModulesFeedback'
@@ -18,12 +18,20 @@ const MODULES_FEEDBACK_ID = 'subjectModulesFeedback'
 function createInitialSubject(initialData) {
   return {
     name: initialData?.name ?? '',
-    required_room_type: initialData?.required_room_type ?? 'normal',
+    room_type_id: initialData?.room_type?.id ?? initialData?.room_type_id ?? '',
     modules: (initialData?.modules ?? []).map((module) => normalizeModule(module)).filter(Boolean),
   }
 }
 
 const SubjectForm = ({ initialData, onSubmit, isLoading, onCancel, readOnly = false }) => {
+  const { data: roomTypes = [], isLoading: roomTypesLoading, isError: roomTypesError, refetch } = useRoomTypes()
+  const normalRoomType = roomTypes.find((roomType) => roomType.is_normal)
+  const roomTypesUnavailable = !roomTypesLoading && (roomTypesError || !normalRoomType)
+  const roomTypesErrorMessage = roomTypesError
+    ? 'Não foi possível carregar os tipos de sala.'
+    : !roomTypesLoading && !normalRoomType
+      ? 'Não existem tipos de sala disponíveis.'
+      : ''
   const [subject, setSubject] = useState(() => createInitialSubject(initialData))
   const [moduleDraft, setModuleDraft] = useState(EMPTY_MODULE)
   const [editingIndex, setEditingIndex] = useState(null)
@@ -80,7 +88,7 @@ const SubjectForm = ({ initialData, onSubmit, isLoading, onCancel, readOnly = fa
 
   const submit = (event) => {
     event.preventDefault()
-    if (readOnly) return
+    if (readOnly || roomTypesLoading || roomTypesError || !normalRoomType) return
     const name = subject.name.trim()
     if (!name) {
       setValidation({ message: 'Nome da disciplina é obrigatório.', field: 'subject-name' })
@@ -89,7 +97,7 @@ const SubjectForm = ({ initialData, onSubmit, isLoading, onCancel, readOnly = fa
     }
     onSubmit({
       name,
-      required_room_type: subject.required_room_type,
+      room_type_id: Number(subject.room_type_id || normalRoomType.id),
       modules: subject.modules.map((module, order) => ({ ...module, order })),
     })
   }
@@ -124,9 +132,25 @@ const SubjectForm = ({ initialData, onSubmit, isLoading, onCancel, readOnly = fa
             )}
           </CCol>
           <CCol md={4}>
-            <CFormSelect id="subject-room-type" label="Tipo de sala" value={subject.required_room_type} onChange={(event) => updateSubject('required_room_type', event.target.value)} disabled={readOnly}>
-              {Object.entries(ROOM_TYPES).map(([value, metadata]) => <option key={value} value={value}>{metadata.label}</option>)}
+            <CFormSelect
+              id="subject-room-type"
+              label="Tipo de sala"
+              value={String(subject.room_type_id || normalRoomType?.id || '')}
+              onChange={(event) => updateSubject('room_type_id', event.target.value)}
+              disabled={readOnly || roomTypesLoading || roomTypesUnavailable}
+              required
+              aria-invalid={roomTypesErrorMessage ? 'true' : undefined}
+              aria-describedby={roomTypesLoading ? 'room-types-loading' : roomTypesErrorMessage ? 'room-types-error' : undefined}
+            >
+              {roomTypes.map((roomType) => <option key={roomType.id} value={roomType.id}>{roomType.name}</option>)}
             </CFormSelect>
+            {roomTypesLoading && <div id="room-types-loading" role="status" aria-live="polite" className="form-text">A carregar tipos de sala…</div>}
+            {roomTypesErrorMessage && (
+              <div id="room-types-error">
+                <CFormFeedback invalid className="d-block" role="alert">{roomTypesErrorMessage}</CFormFeedback>
+                {roomTypesError && <CButton type="button" color="secondary" variant="ghost" size="sm" onClick={() => refetch()}>Tentar novamente</CButton>}
+              </div>
+            )}
           </CCol>
         </CRow>
       </fieldset>
@@ -159,7 +183,7 @@ const SubjectForm = ({ initialData, onSubmit, isLoading, onCancel, readOnly = fa
 
       <CModalFooter className="px-0 mt-4 border-0 pb-0">
         <CButton type="button" color="secondary" variant="ghost" onClick={onCancel}>Cancelar</CButton>
-        {!readOnly && <CButton type="submit" color="primary" disabled={isLoading}>{isLoading ? 'A guardar...' : 'Guardar Disciplina'}</CButton>}
+        {!readOnly && <CButton type="submit" color="primary" disabled={isLoading || roomTypesLoading || roomTypesUnavailable}>{isLoading ? 'A guardar...' : 'Guardar Disciplina'}</CButton>}
       </CModalFooter>
     </CForm>
   )

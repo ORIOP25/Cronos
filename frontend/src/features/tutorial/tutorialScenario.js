@@ -1,6 +1,5 @@
 import { validateClassDraft } from '../../utils/classDraft'
 import { normalizeModule } from '../../utils/subjectModules'
-import { ROOM_TYPES } from '../../utils/presentation'
 import {
   TUTORIAL_ACTIONS,
   TUTORIAL_STEPS,
@@ -289,10 +288,8 @@ function applySubjectUpdate(next, action) {
     subject.name = name
   }
   if (data.required_room_type != null || data.roomType != null) {
-    const type = String(data.required_room_type ?? data.roomType).toUpperCase()
-    if (!ROOM_TYPES[type.toLowerCase()] && !Object.keys(ROOM_TYPES).some((key) => key.toUpperCase() === type)) {
-      throw new TutorialScenarioError('O tipo de sala da disciplina é inválido.')
-    }
+    const type = String(data.required_room_type ?? data.roomType).trim().toUpperCase()
+    if (!type) throw new TutorialScenarioError('O tipo de sala da disciplina é inválido.')
     subject.roomType = type
   }
   if (data.modules != null) {
@@ -334,8 +331,8 @@ function applyRoomUpdate(next, action) {
   const data = action.data ?? action
   const name = String(data.name ?? room.name).trim()
   const capacity = Number(data.capacity ?? room.capacity)
-  const type = String(data.type ?? room.type).toUpperCase()
-  if (!name || !Number.isInteger(capacity) || capacity < 1 || !ROOM_TYPES[type.toLowerCase()]) throw new TutorialScenarioError('Os dados da sala são inválidos.')
+  const type = String(data.type ?? room.type).trim().toUpperCase()
+  if (!name || !Number.isInteger(capacity) || capacity < 1 || !type) throw new TutorialScenarioError('Os dados da sala são inválidos.')
   Object.assign(room, { name, capacity, type })
 }
 

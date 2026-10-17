@@ -116,7 +116,7 @@ const SubjectRow = ({
             <div className="d-flex align-items-center gap-2">
               <CIcon icon={cilBook} className="text-info flex-shrink-0" size="sm" />
               <span className="fw-medium text-break" style={{ minWidth: 0 }}>{subject.subject_name}</span>
-              <RoomTypeBadge type={subject.required_room_type} />
+              <RoomTypeBadge roomType={subject.room_type} />
             </div>
           </div>
 

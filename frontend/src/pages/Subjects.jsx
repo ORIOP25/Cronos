@@ -43,7 +43,7 @@ const Subjects = ({ readOnly = false, allowedActions }) => {
   // 2. Definição das Colunas
   const columns = [
     { key: 'name', label: 'Disciplina' },
-    { key: 'required_room_type', label: 'Tipo de sala', render: (subject) => <RoomTypeBadge type={subject.required_room_type} /> }
+    { key: 'room_type', label: 'Tipo de sala', render: (subject) => <RoomTypeBadge roomType={subject.room_type} /> }
   ]
 
   // --- Handlers ---

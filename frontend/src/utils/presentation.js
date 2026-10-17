@@ -1,12 +1,5 @@
-export const ROOM_TYPES = Object.freeze({
-  normal: { label: 'Normal', color: 'light', textClass: 'text-dark' },
-  lab: { label: 'Laboratório', color: 'info' },
-  gym: { label: 'Ginásio', color: 'warning' },
-  art: { label: 'Artes', color: 'danger' },
-})
-
 export function getRoomType(type) {
-  return ROOM_TYPES[type] ?? { label: type || ROOM_TYPES.normal.label, color: 'secondary' }
+  return { label: typeof type === 'string' ? type || '—' : type?.name || '—', color: 'secondary' }
 }
 
 export function formatGradeLevel(gradeLevel) {

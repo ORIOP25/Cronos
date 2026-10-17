@@ -41,7 +41,7 @@ const Rooms = ({ readOnly = false, allowedActions }) => {
   const columns = [
     { key: 'name', label: 'Sala' },
     { key: 'capacity', label: 'Lotação', render: (room) => <CBadge color="info">{room.capacity} alunos</CBadge> },
-    { key: 'type', label: 'Tipo', render: (room) => <RoomTypeBadge type={room.type} /> }
+    { key: 'room_type', label: 'Tipo', render: (room) => <RoomTypeBadge roomType={room.room_type} /> }
   ]
 
   // --- Handlers ---

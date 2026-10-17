@@ -47,7 +47,7 @@ const createClassData = ({ subjects } = {}) => ({
     {
       id: 2,
       name: 'Zeta',
-      required_room_type: 'normal',
+      room_type: { id: 1, name: 'Normal', is_normal: true },
       total_hours: 50,
       completed_hours: 25,
       overall_percentage: 50,
@@ -59,7 +59,7 @@ const createClassData = ({ subjects } = {}) => ({
     {
       id: 1,
       name: 'Algoritmos',
-      required_room_type: 'lab',
+      room_type: { id: 2, name: 'Oficina', is_normal: false },
       total_hours: 10,
       completed_hours: 0,
       overall_percentage: 0,
@@ -100,6 +100,7 @@ describe('ClassDetails composition', () => {
   it('orders the page and keeps global progress inside the discipline section', () => {
     renderClassDetails()
 
+    expect(screen.getByText('Oficina')).toBeInTheDocument()
     const header = screen.getByRole('heading', { name: '10.º A' }).closest('.card')
     const subjectsTitle = screen.getByText('Disciplinas & Professores')
     const progressTitle = screen.getByText('Progresso por Disciplina')
@@ -162,7 +163,7 @@ describe('ClassDetails composition', () => {
         subjects: [{
           id: 9,
           name: 'Sem módulos',
-          required_room_type: 'normal',
+          room_type: { id: 1, name: 'Normal', is_normal: true },
           total_hours: 0,
           completed_hours: 0,
           overall_percentage: 0,
@@ -212,7 +213,7 @@ describe('ClassDetails composition', () => {
         subjects: [{
           id: 9,
           name: 'Sem módulos',
-          required_room_type: 'normal',
+          room_type: { id: 1, name: 'Normal', is_normal: true },
           total_hours: 0,
           completed_hours: 0,
           overall_percentage: 0,
@@ -322,7 +323,7 @@ describe('ClassDetails composition', () => {
         subjects: [{
           id: 9,
           name: 'Sem módulos',
-          required_room_type: 'normal',
+          room_type: { id: 1, name: 'Normal', is_normal: true },
           total_hours: 0,
           completed_hours: 0,
           overall_percentage: 0,

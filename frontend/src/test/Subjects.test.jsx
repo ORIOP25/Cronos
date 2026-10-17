@@ -5,14 +5,16 @@ import { renderWithRouter } from './testUtils'
 
 const NEW_MODULE_WARNING = 'Disciplina atualizada. Os módulos novos não foram marcados nas turmas. Marque-os nas turmas que os vão ter.'
 
-const { useSubjectsMock, createSubjectMock, updateSubjectMock } = vi.hoisted(() => ({
+const { useSubjectsMock, useRoomTypesMock, createSubjectMock, updateSubjectMock } = vi.hoisted(() => ({
   useSubjectsMock: vi.fn(),
+  useRoomTypesMock: vi.fn(),
   createSubjectMock: vi.fn(),
   updateSubjectMock: vi.fn(),
 }))
 
 vi.mock('../features/catalog/data', () => ({
   useSubjects: () => useSubjectsMock(),
+  useRoomTypes: () => useRoomTypesMock(),
   useCreateSubject: () => ({ isPending: false, mutateAsync: createSubjectMock }),
   useUpdateSubject: () => ({ isPending: false, mutateAsync: updateSubjectMock }),
   useDeleteSubject: () => ({ isPending: false, mutateAsync: vi.fn() }),
@@ -21,7 +23,7 @@ vi.mock('../features/catalog/data', () => ({
 const existingSubject = {
   id: 1,
   name: 'Programação',
-  required_room_type: 'normal',
+  room_type: { id: 11, name: 'Normal', is_normal: true },
   modules: [{ id: 11, name: 'M1', code: 'C1', hours_total: 25, order: 0 }],
 }
 
@@ -42,6 +44,7 @@ describe('Subjects new-module warning', () => {
       error: null,
       refetch: vi.fn(),
     })
+    useRoomTypesMock.mockReturnValue({ data: [{ id: 11, name: 'Normal', is_normal: true }], isLoading: false, isError: false, refetch: vi.fn() })
     createSubjectMock.mockReset()
     createSubjectMock.mockResolvedValue({})
     updateSubjectMock.mockReset()
@@ -52,6 +55,7 @@ describe('Subjects new-module warning', () => {
     renderWithRouter(<Subjects />, { withToaster: true })
 
     expect(screen.getByRole('columnheader', { name: 'Tipo de sala' })).toBeInTheDocument()
+    expect(screen.getByText('Normal')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: /editar programação/i }))
     addModule('M2', '30')
@@ -62,7 +66,7 @@ describe('Subjects new-module warning', () => {
     expect(updateSubjectMock).toHaveBeenCalledWith({
       id: 1,
       name: 'Programação',
-      required_room_type: 'normal',
+      room_type_id: 11,
       modules: [
         { id: 11, name: 'M1', code: 'C1', hours_total: 25, order: 0 },
         { name: 'M2', code: '', hours_total: 30, order: 1 },
