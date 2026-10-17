@@ -70,8 +70,31 @@ describe('BulkImport', () => {
   it('describes room types by the school-defined name instead of a fixed list', () => {
     renderPage()
 
-    expect(screen.getAllByText('Tipo de sala: escreva o nome definido pela escola.')).toHaveLength(2)
+    expect(
+      screen.getAllByText('Tipo de sala: escreva o nome do tipo. Um nome que a escola ainda não tem cria um tipo novo.'),
+    ).toHaveLength(2)
     expect(screen.queryByText(/Laboratório, Ginásio ou Artes/)).not.toBeInTheDocument()
+  })
+
+  it('lists the room types the import will create, once, with the count', async () => {
+    const user = userEvent.setup()
+    mocks.validate.mockResolvedValueOnce({
+      can_commit: true,
+      preview: {
+        counts: { rooms: 1, subjects: 1, room_types: 1 },
+        items: [{ resource: 'room_types', name: 'oficina' }],
+      },
+      issues: [],
+    })
+    renderPage()
+
+    const file = new File(['x'], 'Cronos_Salas_Template.csv', { type: 'text/csv' })
+
+    await user.upload(screen.getByLabelText('Selecionar ficheiro CSV de salas'), file)
+    await user.click(screen.getByRole('button', { name: 'Verificar ficheiros' }))
+
+    expect(await screen.findByText('Tipos de sala novos: 1')).toBeInTheDocument()
+    expect(screen.getByRole('list', { name: 'Tipos de sala novos' })).toHaveTextContent('oficina')
   })
 
   it('lists the class availability section with its instructions', () => {

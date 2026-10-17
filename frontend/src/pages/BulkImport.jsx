@@ -134,6 +134,9 @@ const BulkImport = () => {
   const issues = validation?.issues || serverErrorContext.issues || []
   const errors = issues.filter((issue) => issue.severity === 'error')
   const warnings = issues.filter((issue) => issue.severity === 'warning')
+  const newRoomTypes = (validation?.preview?.items || [])
+    .filter((item) => item.resource === 'room_types')
+    .map((item) => item.name)
   const classAvailabilityPreview = (validation?.preview?.items || []).filter(
     (item) => item.resource === 'class_availability',
   )
@@ -258,6 +261,14 @@ const BulkImport = () => {
               <strong>Pode importar, mas tenha atenção a estes avisos</strong>
               <IssueList issues={warnings} />
             </CAlert>
+          )}
+          {newRoomTypes.length > 0 && (
+            <div className="mt-3">
+              <p className="mb-1 fw-semibold">Tipos de sala novos</p>
+              <ul aria-label="Tipos de sala novos" className="mb-0">
+                {newRoomTypes.map((name) => <li key={name}>{name}</li>)}
+              </ul>
+            </div>
           )}
           {classAvailabilityPreview.length > 0 && (
             <AvailabilityPreviewTable

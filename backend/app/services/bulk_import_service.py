@@ -18,6 +18,7 @@ from app.services import (
     grid_version_service,
     member_service,
     room_service,
+    room_type_service,
     subject_service,
     teacher_service,
 )
@@ -40,6 +41,7 @@ from app.services.bulk_import_policy import (
     ParsedResourceFile,
     ValidationResult,
     _email,
+    fold_text,
     parse_resource_file,
     render_availability_template,
     render_teacher_presence_template,
@@ -321,7 +323,7 @@ async def load_snapshot(
             db, organization_id, models.Availability.teacher_id, models.Availability
         )
     return ImportSnapshot(
-        rooms=[ExistingRoom(item.id, item.name) for item in rooms],
+        rooms=[ExistingRoom(item.id, item.name, item.capacity) for item in rooms],
         subjects=[ExistingSubject(item.id, item.name) for item in subjects],
         room_types=[ExistingRoomType(item.id, item.name) for item in room_types],
         courses=[ExistingCourse(item.id, item.abbreviation, item.name) for item in courses],
@@ -412,19 +414,30 @@ async def commit_import(
         (item.course_abbreviation.upper(), item.name.casefold()): item.id
         for item in snapshot.classes
     }
+    room_ids = {fold_text(item.name): item.id for item in snapshot.rooms}
     teacher_ids: dict[str, int] = {}
     created_counts = dict.fromkeys(IMPORT_RESOURCES, 0)
-    created_counts.update({"classes": 0, "modules": 0, "competencies": 0})
+    created_counts.update({"classes": 0, "modules": 0, "competencies": 0, "room_types": 0})
+
+    # Room types first: rooms and subjects link to them by folded name (D18, T04).
+    room_type_ids: dict[str, int] = {}
+    for item in result.room_types:
+        room_type = await room_type_service.ensure_room_type(db, organization_id, item.name)
+        room_type_ids[fold_text(item.name)] = room_type.id
+        created_counts["room_types"] += int(item.is_new)
 
     for item in result.rooms:
-        await room_service.create_room(
+        room = await room_service.create_room(
             db,
             schemas.RoomCreate(
-                name=item.name, room_type_id=item.room_type_id, capacity=item.capacity
+                name=item.name,
+                room_type_id=room_type_ids[fold_text(item.room_type_name)],
+                capacity=item.capacity,
             ),
             organization_id,
             changed_by_membership_id=current_admin.membership_id,
         )
+        room_ids[fold_text(item.name)] = room.id
         created_counts["rooms"] += 1
 
     for item in result.subjects:
@@ -432,7 +445,7 @@ async def commit_import(
             db,
             schemas.SubjectCreate(
                 name=item.name,
-                room_type_id=item.room_type_id,
+                room_type_id=room_type_ids[fold_text(item.room_type_name)],
                 modules=[
                     schemas.ModuleCreate(
                         name=module.name,
@@ -503,6 +516,18 @@ async def commit_import(
         created_counts["classes"] += len(item.classes)
         for class_item in course.classes:
             class_ids[(item.abbreviation.upper(), class_item.name.casefold())] = class_item.id
+        # The home room needs the rooms and the classes, so it is set last (D20).
+        for class_item in item.classes:
+            if class_item.home_room is None:
+                continue
+            await class_service.update_class_in_course(
+                db,
+                course.id,
+                class_ids[(item.abbreviation.upper(), class_item.name.casefold())],
+                schemas.ClassUpdateInCourse(home_room_id=room_ids[fold_text(class_item.home_room)]),
+                organization_id,
+                changed_by_membership_id=current_admin.membership_id,
+            )
 
     for assignment in result.assignments:
         class_id = class_ids[

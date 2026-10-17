@@ -254,6 +254,26 @@ async def remove_room_type(db: AsyncSession, room_type_id: int, organization_id:
     return "hard_delete"
 
 
+async def ensure_room_type(
+    db: AsyncSession, organization_id: int, name: str
+) -> models.SchoolRoomType:
+    """Tipo ativo com este nome dobrado: usa o existente, restaura o arquivado ou cria-o.
+
+    Usa-o a importação CSV (D18), que cria cada nome uma só vez e nunca liga um
+    nome a um tipo de outra escola.
+    """
+    await _lock_catalogue(db, organization_id)
+    room_type = await _find_by_folded_name(db, organization_id, name)
+    if room_type is None:
+        room_type = models.SchoolRoomType(
+            organization_id=organization_id, name=name, is_normal=False
+        )
+        db.add(room_type)
+    room_type.is_archived = False
+    await db.flush()
+    return room_type
+
+
 async def ensure_initial_room_types(db: AsyncSession, organization_id: int) -> None:
     """Create the initial types of a school, idempotent by Normal and folded name."""
     await _lock_catalogue(db, organization_id)

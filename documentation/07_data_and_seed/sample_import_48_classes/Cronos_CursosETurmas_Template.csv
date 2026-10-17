@@ -1,49 +1,49 @@
-﻿Sigla do curso;Nome do curso;Nome da turma;Ano escolar;Ano de início;Ano de fim;Número de alunos
-TGPSI;Técnico de Gestão e Programação de Sistemas Informáticos;TGPSI 10;10;2026;2029;27
-TGPSI;Técnico de Gestão e Programação de Sistemas Informáticos;TGPSI 11;11;2025;2028;20
-TGPSI;Técnico de Gestão e Programação de Sistemas Informáticos;TGPSI 12;12;2024;2027;21
-TMM;Técnico de Multimédia;TMM 10;10;2026;2029;25
-TMM;Técnico de Multimédia;TMM 11;11;2025;2028;26
-TMM;Técnico de Multimédia;TMM 12;12;2024;2027;27
-TDES;Técnico de Design de Comunicação;TDES 10;10;2026;2029;26
-TDES;Técnico de Design de Comunicação;TDES 11;11;2025;2028;27
-TDES;Técnico de Design de Comunicação;TDES 12;12;2024;2027;20
-TMKT;Técnico de Marketing;TMKT 10;10;2026;2029;26
-TMKT;Técnico de Marketing;TMKT 11;11;2025;2028;27
-TMKT;Técnico de Marketing;TMKT 12;12;2024;2027;20
-TGE;Técnico de Gestão;TGE 10;10;2026;2029;25
-TGE;Técnico de Gestão;TGE 11;11;2025;2028;26
-TGE;Técnico de Gestão;TGE 12;12;2024;2027;27
-TCONT;Técnico de Contabilidade;TCONT 10;10;2026;2029;27
-TCONT;Técnico de Contabilidade;TCONT 11;11;2025;2028;20
-TCONT;Técnico de Contabilidade;TCONT 12;12;2024;2027;21
-TAS;Técnico Auxiliar de Saúde;TAS 10;10;2026;2029;25
-TAS;Técnico Auxiliar de Saúde;TAS 11;11;2025;2028;26
-TAS;Técnico Auxiliar de Saúde;TAS 12;12;2024;2027;27
-TFAR;Técnico de Farmácia;TFAR 10;10;2026;2029;26
-TFAR;Técnico de Farmácia;TFAR 11;11;2025;2028;27
-TFAR;Técnico de Farmácia;TFAR 12;12;2024;2027;20
-TCO;Técnico de Cozinha/Pastelaria;TCO 10;10;2026;2029;25
-TCO;Técnico de Cozinha/Pastelaria;TCO 11;11;2025;2028;26
-TCO;Técnico de Cozinha/Pastelaria;TCO 12;12;2024;2027;27
-TRES;Técnico de Restauração;TRES 10;10;2026;2029;26
-TRES;Técnico de Restauração;TRES 11;11;2025;2028;27
-TRES;Técnico de Restauração;TRES 12;12;2024;2027;20
-TTUR;Técnico de Turismo;TTUR 10;10;2026;2029;26
-TTUR;Técnico de Turismo;TTUR 11;11;2025;2028;27
-TTUR;Técnico de Turismo;TTUR 12;12;2024;2027;20
-TEE;Técnico de Eletrónica e Telecomunicações;TEE 10;10;2026;2029;25
-TEE;Técnico de Eletrónica e Telecomunicações;TEE 11;11;2025;2028;26
-TEE;Técnico de Eletrónica e Telecomunicações;TEE 12;12;2024;2027;27
-TMEC;Técnico de Mecatrónica;TMEC 10;10;2026;2029;26
-TMEC;Técnico de Mecatrónica;TMEC 11;11;2025;2028;27
-TMEC;Técnico de Mecatrónica;TMEC 12;12;2024;2027;20
-TER;Técnico de Energias Renováveis;TER 10;10;2026;2029;25
-TER;Técnico de Energias Renováveis;TER 11;11;2025;2028;26
-TER;Técnico de Energias Renováveis;TER 12;12;2024;2027;27
-TDESP;Técnico de Desporto;TDESP 10;10;2026;2029;27
-TDESP;Técnico de Desporto;TDESP 11;11;2025;2028;20
-TDESP;Técnico de Desporto;TDESP 12;12;2024;2027;21
-TLOG;Técnico de Logística;TLOG 10;10;2026;2029;26
-TLOG;Técnico de Logística;TLOG 11;11;2025;2028;27
-TLOG;Técnico de Logística;TLOG 12;12;2024;2027;20
+﻿Sigla do curso;Nome do curso;Nome da turma;Ano escolar;Ano de início;Ano de fim;Número de alunos;Sala da turma
+TGPSI;Técnico de Gestão e Programação de Sistemas Informáticos;TGPSI 10;10;2026;2029;27;
+TGPSI;Técnico de Gestão e Programação de Sistemas Informáticos;TGPSI 11;11;2025;2028;20;
+TGPSI;Técnico de Gestão e Programação de Sistemas Informáticos;TGPSI 12;12;2024;2027;21;
+TMM;Técnico de Multimédia;TMM 10;10;2026;2029;25;
+TMM;Técnico de Multimédia;TMM 11;11;2025;2028;26;
+TMM;Técnico de Multimédia;TMM 12;12;2024;2027;27;
+TDES;Técnico de Design de Comunicação;TDES 10;10;2026;2029;26;
+TDES;Técnico de Design de Comunicação;TDES 11;11;2025;2028;27;
+TDES;Técnico de Design de Comunicação;TDES 12;12;2024;2027;20;
+TMKT;Técnico de Marketing;TMKT 10;10;2026;2029;26;
+TMKT;Técnico de Marketing;TMKT 11;11;2025;2028;27;
+TMKT;Técnico de Marketing;TMKT 12;12;2024;2027;20;
+TGE;Técnico de Gestão;TGE 10;10;2026;2029;25;
+TGE;Técnico de Gestão;TGE 11;11;2025;2028;26;
+TGE;Técnico de Gestão;TGE 12;12;2024;2027;27;
+TCONT;Técnico de Contabilidade;TCONT 10;10;2026;2029;27;
+TCONT;Técnico de Contabilidade;TCONT 11;11;2025;2028;20;
+TCONT;Técnico de Contabilidade;TCONT 12;12;2024;2027;21;
+TAS;Técnico Auxiliar de Saúde;TAS 10;10;2026;2029;25;
+TAS;Técnico Auxiliar de Saúde;TAS 11;11;2025;2028;26;
+TAS;Técnico Auxiliar de Saúde;TAS 12;12;2024;2027;27;
+TFAR;Técnico de Farmácia;TFAR 10;10;2026;2029;26;
+TFAR;Técnico de Farmácia;TFAR 11;11;2025;2028;27;
+TFAR;Técnico de Farmácia;TFAR 12;12;2024;2027;20;
+TCO;Técnico de Cozinha/Pastelaria;TCO 10;10;2026;2029;25;
+TCO;Técnico de Cozinha/Pastelaria;TCO 11;11;2025;2028;26;
+TCO;Técnico de Cozinha/Pastelaria;TCO 12;12;2024;2027;27;
+TRES;Técnico de Restauração;TRES 10;10;2026;2029;26;
+TRES;Técnico de Restauração;TRES 11;11;2025;2028;27;
+TRES;Técnico de Restauração;TRES 12;12;2024;2027;20;
+TTUR;Técnico de Turismo;TTUR 10;10;2026;2029;26;
+TTUR;Técnico de Turismo;TTUR 11;11;2025;2028;27;
+TTUR;Técnico de Turismo;TTUR 12;12;2024;2027;20;
+TEE;Técnico de Eletrónica e Telecomunicações;TEE 10;10;2026;2029;25;
+TEE;Técnico de Eletrónica e Telecomunicações;TEE 11;11;2025;2028;26;
+TEE;Técnico de Eletrónica e Telecomunicações;TEE 12;12;2024;2027;27;
+TMEC;Técnico de Mecatrónica;TMEC 10;10;2026;2029;26;
+TMEC;Técnico de Mecatrónica;TMEC 11;11;2025;2028;27;
+TMEC;Técnico de Mecatrónica;TMEC 12;12;2024;2027;20;
+TER;Técnico de Energias Renováveis;TER 10;10;2026;2029;25;
+TER;Técnico de Energias Renováveis;TER 11;11;2025;2028;26;
+TER;Técnico de Energias Renováveis;TER 12;12;2024;2027;27;
+TDESP;Técnico de Desporto;TDESP 10;10;2026;2029;27;
+TDESP;Técnico de Desporto;TDESP 11;11;2025;2028;20;
+TDESP;Técnico de Desporto;TDESP 12;12;2024;2027;21;
+TLOG;Técnico de Logística;TLOG 10;10;2026;2029;26;
+TLOG;Técnico de Logística;TLOG 11;11;2025;2028;27;
+TLOG;Técnico de Logística;TLOG 12;12;2024;2027;20;

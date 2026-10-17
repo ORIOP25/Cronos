@@ -52,7 +52,7 @@ def test_templates_use_the_official_names_and_are_deterministic():
     )
     assert text["courses"].splitlines()[0] == (
         "Sigla do curso;Nome do curso;Nome da turma;Ano escolar;Ano de início;"
-        "Ano de fim;Número de alunos"
+        "Ano de fim;Número de alunos;Sala da turma"
     )
     assert text["teachers"].splitlines()[0] == (
         "Nome do professor;Email do professor;Nome da disciplina"
@@ -141,24 +141,24 @@ def test_parser_explains_when_file_belongs_to_another_import_section():
     )
 
 
-def test_room_types_are_resolved_by_school_name_for_rooms_and_subjects():
+ROOMS_HEADER = "Nome da sala;Tipo de sala;Capacidade\r\n"
+SUBJECTS_HEADER = "Nome da disciplina;Tipo de sala;Nome do módulo;Código do módulo;Horas do módulo;Ordem do módulo\r\n"
+COURSES_HEADER = (
+    "Sigla do curso;Nome do curso;Nome da turma;Ano escolar;Ano de início;Ano de fim;"
+    "Número de alunos;Sala da turma\r\n"
+)
+
+
+def test_room_types_match_the_school_name_for_rooms_and_subjects_without_case_or_accents():
     rooms = parse_resource_file(
         "rooms",
         "salas.csv",
-        encoded(
-            "Nome da sala;Tipo de sala;Capacidade\r\n"
-            "Sala 1;LABORATORIO;20\r\n"
-            "Sala 2;GINÁSIO;20\r\n"
-            "Sala 3;artes;20\r\n"
-        ),
+        encoded(ROOMS_HEADER + "Sala 1;LABORATORIO;20\r\nSala 2;GINÁSIO;20\r\nSala 3;artes;20\r\n"),
     )
     subjects = parse_resource_file(
         "subjects",
         "disciplinas.csv",
-        encoded(
-            "Nome da disciplina;Tipo de sala;Nome do módulo;Código do módulo;Horas do módulo;Ordem do módulo\r\n"
-            "Disciplina;laboratorio;Módulo;M1;30;1\r\n"
-        ),
+        encoded(SUBJECTS_HEADER + "Disciplina;laboratorio;Módulo;M1;30;1\r\n"),
     )
 
     result = validate_import(
@@ -167,30 +167,163 @@ def test_room_types_are_resolved_by_school_name_for_rooms_and_subjects():
     )
 
     assert result.can_commit is True
-    assert [item.room_type_id for item in result.rooms] == [2, 3, 4]
-    assert result.subjects[0].room_type_id == 2
+    assert [(item.name, item.is_new) for item in result.room_types] == [
+        ("LABORATORIO", False),
+        ("GINÁSIO", False),
+        ("artes", False),
+    ]
+    assert result.counts["room_types"] == 0
 
 
-def test_room_types_reject_internal_codes_and_unknown_values():
-    parsed = parse_resource_file(
-        "rooms",
-        "salas.csv",
-        encoded(
-            "Nome da sala;Tipo de sala;Capacidade\r\n"
-            "Sala 1;lab;20\r\nSala 2;Biblioteca;20\r\nSala 3;;20\r\n"
-        ),
+def test_an_unknown_room_type_name_is_one_new_type_across_rooms_and_subjects():
+    rooms = parse_resource_file(
+        "rooms", "salas.csv", encoded(ROOMS_HEADER + "Sala 1;oficina;20\r\n")
+    )
+    subjects = parse_resource_file(
+        "subjects",
+        "disciplinas.csv",
+        encoded(SUBJECTS_HEADER + "Oficina;Oficina;Módulo;M1;30;1\r\n"),
     )
 
-    result = validate_import({"rooms": parsed}, ImportSnapshot(room_types=list(INITIAL_ROOM_TYPES)))
+    result = validate_import(
+        {"rooms": rooms, "subjects": subjects},
+        ImportSnapshot(room_types=list(INITIAL_ROOM_TYPES)),
+    )
+
+    assert result.can_commit is True
+    assert [(item.name, item.is_new) for item in result.room_types] == [("oficina", True)]
+    assert result.counts["room_types"] == 1
+    assert {"resource": "room_types", "name": "oficina"} in result.preview
+    assert {item.room_type_name for item in result.rooms} == {"oficina"}
+    assert {item.room_type_name for item in result.subjects} == {"Oficina"}
+
+
+def test_room_type_names_must_be_present_and_at_most_sixty_characters():
+    rooms = parse_resource_file(
+        "rooms",
+        "salas.csv",
+        encoded(ROOMS_HEADER + f"Sala 1;;20\r\nSala 2;{'x' * 61};20\r\n"),
+    )
+
+    result = validate_import({"rooms": rooms}, ImportSnapshot(room_types=list(INITIAL_ROOM_TYPES)))
 
     assert result.can_commit is False
-    assert {issue.code for issue in result.issues} >= {"room_type_unknown", "room_type_invalid"}
-    assert {issue.message for issue in result.issues if issue.code == "room_type_unknown"} == {
-        "Não existe um tipo de sala com esse nome."
-    }
-    assert {issue.message for issue in result.issues if issue.code == "room_type_invalid"} == {
-        "Escreva o tipo de sala."
-    }
+    assert [(issue.code, issue.line, issue.field, issue.message) for issue in result.issues] == [
+        ("room_type_invalid", 2, "type", "Escreva o tipo de sala."),
+        (
+            "room_type_invalid",
+            3,
+            "type",
+            "Escreva um nome de tipo com até 60 caracteres.",
+        ),
+    ]
+
+
+def test_home_room_of_a_new_class_may_be_a_room_of_the_same_batch():
+    rooms = parse_resource_file(
+        "rooms", "salas.csv", encoded(ROOMS_HEADER + "Sala Nova;Normal;30\r\n")
+    )
+    courses = parse_resource_file(
+        "courses",
+        "cursos.csv",
+        encoded(COURSES_HEADER + "TGEI;Curso;TGEI 25/28;10;2025;2028;25;sala nova\r\n"),
+    )
+
+    result = validate_import(
+        {"rooms": rooms, "courses": courses}, ImportSnapshot(room_types=list(INITIAL_ROOM_TYPES))
+    )
+
+    assert result.can_commit is True
+    assert result.courses[0].classes[0].home_room == "sala nova"
+
+
+def test_home_room_of_a_new_class_may_be_an_existing_school_room_that_seats_it():
+    courses = parse_resource_file(
+        "courses",
+        "cursos.csv",
+        encoded(COURSES_HEADER + "TGEI;Curso;TGEI 25/28;10;2025;2028;25;SALA EXISTENTE\r\n"),
+    )
+    snapshot = ImportSnapshot(rooms=[ExistingRoom(id=7, name="Sala Existente", capacity=25)])
+
+    result = validate_import({"courses": courses}, snapshot)
+
+    assert result.can_commit is True
+    assert result.courses[0].classes[0].home_room == "SALA EXISTENTE"
+
+
+def test_empty_home_room_keeps_the_class_automatic():
+    courses = parse_resource_file(
+        "courses",
+        "cursos.csv",
+        encoded(COURSES_HEADER + "TGEI;Curso;TGEI 25/28;10;2025;2028;25;\r\n"),
+    )
+
+    result = validate_import({"courses": courses}, ImportSnapshot())
+
+    assert result.can_commit is True
+    assert result.courses[0].classes[0].home_room is None
+
+
+def test_unknown_home_room_is_an_error_with_row_and_column():
+    courses = parse_resource_file(
+        "courses",
+        "cursos.csv",
+        encoded(COURSES_HEADER + "TGEI;Curso;TGEI 25/28;10;2025;2028;25;Sala Fantasma\r\n"),
+    )
+
+    result = validate_import({"courses": courses}, ImportSnapshot())
+
+    assert result.can_commit is False
+    assert [(issue.code, issue.line, issue.field, issue.message) for issue in result.issues] == [
+        (
+            "home_room_not_found",
+            2,
+            "home_room",
+            "Sala não encontrada. Escreva o nome de uma sala existente ou do ficheiro de salas.",
+        )
+    ]
+
+
+def test_home_room_must_seat_every_student_of_the_class():
+    rooms = parse_resource_file(
+        "rooms", "salas.csv", encoded(ROOMS_HEADER + "Sala Pequena;Normal;24\r\n")
+    )
+    courses = parse_resource_file(
+        "courses",
+        "cursos.csv",
+        encoded(COURSES_HEADER + "TGEI;Curso;TGEI 25/28;10;2025;2028;25;Sala Pequena\r\n"),
+    )
+
+    result = validate_import(
+        {"rooms": rooms, "courses": courses}, ImportSnapshot(room_types=list(INITIAL_ROOM_TYPES))
+    )
+
+    assert result.can_commit is False
+    assert [(issue.code, issue.line, issue.field, issue.message) for issue in result.issues] == [
+        (
+            "home_room_capacity",
+            2,
+            "home_room",
+            "A sala Sala Pequena não tem lugares para os 25 alunos da turma.",
+        )
+    ]
+
+
+def test_home_room_without_class_fields_is_reported_instead_of_ignored():
+    courses = parse_resource_file(
+        "courses",
+        "cursos.csv",
+        encoded(COURSES_HEADER + "TGEI;Curso;;;;;;Sala Nova\r\n"),
+    )
+
+    result = validate_import({"courses": courses}, ImportSnapshot())
+
+    assert result.can_commit is False
+    assert [
+        (issue.code, issue.line, issue.field)
+        for issue in result.issues
+        if issue.severity == "error"
+    ] == [("class_partial", 2, "home_room")]
 
 
 def test_policy_returns_all_cross_reference_issues_and_warnings():
@@ -206,8 +339,8 @@ def test_policy_returns_all_cross_reference_issues_and_warnings():
         "courses",
         "cursos.csv",
         encoded(
-            "Sigla do curso;Nome do curso;Nome da turma;Ano escolar;Ano de início;Ano de fim;Número de alunos\r\n"
-            "TGEI;Curso;10.º A;10;2025;2028;25\r\n"
+            "Sigla do curso;Nome do curso;Nome da turma;Ano escolar;Ano de início;Ano de fim;Número de alunos;Sala da turma\r\n"
+            "TGEI;Curso;10.º A;10;2025;2028;25;\r\n"
         ),
     )
     teachers = parse_resource_file(
@@ -236,7 +369,7 @@ def test_policy_returns_all_cross_reference_issues_and_warnings():
             "assignments": assignments,
         },
         ImportSnapshot(
-            rooms=[ExistingRoom(id=1, name="Sala Existente")],
+            rooms=[ExistingRoom(id=1, name="Sala Existente", capacity=30)],
             subjects=[],
             courses=[],
             classes=[],
@@ -562,8 +695,8 @@ def test_class_availability_accepts_a_class_created_in_the_same_batch():
         "courses",
         "cursos.csv",
         encoded(
-            "Sigla do curso;Nome do curso;Nome da turma;Ano escolar;Ano de início;Ano de fim;Número de alunos\r\n"
-            "TGEI;Curso;TGEI 25/28;10;2025;2028;25\r\n"
+            "Sigla do curso;Nome do curso;Nome da turma;Ano escolar;Ano de início;Ano de fim;Número de alunos;Sala da turma\r\n"
+            "TGEI;Curso;TGEI 25/28;10;2025;2028;25;\r\n"
         ),
     )
     availability = parse_resource_file(
