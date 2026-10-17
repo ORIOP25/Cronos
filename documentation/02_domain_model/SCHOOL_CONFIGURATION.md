@@ -205,6 +205,17 @@ that succeeds stops being pending even when the other fails, and the message
 names the part that was not saved. The Equipa list shows "Sem almoço" and
 "Mín. {N}h · furo {M}h" when they apply.
 
+## Evitar and Preferencial in generation
+
+Teachers and classes use the same four levels in generation.
+
+- Impossível: the generator never places a lesson in that block.
+- Evitar: the generator places a lesson there only when the teacher or class could not fit its remaining lessons before the end of the school year without it. An Evitar block still counts as available time.
+- Preferencial: the generator fills the Preferencial blocks first. The other blocks of that teacher or class count as Evitar.
+- Neutro: no preference.
+
+When a shared hour is contested, the teacher or class with the least availability in the school year takes it first, while it stays on pace with its remaining lessons. See the [Scheduler Engine](../03_scheduler_engine/README.md#key-behaviors) and [Availability Priority Tech Spec](../03_scheduler_engine/AVAILABILITY_PRIORITY_TECH_SPEC.md).
+
 ## Related Documents
 
 - [Professional Education](PROFESSIONAL_EDUCATION.md)

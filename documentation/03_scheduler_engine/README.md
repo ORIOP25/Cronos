@@ -2,12 +2,12 @@
 
 This section documents the Cronos scheduler v1: complete annual generation, adaptive repair, CP-SAT optimization, the global queue, proposal approval, and the test fixtures that validate them.
 
-The scheduler v1 is active in production. The original execution plan and work breakdown (packages W00–W14) were removed once delivered; they remain in git history. Their binding product decisions (D01–D31) now live in section 1.1 of the technical specification.
+The scheduler v1 is active in production. The original execution plan and work breakdown (packages W00–W14) were removed once delivered; they remain in git history. Their binding product decisions now live in section 1.1 of the technical specification.
 
 ## Documents
 
 - [SCHEDULER_V1_TECH_SPEC_V2.md](SCHEDULER_V1_TECH_SPEC_V2.md): Technical specification — product decisions, contracts, models, quality policy, queue, API and operations.
-- [AVAILABILITY_PRIORITY_TECH_SPEC.md](AVAILABILITY_PRIORITY_TECH_SPEC.md) and [AVAILABILITY_PRIORITY_WBS.md](AVAILABILITY_PRIORITY_WBS.md): Proposed plan — priority to teachers and classes with little availability, Evitar and Preferencial in construction, and the per-teacher time proof.
+- [AVAILABILITY_PRIORITY_TECH_SPEC.md](AVAILABILITY_PRIORITY_TECH_SPEC.md) and [AVAILABILITY_PRIORITY_WBS.md](AVAILABILITY_PRIORITY_WBS.md): Plan in implementation — priority to teachers and classes with little availability, Evitar and Preferencial in construction, and the per-teacher time proof.
 
 ## Engine
 
@@ -40,6 +40,8 @@ The diagnosis includes the affected classes and subject. See `domain/diagnostics
 Balanced classroom progression. Constructive priority favors subjects with less curricular progress and classes that have not started. Annual quotas are planned by `infrastructure/annual_model.py` `plan_annual_quotas`. Quality exposes `minimum_class_progress_per_mille` and `class_progress_spread_per_mille`.
 
 Weekly pattern. The constructor remembers the first assignment and room used for each class, weekday and local grid interval. Repeating that assignment can compensate for one lesson of progress. Progress ties favor contiguous class and teacher lessons, then baseline intervals and assignments. The same room is preferred when available. These preferences never remove otherwise eligible resource combinations. Mandatory rules and simultaneous lesson capacity still apply; the pattern can change when resources or curricular progress require it.
+
+Availability priority. For each period, construction ranks the options by the smallest availability among the teachers and classes that are on pace with their remaining lessons. A resource ahead of its pace loses that priority until the pace catches up, so the rule never advances lessons. Within the same priority, an option inside an Evitar block of its teacher or classes ranks after the others. The weekly pattern and progress keys follow. The first pass skips an Evitar block when its teacher or class could still fit its remaining lessons without it. If that skip refuses an option and the pass fails, one relaxed pass repeats the construction without the skip. Adaptive recovery applies the same ranking to the editable future after it retains the valid published positions. The rules live in `domain/availability_priority.py`; see the [Availability Priority Tech Spec](AVAILABILITY_PRIORITY_TECH_SPEC.md) and decisions D32 and D33 above.
 
 Adaptive recovery. The production route compares two validated candidates within the existing budget.
 One retains valid published positions and fills missing credit at the earliest available capacity.

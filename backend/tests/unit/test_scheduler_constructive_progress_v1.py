@@ -257,7 +257,9 @@ def test_an_unavailable_weekly_teacher_does_not_leave_a_fillable_period_empty():
         plan(
             periods,
             [assignment(1, 1, 1, {1}, 540), assignment(2, 1, 2, {1}, 540)],
-            unavailable=(Unavailability(UnavailableResource.TEACHER, 2, periods[6]),),
+            # The scarcer teacher 2 leads (availability priority D01, D02) and
+            # holds the fourth weekday; its second-week occurrence is unavailable.
+            unavailable=(Unavailability(UnavailableResource.TEACHER, 2, periods[8]),),
         ),
         preferred_end_date=periods[-1].school_date,
     )
@@ -265,9 +267,9 @@ def test_an_unavailable_weekly_teacher_does_not_leave_a_fillable_period_empty():
     candidate = construct(target, periods)
 
     by_period = {row.period: row.assignment_id for row in candidate.lessons}
-    assert by_period[periods[1]] == 2
-    assert by_period[periods[6]] == 1
-    assert by_period[periods[11]] == 2
+    assert by_period[periods[3]] == 2
+    assert by_period[periods[8]] == 1
+    assert by_period[periods[13]] == 2
     assert set(by_period) == set(periods[:18])
 
 

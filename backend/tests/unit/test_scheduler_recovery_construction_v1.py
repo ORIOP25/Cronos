@@ -1,21 +1,26 @@
 """Production recovery preserves valid positions and repairs changed school data."""
 
 from dataclasses import replace
-from datetime import time
+from datetime import date, time, timedelta
 from time import monotonic
 
 import pytest
 
 from app.scheduler.composition import repair_published_schedule
+from app.scheduler.domain.calendar import normalize_period
 from app.scheduler.domain.candidate import (
+    Assignment,
     CandidateSchedule,
+    GridSlot,
     LunchRule,
+    PlanningSnapshot,
     SchedulingStrategy,
     TeacherPresenceRule,
     Unavailability,
     UnavailableResource,
 )
 from app.scheduler.domain.candidate_validation import ValidationViolationCode, validate_candidate
+from app.scheduler.domain.projection import ModuleRequirement
 from app.scheduler.infrastructure.recovery_construction import construct_recovery
 from tests.unit.test_scheduler_recovery_solver_v1 import POLICY
 from tests.unit.test_scheduler_resource_exclusivity_v1 import assignment, lesson, plan
@@ -266,18 +271,20 @@ def test_joint_availability_repair_moves_other_lessons_to_free_the_only_shared_p
         (1, periods[2], 1),
         (1, periods[3], 1),
     }
-    assert result.evidence.stop_reason == "FALLBACK_UNRESTRICTED"
+    # The joint unit's teacher has the only shared period, so the availability
+    # priority (spec D01, D10) lets the rebuild construction place it first.
+    assert result.evidence.stop_reason == "CONSTRUCTIVE_RECOVERY"
 
 
-def test_exact_search_consolidates_a_presence_invalid_baseline_onto_one_day():
+def test_a_repair_consolidates_a_presence_invalid_baseline_onto_one_day():
     """A newly added presence minimum invalidates the baseline and forces a real repair.
 
     The setup proof below shows the same baseline is valid without the rule and
     invalid only through `TEACHER_PRESENCE_VIOLATION` with it, so no other
     constraint causes the change. The baseline keeps the shared teacher's two
-    lessons on separate days, which the new 120-minute minimum forbids. The
-    unrestricted exact search repairs it (`FALLBACK_UNRESTRICTED` is returned
-    only when both constructions decline). No CP-SAT call is mocked.
+    lessons on separate days, which the new 120-minute minimum forbids. With the
+    availability priority (spec D01, D10) a validated construction repairs it
+    (`CONSTRUCTIVE_RECOVERY`). No CP-SAT call is mocked.
     """
     periods = (
         period(0, start=9, end=10),
@@ -318,11 +325,13 @@ def test_exact_search_consolidates_a_presence_invalid_baseline_onto_one_day():
         ValidationViolationCode.TEACHER_PRESENCE_VIOLATION
     }
 
-    assert result.evidence.stop_reason == "FALLBACK_UNRESTRICTED"
+    assert result.evidence.stop_reason == "CONSTRUCTIVE_RECOVERY"
     assert positions(result.candidate) != positions(CandidateSchedule(baseline))
+    # The construction finishes as early as possible (scheduler D10), so the
+    # shared teacher's day is the first one.
     assert {row.period for row in result.candidate.lessons if row.assignment_id in (1, 2)} == {
-        periods[2],
-        periods[3],
+        periods[0],
+        periods[1],
     }
     assert history in result.candidate.lessons
     assert any(row.kind.value == "MOVED" for row in result.quality.disruption.changes)
@@ -367,3 +376,96 @@ def test_protected_joint_availability_conflict_is_proven_before_search(resource,
     assert result.search_seconds == 0
     assert result.diagnoses[0].code == "PROTECTED_AVAILABILITY_CONFLICT"
     assert result.diagnoses[0].affected_class_ids == (1, 2)
+
+
+MONDAY = date(2026, 9, 14)
+TZ = "Europe/Lisbon"
+GRID_HOURS = (9, 10, 11, 12, 14, 15, 16, 17)
+
+
+def slot(day, hour):
+    return normalize_period(MONDAY + timedelta(days=day), time(hour), time(hour + 1), TZ)
+
+
+def week_grid():
+    return tuple(slot(day, hour) for day in range(5) for hour in GRID_HOURS)
+
+
+def block(resource, identity, day, start, end):
+    when = normalize_period(MONDAY + timedelta(days=day), time(start), time(end), TZ)
+    return Unavailability(resource, identity, when)
+
+
+def unit(identity, teacher_id, class_ids, minutes):
+    return Assignment(
+        identity,
+        class_ids,
+        identity,
+        teacher_id,
+        frozenset({100 + identity}),
+        (ModuleRequirement(identity, 1, minutes),),
+    )
+
+
+def week_snapshot(assignments, unavailable=(), soft=()):
+    return PlanningSnapshot(
+        strategy=SchedulingStrategy.ADAPTIVE_RECOVERY,
+        origin=MONDAY,
+        preferred_end_date=MONDAY + timedelta(days=4),
+        hard_end_date=MONDAY + timedelta(days=4),
+        timezone_name=TZ,
+        grid_slots=tuple(
+            GridSlot(day, time(hour), time(hour + 1)) for day in range(5) for hour in GRID_HOURS
+        ),
+        assignments=tuple(assignments),
+        executed_minutes={},
+        blocked_dates=frozenset(),
+        unavailable=tuple(unavailable),
+        soft_unavailable=tuple(soft),
+    )
+
+
+def test_a_class_with_scarce_hours_wins_the_shared_teacher_before_a_class_with_spare_hours():
+    # R11: teacher 7 gives 20 h to class 1 (all day) and 20 h to class 2 (mornings only).
+    # Class 1 has the lower assignment id, so only the availability order can favour class 2.
+    impossible = [block(UnavailableResource.CLASS, 2, day, 13, 18) for day in range(5)]
+    snapshot = week_snapshot(
+        (unit(1, 7, (1,), 1200), unit(2, 7, (2,), 1200)),
+        unavailable=impossible,
+    )
+
+    candidate = construct_recovery(snapshot, week_grid(), deadline=monotonic() + 30)
+
+    assert candidate is not None
+    assert validate_candidate(snapshot, candidate).valid
+    assert len(candidate.lessons) == 40
+    class_two = [row for row in candidate.lessons if row.assignment_id == 2]
+    assert all(row.period.start_local < time(13) for row in class_two)
+
+
+def test_recovery_uses_evitar_only_when_the_class_cannot_fit_without_it():
+    # R12: one class. T1 (teacher 7) has Evitar on Monday and Tuesday and is impossible
+    # from Wednesday to Friday except at 9h. T2 (teacher 8) is free only at 9h from Wednesday to Friday.
+    soft = [block(UnavailableResource.TEACHER, 7, day, 9, 18) for day in range(2)]
+    hard = [block(UnavailableResource.TEACHER, 7, day, 10, 18) for day in range(2, 5)]
+    hard += [block(UnavailableResource.TEACHER, 8, day, 9, 18) for day in range(2)]
+    hard += [block(UnavailableResource.TEACHER, 8, day, 10, 18) for day in range(2, 5)]
+    snapshot = week_snapshot(
+        (unit(1, 7, (1,), 180), unit(2, 8, (1,), 180)),
+        unavailable=hard,
+        soft=soft,
+    )
+
+    candidate = construct_recovery(snapshot, week_grid(), deadline=monotonic() + 30)
+
+    assert candidate is not None
+    assert validate_candidate(snapshot, candidate).valid
+    first = [row.period for row in candidate.lessons if row.assignment_id == 1]
+    second = [row.period for row in candidate.lessons if row.assignment_id == 2]
+    assert len(first) == 3
+    assert {period.school_date for period in first} == {MONDAY}
+    assert sorted(second, key=lambda period: period.start_utc) == [
+        slot(2, 9),
+        slot(3, 9),
+        slot(4, 9),
+    ]

@@ -25,6 +25,8 @@ from app.scheduler.domain.candidate import (
     PlanningSnapshot,
     SchedulingStrategy,
     TeacherPresenceRule,
+    Unavailability,
+    UnavailableResource,
 )
 from app.scheduler.domain.projection import ModuleRequirement
 from app.scheduler.domain.teaching_units import (
@@ -201,6 +203,112 @@ def build_typology_fixture(
         snapshot=snapshot,
         periods=periods,
         witness=witness,
+    )
+
+
+# Pilot-school profile (tech spec T13): an 8-hour grid, 9h-13h and 14h-18h.
+AVAILABILITY_HOURS = (9, 10, 11, 12, 14, 15, 16, 17)
+# Subjects in id order: (window end hour, minutes per week). The three full-day
+# subjects come first, so they get the lowest ids in each class.
+AVAILABILITY_PROFILES = (
+    (18, 276),
+    (18, 276),
+    (18, 276),
+    (13, 252),
+    (13, 252),
+    (12, 300),
+    (11, 300),
+)
+
+
+def _split_modules(total_minutes: int) -> tuple[ModuleRequirement, ...]:
+    base, extra = divmod(total_minutes, MODULES_PER_SUBJECT)
+    return tuple(
+        ModuleRequirement(
+            module_id, module_id, base + (extra if module_id == MODULES_PER_SUBJECT else 0)
+        )
+        for module_id in range(1, MODULES_PER_SUBJECT + 1)
+    )
+
+
+def build_availability_typology_fixture(class_count: int) -> TypologyFixture:
+    """Build the pilot-school availability case with the typology calendar.
+
+    Each class has three full-day subjects, two morning subjects (9h-13h), one
+    9h-12h subject and one 9h-11h subject. Each teacher covers one subject in two
+    neighbouring classes and is Impossível outside its window. The weekly
+    minutes are exact and spread over the non-blocked school days. There is no
+    witness: the construction itself is the proof of feasibility.
+    """
+    if class_count < 3 or class_count % 3 != 0:
+        raise ValueError("Classes are always multiples of three (three per course).")
+    days = tuple(day for day in _school_days(SCHOOL_YEAR_START, PREFERRED_END) if not _blocked(day))
+    periods = tuple(
+        normalize_period(day, time(hour), time(hour + 1), TIMEZONE)
+        for day in days
+        for hour in AVAILABILITY_HOURS
+    )
+    grid_slots = tuple(
+        dict.fromkeys(
+            GridSlot(day.weekday(), time(hour), time(hour + 1))
+            for day in days
+            for hour in AVAILABILITY_HOURS
+        )
+    )
+    assignments = []
+    unavailable = []
+    for class_index in range(class_count):
+        class_id = class_index + 1
+        pair = class_index // 2
+        rooms = (class_id, (class_index + 1) % class_count + 1)
+        for subject_id, (window_end, minutes_per_week) in enumerate(AVAILABILITY_PROFILES, 1):
+            teacher_id = subject_id * 1000 + pair + 1
+            assignments.append(
+                Assignment(
+                    assignment_id=class_id * 10 + subject_id,
+                    class_ids=(class_id,),
+                    subject_id=subject_id,
+                    teacher_id=teacher_id,
+                    eligible_room_ids=frozenset(rooms),
+                    modules=_split_modules(round(minutes_per_week * len(days) / 5)),
+                )
+            )
+            # The first class of each pair writes the teacher window once.
+            if class_index % 2 == 0 and window_end < 18:
+                unavailable.extend(
+                    Unavailability(
+                        UnavailableResource.TEACHER,
+                        teacher_id,
+                        normalize_period(day, time(window_end), time(18), TIMEZONE),
+                    )
+                    for day in days
+                )
+    snapshot = PlanningSnapshot(
+        strategy=SchedulingStrategy.COMPLETE_GENERATION,
+        origin=SCHOOL_YEAR_START,
+        preferred_end_date=PREFERRED_END,
+        hard_end_date=HARD_END,
+        timezone_name=TIMEZONE,
+        grid_slots=grid_slots,
+        assignments=tuple(assignments),
+        executed_minutes={},
+        blocked_dates=frozenset(
+            day
+            for day in _school_days(SCHOOL_YEAR_START, HARD_END)
+            if CHRISTMAS_BREAK[0] <= day <= CHRISTMAS_BREAK[1]
+            or EASTER_BREAK[0] <= day <= EASTER_BREAK[1]
+            or day in NATIONAL_HOLIDAYS
+        ),
+        unavailable=tuple(unavailable),
+    )
+    return TypologyFixture(
+        class_count=class_count,
+        courses=class_count // 3,
+        teachers=SUBJECT_COUNT * ((class_count + 1) // 2),
+        rooms=class_count,
+        snapshot=snapshot,
+        periods=periods,
+        witness=None,
     )
 
 

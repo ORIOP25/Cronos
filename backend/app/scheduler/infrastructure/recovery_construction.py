@@ -8,12 +8,12 @@ from datetime import datetime
 from fractions import Fraction
 from time import monotonic
 
+from app.scheduler.domain.availability_priority import AvailabilityLedger
 from app.scheduler.domain.calendar import Period
 from app.scheduler.domain.candidate import (
     Assignment,
     CandidateSchedule,
     PlanningSnapshot,
-    UnavailableResource,
     continuous_break_minutes,
 )
 from app.scheduler.domain.candidate_validation import validate_candidate
@@ -44,7 +44,32 @@ def construct_recovery(
 
     All current hard rules apply, including newly changed school data.
     The frozen prefix stays physical; future module slices are reprojected.
+    An Evitar option is refused while its resource has spare hours (T08). If that
+    leaves no schedule, one relaxed pass repeats the recovery without the refusal (T09).
     """
+    candidate, refused = _construct_recovery(
+        snapshot, periods, deadline=deadline, should_cancel=should_cancel, strict=True
+    )
+    if candidate is None and refused and not _interrupted(deadline, should_cancel):
+        candidate, _ = _construct_recovery(
+            snapshot, periods, deadline=deadline, should_cancel=should_cancel, strict=False
+        )
+    return candidate
+
+
+def _interrupted(deadline: float, should_cancel: Callable[[], bool] | None) -> bool:
+    return monotonic() >= deadline or (should_cancel is not None and should_cancel())
+
+
+def _construct_recovery(
+    snapshot: PlanningSnapshot,
+    periods: tuple[Period, ...],
+    *,
+    deadline: float,
+    should_cancel: Callable[[], bool] | None,
+    strict: bool,
+) -> tuple[CandidateSchedule | None, int]:
+    """One recovery pass. Strict refuses Evitar options (T08) and counts the refusals."""
     assignments = {row.assignment_id: row for row in snapshot.assignments}
     remaining = {identity: residual_minutes(snapshot, identity) for identity in assignments}
     canonical = canonical_periods(periods)
@@ -59,7 +84,7 @@ def construct_recovery(
     slots_by_day = _slots_by_day(snapshot)
 
     def interrupted() -> bool:
-        return monotonic() >= deadline or (should_cancel is not None and should_cancel())
+        return _interrupted(deadline, should_cancel)
 
     predecessors: dict[int, list[int]] = defaultdict(list)
     for source, target in snapshot.precedences:
@@ -123,7 +148,7 @@ def construct_recovery(
             )
         )
 
-    def retain(assignment: Assignment, period: Period, room: int) -> None:
+    def retain(assignment: Assignment, period: Period, room: int) -> int:
         credit = min(remaining[assignment.assignment_id], period.duration_minutes)
         selections[assignment.assignment_id].append((period, room, credit))
         remaining[assignment.assignment_id] -= credit
@@ -131,6 +156,7 @@ def construct_recovery(
         if current_end is None or period.end_utc > current_end:
             last_end[assignment.assignment_id] = period.end_utc
         occupy(assignment, period, room, assignment.teacher_id)
+        return credit
 
     for row in snapshot.protected_lessons:
         assignment = assignments[row.assignment_id]
@@ -140,13 +166,13 @@ def construct_recovery(
             last_end[row.assignment_id] = row.period.end_utc
     for identity, assignment in assignments.items():
         if interrupted():
-            return None
+            return None, 0
         eligible[identity] = set(eligible_periods(snapshot, assignment, canonical))
     for row in sorted(
         snapshot.baseline_lessons, key=lambda row: (row.period.start_utc, row.lesson_id)
     ):
         if interrupted():
-            return None
+            return None, 0
         assignment = assignments.get(row.assignment_id)
         if (
             assignment is None
@@ -165,6 +191,16 @@ def construct_recovery(
         if rooms:
             retain(assignment, row.period, row.room_id if row.room_id in rooms else rooms[0])
 
+    ledger = AvailabilityLedger.build(
+        snapshot,
+        eligible,
+        remaining,
+        occupied=(
+            (assignments[identity], period)
+            for identity, rows in selections.items()
+            for period, _room, _credit in rows
+        ),
+    )
     options_by_period: dict[Period, list[Assignment]] = defaultdict(list)
     for identity, assignment in assignments.items():
         if remaining[identity] > 0:
@@ -172,16 +208,19 @@ def construct_recovery(
                 options_by_period[period].append(assignment)
     for period in canonical:
         if interrupted():
-            return None
+            return None, ledger.refused
         options = [
             (row, rooms)
             for row in options_by_period[period]
             if remaining[row.assignment_id] > 0
             and ready(row.assignment_id, period)
             and (rooms := free_rooms(row, period))
+            and (not strict or ledger.allows(row, period))
         ]
         options.sort(
             key=lambda item: (
+                ledger.priority(item[0], period),
+                ledger.unfavorable(item[0], period),
                 -Fraction(
                     remaining[item[0].assignment_id],
                     sum(module.required_minutes for module in item[0].modules),
@@ -189,28 +228,15 @@ def construct_recovery(
                 not _continues_open_presence(
                     slots_by_day, occupancy, item[0].teacher_id, period, minimum_teachers
                 ),
-                any(
-                    row.overlaps(period)
-                    for row in snapshot.soft_unavailable_on(
-                        UnavailableResource.TEACHER, item[0].teacher_id, period.school_date
-                    )
-                ),
-                any(
-                    row.overlaps(period)
-                    for class_id in item[0].class_ids
-                    for row in snapshot.soft_unavailable_on(
-                        UnavailableResource.CLASS, class_id, period.school_date
-                    )
-                ),
                 item[0].assignment_id,
             )
         )
         for assignment, room in _select_period(options, deadline=deadline):
-            retain(assignment, period, room)
+            ledger.place(assignment, retain(assignment, period, room))
         if not any(remaining.values()):
             break
     if interrupted() or any(remaining.values()):
-        return None
+        return None, ledger.refused
 
     # New periods can precede retained periods. Only the final editable lesson
     # may be partial, so redistribute exact credit over their physical capacity.
@@ -225,4 +251,5 @@ def construct_recovery(
             residual -= credit
         selections[identity] = normalized
     candidate = _build_candidate(snapshot, selections)
-    return candidate if validate_candidate(snapshot, candidate).valid else None
+    valid = validate_candidate(snapshot, candidate).valid
+    return (candidate if valid else None), ledger.refused
