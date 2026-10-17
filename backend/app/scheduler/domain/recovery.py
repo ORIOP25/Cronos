@@ -412,7 +412,7 @@ def measure_disruption(
         elif source.room_id != result.room_id:
             justified = is_justified_room_change(
                 snapshot,
-                assignments[source.assignment_id].class_ids,
+                assignments[result.assignment_id].class_ids,
                 source.room_id,
                 result.room_id,
             )

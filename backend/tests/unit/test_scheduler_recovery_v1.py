@@ -211,6 +211,23 @@ def test_a_justified_room_change_costs_nothing_but_stays_a_room_change():
     assert metrics.total_cost == 0
 
 
+def test_a_published_lesson_of_a_unit_outside_the_snapshot_is_a_movement_not_an_error():
+    """T09 (S10 fix): the published lesson may belong to a unit absent from the snapshot."""
+    when = period(0)
+    target = replace(
+        _recovery_snapshot((when,), rooms=(1, 2)),
+        home_rooms=(HomeRoom(class_id=1, room_id=2),),
+    )
+    baseline = CandidateSchedule((_lesson(1, when, room=1, assignment_id=99),))
+    candidate = CandidateSchedule((_lesson(9, when, room=2, source=1),))
+
+    metrics = measure_disruption(target, baseline, candidate, POLICY)
+
+    assert metrics.moved_lessons == 1
+    assert metrics.room_changes == 0
+    assert metrics.total_cost == POLICY.move_cost
+
+
 def test_swapping_lesson_ids_does_not_hide_an_identical_position():
     when = period(0)
     target = _recovery_snapshot((when,))
