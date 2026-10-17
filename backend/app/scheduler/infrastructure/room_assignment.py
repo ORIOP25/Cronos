@@ -16,6 +16,7 @@ from itertools import combinations
 
 from ortools.graph.python import min_cost_flow
 
+from app.scheduler.domain.calendar import Period
 from app.scheduler.domain.candidate import (
     Assignment,
     CandidateSchedule,
@@ -24,8 +25,10 @@ from app.scheduler.domain.candidate import (
 )
 from app.scheduler.domain.capacity import available_rooms
 from app.scheduler.domain.home_rooms import (
+    ForeignClaims,
     RoomHabits,
-    foreign_home_claims,
+    avoidable_room_changes,
+    home_room_misses,
     is_justified_room_change,
     lexicographic_weights,
     room_choice_costs,
@@ -73,7 +76,11 @@ def assign_rooms_by_period(
     """Return the candidate with rooms chosen by the home-room policy.
 
     ``baseline`` and ``policy`` are given only in recovery: they price leaving the
-    published room, and a justified change costs nothing.
+    published room, and a justified change costs nothing. Without a baseline the pass
+    returns the input when its result is lexicographically worse on (home-room misses,
+    avoidable changes), unless the input shares a room in one period: such an input is
+    repaired, not compared. With a baseline the guard does not apply: the published rooms
+    cost more than avoidable changes in the recovery cost order (T09).
     """
     if (baseline is None) != (policy is None):
         raise ValueError("Published rooms need a baseline and a recovery policy together.")
@@ -92,12 +99,46 @@ def assign_rooms_by_period(
     for (school_date, _start, _end), lessons in _periods(candidate.lessons):
         editable = [row for row in lessons if row.lesson_id not in protected_ids]
         if editable and school_date not in partly_overlapping:
-            rooms.update(_choose_rooms(context, habits, lessons, editable))
+            chosen = _choose_rooms(context, habits, lessons, editable)
+            if chosen is None:
+                # The period cannot give each lesson its own room, so the input is invalid
+                # and the validator rejects it downstream.
+                return candidate
+            rooms.update(chosen)
         for row in lessons:
             habits.record(context.assignments[row.assignment_id], school_date, rooms[row.lesson_id])
-    return CandidateSchedule(
+    result = CandidateSchedule(
         tuple(replace(row, room_id=rooms[row.lesson_id]) for row in candidate.lessons)
     )
+    guarded = baseline is None and not _shares_a_room(candidate)
+    # ponytail: the guard returns the whole input when one period worsens, so the other
+    # periods' gains are lost too; upgrade = guard each period's matching on its own.
+    if guarded and _worse_room_plan(snapshot, result, candidate):
+        return candidate
+    return result
+
+
+def _shares_a_room(candidate: CandidateSchedule) -> bool:
+    """True when two lessons of one period hold the same room; the pass repairs that clash."""
+    seen: set[tuple[date, datetime, datetime, int]] = set()
+    for row in candidate.lessons:
+        key = (row.period.school_date, row.period.start_utc, row.period.end_utc, row.room_id)
+        if key in seen:
+            return True
+        seen.add(key)
+    return False
+
+
+def _worse_room_plan(
+    snapshot: PlanningSnapshot, result: CandidateSchedule, reference: CandidateSchedule
+) -> bool:
+    """True when ``result`` has more home-room misses, or as many and more avoidable changes."""
+    result_key = (home_room_misses(snapshot, result), avoidable_room_changes(snapshot, result))
+    reference_key = (
+        home_room_misses(snapshot, reference),
+        avoidable_room_changes(snapshot, reference),
+    )
+    return result_key > reference_key
 
 
 def _published_by_position(
@@ -124,28 +165,30 @@ def _periods(
 def _partly_overlapping_dates(
     lessons: Sequence[ScheduledLesson], protected_ids: set[int]
 ) -> frozenset[date]:
-    """Dates where an editable lesson overlaps another lesson without the same period (T13)."""
-    by_day: dict[date, list[ScheduledLesson]] = defaultdict(list)
+    """Dates where two distinct periods overlap and one of them holds an editable lesson (T13).
+
+    Compares the distinct periods of each day, not every pair of lessons.
+    """
+    periods_by_day: dict[date, dict[tuple[datetime, datetime], tuple[Period, bool]]] = defaultdict(
+        dict
+    )
     for row in lessons:
-        by_day[row.period.school_date].append(row)
+        day_periods = periods_by_day[row.period.school_date]
+        key = (row.period.start_utc, row.period.end_utc)
+        _period, editable = day_periods.get(key, (row.period, False))
+        day_periods[key] = (row.period, editable or row.lesson_id not in protected_ids)
+    # ponytail: a date with a partial overlap keeps its construction rooms; upgrade = interval
+    # matching that reassigns rooms across the overlapping periods.
     return frozenset(
         day
-        for day, rows in by_day.items()
+        for day, day_periods in periods_by_day.items()
         if any(
-            _partly_overlaps(left, right, protected_ids) for left, right in combinations(rows, 2)
+            left.overlaps(right) and (left_editable or right_editable)
+            for (left, left_editable), (right, right_editable) in combinations(
+                day_periods.values(), 2
+            )
         )
     )
-
-
-def _partly_overlaps(
-    left: ScheduledLesson, right: ScheduledLesson, protected_ids: set[int]
-) -> bool:
-    editable = left.lesson_id not in protected_ids or right.lesson_id not in protected_ids
-    same_period = (left.period.start_utc, left.period.end_utc) == (
-        right.period.start_utc,
-        right.period.end_utc,
-    )
-    return editable and not same_period and left.period.overlaps(right.period)
 
 
 def _choose_rooms(
@@ -153,8 +196,8 @@ def _choose_rooms(
     habits: RoomHabits,
     lessons: Sequence[ScheduledLesson],
     editable: Sequence[ScheduledLesson],
-) -> dict[int, int]:
-    """Best rooms for the editable lessons of one period; the current room is always an option."""
+) -> dict[int, int] | None:
+    """Best rooms for the editable lessons of one period; None when they cannot all get one."""
     domains = {
         row.lesson_id: sorted(
             {
@@ -166,14 +209,19 @@ def _choose_rooms(
         )
         for row in editable
     }
+    claims = ForeignClaims.of(
+        context.homes, [context.assignments[row.assignment_id] for row in editable]
+    )
     components: dict[tuple[int, int], tuple[int, ...]] = {}
     for row in editable:
         assignment = context.assignments[row.assignment_id]
-        others = [
-            context.assignments[other.assignment_id]
-            for other in lessons
-            if other.lesson_id != row.lesson_id
-        ]
+        # I09: a flexible lesson of classes without a home room keeps its current room on a
+        # tie. This level sits just above the room_id tie-break.
+        # ponytail: other lessons still take the lowest room id on a tie; upgrade = extend
+        # this level to every class after the owner reviews the R19 and R20 expectations.
+        keeps_room = not assignment.needs_special_room and not any(
+            class_id in context.homes for class_id in assignment.class_ids
+        )
         for room in domains[row.lesson_id]:
             components[(row.lesson_id, room)] = (
                 *room_choice_costs(
@@ -182,9 +230,10 @@ def _choose_rooms(
                     assignment,
                     row.period.school_date,
                     room,
-                    foreign_claims=foreign_home_claims(context.homes, assignment, room, others),
+                    foreign_claims=claims.for_lesson(assignment, room),
                     published_change=context.published_change(row, assignment, room),
                 ),
+                int(keeps_room and room != row.room_id),
                 room,
             )
     level_count = len(next(iter(components.values())))
@@ -199,8 +248,11 @@ def _choose_rooms(
 
 def _match(
     domains: Mapping[int, Sequence[int]], costs: Mapping[tuple[int, int], int]
-) -> dict[int, int]:
-    """Give each lesson one room, each room to one lesson, at the lowest total cost."""
+) -> dict[int, int] | None:
+    """Give each lesson one room, each room to one lesson, at the lowest total cost.
+
+    None when no such matching exists; the solver must still reach an optimal flow.
+    """
     flow = min_cost_flow.SimpleMinCostFlow()
     nodes: dict[tuple[str, int], int] = {}
 
@@ -226,5 +278,5 @@ def _match(
         raise RuntimeError(f"Period room matching failed: {status}.")
     chosen = {lesson_id: room for (lesson_id, room), arc in arcs.items() if flow.flow(arc)}
     if len(chosen) != supply:
-        raise RuntimeError("Period room matching left a lesson without a room.")
+        return None
     return chosen

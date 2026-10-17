@@ -123,21 +123,35 @@ def _habitual_room(
     return _most_used(habits.flexible_rooms.get(class_id))
 
 
-def foreign_home_claims(
-    homes: Mapping[int, int],
-    assignment: Assignment,
-    room_id: int,
-    others: Sequence[Assignment],
-) -> int:
-    """Other classes whose home room is ``room_id`` and whose lesson in the period fits it (D04)."""
-    own = set(assignment.class_ids)
-    return sum(
-        1
-        for other in others
-        if room_id in other.eligible_room_ids
-        for class_id in other.class_ids
-        if class_id not in own and homes.get(class_id) == room_id
-    )
+@dataclass(frozen=True)
+class ForeignClaims:
+    """Home-room claims of the editable lessons of one period, counted once (D04).
+
+    A claim is a class whose home room is a room the lesson may use. Claims by the
+    lesson's own classes never count against it.
+    """
+
+    room_totals: Mapping[int, int]
+    class_room_counts: Mapping[tuple[int, int], int]
+
+    @classmethod
+    def of(cls, homes: Mapping[int, int], assignments: Sequence[Assignment]) -> "ForeignClaims":
+        room_totals: Counter[int] = Counter()
+        class_room_counts: Counter[tuple[int, int]] = Counter()
+        for assignment in assignments:
+            for room_id in assignment.eligible_room_ids:
+                for class_id in assignment.class_ids:
+                    if homes.get(class_id) == room_id:
+                        room_totals[room_id] += 1
+                        class_room_counts[(class_id, room_id)] += 1
+        return cls(room_totals, class_room_counts)
+
+    def for_lesson(self, assignment: Assignment, room_id: int) -> int:
+        """Other classes whose home room is ``room_id`` and whose lesson in the period fits it."""
+        own = sum(
+            self.class_room_counts.get((class_id, room_id), 0) for class_id in assignment.class_ids
+        )
+        return self.room_totals.get(room_id, 0) - own
 
 
 def room_choice_costs(

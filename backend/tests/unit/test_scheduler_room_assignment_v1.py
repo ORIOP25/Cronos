@@ -3,7 +3,9 @@
 import random
 from dataclasses import replace
 from datetime import date, time, timedelta
+from itertools import permutations
 
+import app.scheduler.infrastructure.room_assignment as room_module
 import app.scheduler.infrastructure.search as search_module
 from app.scheduler.domain.calendar import normalize_period
 from app.scheduler.domain.candidate import (
@@ -16,7 +18,11 @@ from app.scheduler.domain.candidate import (
     SchedulingStrategy,
 )
 from app.scheduler.domain.candidate_validation import validate_candidate
-from app.scheduler.domain.home_rooms import avoidable_room_changes, home_room_misses
+from app.scheduler.domain.home_rooms import (
+    ForeignClaims,
+    avoidable_room_changes,
+    home_room_misses,
+)
 from app.scheduler.domain.projection import ModuleRequirement, ModuleSlice
 from app.scheduler.domain.recovery import measure_disruption
 from app.scheduler.infrastructure.constructive import construct_schedule
@@ -256,23 +262,55 @@ def test_r21_a_new_home_room_moves_future_editable_lessons_at_no_disruption_cost
     assert metrics.total_cost == 0
 
 
+def _layouts(eligible: dict[int, set[int]], avoided: int | None) -> list[tuple[int, ...]]:
+    """Rooms for classes 1, 2 and 3 in order: distinct, eligible, and not the avoided room."""
+    free = [room for room in (1, 2, 3, 4) if room != avoided]
+    return [
+        layout
+        for layout in permutations(free, 3)
+        if all(room in eligible[class_id] for class_id, room in zip((1, 2, 3), layout, strict=True))
+    ]
+
+
 def _random_normal_day(seed: int):
-    """Three classes without home rooms, Normal subjects, one lesson per hour in four rooms."""
+    """Three classes without home rooms, Normal subjects, one lesson per hour in four rooms.
+
+    Each class is eligible for its own room and one more. Half of the hours also hold a
+    protected lesson of a fourth class in a room the editable lessons of that hour avoid,
+    so the pass must work around it.
+    """
     rng = random.Random(seed)
     rooms = (1, 2, 3, 4)
-    assignments = [_assignment(class_id, (class_id,), rooms) for class_id in (1, 2, 3)]
+    eligible = {
+        class_id: {class_id, rng.choice([room for room in rooms if room != class_id])}
+        for class_id in (1, 2, 3)
+    }
+    assignments = [_assignment(class_id, (class_id,), eligible[class_id]) for class_id in (1, 2, 3)]
+    assignments.append(_assignment(4, (4,), rooms, lessons=4))
     lessons = []
+    protected = []
     lesson_id = 1
     for hour in range(9, 13):
-        for class_id, room in zip((1, 2, 3), rng.sample(rooms, 3), strict=True):
+        avoided = rng.choice(rooms) if rng.random() < 0.5 else None
+        layouts = _layouts(eligible, avoided)
+        if not layouts:
+            avoided = None
+            layouts = _layouts(eligible, None)
+        if avoided is not None:
+            fixed = _lesson(lesson_id, 4, avoided, hour, offset=60 * len(protected))
+            lessons.append(fixed)
+            protected.append(fixed)
+            lesson_id += 1
+        for class_id, room in zip((1, 2, 3), rng.choice(layouts), strict=True):
             lessons.append(_lesson(lesson_id, class_id, room, hour))
             lesson_id += 1
-    return _snapshot(assignments), CandidateSchedule(tuple(lessons))
+    snapshot = replace(_snapshot(assignments), protected_lessons=tuple(protected))
+    return snapshot, CandidateSchedule(tuple(lessons))
 
 
 def test_i09_a_class_without_home_room_and_only_normal_subjects_never_gets_more_avoidable_changes():
     """❌ I09: o passe não piora mudanças evitáveis de turmas sem sala e só Normal."""
-    for seed in range(40):
+    for seed in range(200):
         snapshot, candidate = _random_normal_day(seed)
 
         result = assign_rooms_by_period(snapshot, candidate)
@@ -280,6 +318,157 @@ def test_i09_a_class_without_home_room_and_only_normal_subjects_never_gets_more_
         assert avoidable_room_changes(snapshot, result) <= avoidable_room_changes(
             snapshot, candidate
         ), f"seed {seed}"
+
+
+def test_i09_a_protected_lesson_in_the_other_room_keeps_the_current_room_on_a_tie():
+    """❌ I09: a 9h a sala atual vence o empate; a 10h, com a N1 protegida, fica em N2."""
+    snapshot = replace(
+        _snapshot(
+            [
+                _assignment(1, (1,), {NORMAL_1, NORMAL_2}, lessons=2),  # turma 1, sem sala
+                _assignment(2, (2,), {NORMAL_1}),  # turma 2, aula protegida na N1
+            ]
+        ),
+        protected_lessons=(_lesson(3, 2, NORMAL_1, 10),),
+    )
+    candidate = CandidateSchedule(
+        (
+            _lesson(1, 1, NORMAL_2, 9),
+            _lesson(2, 1, NORMAL_2, 10, offset=60),
+            _lesson(3, 2, NORMAL_1, 10),
+        )
+    )
+
+    result = assign_rooms_by_period(snapshot, candidate)
+
+    assert _rooms_by_lesson(result) == {1: NORMAL_2, 2: NORMAL_2, 3: NORMAL_1}
+    assert avoidable_room_changes(snapshot, result) == 0
+
+
+def test_i09_without_a_baseline_the_pass_keeps_the_input_when_it_worsens_avoidable_changes(
+    monkeypatch,
+):
+    """❌ I09: se o passe piorar mudanças evitáveis, sem linha de base, devolve a entrada."""
+    snapshot = _snapshot([_assignment(1, (1,), {NORMAL_1, NORMAL_2}, lessons=2)])
+    candidate = CandidateSchedule(
+        (_lesson(1, 1, NORMAL_2, 9), _lesson(2, 1, NORMAL_2, 10, offset=60))
+    )
+    monkeypatch.setattr(room_module, "_choose_rooms", lambda *_args: {1: NORMAL_1, 2: NORMAL_2})
+
+    assert assign_rooms_by_period(snapshot, candidate) == candidate
+
+
+def test_d04_a_protected_lesson_does_not_claim_the_home_room_of_its_class():
+    """❌ D04: a aula protegida da turma C fica na N2 e não reclama a N1; D mantém a N1."""
+    protected = _lesson(1, 1, NORMAL_2, 9)
+    snapshot = replace(
+        _snapshot(
+            [
+                _assignment(1, (3,), {NORMAL_1, NORMAL_2}),  # turma C, protegida
+                _assignment(2, (4,), {NORMAL_1, GYM}),  # turma D, sem sala da turma
+            ],
+            home_rooms=[HomeRoom(class_id=3, room_id=NORMAL_1)],
+        ),
+        protected_lessons=(protected,),
+    )
+    candidate = CandidateSchedule((protected, _lesson(2, 2, NORMAL_1, 9)))
+
+    result = assign_rooms_by_period(snapshot, candidate)
+
+    assert _rooms_by_lesson(result) == {1: NORMAL_2, 2: NORMAL_1}
+
+
+def _pairwise_foreign_claims(homes, assignment, room_id, others) -> int:
+    """Reference count: other classes whose home room is ``room_id`` and that may use it."""
+    own = set(assignment.class_ids)
+    return sum(
+        1
+        for other in others
+        if room_id in other.eligible_room_ids
+        for class_id in other.class_ids
+        if class_id not in own and homes.get(class_id) == room_id
+    )
+
+
+def test_d04_the_precomputed_foreign_claims_match_the_pairwise_count():
+    """D04: a tabela por sala dá a mesma contagem que comparar as aulas duas a duas."""
+    rng = random.Random(7)
+    rooms = (1, 2, 3, 4)
+    for _ in range(300):
+        homes = {class_id: rng.choice(rooms) for class_id in rng.sample(range(1, 7), 4)}
+        assignments = [
+            _assignment(
+                index + 1,
+                tuple(sorted(rng.sample(range(1, 7), rng.choice((1, 2))))),
+                set(rng.sample(rooms, rng.choice((1, 2, 3)))),
+            )
+            for index in range(4)
+        ]
+        claims = ForeignClaims.of(homes, assignments)
+        for assignment in assignments:
+            others = [other for other in assignments if other is not assignment]
+            for room_id in rooms:
+                assert claims.for_lesson(assignment, room_id) == _pairwise_foreign_claims(
+                    homes, assignment, room_id, others
+                )
+
+
+def test_t13_two_overlapping_periods_with_only_protected_lessons_are_not_partly_overlapping():
+    """T13: horas sobrepostas só com aulas protegidas não são sobreposição parcial editável."""
+    early = normalize_period(ORIGIN, time(9), time(10), TZ)
+    late = normalize_period(ORIGIN, time(9, 30), time(10, 30), TZ)
+    lessons = (
+        replace(_lesson(1, 1, NORMAL_1, 9), period=early),
+        replace(_lesson(2, 2, NORMAL_2, 9), period=late),
+    )
+
+    assert room_module._partly_overlapping_dates(lessons, {1, 2}) == frozenset()
+    assert room_module._partly_overlapping_dates(lessons, {1}) == frozenset({ORIGIN})
+
+
+def _pairwise_partly_overlapping_dates(lessons, protected_ids) -> frozenset:
+    """Reference rule: an editable lesson overlaps another lesson without the same period."""
+    dates = set()
+    for left in lessons:
+        for right in lessons:
+            same_period = (left.period.start_utc, left.period.end_utc) == (
+                right.period.start_utc,
+                right.period.end_utc,
+            )
+            editable = left.lesson_id not in protected_ids or right.lesson_id not in protected_ids
+            if editable and not same_period and left.period.overlaps(right.period):
+                dates.add(left.period.school_date)
+    return frozenset(dates)
+
+
+def test_t13_the_distinct_period_check_matches_the_pairwise_rule():
+    """T13: comparar períodos distintos dá a mesma resposta que comparar aulas duas a duas."""
+    rng = random.Random(11)
+    for _ in range(300):
+        lessons = []
+        for lesson_id in range(1, 7):
+            start = rng.randrange(9 * 60, 12 * 60, 30)
+            length = rng.choice((60, 90))
+            period = normalize_period(
+                ORIGIN + timedelta(days=rng.randrange(2)),
+                time(start // 60, start % 60),
+                time((start + length) // 60, (start + length) % 60),
+                TZ,
+            )
+            lessons.append(replace(_lesson(lesson_id, lesson_id, NORMAL_1, 9), period=period))
+        protected_ids = {lesson_id for lesson_id in range(1, 7) if rng.random() < 0.5}
+
+        assert room_module._partly_overlapping_dates(
+            lessons, protected_ids
+        ) == _pairwise_partly_overlapping_dates(lessons, protected_ids)
+
+
+def test_a_period_whose_lessons_need_one_room_returns_the_candidate_unchanged():
+    """❌ Matching: duas turmas na única sala elegível no mesmo horário; o passe devolve a entrada."""
+    snapshot = _snapshot([_assignment(1, (1,), {NORMAL_1}), _assignment(2, (2,), {NORMAL_1})])
+    candidate = CandidateSchedule((_lesson(1, 1, NORMAL_1, 9), _lesson(2, 2, NORMAL_1, 9)))
+
+    assert assign_rooms_by_period(snapshot, candidate) == candidate
 
 
 def _exact_path_candidate():

@@ -391,6 +391,9 @@ def _room_pass(
     )
     if not guarded or profile.vector(snapshot, passed) <= profile.vector(snapshot, candidate):
         return passed
+    # ponytail: on the exact path this guard may refuse a home-room move on a day with a
+    # protected lesson, because the vector prices that move; upgrade = let justified changes
+    # leave room_change_cost (T12).
     return candidate
 
 
