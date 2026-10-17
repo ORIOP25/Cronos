@@ -142,6 +142,25 @@ describe('SmartTable', () => {
     expect(await screen.findByText(/ainda sem registos/i)).toBeInTheDocument()
   })
 
+  it('builds the removal message from the row when deleteMessage is a function', () => {
+    const deleteMessage = vi.fn((row) => `Remover ${row.name}?`)
+    render(
+      <SmartTable
+        columns={[{ key: 'name', label: 'Nome' }]}
+        data={[{ id: 8, name: 'Sala F' }]}
+        actions
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+        deleteMessage={deleteMessage}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: /remover sala f/i }))
+
+    expect(screen.getByText('Remover Sala F?')).toBeInTheDocument()
+    expect(deleteMessage).toHaveBeenLastCalledWith(expect.objectContaining({ id: 8, name: 'Sala F' }))
+  })
+
   it('activates labeled rows with Enter and Space', () => {
     const row = { id: 3, name: 'Curso A' }
     const onRowClick = vi.fn()

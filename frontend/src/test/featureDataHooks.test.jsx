@@ -333,6 +333,7 @@ describe('vertical feature data hooks', () => {
     expect(invalidate.mock.calls.map(([options]) => options.queryKey)).toEqual(expect.arrayContaining([
       ['courses', 'org-a'],
       ['classes', 'org-a'],
+      ['rooms', 'org-a'],
       ['readiness-bases', 'org-a'],
     ]))
   })

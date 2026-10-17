@@ -303,7 +303,7 @@ export const useUpdateCourseClass = () => {
       return apiClient.patch(`/courses/${courseId}/classes/${classId}`, data)
     },
     onSuccess: (data, variables) => {
-      void invalidateOrgQueries(queryClient, orgId, ['courses', 'classes'])
+      void invalidateOrgQueries(queryClient, orgId, ['courses', 'classes', 'rooms'])
       void invalidatePreparationQueries(queryClient, orgId)
       queryClient.setQueryData(orgQueryKey('classes', orgId, variables.classId), (previous) => (
         previous ? { ...previous, ...data } : previous

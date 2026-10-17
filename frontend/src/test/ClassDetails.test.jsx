@@ -10,6 +10,7 @@ const hooks = vi.hoisted(() => ({
   updateClass: vi.fn(),
   updateProgress: vi.fn(),
   classAvailability: vi.fn(),
+  rooms: vi.fn(),
 }))
 
 vi.mock('../features/catalog/data', () => ({
@@ -18,6 +19,7 @@ vi.mock('../features/catalog/data', () => ({
   useUpdateCourseClass: () => hooks.updateClass(),
   useUpdateClassProgress: () => hooks.updateProgress(),
   useClassAvailability: () => hooks.classAvailability(),
+  useRooms: () => hooks.rooms(),
   useTimeslots: () => ({ data: [], isLoading: false, error: null }),
   useSaveClassAvailability: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useCopyClassAvailability: () => ({ mutateAsync: vi.fn(), isPending: false }),
@@ -95,6 +97,7 @@ describe('ClassDetails composition', () => {
     hooks.updateClass.mockReset().mockReturnValue(createMutationState())
     hooks.updateProgress.mockReset().mockReturnValue(createMutationState())
     hooks.classAvailability.mockReset().mockReturnValue({ data: [], isLoading: false, error: null })
+    hooks.rooms.mockReset().mockReturnValue({ data: [], isLoading: false, error: null })
   })
 
   it('orders the page and keeps global progress inside the discipline section', () => {
@@ -142,8 +145,130 @@ describe('ClassDetails composition', () => {
     expect(mutation.mutate).toHaveBeenCalledWith({
       courseId: 7,
       classId: 11,
-      data: { name: '10.º B', size: 25 },
+      data: { name: '10.º B', size: 25, home_room_id: null },
     }, expect.any(Object))
+  })
+
+  describe('class home room (S13)', () => {
+    const normalType = { id: 1, name: 'Normal', is_normal: true }
+    const labType = { id: 3, name: 'Laboratório', is_normal: false }
+    const createRooms = () => [
+      { id: 31, name: 'N1', capacity: 30, is_archived: false, room_type: normalType, home_classes: [] },
+      { id: 32, name: 'P2', capacity: 20, is_archived: false, room_type: normalType, home_classes: [] },
+      {
+        id: 33,
+        name: 'Lab Química',
+        capacity: 26,
+        is_archived: false,
+        room_type: labType,
+        home_classes: [{ id: 11, name: '10.º A' }, { id: 12, name: '10.º B' }],
+      },
+      { id: 34, name: 'Sala Antiga', capacity: 40, is_archived: true, room_type: normalType, home_classes: [] },
+    ]
+    const withHomeRoom = (room) => ({ ...createClassData(), home_room: room })
+    const apiError = (status, detail) => Object.assign(new Error('Falha da API'), {
+      response: { status, data: { detail } },
+    })
+
+    const openEditHeader = () => fireEvent.click(screen.getByTitle('Editar nome e capacidade'))
+
+    it('offers only active rooms with enough seats and names the other home classes', () => {
+      hooks.rooms.mockReturnValue({ data: createRooms(), isLoading: false, error: null })
+      renderClassDetails()
+
+      openEditHeader()
+
+      const options = within(screen.getByLabelText('Sala da turma')).getAllByRole('option').map(option => option.textContent)
+      expect(options).toEqual([
+        'Automática (o Cronos escolhe)',
+        'N1 · Normal · 30 lugares',
+        'Lab Química · Laboratório · 26 lugares · também é sala da turma 10.º B',
+      ])
+    })
+
+    it('sends null when Automática is chosen', () => {
+      const mutation = createMutationState()
+      hooks.updateClass.mockReturnValue(mutation)
+      hooks.classDetails.mockReturnValue({ data: withHomeRoom({ id: 31, name: 'N1', capacity: 30, room_type: normalType }), isLoading: false, error: null })
+      hooks.rooms.mockReturnValue({ data: createRooms(), isLoading: false, error: null })
+      renderClassDetails()
+
+      openEditHeader()
+      fireEvent.change(screen.getByLabelText('Sala da turma'), { target: { value: '' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Guardar' }))
+
+      expect(mutation.mutate).toHaveBeenCalledWith({
+        courseId: 7,
+        classId: 11,
+        data: { name: '10.º A', size: 24, home_room_id: null },
+      }, expect.any(Object))
+    })
+
+    it('sends the chosen room id', () => {
+      const mutation = createMutationState()
+      hooks.updateClass.mockReturnValue(mutation)
+      hooks.rooms.mockReturnValue({ data: createRooms(), isLoading: false, error: null })
+      renderClassDetails()
+
+      openEditHeader()
+      fireEvent.change(screen.getByLabelText('Sala da turma'), { target: { value: '33' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Guardar' }))
+
+      expect(mutation.mutate).toHaveBeenCalledWith({
+        courseId: 7,
+        classId: 11,
+        data: { name: '10.º A', size: 24, home_room_id: 33 },
+      }, expect.any(Object))
+    })
+
+    it('shows the home room in the header and Automática without one', () => {
+      hooks.classDetails.mockReturnValue({ data: withHomeRoom({ id: 31, name: 'N1', capacity: 30, room_type: normalType }), isLoading: false, error: null })
+      const { unmount } = renderClassDetails()
+      expect(screen.getByText('Sala N1')).toBeInTheDocument()
+      unmount()
+
+      hooks.classDetails.mockReturnValue({ data: createClassData(), isLoading: false, error: null })
+      renderClassDetails()
+      expect(screen.getByText('Sala automática')).toBeInTheDocument()
+    })
+
+    it('warns when the class has more students than its home room seats', () => {
+      hooks.classDetails.mockReturnValue({ data: withHomeRoom({ id: 32, name: 'P2', capacity: 20, room_type: normalType }), isLoading: false, error: null })
+      renderClassDetails()
+
+      expect(screen.getByText('A sala P2 tem 20 lugares e a turma tem 24 alunos. Até corrigir, o Cronos escolhe a sala.')).toBeInTheDocument()
+    })
+
+    it('shows the exact capacity message when the server refuses the home room', () => {
+      const mutation = createMutationState()
+      mutation.mutate.mockImplementation((_variables, options) => options.onError(apiError(422, {
+        code: 'home_room_capacity',
+        context: { room_name: 'P2', room_capacity: 20, class_size: 24 },
+      })))
+      hooks.updateClass.mockReturnValue(mutation)
+      hooks.rooms.mockReturnValue({ data: createRooms(), isLoading: false, error: null })
+      renderClassDetails()
+
+      openEditHeader()
+      fireEvent.change(screen.getByLabelText('Sala da turma'), { target: { value: '31' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Guardar' }))
+
+      expect(screen.getByText('A sala P2 tem 20 lugares e a turma tem 24 alunos.')).toBeInTheDocument()
+    })
+
+    it('shows the exact not-found message when the chosen room no longer exists', () => {
+      const mutation = createMutationState()
+      mutation.mutate.mockImplementation((_variables, options) => options.onError(apiError(404, { code: 'resource_not_found' })))
+      hooks.updateClass.mockReturnValue(mutation)
+      hooks.rooms.mockReturnValue({ data: createRooms(), isLoading: false, error: null })
+      renderClassDetails()
+
+      openEditHeader()
+      fireEvent.change(screen.getByLabelText('Sala da turma'), { target: { value: '31' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Guardar' }))
+
+      expect(screen.getByText('Sala não encontrada.')).toBeInTheDocument()
+    })
   })
 
   it('does not mutate the React Query subject order while rendering', () => {

@@ -53,6 +53,10 @@ Other client responses stay in context.
 | Remove a room type | Business block | `resource_in_use` | Banner in the modal: "Este tipo é usado por: salas {salas}; disciplinas {disciplinas}. Mude-lhes o tipo primeiro." | `RoomTypesModal` | Change the rooms and subjects first |
 | Remove a room type | Not found or fixed | `resource_not_found`, `room_type_fixed` | Banner in the modal: "Tipo de sala não encontrado." or the fixed-type message | `RoomTypesModal` | Reopen the window |
 | Save or remove a room type | Transient failure | Network, 429, 5xx | Toast, 6 s | `RoomTypesModal` | Retry |
+| Save a class home room | Not found | `resource_not_found` | Field feedback under "Sala da turma": "Sala não encontrada." | `ClassDetails` | Choose another room |
+| Save a class home room | Capacity | `home_room_capacity` | Field feedback under "Sala da turma": "A sala {nome} tem {c} lugares e a turma tem {n} alunos." | `ClassDetails` | Choose a room with enough seats or Automática |
+| Show a class above its home room capacity | Warning | — | Banner in the class header: "A sala {nome} tem {c} lugares e a turma tem {n} alunos. Até corrigir, o Cronos escolhe a sala." | `ClassDetails` | Choose a larger room or correct the class size |
+| Remove a room that is a class home room | Confirmation | — | Added to the removal confirmation: "É a sala da turma de {turmas}. Essas turmas passam a Automática." | `Rooms` | Confirm or cancel |
 | Assign a teacher | Missing competency | `teacher_competency_missing` | Field feedback | `ClassSubjects` | Choose an eligible teacher |
 | Assign a teacher | Transient failure | Network, 429, 5xx | Toast, 6 s | `ClassSubjects` | Retry |
 | Update a class subject's modules | Success | — | Toast, 4 s, one fixed `id` | `ClassSubjects` | — |

@@ -164,4 +164,35 @@ describe('DraftPanel', () => {
 
     expect(screen.getByText('Conjunta')).toBeInTheDocument()
   })
+
+  it('shows the avoidable room changes next to the other metrics', () => {
+    render(
+      <DraftPanel
+        draft={{ ...proposal, metrics: { ...proposal.metrics, avoidable_room_changes: 3 } }}
+        onApprove={vi.fn()}
+        onReject={vi.fn()}
+      />
+    )
+
+    expect(screen.getByText(/mudanças de sala evitáveis/)).toHaveTextContent('3 mudanças de sala evitáveis')
+  })
+
+  it('hides the avoidable room changes on an outdated proposal', () => {
+    render(
+      <DraftPanel
+        draft={{
+          ...proposal,
+          is_stale: true,
+          stale_reason: 'REVISIONS_CHANGED',
+          can_approve: false,
+          metrics: { ...proposal.metrics, avoidable_room_changes: 3 },
+        }}
+        onApprove={vi.fn()}
+        onReject={vi.fn()}
+      />
+    )
+
+    expect(screen.getByTestId('stale-proposal-warning')).toBeInTheDocument()
+    expect(screen.queryByText(/mudanças de sala evitáveis/)).toBeNull()
+  })
 })

@@ -75,6 +75,9 @@ const DraftPanel = ({ draft, onApprove, onReject, isApproving, isRejecting, allo
                 <strong>{metrics.excess_days ?? 0}</strong> dias depois da data preferencial
               </span>
               <span><strong>{metrics.margin_days ?? 0}</strong> dias de margem</span>
+              {typeof metrics.avoidable_room_changes === 'number' && (
+                <span><strong>{metrics.avoidable_room_changes}</strong> mudanças de sala evitáveis</span>
+              )}
             </div>
           )}
 
