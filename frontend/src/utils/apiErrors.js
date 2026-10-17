@@ -201,7 +201,9 @@ export function getRoomTypeErrorMessage(error) {
 // block, so the caller keeps its generic message.
 export function getClassHomeRoomErrorMessage(error) {
   const code = getApiErrorCode(error)
-  if (code === 'resource_not_found') return 'Sala não encontrada.'
+  if (code === 'resource_not_found') {
+    return detailOf(error)?.context?.resource === 'room' ? 'Sala não encontrada.' : null
+  }
   if (code === 'home_room_capacity') {
     const { room_name: roomName, room_capacity: roomCapacity, class_size: classSize } = detailOf(error)?.context ?? {}
     if (isText(roomName) && isPositiveInt(roomCapacity) && isPositiveInt(classSize)) {

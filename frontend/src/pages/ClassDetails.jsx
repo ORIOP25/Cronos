@@ -69,6 +69,16 @@ const homeRoomChoices = (rooms, { classSize, currentHomeRoom }) => {
   return currentHomeRoom && !listed ? [currentHomeRoom, ...choices] : choices
 }
 
+/**
+ * Corpo do PATCH da turma. A sala só entra quando muda: a sala guardada que
+ * ficou pequena não pode bloquear o aumento da turma (D13).
+ */
+const classHeaderPayload = ({ name, size, homeRoomId, currentHomeRoomId }) => (
+  homeRoomId === currentHomeRoomId
+    ? { name, size }
+    : { name, size, home_room_id: homeRoomId }
+)
+
 const homeRoomOptionLabel = (room, classId) => {
   const otherClasses = (room.home_classes ?? []).filter(turma => turma.id !== classId).map(turma => turma.name)
   const base = `${room.name} · ${room.room_type?.name ?? '—'} · ${room.capacity} lugares`
@@ -286,9 +296,15 @@ const ClassDetails = () => {
     const size = Number.parseInt(headerForm.size, 10)
     if (!trimName || Number.isNaN(size) || size <= 0) return
     const homeRoomId = headerForm.homeRoomId === AUTOMATIC_HOME_ROOM ? null : Number(headerForm.homeRoomId)
+    const data = classHeaderPayload({
+      name: trimName,
+      size,
+      homeRoomId,
+      currentHomeRoomId: classData.home_room?.id ?? null,
+    })
 
     updateClass.mutate(
-      { courseId: numCourseId, classId: numClassId, data: { name: trimName, size, home_room_id: homeRoomId } },
+      { courseId: numCourseId, classId: numClassId, data },
       attemptScope.guard({
         onSuccess: () => {
           setHomeRoomError('')
@@ -296,7 +312,7 @@ const ClassDetails = () => {
           toast.success('Turma atualizada.')
         },
         onError: (error) => {
-          const roomMessage = homeRoomId === null ? null : getClassHomeRoomErrorMessage(error)
+          const roomMessage = Object.hasOwn(data, 'home_room_id') ? getClassHomeRoomErrorMessage(error) : null
           if (roomMessage) {
             setHomeRoomError(roomMessage)
             return
