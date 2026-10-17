@@ -249,6 +249,58 @@ describe('ClassDetails composition', () => {
       expect(mutation.mutate.mock.calls[0][0].data).toStrictEqual({ name: '10.º A', size: 31 })
     })
 
+    it('filters the rooms by the size typed in the form', () => {
+      hooks.rooms.mockReturnValue({ data: createRooms(), isLoading: false, error: null })
+      renderClassDetails()
+
+      openEditHeader()
+      fireEvent.change(screen.getByLabelText('Capacidade (alunos)'), { target: { value: '27' } })
+
+      const options = within(screen.getByLabelText('Sala da turma')).getAllByRole('option').map(option => option.textContent)
+      expect(options).toEqual(['Automática (o Cronos escolhe)', 'N1 · Normal · 30 lugares'])
+    })
+
+    it('falls back to the saved size when the typed size is empty', () => {
+      hooks.rooms.mockReturnValue({ data: createRooms(), isLoading: false, error: null })
+      renderClassDetails()
+
+      openEditHeader()
+      fireEvent.change(screen.getByLabelText('Capacidade (alunos)'), { target: { value: '' } })
+
+      const options = within(screen.getByLabelText('Sala da turma')).getAllByRole('option').map(option => option.textContent)
+      expect(options).toEqual([
+        'Automática (o Cronos escolhe)',
+        'N1 · Normal · 30 lugares',
+        'Lab Química · Laboratório · 26 lugares · também é sala da turma 10.º B',
+      ])
+    })
+
+    it('says when the rooms are loading', () => {
+      hooks.rooms.mockReturnValue({ data: undefined, isLoading: true, isError: false, refetch: vi.fn() })
+      renderClassDetails()
+
+      openEditHeader()
+
+      expect(screen.getByRole('status')).toHaveTextContent('A carregar salas…')
+    })
+
+    it('offers a retry when the rooms fail to load and keeps the current room selectable', () => {
+      const refetch = vi.fn()
+      hooks.classDetails.mockReturnValue({ data: withHomeRoom({ id: 31, name: 'N1', capacity: 30, room_type: normalType }), isLoading: false, error: null })
+      hooks.rooms.mockReturnValue({ data: undefined, isLoading: false, isError: true, refetch })
+      renderClassDetails()
+
+      openEditHeader()
+
+      expect(screen.getByText('Não foi possível carregar as salas.')).toHaveAttribute('role', 'alert')
+      const select = screen.getByLabelText('Sala da turma')
+      expect(select).toHaveValue('31')
+      const options = within(select).getAllByRole('option').map(option => option.textContent)
+      expect(options).toEqual(['Automática (o Cronos escolhe)', 'N1 · Normal · 30 lugares'])
+      fireEvent.click(screen.getByRole('button', { name: 'Tentar novamente' }))
+      expect(refetch).toHaveBeenCalledTimes(1)
+    })
+
     it('shows the home room in the header and Automática without one', () => {
       hooks.classDetails.mockReturnValue({ data: withHomeRoom({ id: 31, name: 'N1', capacity: 30, room_type: normalType }), isLoading: false, error: null })
       const { unmount } = renderClassDetails()

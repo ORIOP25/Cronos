@@ -229,7 +229,7 @@ const ClassDetails = () => {
   const { data: classData, isLoading, error } = useClassDetails(numClassId)
   const { data: classSubjects } = useClassSubjects(numClassId)
   const classAvailabilityQuery = useClassAvailability({ classId: numClassId })
-  const { data: rooms = [] } = useRooms()
+  const { data: rooms = [], isLoading: roomsLoading, isError: roomsError, refetch: refetchRooms } = useRooms()
   const updateClass = useUpdateCourseClass()
   const updateProgress = useUpdateClassProgress()
   const attemptScope = useAttemptScope()
@@ -405,7 +405,11 @@ const ClassDetails = () => {
   const yearLabel = `${classData.start_year}/${classData.end_year}`
   const homeRoom = classData.home_room
   const homeRoomTooSmall = Boolean(homeRoom) && homeRoom.capacity < classData.size
-  const roomChoices = homeRoomChoices(rooms, { classSize: classData.size, currentHomeRoom: homeRoom })
+  const typedSize = Number.parseInt(headerForm.size, 10)
+  const roomChoices = homeRoomChoices(rooms, {
+    classSize: Number.isNaN(typedSize) || typedSize <= 0 ? classData.size : typedSize,
+    currentHomeRoom: homeRoom,
+  })
 
   // ==========================================
   //  RENDER: Page
@@ -462,6 +466,17 @@ const ClassDetails = () => {
                     <option key={room.id} value={String(room.id)}>{homeRoomOptionLabel(room, numClassId)}</option>
                   ))}
                 </CFormSelect>
+                {roomsLoading && <div role="status" className="form-text">A carregar salas…</div>}
+                {roomsError && (
+                  <div>
+                    <CFormFeedback id="header-home-room-rooms-error" invalid className="d-block" role="alert">
+                      Não foi possível carregar as salas.
+                    </CFormFeedback>
+                    <CButton type="button" color="secondary" variant="ghost" size="sm" onClick={() => refetchRooms()}>
+                      Tentar novamente
+                    </CButton>
+                  </div>
+                )}
                 {homeRoomError && (
                   <CFormFeedback id="header-home-room-error" invalid className="d-block" role="alert">{homeRoomError}</CFormFeedback>
                 )}
