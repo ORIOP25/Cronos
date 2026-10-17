@@ -19,7 +19,12 @@ import apiClient from './apiClient'
 import {
   canAccessTeacherRoutes,
   getDefaultRouteForMember,
+  getFoundationLandingRoute,
+  getMemberRoute,
   hasMemberCapability,
+  isFoundationComplete,
+  ROUTE_FOUNDATION_WAITING,
+  ROUTE_SCHOOL_CONFIG,
 } from './roleAccess'
 import FailureState from './components/FailureState'
 import { getApiErrorPresentation } from './utils/apiErrors'
@@ -195,7 +200,7 @@ function useOrganizationGuardState() {
   }
 }
 
-function MemberGate({ children, capability, requireTeacherId = false, redirectToDefault = false, allowUncompletedFoundation = false }) {
+function MemberGate({ children, capability, requireTeacherId = false, redirectToMemberRoute = false, allowUncompletedFoundation = false, foundationWizard = false }) {
   const state = useOrganizationGuardState()
   const { data: member, isLoading: memberLoading, isError, error, refetch } = state.member
   if (!state.isLoaded || !state.sessionLoaded) return <PageLoader />
@@ -209,6 +214,7 @@ function MemberGate({ children, capability, requireTeacherId = false, redirectTo
   if (memberLoading || state.isCompleting || (state.bootstrapRequired && !state.error)) return <PageLoader />
   if (state.error) return <OnboardingFailure retry={state.retry} />
   if (isError) return <MemberQueryFailure error={error} recoverSession={state.recoverSession} refetch={refetch} signOut={state.signOut} />
+  if (!member) return <PageLoader />
   if (state.legal.isLoading) return <PageLoader />
   if (state.legal.isError) return <OnboardingFailure retry={state.retry} />
   if (state.legal.data?.requires_acceptance) {
@@ -217,12 +223,27 @@ function MemberGate({ children, capability, requireTeacherId = false, redirectTo
     }
     return <LegalAdminRequired />
   }
-  if (redirectToDefault) return <Navigate to={getDefaultRouteForMember(member)} replace />
+  // The incomplete organization still owns the destination: a founder opens the
+  // wizard and every other member waits there instead of an operational route.
+  if (redirectToMemberRoute) return <Navigate to={getMemberRoute(member)} replace />
+
+  // Foundation wizard: only the founder of an incomplete organization runs it.
+  // A completed organization continues at school configuration, never in the wizard.
+  if (foundationWizard) {
+    if (isFoundationComplete(member)) {
+      return hasMemberCapability(member, 'admin')
+        ? <Navigate to={ROUTE_SCHOOL_CONFIG} replace />
+        : <Navigate to={getDefaultRouteForMember(member)} replace />
+    }
+    const canRunWizard = hasMemberCapability(member, 'admin') && member.can_manage_foundation === true
+    return canRunWizard
+      ? children ?? <Outlet />
+      : <Navigate to={ROUTE_FOUNDATION_WAITING} replace />
+  }
 
   // Foundation gate: incomplete organizations have no operational routes.
-  const isOrgAdmin = hasMemberCapability(member, 'admin')
-  if (!allowUncompletedFoundation && member && member.foundation_status !== 'COMPLETED') {
-    return <Navigate to={isOrgAdmin ? '/foundation' : '/foundation/waiting'} replace />
+  if (!allowUncompletedFoundation && !isFoundationComplete(member)) {
+    return <Navigate to={getFoundationLandingRoute(member)} replace />
   }
 
   const allowed = requireTeacherId
@@ -237,6 +258,10 @@ export function RequireAdmin({ children }) {
 }
 
 export function RequireFoundationAdmin({ children }) {
+  return <MemberGate foundationWizard>{children}</MemberGate>
+}
+
+export function RequireGuide({ children }) {
   return <MemberGate capability="admin" allowUncompletedFoundation>{children}</MemberGate>
 }
 
@@ -245,5 +270,5 @@ export function RequireTeacher({ children }) {
 }
 
 export function SignedInRedirect() {
-  return <MemberGate redirectToDefault />
+  return <MemberGate redirectToMemberRoute />
 }

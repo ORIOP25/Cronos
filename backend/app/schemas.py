@@ -316,6 +316,7 @@ class CurrentMemberRead(BaseModel):
     default_mode: Literal["admin", "teacher"]
     available_modes: list[Literal["admin", "teacher"]]
     foundation_status: OrganizationFoundationStatus
+    can_manage_foundation: bool
 
 
 class SessionBootstrapOrganization(BaseModel):
@@ -335,6 +336,7 @@ class SessionBootstrapMember(BaseModel):
     capabilities: list[MemberCapabilityLiteral]
     default_mode: Literal["admin", "teacher"]
     teacher_id: int | None = None
+    can_manage_foundation: bool
 
 
 class SessionBootstrapResponse(BaseModel):

@@ -1,3 +1,4 @@
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -11,6 +12,32 @@ class DummyClerkError(Exception):
     def __init__(self, message: str, status_code: int | None = None):
         super().__init__(message)
         self.status_code = status_code
+
+
+@pytest.mark.asyncio
+async def test_fetch_clerk_organization_profile_reads_name_and_creator():
+    gateway = MagicMock()
+    gateway.sdk.organizations.get_async = AsyncMock(
+        return_value=SimpleNamespace(name="Escola X", created_by="user_creator")
+    )
+
+    profile = await clerk_sync.fetch_clerk_organization_profile("org_1", gateway=gateway)
+
+    assert profile == clerk_sync.ClerkOrganizationProfile(
+        name="Escola X", created_by="user_creator"
+    )
+
+
+@pytest.mark.asyncio
+async def test_fetch_clerk_organization_profile_returns_none_on_provider_error():
+    gateway = MagicMock()
+    gateway.sdk.organizations.get_async = AsyncMock(
+        side_effect=DummyClerkError("Boom", status_code=500)
+    )
+
+    result = await clerk_sync.fetch_clerk_organization_profile("org_1", gateway=gateway)
+
+    assert result is None
 
 
 @pytest.mark.asyncio

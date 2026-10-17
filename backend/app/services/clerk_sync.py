@@ -20,10 +20,21 @@ class ClerkUserProfile:
     name: str | None
 
 
-async def fetch_clerk_organization_name(
+@dataclass(frozen=True)
+class ClerkOrganizationProfile:
+    name: str | None
+    created_by: str | None
+
+
+async def fetch_clerk_organization_profile(
     clerk_org_id: str,
     gateway: ClerkGateway | None = None,
-) -> str | None:
+) -> ClerkOrganizationProfile | None:
+    """Read the organization name and its trusted creator from one provider call.
+
+    ``created_by`` is the Clerk user id that created the organization. It is the
+    only trusted evidence of who owns the one-time Foundation setup.
+    """
     sdk = gateway.sdk if gateway is not None else get_clerk_sdk()
     try:
         organization = (
@@ -41,7 +52,10 @@ async def fetch_clerk_organization_name(
             exception_frames=safe_exception_frames(exc),
         )
         return None
-    return organization.name
+    return ClerkOrganizationProfile(
+        name=getattr(organization, "name", None),
+        created_by=getattr(organization, "created_by", None),
+    )
 
 
 async def fetch_clerk_user_profile(

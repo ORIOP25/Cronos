@@ -9,8 +9,12 @@ from app.schemas import (
     FoundationDraftData,
     FoundationDraftWrite,
     FoundationInternshipFlow,
+    SessionBootstrapMember,
 )
-from app.services.foundation_service import validate_foundation_snapshot
+from app.services.foundation_service import (
+    can_manage_foundation,
+    validate_foundation_snapshot,
+)
 
 
 def valid_snapshot() -> FoundationDraftData:
@@ -129,6 +133,54 @@ def test_current_member_requires_foundation_status():
             lifecycle_status="active",
             default_mode="admin",
             available_modes=["admin"],
+        )
+
+
+@pytest.mark.parametrize(
+    ("clerk_user_id", "creator_id", "can_admin", "expected"),
+    [
+        ("user_creator", "user_creator", True, True),
+        ("user_creator", "user_creator", False, False),
+        ("user_invited", "user_creator", True, False),
+        ("user_creator", None, True, False),
+    ],
+)
+def test_can_manage_foundation_requires_clerk_creator_and_admin(
+    clerk_user_id, creator_id, can_admin, expected
+):
+    assert (
+        can_manage_foundation(
+            clerk_user_id=clerk_user_id,
+            organization_creator_clerk_user_id=creator_id,
+            can_admin=can_admin,
+        )
+        is expected
+    )
+
+
+def test_current_member_requires_founder_capability_flag():
+    with pytest.raises(ValidationError):
+        CurrentMemberRead(
+            member_id=1,
+            account_id=1,
+            organization_id=1,
+            capabilities=["admin"],
+            access_status="active",
+            lifecycle_status="active",
+            default_mode="admin",
+            available_modes=["admin"],
+            foundation_status="IN_PROGRESS",
+        )
+
+
+def test_session_bootstrap_member_requires_founder_capability_flag():
+    with pytest.raises(ValidationError):
+        SessionBootstrapMember(
+            id=1,
+            access_status="active",
+            lifecycle_status="active",
+            capabilities=["admin"],
+            default_mode="admin",
         )
 
 

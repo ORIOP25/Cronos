@@ -8,6 +8,7 @@ import {
   RequireAdmin,
   RequireAuth,
   RequireFoundationAdmin,
+  RequireGuide,
   RequireTeacher,
   SignedInRedirect,
 } from '../routeGuards'
@@ -97,6 +98,8 @@ function renderGuard(ui, initialEntries = ['/protected']) {
       <Route path="/dashboard" element={<div data-testid="dashboard-route">Dashboard</div>} />
       <Route path="/my-availability" element={<div data-testid="teacher-route">Teacher</div>} />
       <Route path="/foundation" element={<div data-testid="foundation-route">Foundation</div>} />
+      <Route path="/foundation/waiting" element={<div data-testid="foundation-waiting-route">Waiting</div>} />
+      <Route path="/config" element={<div data-testid="config-route">Config</div>} />
       <Route path="/login" element={<div data-testid="login-route">Login</div>} />
     </Routes>,
     { initialEntries },
@@ -110,6 +113,7 @@ function renderRedirect() {
       <Route path="/dashboard" element={<div data-testid="dashboard-route">Dashboard</div>} />
       <Route path="/my-availability" element={<div data-testid="teacher-route">Teacher</div>} />
       <Route path="/foundation" element={<div data-testid="foundation-route">Foundation</div>} />
+      <Route path="/foundation/waiting" element={<div data-testid="foundation-waiting-route">Waiting</div>} />
     </Routes>,
   )
 }
@@ -224,6 +228,30 @@ describe('RequireAdmin', () => {
     expect(screen.getByTestId('admin-content')).toBeInTheDocument()
   })
 
+  it('keeps the loader instead of redirecting when member data disappears', () => {
+    const renderRoutes = () => (
+      <Routes>
+        <Route path="/protected" element={<RequireAdmin><div data-testid="admin-content">Admin</div></RequireAdmin>} />
+        <Route path="/dashboard" element={<div data-testid="dashboard-route">Dashboard</div>} />
+        <Route path="/foundation" element={<div data-testid="foundation-route">Foundation</div>} />
+        <Route path="/foundation/waiting" element={<div data-testid="foundation-waiting-route">Waiting</div>} />
+      </Routes>
+    )
+    const view = renderWithRouter(renderRoutes(), { initialEntries: ['/protected'] })
+    expect(screen.getByTestId('admin-content')).toBeInTheDocument()
+
+    memberState.value = null
+    view.rerender(
+      <MemoryRouter initialEntries={['/protected']}>{renderRoutes()}</MemoryRouter>,
+    )
+
+    expect(screen.getByRole('status', { hidden: true })).toBeInTheDocument()
+    expect(screen.queryByTestId('admin-content')).toBeNull()
+    expect(screen.queryByTestId('dashboard-route')).toBeNull()
+    expect(screen.queryByTestId('foundation-route')).toBeNull()
+    expect(screen.queryByTestId('foundation-waiting-route')).toBeNull()
+  })
+
   it('blocks teacher-only member and redirects to teacher default route', () => {
     memberState.value = {
       access_status: 'active',
@@ -254,6 +282,111 @@ describe('RequireAdmin', () => {
 
     expect(screen.getByTestId('redirect-to-tasks')).toBeInTheDocument()
     expect(screen.queryByTestId('redirect-to-sign-in')).toBeNull()
+  })
+})
+
+describe('RequireFoundationAdmin', () => {
+  beforeEach(() => {
+    resetClerkState()
+    orgAdminState.value = true
+    onboardingErrorState.value = null
+    onboardingErrorState.retry.mockReset()
+    memberState.loading = false
+    memberState.error = null
+    memberState.value = {
+      access_status: 'active',
+      lifecycle_status: 'active',
+      capabilities: ['admin'],
+      default_mode: 'admin',
+      teacher_id: null,
+      foundation_status: 'IN_PROGRESS',
+      can_manage_foundation: true,
+    }
+    legalState.value = {
+      accepted: true,
+      requires_acceptance: false,
+      terms_version: '2026-01',
+      dpa_version: '2026-01',
+      privacy_version: '2026-01',
+    }
+    legalState.loading = false
+    legalState.error = null
+  })
+
+  it('allows the founder of an incomplete organization to open the wizard', () => {
+    renderGuard(<RequireFoundationAdmin><div data-testid="wizard">Wizard</div></RequireFoundationAdmin>)
+    expect(screen.getByTestId('wizard')).toBeInTheDocument()
+  })
+
+  it('sends a non-founder admin of an incomplete organization to the waiting route', () => {
+    memberState.value = { ...memberState.value, can_manage_foundation: false }
+    renderGuard(<RequireFoundationAdmin><div>Wizard</div></RequireFoundationAdmin>)
+    expect(screen.getByTestId('foundation-waiting-route')).toBeInTheDocument()
+    expect(screen.queryByText('Wizard')).toBeNull()
+  })
+
+  it('redirects a completed-organization admin to /config', () => {
+    memberState.value = {
+      ...memberState.value,
+      foundation_status: 'COMPLETED',
+      can_manage_foundation: true,
+    }
+    renderGuard(<RequireFoundationAdmin><div>Wizard</div></RequireFoundationAdmin>)
+    expect(screen.getByTestId('config-route')).toBeInTheDocument()
+    expect(screen.queryByText('Wizard')).toBeNull()
+  })
+
+  it('redirects a teacher away from /foundation to the teacher default', () => {
+    memberState.value = {
+      access_status: 'active',
+      lifecycle_status: 'active',
+      capabilities: ['teacher'],
+      default_mode: 'teacher',
+      teacher_id: 10,
+      foundation_status: 'COMPLETED',
+      can_manage_foundation: false,
+    }
+    renderGuard(<RequireFoundationAdmin><div>Wizard</div></RequireFoundationAdmin>)
+    expect(screen.getByTestId('teacher-route')).toBeInTheDocument()
+    expect(screen.queryByText('Wizard')).toBeNull()
+  })
+})
+
+describe('RequireGuide', () => {
+  beforeEach(() => {
+    resetClerkState()
+    orgAdminState.value = true
+    onboardingErrorState.value = null
+    memberState.loading = false
+    memberState.error = null
+    memberState.value = {
+      access_status: 'active',
+      lifecycle_status: 'active',
+      capabilities: ['admin'],
+      default_mode: 'admin',
+      teacher_id: null,
+      foundation_status: 'COMPLETED',
+      can_manage_foundation: false,
+    }
+    legalState.value = {
+      accepted: true,
+      requires_acceptance: false,
+      terms_version: '2026-01',
+      dpa_version: '2026-01',
+      privacy_version: '2026-01',
+    }
+    legalState.loading = false
+    legalState.error = null
+  })
+
+  it('keeps the tutorial available to a non-founder admin after completion', () => {
+    renderGuard(<RequireGuide><div data-testid="guide">Guide</div></RequireGuide>)
+    expect(screen.getByTestId('guide')).toBeInTheDocument()
+  })
+
+  it('keeps an operational admin route available to a non-founder admin', () => {
+    renderGuard(<RequireAdmin><div data-testid="config">Config</div></RequireAdmin>)
+    expect(screen.getByTestId('config')).toBeInTheDocument()
   })
 })
 
@@ -304,6 +437,14 @@ describe('RequireTeacher', () => {
     renderGuard(<RequireAdmin><div>Admin</div></RequireAdmin>)
     expect(screen.getByText(/Não foi possível confirmar o acesso/i)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Tentar novamente/i })).toBeInTheDocument()
+  })
+
+  it('keeps a member-query failure visible when member data is missing', () => {
+    memberState.value = null
+    memberState.error = { response: { status: 503 } }
+    renderGuard(<RequireAdmin><div>Admin</div></RequireAdmin>)
+    expect(screen.getByText(/Não foi possível confirmar o acesso/i)).toBeInTheDocument()
+    expect(screen.queryByTestId('foundation-route')).toBeNull()
   })
 
   it('shows organization selection when memberships exist but none is active', () => {
@@ -452,10 +593,57 @@ describe('SignedInRedirect', () => {
     expect(screen.getByTestId('teacher-route')).toBeInTheDocument()
   })
 
-  it('redirects missing member to /foundation', () => {
+  it('shows a loader for a missing member instead of opening the foundation wizard', () => {
     memberState.value = null
     renderRedirect()
+    expect(screen.getByRole('status', { hidden: true })).toBeInTheDocument()
+    expect(screen.queryByTestId('foundation-route')).toBeNull()
+  })
+
+  it('lands a member switched into a completed organization on the role default', () => {
+    memberState.value = {
+      access_status: 'active',
+      lifecycle_status: 'active',
+      capabilities: ['admin'],
+      default_mode: 'admin',
+      teacher_id: null,
+      foundation_status: 'COMPLETED',
+      can_manage_foundation: false,
+    }
+    renderRedirect()
+    expect(screen.getByTestId('dashboard-route')).toBeInTheDocument()
+    expect(screen.queryByTestId('foundation-route')).toBeNull()
+  })
+
+  it('opens the wizard for the founder of an incomplete organization', () => {
+    memberState.value = {
+      access_status: 'active',
+      lifecycle_status: 'active',
+      capabilities: ['admin'],
+      default_mode: 'admin',
+      teacher_id: null,
+      foundation_status: 'IN_PROGRESS',
+      can_manage_foundation: true,
+    }
+    renderRedirect()
     expect(screen.getByTestId('foundation-route')).toBeInTheDocument()
+    expect(screen.queryByTestId('dashboard-route')).toBeNull()
+  })
+
+  it('waits instead of opening an operational route for an incomplete non-founder', () => {
+    memberState.value = {
+      access_status: 'active',
+      lifecycle_status: 'active',
+      capabilities: ['admin'],
+      default_mode: 'admin',
+      teacher_id: null,
+      foundation_status: 'IN_PROGRESS',
+      can_manage_foundation: false,
+    }
+    renderRedirect()
+    expect(screen.getByTestId('foundation-waiting-route')).toBeInTheDocument()
+    expect(screen.queryByTestId('dashboard-route')).toBeNull()
+    expect(screen.queryByTestId('foundation-route')).toBeNull()
   })
 
   it('keeps missing legal acceptance inside the guarded flow', () => {

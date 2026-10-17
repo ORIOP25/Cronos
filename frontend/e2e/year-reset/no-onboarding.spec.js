@@ -6,6 +6,7 @@ import {
   goTo,
   loginAsAdminReal,
 } from '../utils/clerk-helpers.js'
+import { apiRequest } from '../utils/scheduler-fixtures.js'
 
 test.describe.configure({ mode: 'serial' })
 test.use({ storageState: '.auth/admin.json' })
@@ -23,12 +24,11 @@ test.describe('Year reset — no legacy onboarding', () => {
       Object.entries(localStorage).filter(([key]) => key.startsWith('cronos:tutorial:')),
     ))
 
-    const foundationStatusBeforeResponse = page.waitForResponse((response) => (
-      response.url().includes('/api/v1/foundation/status')
-      && response.request().method() === 'GET'
-    ))
+    const foundationStatusBefore = await apiRequest(page, 'GET', '/foundation/status')
+    // A completed organization never reopens onboarding: the wizard route is
+    // replaced by school configuration.
     await goTo(page, '/foundation')
-    const foundationStatusBefore = await (await foundationStatusBeforeResponse).json()
+    await expect(page).toHaveURL(/\/config(?:[?#].*)?$/)
 
     await goTo(page, '/config')
     await page.getByRole('button', { name: 'Recomeçar ano letivo' }).click()
@@ -42,16 +42,14 @@ test.describe('Year reset — no legacy onboarding', () => {
     ))
     expect(tutorialStorageAfter).toEqual(tutorialStorageBefore)
 
-    const foundationStatusAfterResponse = page.waitForResponse((response) => (
-      response.url().includes('/api/v1/foundation/status')
-      && response.request().method() === 'GET'
-    ))
-    await goTo(page, '/foundation')
-    const foundationStatusAfter = await (await foundationStatusAfterResponse).json()
+    const foundationStatusAfter = await apiRequest(page, 'GET', '/foundation/status')
     expect(foundationStatusAfter).toMatchObject({
       foundation_status: foundationStatusBefore.foundation_status,
       organization_name: foundationStatusBefore.organization_name,
     })
+
+    await goTo(page, '/foundation')
+    await expect(page).toHaveURL(/\/config(?:[?#].*)?$/)
 
     await goTo(page, '/dashboard')
     await expect(page).not.toHaveURL(/\/onboarding/)

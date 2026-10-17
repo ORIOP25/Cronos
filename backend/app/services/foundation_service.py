@@ -40,6 +40,23 @@ class FoundationIncompleteDraftError(FoundationError):
     pass
 
 
+def can_manage_foundation(
+    *,
+    clerk_user_id: str,
+    organization_creator_clerk_user_id: str | None,
+    can_admin: bool,
+) -> bool:
+    """Only the active Clerk organization creator with admin access may found it.
+
+    Local inviter markers cannot establish who created the Clerk organization.
+    """
+    return (
+        can_admin
+        and organization_creator_clerk_user_id is not None
+        and clerk_user_id == organization_creator_clerk_user_id
+    )
+
+
 def _domain_break_overrides(data: schemas.FoundationDraftData) -> tuple[BreakOverride, ...]:
     return tuple(
         BreakOverride(after_slot=item.after_slot, duration_minutes=item.duration_minutes)

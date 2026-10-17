@@ -41,7 +41,7 @@ const ContactPage = lazy(() => import('./pages/marketing/ContactPage.jsx'))
 
 import DefaultLayout from './components/DefaultLayout'
 import { ROUTE_MY_SCHEDULES } from './roleAccess'
-import { PageLoader, RequireAdmin, RequireFoundationAdmin, RequireAuth, RequireTeacher } from './routeGuards'
+import { PageLoader, RequireAdmin, RequireFoundationAdmin, RequireAuth, RequireGuide, RequireTeacher } from './routeGuards'
 import { clearStorageKeys } from './utils/expiringStorage'
 
 function useStorageScopeCleanup(userId, isSignedIn, organizationId) {
@@ -113,7 +113,7 @@ function App() {
           <Route path="/foundation" element={
             <RequireFoundationAdmin><Foundation /></RequireFoundationAdmin>
           } />
-          <Route path="/guide" element={<RequireFoundationAdmin><Guide /></RequireFoundationAdmin>} />
+          <Route path="/guide" element={<RequireGuide><Guide /></RequireGuide>} />
 
           <Route element={<RequireAuth><DefaultLayout /></RequireAuth>}>
             <Route element={<RequireAdmin />}>

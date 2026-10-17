@@ -33,7 +33,9 @@ export const useCurrentMember = ({
 } = {}) => {
   const apiClient = useApiClient()
   const orgId = useOrganization().organization?.id
-  const { getToken, isLoaded, isSignedIn } = useAuth()
+  // A pending organization session is still signed in; loading the member must
+  // not wait for it, otherwise guards fall back to a wrong route.
+  const { getToken, isLoaded, isSignedIn } = useAuth({ treatPendingAsSignedOut: false })
   return useQuery({
     queryKey: orgQueryKey('current-member', orgId),
     queryFn: async () => {

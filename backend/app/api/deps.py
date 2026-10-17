@@ -14,7 +14,9 @@ from app.core.exceptions import AppError
 from app.db.database import SessionLocal
 from app.db.tenant import set_async_tenant_context
 from app.scheduler.infrastructure.task_dispatcher import CelerySchedulerTaskDispatcher
+from app.services import clerk_sync
 from app.services.clerk_access_service import ClerkAccessService
+from app.services.foundation_service import can_manage_foundation
 from app.services.legal_acceptance_service import LegalAcceptanceService
 from app.services.member_access_operation_service import MemberAccessOperationService
 
@@ -213,13 +215,69 @@ def user_has_teacher_capability(current_user: Actor) -> bool:
     )
 
 
-def get_foundation_admin(
+async def get_foundation_admin(
     current_user: Annotated[Actor, Depends(get_current_legal_accepted_user)],
+    db: Annotated[AsyncSession, Depends(get_db, scope="function")],  # NOSONAR
+    clerk: Annotated[ClerkGateway, Depends(get_clerk_gateway)],
 ) -> Actor:
     if not user_has_admin_capability(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin access required",
+        )
+    organization = (
+        await db.execute(
+            select(models.Organization.clerk_org_id).where(
+                models.Organization.id == current_user.organization_id
+            )
+        )
+    ).one_or_none()
+    if organization is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Organization access required",
+        )
+    (clerk_org_id,) = organization
+    membership_clerk_user_id = await db.scalar(
+        select(models.User.clerk_user_id)
+        .join(
+            models.OrganizationMembership,
+            models.OrganizationMembership.account_id == models.User.id,
+        )
+        .where(
+            models.OrganizationMembership.id == current_user.membership_id,
+            models.OrganizationMembership.organization_id == current_user.organization_id,
+            models.OrganizationMembership.lifecycle_status
+            == models.MembershipLifecycleStatus.active,
+            models.OrganizationMembership.access_status == models.MembershipAccessStatus.active,
+            models.OrganizationMembership.can_admin.is_(True),
+        )
+    )
+    if membership_clerk_user_id != current_user.clerk_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Active organization administrator access is required.",
+        )
+    profile = (
+        await clerk_sync.fetch_clerk_organization_profile(clerk_org_id, clerk)
+        if clerk_org_id
+        else None
+    )
+    if profile is None:
+        raise AppError(
+            kind="unavailable",
+            code="CLERK_DIRECTORY_UNAVAILABLE",
+            detail="The organization creator could not be verified.",
+            public_retryable=True,
+        )
+    if not can_manage_foundation(
+        clerk_user_id=current_user.clerk_user_id,
+        organization_creator_clerk_user_id=profile.created_by,
+        can_admin=current_user.can_admin,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the organization creator can manage the foundation.",
         )
     return current_user
 

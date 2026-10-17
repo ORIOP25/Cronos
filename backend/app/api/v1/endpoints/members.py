@@ -31,8 +31,9 @@ async def list_members(
 async def get_current_member(
     db: deps.DbSession,
     current_user: deps.SessionActor,
+    clerk: deps.ClerkGatewayDep,
 ):
-    return await member_service.current_member(db, current_user=current_user)
+    return await member_service.current_member(db, current_user=current_user, clerk=clerk)
 
 
 @router.post("", response_model=schemas.MemberRead, status_code=201)
