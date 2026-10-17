@@ -1359,11 +1359,7 @@ async def _substitute_exclusions(
             models.Subject.organization_id == organization_id,
         )
     )
-    if (
-        room is not None
-        and subject is not None
-        and room.room_type_id != subject.room_type_id
-    ):
+    if room is not None and subject is not None and room.room_type_id != subject.room_type_id:
         exclusions.append(
             _substitution_exclusion(
                 "room_mismatch",

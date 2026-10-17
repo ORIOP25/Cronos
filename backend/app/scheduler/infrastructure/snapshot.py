@@ -1099,7 +1099,9 @@ async def _build_assignments(
                 )
                 .order_by(models.Room.id)
             )
-        ).scalars().all()
+        )
+        .scalars()
+        .all()
     ]
     grouped_ids = {member for group in groups for member in group.member_assignment_ids}
     retired = await _retired_modules(db, organization_id, grouped_ids)
