@@ -8,6 +8,18 @@ const DYNAMIC_OPTS = {
   staleTime: 1000 * 60 * 5, // 5 minutos de "frescura"
 }
 
+const JOB_POLL_INTERVAL_MS = 5000
+const TERMINAL_JOB_STATUSES = ['SUCCEEDED', 'FAILED', 'CANCELLED', 'STALE', 'INFEASIBLE', 'INCONCLUSIVE']
+
+// A client error (auth, permission, not found, invalid input) will not recover
+// by waiting, so the poll stops. Everything else (offline, 408, 429, 5xx) is
+// transient and keeps polling the same way `createQueryClient` retries it.
+function isPermanentJobError(error) {
+  const status = error?.response?.status
+  return typeof status === 'number' && status >= 400 && status < 500
+    && status !== 408 && status !== 429
+}
+
 export const useSchedulerStatus = () => {
   const apiClient = useApiClient()
   const orgId = useOrganization().organization?.id
@@ -87,6 +99,7 @@ export const useRejectDraft = () => {
     },
     onSuccess: () => {
       void invalidateOrgQueries(queryClient, orgId, ['scheduler-status', 'scheduler-current-draft', 'schedule-diff'])
+      void invalidatePreparationQueries(queryClient, orgId)
     },
   })
 }
@@ -128,11 +141,9 @@ export const useScheduleTaskStatus = (jobId) => {
     enabled: Boolean(orgId) && Boolean(jobId),
     // TanStack Query uses false to disable polling after terminal states.
     refetchInterval: (query) => { // NOSONAR
-      if (query.state.error) return false
-      const status = query.state.data?.status
-      if (!status) return 5000
-      const terminal = ['SUCCEEDED', 'FAILED', 'CANCELLED', 'STALE', 'INFEASIBLE', 'INCONCLUSIVE']
-      return terminal.includes(status) ? false : 5000
+      if (TERMINAL_JOB_STATUSES.includes(query.state.data?.status)) return false
+      if (isPermanentJobError(query.state.error)) return false
+      return JOB_POLL_INTERVAL_MS
     },
     ...DYNAMIC_OPTS,
   })
