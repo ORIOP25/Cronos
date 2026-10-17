@@ -92,7 +92,7 @@ describe('tutorial v3 domain', () => {
       subjectId: 1,
       data: {
         name: 'Programação Aplicada',
-        required_room_type: 'lab',
+        room_type_id: 2,
         modules: [{ name: 'Algoritmos', code: 'UFCD-A', hours_total: 2 }],
       },
     })
@@ -123,7 +123,7 @@ describe('tutorial v3 domain', () => {
     const editedRoom = applyTutorialDemoAction(roomScenario, {
       type: TUTORIAL_ACTIONS.UPDATE_ROOM,
       roomId: 1,
-      data: { name: 'Laboratório maior', type: 'lab', capacity: 30 },
+      data: { name: 'Laboratório maior', room_type_id: 2, capacity: 30 },
     })
     expect(editedRoom.rooms[0]).toMatchObject({ name: 'Laboratório maior', capacity: 30 })
 
@@ -145,18 +145,18 @@ describe('tutorial v3 domain', () => {
     expect(availabilityScenario.availability.slots[0].score).toBe(1)
   })
 
-  it('accepts school-defined room type names in the demo scenario', () => {
+  it('accepts school-defined room type ids in the demo scenario', () => {
     const subjectScenario = createTutorialScenario('curriculum')
     const editedSubject = applyTutorialDemoAction(subjectScenario, {
       type: TUTORIAL_ACTIONS.UPDATE_SUBJECT,
       subjectId: 1,
-      data: { required_room_type: 'Oficina' },
+      data: { room_type_id: 5 },
     })
     const roomScenario = createTutorialScenario('rooms')
     const editedRoom = applyTutorialDemoAction(roomScenario, {
       type: TUTORIAL_ACTIONS.UPDATE_ROOM,
       roomId: 1,
-      data: { name: 'Oficina 2', type: 'Oficina', capacity: 30 },
+      data: { name: 'Oficina 2', room_type_id: 5, capacity: 30 },
     })
 
     expect(editedSubject.subjects[0].roomType).toBe('OFICINA')

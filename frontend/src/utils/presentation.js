@@ -1,7 +1,3 @@
-export function getRoomType(type) {
-  return { label: typeof type === 'string' ? type || '—' : type?.name || '—', color: 'secondary' }
-}
-
 export function formatGradeLevel(gradeLevel) {
   return gradeLevel == null || gradeLevel === '' ? '—' : `${gradeLevel}.º ano`
 }

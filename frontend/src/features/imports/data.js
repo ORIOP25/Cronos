@@ -13,7 +13,7 @@ export const IMPORT_RESOURCES = Object.freeze([
     instructions: [
       'Cada linha cria uma sala.',
       'Nome da sala: nome único, por exemplo Sala 1.02.',
-      'Tipo de sala: Normal, Laboratório, Ginásio ou Artes.',
+      'Tipo de sala: escreva o nome definido pela escola.',
       'Capacidade: número de pessoas, igual ou superior a 1.',
     ],
     fields: { name: 'Nome da sala', type: 'Tipo de sala', capacity: 'Capacidade' },
@@ -25,7 +25,7 @@ export const IMPORT_RESOURCES = Object.freeze([
     origin: '/subjects',
     instructions: [
       'Repita a disciplina numa nova linha por cada módulo.',
-      'Tipo de sala: Normal, Laboratório, Ginásio ou Artes.',
+      'Tipo de sala: escreva o nome definido pela escola.',
       'Horas e ordem são números inteiros a partir de 1.',
       'A ordem dos módulos deve ser contínua: 1, 2, 3…',
       'Para criar uma disciplina sem módulos, deixe os campos do módulo vazios; será apresentado um aviso.',

@@ -85,7 +85,7 @@ function getClassSubjects(snapshot, scenario, classId) {
           id: snapshot.assignments.find((item) => item.subject_id === snapshotSubject?.id)?.id,
           subject_id: snapshotSubject?.id,
           subject_name: subject.name,
-          required_room_type: subject.roomType.toLowerCase(),
+          room_type: snapshotSubject?.room_type,
           joint_group: null,
           teacher_id: snapshot.teachers.find((item) => item.name === teacher?.name)?.id ?? null,
           teacher_name: teacher?.name ?? null,
@@ -305,7 +305,7 @@ function handleBasicRoutes(context) {
     })
     return read({ days, transition_date: null })
   }
-  const collections = { '/subjects': snapshot.subjects, '/rooms': snapshot.rooms, '/courses': snapshot.courses, '/classes': snapshot.classes, '/teachers': snapshot.teachers, '/timeslots': snapshot.timeslots }
+  const collections = { '/subjects': snapshot.subjects, '/rooms': snapshot.rooms, '/room-types': snapshot.roomTypes, '/courses': snapshot.courses, '/classes': snapshot.classes, '/teachers': snapshot.teachers, '/timeslots': snapshot.timeslots }
   if (Object.hasOwn(collections, path)) return method === 'get' ? read(collections[path]) : methodNotAllowed(context)
   return null
 }

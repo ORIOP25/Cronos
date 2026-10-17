@@ -10,6 +10,45 @@ const DEMO_WEEK_START = '2025-09-15'
 const DEMO_REFERENCE_DATE = '2025-09-20T12:00:00Z'
 const DEMO_HARD_END_DATE = '2026-07-31'
 const SLOT_DURATION_MINUTES = 60
+const ROOM_TYPE_NAMES = Object.freeze({
+  NORMAL: 'Normal',
+  LAB: 'Laboratório',
+  GYM: 'Ginásio',
+  ART: 'Artes',
+})
+const DEMO_ROOM_TYPES = Object.freeze([
+  { id: 'demo-room-type-normal', name: 'Normal', isNormal: true },
+  { id: 'demo-room-type-lab', name: 'Laboratório', isNormal: false },
+  { id: 'demo-room-type-gym', name: 'Ginásio', isNormal: false },
+  { id: 'demo-room-type-art', name: 'Artes', isNormal: false },
+  { id: 'demo-room-type-workshop', name: 'Oficina', isNormal: false },
+])
+
+function scenarioRoomTypeName(value) {
+  const name = String(value ?? '').trim()
+  return ROOM_TYPE_NAMES[name.toUpperCase()] || name
+}
+
+function scenarioRoomTypeValue(name) {
+  const code = Object.entries(ROOM_TYPE_NAMES)
+    .find(([, label]) => label.toLocaleLowerCase() === name.toLocaleLowerCase())?.[0]
+  return code || name.toUpperCase()
+}
+
+function findScenarioRoomType(scenario, value) {
+  const expectedName = scenarioRoomTypeName(value)
+  return scenario.roomTypes.find((item) => item.name.toLocaleLowerCase() === expectedName.toLocaleLowerCase()) || null
+}
+
+function roomTypeReference(scenario, value) {
+  const roomType = findScenarioRoomType(scenario, value)
+  if (!roomType) throw new TutorialScenarioError('O tipo de sala não existe no exemplo.', { code: 'ROOM_TYPE_NOT_FOUND', status: 404 })
+  return {
+    id: numericId(scenario.roomTypes, roomType.id),
+    name: roomType.name,
+    is_normal: roomType.isNormal,
+  }
+}
 
 export class TutorialScenarioError extends Error {
   constructor(message, { code = 'TUTORIAL_SCENARIO_INVALID', status = 400 } = {}) {
@@ -107,6 +146,7 @@ function createBaseScenario(stepId) {
     referenceDate: DEMO_REFERENCE_DATE,
     hardEndDate: DEMO_HARD_END_DATE,
     slotDurationMinutes: SLOT_DURATION_MINUTES,
+    roomTypes: DEMO_ROOM_TYPES.map((roomType) => ({ ...roomType })),
     timeslots,
     courses: [
       { id: 'demo-course-informatics', name: 'Curso de Informática', code: 'TIS', active: true },
@@ -287,10 +327,9 @@ function applySubjectUpdate(next, action) {
     if (!name) throw new TutorialScenarioError('O nome da disciplina é obrigatório.')
     subject.name = name
   }
-  if (data.required_room_type != null || data.roomType != null) {
-    const type = String(data.required_room_type ?? data.roomType).trim().toUpperCase()
-    if (!type) throw new TutorialScenarioError('O tipo de sala da disciplina é inválido.')
-    subject.roomType = type
+  if (data.room_type_id != null) {
+    const roomType = requireEntity(next.roomTypes, data.room_type_id, 'O tipo de sala')
+    subject.roomType = scenarioRoomTypeValue(roomType.name)
   }
   if (data.modules != null) {
     const modules = normalizeSubjectModules(data.modules)
@@ -331,8 +370,12 @@ function applyRoomUpdate(next, action) {
   const data = action.data ?? action
   const name = String(data.name ?? room.name).trim()
   const capacity = Number(data.capacity ?? room.capacity)
-  const type = String(data.type ?? room.type).trim().toUpperCase()
-  if (!name || !Number.isInteger(capacity) || capacity < 1 || !type) throw new TutorialScenarioError('Os dados da sala são inválidos.')
+  let type = room.type
+  if (data.room_type_id != null) {
+    const roomType = requireEntity(next.roomTypes, data.room_type_id, 'O tipo de sala')
+    type = scenarioRoomTypeValue(roomType.name)
+  }
+  if (!name || !Number.isInteger(capacity) || capacity < 1) throw new TutorialScenarioError('Os dados da sala são inválidos.')
   Object.assign(room, { name, capacity, type })
 }
 
@@ -436,7 +479,7 @@ function subjectApi(scenario, subject) {
   return {
     id: numericId(scenario.subjects, subject.id),
     name: subject.name,
-    required_room_type: subject.roomType.toLowerCase(),
+    room_type: roomTypeReference(scenario, subject.roomType),
     modules: scenario.modules.filter((module) => module.subjectId === subject.id).map((module, index) => ({
       id: numericId(scenario.modules, module.id),
       name: module.name,
@@ -493,7 +536,12 @@ export function createTutorialApiSnapshot(scenario) {
     lock_version: 1,
     actions: { can_edit: true, can_remove: false, can_resend_invite: false, can_retry_sync: false, can_restore: false },
   }))
-  const rooms = scenario.rooms.map((room) => ({ id: numericId(scenario.rooms, room.id), name: room.name, type: room.type.toLowerCase(), capacity: room.capacity }))
+  const rooms = scenario.rooms.map((room) => ({ id: numericId(scenario.rooms, room.id), name: room.name, room_type: roomTypeReference(scenario, room.type), capacity: room.capacity }))
+  const roomTypes = scenario.roomTypes.map((roomType) => ({
+    ...roomTypeReference(scenario, roomType.name),
+    room_count: scenario.rooms.filter((room) => roomTypeReference(scenario, room.type).id === numericId(scenario.roomTypes, roomType.id)).length,
+    subject_count: scenario.subjects.filter((subject) => roomTypeReference(scenario, subject.roomType).id === numericId(scenario.roomTypes, roomType.id)).length,
+  }))
   const timeslots = scenario.timeslots.map((slot) => ({
     id: numericId(scenario.timeslots, slot.id),
     day_of_week: slot.dayOfWeek,
@@ -532,11 +580,11 @@ export function createTutorialApiSnapshot(scenario) {
       warnings: scenario.draft.warnings,
     },
   } : null
-  return { subjects, courses, classes, teachers, members, rooms, timeslots, assignments, currentDraft }
+  return { subjects, courses, classes, teachers, members, rooms, roomTypes, timeslots, assignments, currentDraft }
 }
 
 export function tutorialScenarioInvariants(scenario) {
-  const allEntities = [...scenario.courses, ...scenario.classes, ...scenario.subjects, ...scenario.modules, ...scenario.teachers, ...scenario.rooms, ...scenario.classSubjects, ...scenario.timeslots, ...scenario.blocks]
+  const allEntities = [...scenario.courses, ...scenario.classes, ...scenario.subjects, ...scenario.modules, ...scenario.teachers, ...scenario.rooms, ...scenario.roomTypes, ...scenario.classSubjects, ...scenario.timeslots, ...scenario.blocks]
   const programming = scenario.subjects.find((subject) => subject.id === 'demo-subject-programming')
   const mathsTeacher = scenario.teachers.find((teacher) => teacher.id === 'demo-teacher-mathematics')
   return {

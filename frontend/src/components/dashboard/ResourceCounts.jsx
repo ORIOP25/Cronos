@@ -1,5 +1,4 @@
 import { CCol, CRow } from '@coreui/react'
-import { getRoomType } from '../../utils/presentation'
 
 function KpiSkeleton() {
   return (
@@ -67,7 +66,7 @@ export default function ResourceCounts({ resources, isLoading }) {
               ? '—'
               : Object.entries(roomsByType).map(([type, count], i) => (
                   <span key={type}>
-                    {getRoomType(type).label}: {count}
+                    {type}: {count}
                     {i < Object.keys(roomsByType).length - 1 ? ' · ' : ''}
                   </span>
                 ))

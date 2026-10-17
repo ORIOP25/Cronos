@@ -69,6 +69,13 @@ export async function apiRequest(page, method, path, body, timeoutMs = REQUEST_T
   )
 }
 
+export async function getNormalRoomTypeId(page) {
+  const roomTypes = await apiRequest(page, 'GET', '/room-types/')
+  const normalRoomType = roomTypes.find((roomType) => roomType.is_normal)
+  if (!Number.isInteger(normalRoomType?.id)) throw new Error('Prepared E2E school has no Normal room type.')
+  return normalRoomType.id
+}
+
 export async function seedMinimalSchedulerInputs(page, requestedTeacherEmail = process.env.E2E_CLERK_TEACHER_EMAIL) {
   const dates = fixtureDates()
   await resetSchedulerState(page)
@@ -130,7 +137,7 @@ async function ensureSubject(page) {
     hours_total: 2,
     order: 0,
   }
-  const payload = { name: FIXTURE.subjectName, required_room_type: 'normal', modules: [module] }
+  const payload = { name: FIXTURE.subjectName, room_type_id: await getNormalRoomTypeId(page), modules: [module] }
   return existing
     ? apiRequest(page, 'PATCH', `/subjects/${existing.id}`, payload)
     : apiRequest(page, 'POST', '/subjects/', payload)
@@ -167,7 +174,7 @@ async function ensureClass(page, courseId, dates) {
 async function ensureRoom(page) {
   const rooms = await apiRequest(page, 'GET', '/rooms/')
   const existing = rooms.find((room) => room.name === FIXTURE.roomName)
-  const payload = { name: FIXTURE.roomName, type: 'normal', capacity: 30 }
+  const payload = { name: FIXTURE.roomName, room_type_id: await getNormalRoomTypeId(page), capacity: 30 }
   return existing
     ? apiRequest(page, 'PATCH', `/rooms/${existing.id}`, payload)
     : apiRequest(page, 'POST', '/rooms/', payload)
@@ -197,7 +204,7 @@ async function ensureSubjectWithModules(page, fixture) {
     hours_total: 2,
     order: index,
   }))
-  const payload = { name: fixture.subjectName, required_room_type: 'normal', modules }
+  const payload = { name: fixture.subjectName, room_type_id: await getNormalRoomTypeId(page), modules }
   if (existing) await apiRequest(page, 'PATCH', `/subjects/${existing.id}`, payload)
   else await apiRequest(page, 'POST', '/subjects/', payload)
   const refreshed = await apiRequest(page, 'GET', '/subjects/')
@@ -227,7 +234,7 @@ async function ensureNamedClass(page, courseId, name, dates) {
 async function ensureNamedRoom(page, name, capacity = 30) {
   const rooms = await apiRequest(page, 'GET', '/rooms/')
   const existing = rooms.find((room) => room.name === name)
-  const payload = { name, type: 'normal', capacity }
+  const payload = { name, room_type_id: await getNormalRoomTypeId(page), capacity }
   return existing
     ? apiRequest(page, 'PATCH', `/rooms/${existing.id}`, payload)
     : apiRequest(page, 'POST', '/rooms/', payload)

@@ -1,5 +1,4 @@
 import { humanizeOperationalDetail, TXT } from './terminology'
-import { getRoomType } from './presentation'
 
 const PRESENTATIONS = {
   authentication_required: { title: 'Sessão terminada', message: 'A sua sessão terminou. Entre novamente para continuar.', retryable: true },
@@ -94,7 +93,7 @@ function formatRoomIssue(issue) {
   if (!issue || typeof issue !== 'object') return null
   const { class_name: className, subject_name: subjectName, reason } = issue
   if (!isText(className) || !isText(subjectName) || !ROOM_REASONS.has(reason)) return null
-  const roomType = getRoomType(issue.required_room_type).label
+  const roomType = isText(issue.required_room_type_name) ? issue.required_room_type_name : '—'
   if (reason === 'NO_ROOM_OF_TYPE') {
     return `${className} / ${subjectName}: não existe sala do tipo ${roomType}.`
   }

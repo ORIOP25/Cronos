@@ -61,8 +61,8 @@ describe('bulk import file utilities', () => {
       'Cronos_PresencaProfessores_Template.csv',
     ])
     expect(IMPORT_RESOURCES.every((item) => item.instructions.length > 0)).toBe(true)
-    expect(IMPORT_RESOURCES[0].instructions.join(' ')).toContain('Normal')
-    expect(IMPORT_RESOURCES[1].instructions.join(' ')).toContain('Laboratório')
+    expect(IMPORT_RESOURCES[0].instructions.join(' ')).toContain('nome definido pela escola')
+    expect(IMPORT_RESOURCES[1].instructions.join(' ')).toContain('nome definido pela escola')
     expect(getImportCountLabel('rooms')).toBe('Salas')
     expect(getImportCountLabel('assignments')).toBe('Atribuições')
     expect(getImportCountLabel('class_availability')).toBe('Disponibilidade das turmas')
@@ -96,8 +96,8 @@ describe('bulk import file utilities', () => {
 
   it('formats issues with Portuguese section and field names', () => {
     expect(formatImportIssue({
-      resource: 'rooms', line: 4, field: 'type', message: 'Escreva Normal, Laboratório, Ginásio ou Artes.',
-    })).toBe('Salas, linha 4, Tipo de sala: Escreva Normal, Laboratório, Ginásio ou Artes.')
+      resource: 'rooms', line: 4, field: 'type', message: 'Escreva o tipo de sala.',
+    })).toBe('Salas, linha 4, Tipo de sala: Escreva o tipo de sala.')
   })
 
   it('shows the raw column title when the field is a dynamic hour column', () => {

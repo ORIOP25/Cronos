@@ -372,7 +372,7 @@ describe('Schedules scheduler flow', () => {
               room_issues: [{
                 class_name: 'TDESP 10',
                 subject_name: 'Treino Desportivo',
-                required_room_type: 'gym',
+                required_room_type_name: 'Ginásio',
                 required_capacity: 27,
                 max_available_capacity: 26,
                 reason: 'INSUFFICIENT_CAPACITY',
