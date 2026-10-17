@@ -1,6 +1,6 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import joinedload, selectinload
 
 from app import models, schemas
 from app.core.exceptions import AppError
@@ -13,33 +13,32 @@ def _room_snapshot(room: models.Room) -> dict:
     return {"room_type_id": room.room_type_id, "capacity": room.capacity}
 
 
-# Tipo e turmas da sala em bloco: uma só consulta para a lista, sem uma por sala.
-_ROOM_OPTIONS = (
-    joinedload(models.Room.room_type),
-    joinedload(models.Room.home_classes),
-)
-
-
 async def _room_with_type(
     db: AsyncSession, room_id: int, organization_id: int
 ) -> models.Room | None:
     """A sala da escola com o tipo e as turmas da sala já carregados, para a resposta."""
-    result = await db.execute(
+    return await db.scalar(
         select(models.Room)
-        .options(*_ROOM_OPTIONS)
+        .options(
+            joinedload(models.Room.room_type),
+            selectinload(models.Room.home_classes),
+        )
         .where(
             models.Room.id == room_id,
             models.Room.organization_id == organization_id,
         )
     )
-    return result.unique().scalar_one_or_none()
 
 
 # --- ASYNC (API) ---
 async def get_rooms_by_org(db: AsyncSession, organization_id: int):
+    # Tipo e turmas da sala na mesma consulta: a lista não ganha uma consulta por sala.
     result = await db.execute(
         select(models.Room)
-        .options(*_ROOM_OPTIONS)
+        .options(
+            joinedload(models.Room.room_type),
+            joinedload(models.Room.home_classes),
+        )
         .where(
             models.Room.organization_id == organization_id,
             models.Room.is_archived.is_(False),
