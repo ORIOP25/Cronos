@@ -13,7 +13,7 @@ from app import models
 from app.config import settings
 from app.services.scheduler_fingerprint_service import SchedulerFingerprintService
 from app.services.scheduler_state_service import SchedulerStateService
-from tests._support.db_fixtures import create_teacher_profile
+from tests._support.db_fixtures import create_org_and_user, create_teacher_profile
 
 API = settings.API_V1_STR
 
@@ -296,6 +296,106 @@ async def test_bulk_import_accepts_comma_delimited_file_without_bom(
 
     assert response.status_code == 200
     assert response.json()["can_commit"] is True
+
+
+async def _create_room_type(client: AsyncClient, headers: dict, name: str = "Oficina") -> int:
+    resp = await client.post(f"{API}/room-types/", json={"name": name}, headers=headers)
+    assert resp.status_code == 201
+    return resp.json()["id"]
+
+
+async def test_bulk_import_links_the_school_room_type_by_name(
+    async_client: AsyncClient, db_session: AsyncSession, clerk_admin_headers: dict
+):
+    """S2/R02: a importação liga a sala e a disciplina ao tipo da escola, pelo nome."""
+    oficina = await _create_room_type(async_client, clerk_admin_headers)
+    suffix = uuid4().hex[:8]
+
+    files = {
+        "rooms": csv_payload(
+            "Cronos_Salas_Template.csv",
+            f"Nome da sala;Tipo de sala;Capacidade\r\nOficina {suffix};oficina;20\r\n",
+        ),
+        "subjects": csv_payload(
+            "Cronos_DisciplinasEModulos_Template.csv",
+            "Nome da disciplina;Tipo de sala;Nome do módulo;Código do módulo;"
+            "Horas do módulo;Ordem do módulo\r\n"
+            f"Oficina {suffix};OFICINA;Módulo {suffix};M{suffix};30;1\r\n",
+        ),
+    }
+
+    validation = await async_client.post(
+        f"{API}/imports/validate", json={"files": files}, headers=clerk_admin_headers
+    )
+    assert validation.status_code == 200, validation.text
+    assert validation.json()["can_commit"] is True, validation.text
+
+    commit = await async_client.post(
+        f"{API}/imports/commit", json={"files": files}, headers=clerk_admin_headers
+    )
+    assert commit.status_code == 201, commit.text
+
+    org_id = await _org_id(db_session)
+    room_type_id = await db_session.scalar(
+        select(models.Room.room_type_id).where(
+            models.Room.organization_id == org_id,
+            models.Room.name == f"Oficina {suffix}",
+        )
+    )
+    subject_type_id = await db_session.scalar(
+        select(models.Subject.room_type_id).where(
+            models.Subject.organization_id == org_id,
+            models.Subject.name == f"Oficina {suffix}",
+        )
+    )
+    assert room_type_id == oficina
+    assert subject_type_id == oficina
+
+
+async def test_bulk_import_rejects_a_room_type_of_another_school(
+    async_client: AsyncClient, db_session: AsyncSession, clerk_admin_headers: dict
+):
+    """S2/R02: o tipo de sala de outra escola não existe na escola que importa."""
+    await create_org_and_user(
+        db_session,
+        clerk_user_id="import_admin_b",
+        clerk_org_id="org_import_b",
+        org_name="Escola Secundária",
+    )
+    await db_session.commit()
+    headers_b = {"Authorization": "Bearer test_import_admin_b"}
+    await _create_room_type(async_client, headers_b)
+
+    suffix = uuid4().hex[:8]
+    files = {
+        "rooms": csv_payload(
+            "Cronos_Salas_Template.csv",
+            f"Nome da sala;Tipo de sala;Capacidade\r\nSala {suffix};Oficina;20\r\n",
+        )
+    }
+
+    validation = await async_client.post(
+        f"{API}/imports/validate", json={"files": files}, headers=clerk_admin_headers
+    )
+    assert validation.status_code == 200
+    assert validation.json()["can_commit"] is False
+    assert any(issue["code"] == "room_type_unknown" for issue in validation.json()["issues"]), (
+        validation.text
+    )
+
+    commit = await async_client.post(
+        f"{API}/imports/commit", json={"files": files}, headers=clerk_admin_headers
+    )
+    assert commit.status_code == 422
+
+    org_id = await _org_id(db_session)
+    created = await db_session.scalar(
+        select(models.Room.id).where(
+            models.Room.organization_id == org_id,
+            models.Room.name == f"Sala {suffix}",
+        )
+    )
+    assert created is None
 
 
 async def _prepare_class_grid(

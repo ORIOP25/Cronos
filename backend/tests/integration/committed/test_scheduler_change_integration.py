@@ -6,6 +6,7 @@ from app import models, schemas
 from app.services import (
     class_service,
     room_service,
+    room_type_service,
     settings_service,
     subject_service,
     teacher_service,
@@ -19,6 +20,8 @@ async def test_scheduler_shaping_writes_increment_but_policy_and_text_do_not(db_
     organization = models.Organization(name="Versioned School", plan_status="active")
     db_session.add(organization)
     await db_session.commit()
+    # Uma escola precisa dos tipos de sala iniciais antes de ter salas (S2).
+    await room_type_service.ensure_initial_room_types(db_session, organization.id)
 
     await settings_service.upsert_settings(
         db_session,
@@ -46,7 +49,7 @@ async def test_scheduler_shaping_writes_increment_but_policy_and_text_do_not(db_
 
     room = await room_service.create_room(
         db_session,
-        schemas.RoomCreate(name="Room A", type=models.RoomType.normal, capacity=20),
+        schemas.RoomCreate(name="Room A", capacity=20),
         organization.id,
     )
     await db_session.refresh(state)

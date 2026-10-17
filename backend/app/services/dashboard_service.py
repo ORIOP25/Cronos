@@ -3,7 +3,7 @@
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 
-from sqlalchemy import String, and_, cast, func, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
@@ -159,14 +159,21 @@ def _get_overview(
     today_lessons = active_lessons.where(SchedulerLessonV1.school_date == today)
     room_counts = (
         select(
-            cast(models.Room.type, String).label("room_type"),
+            models.SchoolRoomType.name.label("room_type"),
             func.count(models.Room.id).label("room_count"),
+        )
+        .join(
+            models.SchoolRoomType,
+            and_(
+                models.SchoolRoomType.organization_id == models.Room.organization_id,
+                models.SchoolRoomType.id == models.Room.room_type_id,
+            ),
         )
         .where(
             models.Room.organization_id == organization_id,
             models.Room.is_archived.is_(False),
         )
-        .group_by(models.Room.type)
+        .group_by(models.SchoolRoomType.name)
         .subquery()
     )
     rooms_by_type = (

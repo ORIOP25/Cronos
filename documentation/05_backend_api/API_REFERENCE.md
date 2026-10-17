@@ -110,6 +110,8 @@ A joint lesson group joins two or more classes of one subject for a set of modul
 
 Every `/api/v1/room-types` route, including the list, is administrator-only. The list returns the active types of the caller's school, with `room_count` and `subject_count` of the active rooms and subjects that use each type. `POST` creates a type with a name of 1 to 60 characters, `PATCH` renames it, and `DELETE` removes it. A name already used by another type of the same school returns `409 room_type_name_taken` (compared ignoring case and accents); a blank or over-long name returns `422`. Renaming or removing the fixed Normal type returns `409 room_type_fixed`. Removing a type used by an active room or subject returns `409 resource_in_use` with the names in `context.rooms` and `context.subjects`; a type kept only by archived objects is archived, and creating the same name again restores it with the same `id` and name. A type of another school returns `404 resource_not_found`. A non-administrator returns `403`.
 
+A room or a subject takes the school type it needs as `room_type_id`. `POST /api/v1/rooms/` and `POST /api/v1/subjects/` without the field, or with `null`, use the school's Normal type; `PATCH` without the field keeps the current type, and an explicit `null` goes back to Normal. Every room and subject read returns the nested `room_type` (`id`, `name`, `is_normal`), including `GET /api/v1/courses/{course_id}`, `GET /api/v1/classes/{class_id}`, the subject list of `GET /api/v1/classes/{class_id}/subjects` and the teacher progress reads. An identifier that does not exist, belongs to another school or is archived returns `404 resource_not_found` and changes nothing.
+
 ### Members and teachers
 
 | Method | Route | Access |

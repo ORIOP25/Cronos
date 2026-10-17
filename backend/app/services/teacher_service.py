@@ -335,6 +335,7 @@ async def get_teacher_progress(
         .options(
             selectinload(models.ClassSubjectLink.class_).selectinload(models.Class.course),
             selectinload(models.ClassSubjectLink.subject).selectinload(models.Subject.modules),
+            selectinload(models.ClassSubjectLink.subject).joinedload(models.Subject.room_type),
         )
     )
     links_result = await db.execute(links_query)

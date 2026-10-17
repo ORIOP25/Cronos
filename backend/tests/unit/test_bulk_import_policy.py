@@ -12,6 +12,7 @@ from app.services.bulk_import_policy import (
     ExistingClass,
     ExistingCourse,
     ExistingRoom,
+    ExistingRoomType,
     ExistingSubject,
     ExistingTeacher,
     ExistingTimeslot,
@@ -22,6 +23,14 @@ from app.services.bulk_import_policy import (
     render_template,
     template_filename,
     validate_import,
+)
+
+# Os quatro tipos iniciais de uma escola, na ordem do S1.
+INITIAL_ROOM_TYPES = (
+    ExistingRoomType(id=1, name="Normal"),
+    ExistingRoomType(id=2, name="Laboratório"),
+    ExistingRoomType(id=3, name="Ginásio"),
+    ExistingRoomType(id=4, name="Artes"),
 )
 
 
@@ -132,7 +141,7 @@ def test_parser_explains_when_file_belongs_to_another_import_section():
     )
 
 
-def test_room_types_are_normalized_for_rooms_and_subjects():
+def test_room_types_are_resolved_by_school_name_for_rooms_and_subjects():
     rooms = parse_resource_file(
         "rooms",
         "salas.csv",
@@ -154,12 +163,12 @@ def test_room_types_are_normalized_for_rooms_and_subjects():
 
     result = validate_import(
         {"rooms": rooms, "subjects": subjects},
-        ImportSnapshot(),
+        ImportSnapshot(room_types=list(INITIAL_ROOM_TYPES)),
     )
 
     assert result.can_commit is True
-    assert [item.room_type for item in result.rooms] == ["lab", "gym", "art"]
-    assert result.subjects[0].room_type == "lab"
+    assert [item.room_type_id for item in result.rooms] == [2, 3, 4]
+    assert result.subjects[0].room_type_id == 2
 
 
 def test_room_types_reject_internal_codes_and_unknown_values():
@@ -167,19 +176,21 @@ def test_room_types_reject_internal_codes_and_unknown_values():
         "rooms",
         "salas.csv",
         encoded(
-            "Nome da sala;Tipo de sala;Capacidade\r\nSala 1;lab;20\r\nSala 2;Biblioteca;20\r\n"
+            "Nome da sala;Tipo de sala;Capacidade\r\n"
+            "Sala 1;lab;20\r\nSala 2;Biblioteca;20\r\nSala 3;;20\r\n"
         ),
     )
 
-    result = validate_import({"rooms": parsed}, ImportSnapshot())
+    result = validate_import({"rooms": parsed}, ImportSnapshot(room_types=list(INITIAL_ROOM_TYPES)))
 
     assert result.can_commit is False
-    assert {issue.code for issue in result.issues} >= {"room_type_invalid"}
-    assert all(
-        "Escreva Normal, Laboratório, Ginásio ou Artes." in issue.message
-        for issue in result.issues
-        if issue.code == "room_type_invalid"
-    )
+    assert {issue.code for issue in result.issues} >= {"room_type_unknown", "room_type_invalid"}
+    assert {issue.message for issue in result.issues if issue.code == "room_type_unknown"} == {
+        "Não existe um tipo de sala com esse nome."
+    }
+    assert {issue.message for issue in result.issues if issue.code == "room_type_invalid"} == {
+        "Escreva o tipo de sala."
+    }
 
 
 def test_policy_returns_all_cross_reference_issues_and_warnings():
@@ -979,6 +990,7 @@ def test_availability_preview_keeps_every_row_beyond_the_generic_cap():
     result = validate_import(
         {"rooms": rooms_file, TEACHER_AVAILABILITY: teachers_file},
         ImportSnapshot(
+            room_types=list(INITIAL_ROOM_TYPES),
             teachers=[
                 ExistingTeacher(
                     id=index,

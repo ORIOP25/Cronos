@@ -1126,6 +1126,9 @@ class Room(Base):
     # Tipo de sala da escola (S1 nulo; obrigatório no fim do PR 1).
     room_type_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
+    # Só de leitura; quem escreve é room_type_id e os leitores carregam-no em bloco.
+    room_type: Mapped[SchoolRoomType | None] = relationship(viewonly=True)
+
     # Chave Estrangeira: Liga a Sala à sua Organization
     organization_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID))
 
@@ -1162,6 +1165,9 @@ class Subject(Base):
 
     # Tipo de sala da escola (S1 nulo; obrigatório no fim do PR 1).
     room_type_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    # Só de leitura; quem escreve é room_type_id e os leitores carregam-no em bloco.
+    room_type: Mapped[SchoolRoomType | None] = relationship(viewonly=True)
 
     modules: Mapped[list["Module"]] = relationship(
         back_populates="subject", cascade=CASCADE_ALL_DELETE

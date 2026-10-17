@@ -264,7 +264,6 @@ class TestClassSubjectModuleSelection:
             f"{API}/subjects/",
             json={
                 "name": "Educação Física",
-                "required_room_type": "normal",
                 "modules": [{"name": "M1", "code": "EF1", "hours_total": 10, "order": 0}],
             },
             headers=clerk_admin_headers,
@@ -551,7 +550,6 @@ class TestClassSubjectModuleSelectionQueryBudget:
                 f"{API}/subjects/",
                 json={
                     "name": f"Extra {index}",
-                    "required_room_type": "normal",
                     "modules": [
                         {"name": f"E{index}", "code": f"E{index}", "hours_total": 10, "order": 0}
                     ],

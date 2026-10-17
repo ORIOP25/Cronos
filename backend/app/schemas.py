@@ -22,7 +22,6 @@ from .models import (
     LessonOccurrenceStatus,
     OrganizationFoundationStatus,
     PreferenceLevel,
-    RoomType,
     TimesheetStatus,
 )
 from .scheduler.domain.timetable import BreakOverride, build_daily_slots
@@ -564,10 +563,33 @@ class ModuleRead(ModuleBase):
     model_config = ConfigDict(from_attributes=True)
 
 
+# --- ROOM TYPE (TIPO DE SALA) ---
+class RoomTypeRef(BaseModel):
+    id: int
+    name: str
+    is_normal: bool
+    model_config = model_config
+
+
+class RoomTypeRead(RoomTypeRef):
+    room_count: int = 0
+    subject_count: int = 0
+
+
+class RoomTypeCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    name: str = Field(..., min_length=1, max_length=60)
+
+
+class RoomTypeUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    name: str = Field(..., min_length=1, max_length=60)
+
+
 # --- SUBJECT ---
 class SubjectBase(BaseModel):
     name: str
-    required_room_type: RoomType = RoomType.normal
+    room_type_id: int | None = Field(None, description="Tipo de sala da escola")
 
 
 class SubjectCreate(SubjectBase):
@@ -602,7 +624,7 @@ class SubjectCreate(SubjectBase):
 
 class SubjectUpdate(BaseModel):
     name: str | None = None
-    required_room_type: RoomType | None = None
+    room_type_id: int | None = None
     modules: list[ModuleUpsert] | None = None
 
     @model_validator(mode="after")
@@ -622,6 +644,7 @@ class SubjectUpdate(BaseModel):
 class SubjectRead(SubjectBase):
     id: int
     organization_id: int
+    room_type: RoomTypeRef | None = None
     modules: list[ModuleRead] = []
     is_archived: bool = False
     model_config = model_config
@@ -630,7 +653,7 @@ class SubjectRead(SubjectBase):
 # --- ROOM (SALA) ---
 class RoomBase(BaseModel):
     name: str
-    type: RoomType
+    room_type_id: int | None = Field(None, description="Tipo de sala da escola")
     capacity: int = Field(30, gt=0)
 
 
@@ -640,38 +663,16 @@ class RoomCreate(RoomBase):
 
 class RoomUpdate(BaseModel):
     name: str | None = None
-    type: RoomType | None = None
+    room_type_id: int | None = None
     capacity: int | None = Field(None, gt=0)
 
 
 class RoomRead(RoomBase):
     id: int
     organization_id: int
+    room_type: RoomTypeRef | None = None
     is_archived: bool = False
     model_config = model_config
-
-
-# --- ROOM TYPE (TIPO DE SALA) ---
-class RoomTypeRef(BaseModel):
-    id: int
-    name: str
-    is_normal: bool
-    model_config = model_config
-
-
-class RoomTypeRead(RoomTypeRef):
-    room_count: int = 0
-    subject_count: int = 0
-
-
-class RoomTypeCreate(BaseModel):
-    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
-    name: str = Field(..., min_length=1, max_length=60)
-
-
-class RoomTypeUpdate(BaseModel):
-    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
-    name: str = Field(..., min_length=1, max_length=60)
 
 
 # ==========================================
@@ -1012,7 +1013,7 @@ class SubjectSimple(BaseModel):
 
     id: int
     name: str
-    required_room_type: RoomType
+    room_type: RoomTypeRef | None = None
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -1063,7 +1064,7 @@ class SubjectProgressRead(BaseModel):
 
     id: int
     name: str
-    required_room_type: RoomType
+    room_type: RoomTypeRef | None = None
     modules: list[ModuleProgressRead] = []
     total_hours: float = 0.0
     completed_hours: float = 0.0
@@ -1612,7 +1613,7 @@ class ClassSubjectRead(BaseModel):
     id: int
     subject_id: int
     subject_name: str
-    required_room_type: RoomType
+    room_type: RoomTypeRef | None = None
     grade_level: int
     teacher_id: int | None = None
     teacher_name: str | None = None
@@ -2057,7 +2058,7 @@ class TeacherSubjectProgressRead(BaseModel):
 
     subject_id: int = Field(validation_alias=AliasChoices("subject_id", "id"))
     subject_name: str = Field(validation_alias=AliasChoices("subject_name", "name"))
-    required_room_type: RoomType
+    room_type: RoomTypeRef | None = None
     modules: list[TeacherModuleProgressRead] = []
     total_hours: float = 0.0
     completed_hours: float = 0.0

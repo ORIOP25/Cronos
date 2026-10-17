@@ -1,9 +1,11 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+from sqlalchemy.orm import joinedload
 
 from app import models, schemas
 from app.core.exceptions import AppError
 from app.services import resource_removal
+from app.services.room_type_service import legacy_room_type, resolve_active_room_type
 from app.services.scheduler_state_service import record_scheduler_change
 
 
@@ -11,10 +13,26 @@ def _room_snapshot(room: models.Room) -> dict:
     return {"type": room.type, "capacity": room.capacity}
 
 
+async def _room_with_type(
+    db: AsyncSession, room_id: int, organization_id: int
+) -> models.Room | None:
+    """A sala da escola com o tipo já carregado, para a resposta."""
+    return await db.scalar(
+        select(models.Room)
+        .options(joinedload(models.Room.room_type))
+        .where(
+            models.Room.id == room_id,
+            models.Room.organization_id == organization_id,
+        )
+    )
+
+
 # --- ASYNC (API) ---
 async def get_rooms_by_org(db: AsyncSession, organization_id: int):
     result = await db.execute(
-        select(models.Room).where(
+        select(models.Room)
+        .options(joinedload(models.Room.room_type))
+        .where(
             models.Room.organization_id == organization_id,
             models.Room.is_archived.is_(False),
         )
@@ -28,9 +46,11 @@ async def create_room(
     organization_id: int,
     changed_by_membership_id: int | None = None,
 ):
+    room_type = await resolve_active_room_type(db, organization_id, item.room_type_id)
     db_item = models.Room(
         name=item.name,
-        type=item.type,
+        type=legacy_room_type(room_type),
+        room_type_id=room_type.id,
         capacity=item.capacity,
         organization_id=organization_id,
     )
@@ -48,7 +68,7 @@ async def create_room(
     )
     await db.flush()
     await db.refresh(db_item)
-    return db_item
+    return await _room_with_type(db, db_item.id, organization_id)
 
 
 async def update_room(
@@ -58,6 +78,10 @@ async def update_room(
     organization_id: int,
     changed_by_membership_id: int | None = None,
 ):
+    room_type = None
+    if "room_type_id" in room_in.model_fields_set:
+        room_type = await resolve_active_room_type(db, organization_id, room_in.room_type_id)
+
     query = select(models.Room).where(
         models.Room.id == room_id, models.Room.organization_id == organization_id
     )
@@ -73,6 +97,9 @@ async def update_room(
 
     before = _room_snapshot(room)
     update_data = room_in.model_dump(exclude_unset=True)
+    if room_type is not None:
+        update_data["room_type_id"] = room_type.id
+        update_data["type"] = legacy_room_type(room_type)
     for field, value in update_data.items():
         setattr(room, field, value)
 
@@ -89,7 +116,7 @@ async def update_room(
     )
     await db.flush()
     await db.refresh(room)
-    return room
+    return await _room_with_type(db, room.id, organization_id)
 
 
 async def delete_room(

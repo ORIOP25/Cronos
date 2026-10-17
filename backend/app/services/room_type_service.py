@@ -22,6 +22,13 @@ DEFAULT_ROOM_TYPES: tuple[tuple[str, bool], ...] = (
     ("Artes", False),
 )
 
+# Nomes dos tipos iniciais no enum antigo, para os leitores do horário até ao S3.
+LEGACY_TYPES_BY_NAME: dict[str, models.RoomType] = {
+    "laboratorio": models.RoomType.lab,
+    "ginasio": models.RoomType.gym,
+    "artes": models.RoomType.art,
+}
+
 
 def _not_found() -> AppError:
     return AppError(kind="not_found", code="resource_not_found", detail="Room type not found")
@@ -72,6 +79,47 @@ async def _load_active(
     if room_type is None:
         raise _not_found()
     return room_type
+
+
+def legacy_room_type(room_type: models.SchoolRoomType | None) -> models.RoomType:
+    """Ponte para o enum antigo enquanto o motor ainda o usa.
+
+    ponytail: sai no S4, quando o enum e as colunas antigas desaparecerem.
+    O tipo Normal mapeia em ``normal``, os tipos iniciais pelo nome dobrado; um
+    tipo novo ou renomeado cai no ``lab``, o teto conhecido desta ponte.
+    """
+    if room_type is None:
+        return models.RoomType.normal
+    if room_type.is_normal:
+        return models.RoomType.normal
+    return LEGACY_TYPES_BY_NAME.get(fold_text(room_type.name), models.RoomType.lab)
+
+
+async def resolve_active_room_type(
+    db: AsyncSession, organization_id: int, room_type_id: int | None
+) -> models.SchoolRoomType:
+    """Tipo de sala que uma sala ou disciplina tem de usar.
+
+    Sem identificador vale o tipo Normal da escola. Qualquer identificador
+    desconhecido, de outra escola ou arquivado tem a mesma resposta de não
+    encontrado da API dos tipos. A escola é bloqueada primeiro, pela mesma ordem
+    das escritas do catálogo, para que uma remoção em curso não deixe um objeto
+    ativo a apontar para um tipo arquivado.
+    """
+    await _lock_catalogue(db, organization_id)
+    if room_type_id is not None:
+        return await _load_active(db, organization_id, room_type_id)
+
+    normal = await db.scalar(
+        select(models.SchoolRoomType).where(
+            models.SchoolRoomType.organization_id == organization_id,
+            models.SchoolRoomType.is_normal.is_(True),
+            models.SchoolRoomType.is_archived.is_(False),
+        )
+    )
+    if normal is None:
+        raise _not_found()
+    return normal
 
 
 async def _find_by_folded_name(

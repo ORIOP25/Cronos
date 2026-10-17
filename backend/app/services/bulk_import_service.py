@@ -32,6 +32,7 @@ from app.services.bulk_import_policy import (
     ExistingClass,
     ExistingCourse,
     ExistingRoom,
+    ExistingRoomType,
     ExistingSubject,
     ExistingTeacher,
     ExistingTimeslot,
@@ -257,6 +258,14 @@ async def load_snapshot(
             )
         )
     ).all()
+    room_types = (
+        await db.scalars(
+            select(models.SchoolRoomType).where(
+                models.SchoolRoomType.organization_id == organization_id,
+                models.SchoolRoomType.is_archived.is_(False),
+            )
+        )
+    ).all()
     courses = (
         await db.scalars(
             select(models.Course).where(
@@ -314,6 +323,7 @@ async def load_snapshot(
     return ImportSnapshot(
         rooms=[ExistingRoom(item.id, item.name) for item in rooms],
         subjects=[ExistingSubject(item.id, item.name) for item in subjects],
+        room_types=[ExistingRoomType(item.id, item.name) for item in room_types],
         courses=[ExistingCourse(item.id, item.abbreviation, item.name) for item in courses],
         classes=[
             ExistingClass(item.id, item.course_id, abbreviation, item.name)
@@ -409,7 +419,9 @@ async def commit_import(
     for item in result.rooms:
         await room_service.create_room(
             db,
-            schemas.RoomCreate(name=item.name, type=item.room_type, capacity=item.capacity),
+            schemas.RoomCreate(
+                name=item.name, room_type_id=item.room_type_id, capacity=item.capacity
+            ),
             organization_id,
             changed_by_membership_id=current_admin.membership_id,
         )
@@ -420,7 +432,7 @@ async def commit_import(
             db,
             schemas.SubjectCreate(
                 name=item.name,
-                required_room_type=item.room_type,
+                room_type_id=item.room_type_id,
                 modules=[
                     schemas.ModuleCreate(
                         name=module.name,

@@ -168,8 +168,10 @@ subjects. A type kept only by archived objects is archived; creating the same na
 again restores it with the same identity and name. Editing the types records no
 scheduler change.
 
-Rooms and subjects still carry the legacy requirement enum in this first slice; the
-nullable `room_type_id` column holds the school type after the migration backfill.
+Rooms and subjects name a school type through `room_type_id`, and the reads return
+the type they use (see the [API Reference](../05_backend_api/API_REFERENCE.md)).
+The legacy requirement enum stays in the database only as a bridge for the scheduler
+engine until the final slice removes it; the migration backfilled both columns.
 
 ## Presença dos professores
 

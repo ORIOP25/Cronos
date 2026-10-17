@@ -5,7 +5,7 @@ from sqlalchemy import and_, delete, func
 from sqlalchemy import update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import joinedload, selectinload
 
 from app import models, schemas
 from app.core.exceptions import AppError
@@ -15,6 +15,12 @@ from app.scheduler.infrastructure.operations import (
 )
 from app.services import joint_lesson_service, resource_removal
 from app.services.scheduler_state_service import record_scheduler_change
+
+# A disciplina de uma ligação com os módulos e o tipo da escola, em bloco.
+_LINK_SUBJECT_OPTIONS = (
+    selectinload(models.ClassSubjectLink.subject).selectinload(models.Subject.modules),
+    selectinload(models.ClassSubjectLink.subject).joinedload(models.Subject.room_type),
+)
 
 
 def _class_demand_snapshot(item: models.Class) -> dict:
@@ -459,7 +465,7 @@ def _build_subject_with_progress(subject, selected_modules, progress_map: dict) 
     return {
         "id": subject.id,
         "name": subject.name,
-        "required_room_type": subject.required_room_type,
+        "room_type": subject.room_type,
         "modules": modules_data,
         "total_hours": round(subject_total, 1),
         "completed_hours": round(subject_completed, 1),
@@ -518,7 +524,7 @@ async def get_class_full_details(db: AsyncSession, class_id: int, organization_i
             models.ClassSubjectLink.class_id == class_id,
             models.ClassSubjectLink.grade_level == db_class.grade_level,
         )
-        .options(selectinload(models.ClassSubjectLink.subject).selectinload(models.Subject.modules))
+        .options(*_LINK_SUBJECT_OPTIONS)
     )
     links_result = await db.execute(links_query)
     links = links_result.scalars().all()
@@ -601,7 +607,7 @@ async def update_class_progress(
             models.ClassSubjectLink.class_id == class_id,
             models.ClassSubjectLink.grade_level == db_class.grade_level,
         )
-        .options(selectinload(models.ClassSubjectLink.subject).selectinload(models.Subject.modules))
+        .options(*_LINK_SUBJECT_OPTIONS)
     )
     links_result = await db.execute(links_query)
     links = links_result.scalars().all()
@@ -711,7 +717,7 @@ async def get_class_subjects(db: AsyncSession, class_id: int, organization_id: i
             models.ClassSubjectLink.grade_level == db_class.grade_level,
         )
         .options(
-            selectinload(models.ClassSubjectLink.subject),
+            selectinload(models.ClassSubjectLink.subject).joinedload(models.Subject.room_type),
             selectinload(models.ClassSubjectLink.teacher),
         )
     )
@@ -738,7 +744,7 @@ async def get_class_subjects(db: AsyncSession, class_id: int, organization_id: i
                 "id": link.id,
                 "subject_id": link.subject_id,
                 "subject_name": link.subject.name if link.subject else "",
-                "required_room_type": link.subject.required_room_type if link.subject else "normal",
+                "room_type": link.subject.room_type if link.subject else None,
                 "grade_level": link.grade_level,
                 "teacher_id": link.teacher_id,
                 "teacher_name": link.teacher.name if link.teacher else None,
@@ -1178,7 +1184,7 @@ async def get_available_subjects_for_class(db: AsyncSession, class_id: int, orga
     if existing_ids:
         subjects_query = (
             select(models.Subject)
-            .options(selectinload(models.Subject.modules))
+            .options(selectinload(models.Subject.modules), joinedload(models.Subject.room_type))
             .where(
                 models.Subject.organization_id == organization_id,
                 models.Subject.is_archived.is_(False),
@@ -1189,7 +1195,7 @@ async def get_available_subjects_for_class(db: AsyncSession, class_id: int, orga
     else:
         subjects_query = (
             select(models.Subject)
-            .options(selectinload(models.Subject.modules))
+            .options(selectinload(models.Subject.modules), joinedload(models.Subject.room_type))
             .where(
                 models.Subject.organization_id == organization_id,
                 models.Subject.is_archived.is_(False),
