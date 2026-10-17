@@ -323,7 +323,7 @@ export const useDeleteCourseClass = () => {
       return apiClient.delete(`/courses/${courseId}/classes/${classId}`)
     },
     onSuccess: (_data, variables) => {
-      void invalidateOrgQueries(queryClient, orgId, ['courses', 'classes'])
+      void invalidateOrgQueries(queryClient, orgId, ['courses', 'classes', 'rooms'])
       void invalidatePreparationQueries(queryClient, orgId)
       queryClient.removeQueries({ queryKey: orgQueryKey('classes', orgId, variables.classId) })
       queryClient.removeQueries({ queryKey: orgQueryKey('class-subjects', orgId, variables.classId) })

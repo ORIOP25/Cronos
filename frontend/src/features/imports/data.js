@@ -200,7 +200,7 @@ export function formatImportIssue(issue) {
 }
 
 const IMPORT_INVALIDATIONS = [
-  'members', 'teachers', 'eligible-teachers', 'rooms', 'subjects', 'courses',
+  'members', 'teachers', 'eligible-teachers', 'rooms', 'room-types', 'subjects', 'courses',
   'classes', 'class-subjects', 'available-subjects', 'class-availability',
   'teacher-availability', 'teacher-presence', 'substitute-recommendations',
   'substitute-diagnostics', 'occurrences', 'teacher-progress', 'my-availability',
