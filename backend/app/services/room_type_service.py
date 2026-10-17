@@ -22,13 +22,6 @@ DEFAULT_ROOM_TYPES: tuple[tuple[str, bool], ...] = (
     ("Artes", False),
 )
 
-# Nomes dos tipos iniciais no enum antigo, para os leitores do horário até ao S3.
-LEGACY_TYPES_BY_NAME: dict[str, models.RoomType] = {
-    "laboratorio": models.RoomType.lab,
-    "ginasio": models.RoomType.gym,
-    "artes": models.RoomType.art,
-}
-
 
 def _not_found() -> AppError:
     return AppError(kind="not_found", code="resource_not_found", detail="Room type not found")
@@ -79,20 +72,6 @@ async def _load_active(
     if room_type is None:
         raise _not_found()
     return room_type
-
-
-def legacy_room_type(room_type: models.SchoolRoomType | None) -> models.RoomType:
-    """Ponte para o enum antigo enquanto o motor ainda o usa.
-
-    ponytail: sai no S4, quando o enum e as colunas antigas desaparecerem.
-    O tipo Normal mapeia em ``normal``, os tipos iniciais pelo nome dobrado; um
-    tipo novo ou renomeado cai no ``lab``, o teto conhecido desta ponte.
-    """
-    if room_type is None:
-        return models.RoomType.normal
-    if room_type.is_normal:
-        return models.RoomType.normal
-    return LEGACY_TYPES_BY_NAME.get(fold_text(room_type.name), models.RoomType.lab)
 
 
 async def resolve_active_room_type(

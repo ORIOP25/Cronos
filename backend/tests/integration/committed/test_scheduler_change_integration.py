@@ -15,7 +15,7 @@ from app.services import (
     timeslot_service,
 )
 from app.services.scheduler_state_service import SchedulerStateService
-from tests._support.db_fixtures import create_teacher_profile
+from tests._support.db_fixtures import create_teacher_profile, get_school_room_type_id
 
 
 async def test_scheduler_shaping_writes_increment_but_policy_and_text_do_not(db_session):
@@ -114,8 +114,8 @@ async def test_scheduler_shaping_writes_increment_but_policy_and_text_do_not(db_
 
     subject = models.Subject(
         name="Math",
-        required_room_type=models.RoomType.normal,
         organization_id=organization.id,
+        room_type_id=await get_school_room_type_id(db_session, organization.id, "Normal"),
     )
     course = models.Course(
         name="Science",
@@ -243,7 +243,11 @@ async def test_module_selection_records_a_class_subject_assignment_update(db_ses
     version_before = state.scheduler_state_version
 
     course = models.Course(name="Curso", abbreviation="CUR", organization_id=organization.id)
-    subject = models.Subject(name="Disciplina", organization_id=organization.id)
+    subject = models.Subject(
+        name="Disciplina",
+        organization_id=organization.id,
+        room_type_id=await get_school_room_type_id(db_session, organization.id, "Normal"),
+    )
     db_session.add_all([course, subject])
     await db_session.flush()
     class_ = models.Class(
@@ -324,15 +328,14 @@ async def test_specific_room_requires_the_same_school_room_type_id(db_session):
     course = models.Course(name="Curso", abbreviation="CUR", organization_id=organization.id)
     subject = models.Subject(
         name="Química",
-        required_room_type=models.RoomType.lab,
         organization_id=organization.id,
+        room_type_id=await get_school_room_type_id(db_session, organization.id, "Normal"),
     )
     db_session.add_all((first_type, second_type, course, subject))
     await db_session.flush()
     subject.room_type_id = second_type.id
     room = models.Room(
         name="Química 1",
-        type=models.RoomType.lab,
         room_type_id=first_type.id,
         capacity=30,
         organization_id=organization.id,

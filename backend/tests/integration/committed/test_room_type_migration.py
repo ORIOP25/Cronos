@@ -1,9 +1,4 @@
-"""Focused contract for the additive part of the 0006_room_types migration.
-
-S1 only: the table, the initial types of every existing school and the enum
-backfill. Each test returns the schema to ``head`` in a ``finally`` block so a
-failure never leaves the shared test database on an intermediate revision.
-"""
+"""Contract for the additive and final 0006_room_types migration."""
 
 import pytest
 from sqlalchemy import inspect, text
@@ -99,6 +94,38 @@ def test_upgrade_backfills_room_and_subject_types_for_every_school(clean_databas
                 assert _room_type_by_object(connection, "subject", organization_id) == {
                     f"Disc {code}": name for code, name in ENUM_TO_NAME.items()
                 }
+
+        command.downgrade(config, PREVIOUS_REVISION)
+        with sync_test_engine.connect() as connection:
+            for organization_id in (first, second):
+                assert dict(
+                    connection.execute(
+                        text(
+                            "SELECT name, type::text FROM public.room "
+                            "WHERE organization_id = :organization_id"
+                        ),
+                        {"organization_id": organization_id},
+                    ).all()
+                ) == {f"Sala {code}": code for code in ENUM_TO_NAME}
+                assert dict(
+                    connection.execute(
+                        text(
+                            "SELECT name, required_room_type::text FROM public.subject "
+                            "WHERE organization_id = :organization_id"
+                        ),
+                        {"organization_id": organization_id},
+                    ).all()
+                ) == {f"Disc {code}": code for code in ENUM_TO_NAME}
+
+        command.upgrade(config, "head")
+        with sync_test_engine.connect() as connection:
+            for organization_id in (first, second):
+                assert _room_type_by_object(connection, "room", organization_id) == {
+                    f"Sala {code}": name for code, name in ENUM_TO_NAME.items()
+                }
+                assert _room_type_by_object(connection, "subject", organization_id) == {
+                    f"Disc {code}": name for code, name in ENUM_TO_NAME.items()
+                }
     finally:
         command.upgrade(config, "head")
 
@@ -123,7 +150,7 @@ def test_migration_creates_types_for_a_school_without_foundation(clean_database)
         command.upgrade(config, "head")
 
 
-def test_downgrade_removes_the_table_and_the_nullable_columns(clean_database):
+def test_downgrade_restores_the_legacy_columns(clean_database):
     config = _alembic_config()
     try:
         with sync_test_engine.connect() as connection:
@@ -143,6 +170,10 @@ def test_downgrade_removes_the_table_and_the_nullable_columns(clean_database):
                 column["name"] for column in inspector.get_columns("room")
             }
             assert "room_type_id" not in {
+                column["name"] for column in inspector.get_columns("subject")
+            }
+            assert "type" in {column["name"] for column in inspector.get_columns("room")}
+            assert "required_room_type" in {
                 column["name"] for column in inspector.get_columns("subject")
             }
     finally:
@@ -184,8 +215,10 @@ def test_room_type_matches_the_tenant_contract(clean_database):
 
         room_columns = {column["name"]: column for column in inspector.get_columns("room")}
         subject_columns = {column["name"]: column for column in inspector.get_columns("subject")}
-        assert room_columns["room_type_id"]["nullable"] is True
-        assert subject_columns["room_type_id"]["nullable"] is True
+        assert room_columns["room_type_id"]["nullable"] is False
+        assert subject_columns["room_type_id"]["nullable"] is False
+        assert "type" not in room_columns
+        assert "required_room_type" not in subject_columns
 
         rowsecurity = connection.execute(
             text(

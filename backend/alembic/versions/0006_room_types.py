@@ -1,9 +1,9 @@
-"""School-owned room types and the nullable room_type reference.
+"""School-owned room types and required room_type references.
 
-Additive part of the class home room work (S1): creates ``room_type``, seeds the
-four initial types of every existing school, and adds ``room.room_type_id`` and
-``subject.room_type_id`` backfilled from the legacy ``RoomType`` enum. The
-columns stay nullable and the enum remains in place until the final pass (S4).
+Creates ``room_type``, seeds the initial types of every school, backfills
+room and subject references from the legacy enum, then removes the enum-backed
+columns. Downgrade restores those columns for the four original types; custom
+room types cannot be represented by the legacy enum.
 
 Revision ID: 0006_room_types
 Revises: 0005_teacher_presence
@@ -117,8 +117,42 @@ def upgrade() -> None:
     _backfill("room", "type")
     _backfill("subject", "required_room_type")
 
+    op.alter_column("room", "room_type_id", nullable=False)
+    op.alter_column("subject", "room_type_id", nullable=False)
+    op.drop_column("room", "type")
+    op.drop_column("subject", "required_room_type")
+    op.execute("DROP TYPE public.roomtype")
+
 
 def downgrade() -> None:
+    op.execute("CREATE TYPE public.roomtype AS ENUM ('normal', 'lab', 'gym', 'art')")
+    op.execute("ALTER TYPE public.roomtype OWNER TO cronos_migrator")
+    enum_type = sa.Enum(name="roomtype", create_type=False)
+    op.add_column("room", sa.Column("type", enum_type, nullable=True))
+    op.add_column("subject", sa.Column("required_room_type", enum_type, nullable=True))
+    op.execute(
+        """UPDATE public.room AS r SET type = CASE rt.name
+            WHEN 'Normal' THEN 'normal'::public.roomtype
+            WHEN 'Laboratório' THEN 'lab'::public.roomtype
+            WHEN 'Ginásio' THEN 'gym'::public.roomtype
+            WHEN 'Artes' THEN 'art'::public.roomtype
+            ELSE NULL END
+        FROM public.room_type AS rt
+        WHERE rt.organization_id = r.organization_id AND rt.id = r.room_type_id"""
+    )
+    op.execute(
+        """UPDATE public.subject AS s SET required_room_type = CASE rt.name
+            WHEN 'Normal' THEN 'normal'::public.roomtype
+            WHEN 'Laboratório' THEN 'lab'::public.roomtype
+            WHEN 'Ginásio' THEN 'gym'::public.roomtype
+            WHEN 'Artes' THEN 'art'::public.roomtype
+            ELSE NULL END
+        FROM public.room_type AS rt
+        WHERE rt.organization_id = s.organization_id AND rt.id = s.room_type_id"""
+    )
+    op.alter_column("room", "type", nullable=False)
+    op.alter_column("subject", "required_room_type", nullable=False)
+
     op.drop_constraint("fk_subject_room_type_org", "subject", type_="foreignkey")
     op.drop_constraint("fk_room_room_type_org", "room", type_="foreignkey")
     op.drop_column("subject", "room_type_id")

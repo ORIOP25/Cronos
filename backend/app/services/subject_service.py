@@ -5,7 +5,7 @@ from sqlalchemy.orm import joinedload, selectinload
 from app import models, schemas
 from app.core.exceptions import AppError
 from app.services import resource_removal
-from app.services.room_type_service import legacy_room_type, resolve_active_room_type
+from app.services.room_type_service import resolve_active_room_type
 from app.services.scheduler_state_service import record_scheduler_change
 
 
@@ -107,7 +107,6 @@ async def create_subject(
     db_subject = models.Subject(
         **subject_data,
         room_type_id=room_type.id,
-        required_room_type=legacy_room_type(room_type),
         organization_id=organization_id,
     )
     db.add(db_subject)
@@ -272,7 +271,6 @@ async def update_subject(
     update_data = subject_in.model_dump(exclude_unset=True, exclude={"modules"})
     if room_type is not None:
         update_data["room_type_id"] = room_type.id
-        update_data["required_room_type"] = legacy_room_type(room_type)
     for field, value in update_data.items():
         setattr(subject, field, value)
 

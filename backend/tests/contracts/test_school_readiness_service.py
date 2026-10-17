@@ -12,6 +12,7 @@ from app.services.school_readiness_service import SchoolReadinessService
 from tests._support.db_fixtures import (
     create_org_and_user,
     create_teacher_profile,
+    get_school_room_type_id,
     select_all_subject_modules,
 )
 
@@ -88,6 +89,7 @@ async def test_readiness_evaluates_teachers_before_class_subject_links(db_sessio
     subject = models.Subject(
         organization_id=organization.id,
         name="Disciplina de Teste",
+        room_type_id=await get_school_room_type_id(db_session, organization.id, "Normal"),
     )
     db_session.add_all([course, subject])
     await db_session.flush()
@@ -176,6 +178,7 @@ async def test_readiness_teacher_step_uses_active_membership_capability_only(db_
     subject = models.Subject(
         organization_id=organization.id,
         name="Disciplina de Professores",
+        room_type_id=await get_school_room_type_id(db_session, organization.id, "Normal"),
     )
     db_session.add_all([course, subject])
     await db_session.flush()
@@ -241,6 +244,7 @@ async def test_readiness_teacher_step_uses_active_membership_capability_only(db_
     other_subject = models.Subject(
         organization_id=other_organization.id,
         name="Disciplina de Outra Organização",
+        room_type_id=await get_school_room_type_id(db_session, other_organization.id, "Normal"),
     )
     db_session.add_all([other_course, other_subject])
     await db_session.flush()
@@ -285,6 +289,7 @@ async def test_readiness_counts_scheduler_only_teacher_assignment(db_session):
     subject = models.Subject(
         organization_id=organization.id,
         name="Disciplina de Docência",
+        room_type_id=await get_school_room_type_id(db_session, organization.id, "Normal"),
     )
     db_session.add_all([course, subject])
     await db_session.flush()
@@ -380,12 +385,13 @@ async def test_readiness_mixed_and_fully_impossible_availability(db_session):
     subject = models.Subject(
         organization_id=organization.id,
         name="Disciplina Mista",
+        room_type_id=await get_school_room_type_id(db_session, organization.id, "Normal"),
     )
     room = models.Room(
         organization_id=organization.id,
         name="Sala 1",
         capacity=30,
-        type=models.RoomType.normal,
+        room_type_id=await get_school_room_type_id(db_session, organization.id, "Normal"),
     )
     school_year = models.SchedulerSchoolYear(
         organization_id=organization.id,
@@ -559,6 +565,7 @@ async def test_readiness_ignores_archived_class_and_subject(db_session):
     subject = models.Subject(
         organization_id=organization.id,
         name="Disciplina Arquivada",
+        room_type_id=await get_school_room_type_id(db_session, organization.id, "Normal"),
     )
     db_session.add_all([course, subject])
     await db_session.flush()
@@ -617,14 +624,12 @@ async def test_readiness_requires_an_active_compatible_room(db_session):
     subject = models.Subject(
         organization_id=organization.id,
         name="Disciplina Sala",
-        required_room_type=models.RoomType.lab,
         room_type_id=laboratory_type.id,
     )
     room = models.Room(
         organization_id=organization.id,
         name="Sala Compatível",
         capacity=30,
-        type=models.RoomType.lab,
         room_type_id=other_type.id,
     )
     db_session.add_all([course, subject, room])
@@ -719,6 +724,7 @@ async def test_readiness_requires_a_selected_module(db_session):
     subject = models.Subject(
         organization_id=organization.id,
         name="Disciplina Seleção",
+        room_type_id=await get_school_room_type_id(db_session, organization.id, "Normal"),
     )
     db_session.add_all([course, subject])
     await db_session.flush()
@@ -787,12 +793,16 @@ async def test_readiness_invalid_joint_member_blocks_the_group(db_session):
         clerk_org_id="readiness-joint-org",
     )
     course = models.Course(organization_id=organization.id, name="Curso J", abbreviation="CJ")
-    subject = models.Subject(organization_id=organization.id, name="Português")
+    subject = models.Subject(
+        organization_id=organization.id,
+        name="Português",
+        room_type_id=await get_school_room_type_id(db_session, organization.id, "Normal"),
+    )
     room = models.Room(
         organization_id=organization.id,
         name="Sala J",
         capacity=40,
-        type=models.RoomType.normal,
+        room_type_id=await get_school_room_type_id(db_session, organization.id, "Normal"),
     )
     db_session.add_all([course, subject, room])
     await db_session.flush()

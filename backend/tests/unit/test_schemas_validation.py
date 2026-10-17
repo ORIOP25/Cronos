@@ -9,7 +9,6 @@ Valida regras de negócio em Pydantic schemas.
 import pytest
 from pydantic import TypeAdapter, ValidationError
 
-from app.models import RoomType
 from app.schemas import (
     MAX_WEEKLY_TIMETABLE_SLOTS,
     AvailabilitySelfCreate,
@@ -143,7 +142,7 @@ class TestSubjectCreateValidation:
         """✅ Subject com módulos sequenciais [0, 1, 2] deve ser aceite"""
         subject_data = {
             "name": "Programação",
-            "required_room_type": RoomType.lab,
+            "room_type_id": 2,
             "modules": [
                 {"name": "Python Básico", "code": "P001", "hours_total": 40, "order": 0},
                 {"name": "Python Avançado", "code": "P002", "hours_total": 40, "order": 1},
@@ -161,7 +160,7 @@ class TestSubjectCreateValidation:
         """✅ Subject sem módulos deve ser aceite (criados depois)"""
         subject_data = {
             "name": "Matemática",
-            "required_room_type": RoomType.normal,
+            "room_type_id": 1,
         }
 
         subject = SubjectCreate(**subject_data)
@@ -173,7 +172,7 @@ class TestSubjectCreateValidation:
         """❌ Subject com ordem [0, 2, 4] deve ser rejeitado"""
         subject_data = {
             "name": "Programação",
-            "required_room_type": RoomType.lab,
+            "room_type_id": 2,
             "modules": [
                 {"name": "Python Básico", "code": "P001", "hours_total": 40, "order": 0},
                 {"name": "Python Avançado", "code": "P002", "hours_total": 40, "order": 2},
@@ -194,7 +193,7 @@ class TestSubjectCreateValidation:
         """✅ Subject com módulos fora de ordem [1, 0, 2] é aceite pois o schema reordena"""
         subject_data = {
             "name": "Programação",
-            "required_room_type": RoomType.lab,
+            "room_type_id": 2,
             "modules": [
                 {"name": "Python Avançado", "code": "P002", "hours_total": 40, "order": 1},
                 {"name": "Python Básico", "code": "P001", "hours_total": 40, "order": 0},
@@ -211,7 +210,7 @@ class TestSubjectCreateValidation:
         """❌ Subject com ordem duplicada [0, 0, 1] deve ser rejeitado"""
         subject_data = {
             "name": "Programação",
-            "required_room_type": RoomType.lab,
+            "room_type_id": 2,
             "modules": [
                 {"name": "Python Básico A", "code": "P001", "hours_total": 40, "order": 0},
                 {"name": "Python Básico B", "code": "P002", "hours_total": 40, "order": 0},
@@ -229,7 +228,7 @@ class TestSubjectCreateValidation:
         """❌ Ordem começando em 1 em vez de 0 deve ser rejeitada"""
         subject_data = {
             "name": "Programação",
-            "required_room_type": RoomType.lab,
+            "room_type_id": 2,
             "modules": [
                 {"name": "Python Básico", "code": "P001", "hours_total": 40, "order": 1},
                 {"name": "Python Avançado", "code": "P002", "hours_total": 40, "order": 2},
@@ -247,7 +246,7 @@ class TestSubjectCreateValidation:
         """✅ Subject com um módulo (order=0) deve ser aceite"""
         subject_data = {
             "name": "Iniciação",
-            "required_room_type": RoomType.normal,
+            "room_type_id": 1,
             "modules": [
                 {"name": "Aula 1", "code": "A001", "hours_total": 20, "order": 0},
             ],
@@ -262,7 +261,7 @@ class TestSubjectCreateValidation:
         """❌ Ordem DEVE começar em 0, não em 5 ou 32"""
         subject_data = {
             "name": "Programação",
-            "required_room_type": RoomType.lab,
+            "room_type_id": 2,
             "modules": [
                 {"name": "Python Básico", "code": "P001", "hours_total": 40, "order": 5},
                 {"name": "Python Avançado", "code": "P002", "hours_total": 40, "order": 6},
@@ -330,14 +329,15 @@ class TestClassInCourseValidation:
 
 class TestRoomValidation:
     def test_room_create_accepts_positive_capacity(self):
-        room = RoomCreate(name="Lab 1", type=RoomType.lab, capacity=1)
+        room = RoomCreate(name="Lab 1", room_type_id=2, capacity=1)
 
+        assert room.room_type_id == 2
         assert room.capacity == 1
 
     @pytest.mark.parametrize("capacity", [0, -1])
     def test_room_create_rejects_non_positive_capacity(self, capacity):
         with pytest.raises(ValidationError):
-            RoomCreate(name="Lab 1", type=RoomType.lab, capacity=capacity)
+            RoomCreate(name="Lab 1", room_type_id=2, capacity=capacity)
 
     @pytest.mark.parametrize("capacity", [0, -5])
     def test_room_update_rejects_non_positive_capacity(self, capacity):

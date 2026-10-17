@@ -21,7 +21,11 @@ from app.scheduler.infrastructure.models import (
 from app.scheduler.infrastructure.proposals import approve_proposal
 from app.scheduler.infrastructure.queries import current_proposal
 from app.services import grid_change_service, grid_version_service, settings_service
-from tests._support.db_fixtures import create_teacher_profile, select_all_subject_modules
+from tests._support.db_fixtures import (
+    create_teacher_profile,
+    get_school_room_type_id,
+    select_all_subject_modules,
+)
 from tests._support.scheduler_v1 import V1Seed, add_version, seed_generatable_school
 
 API = app_settings.API_V1_STR
@@ -412,8 +416,17 @@ async def _seed_v1_configuration_for_admin_org(db_session) -> models.Organizatio
         )
     )
     course = models.Course(name="Course", abbreviation="C", organization_id=organization.id)
-    subject = models.Subject(name="Subject", organization_id=organization.id)
-    room = models.Room(name="Sala", capacity=25, organization_id=organization.id)
+    subject = models.Subject(
+        name="Subject",
+        organization_id=organization.id,
+        room_type_id=await get_school_room_type_id(db_session, organization.id, "Normal"),
+    )
+    room = models.Room(
+        name="Sala",
+        capacity=25,
+        organization_id=organization.id,
+        room_type_id=await get_school_room_type_id(db_session, organization.id, "Normal"),
+    )
     db_session.add_all((course, subject, room))
     await db_session.flush()
     class_ = models.Class(

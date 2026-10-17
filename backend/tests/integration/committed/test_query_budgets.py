@@ -580,13 +580,11 @@ async def test_populated_dashboard_skips_fingerprints_with_bounded_queries(db_se
     subject = models.Subject(
         organization_id=organization.id,
         name="Disciplina Populada",
-        required_room_type=models.RoomType.normal,
         room_type_id=normal_room_type_id,
     )
     room = models.Room(
         organization_id=organization.id,
         name="Sala Populada",
-        type=models.RoomType.normal,
         capacity=30,
         room_type_id=normal_room_type_id,
     )

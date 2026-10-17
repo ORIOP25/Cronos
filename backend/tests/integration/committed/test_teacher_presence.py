@@ -19,6 +19,7 @@ from tests._support.db_fixtures import (
     _alembic_config,
     create_teacher_profile,
     create_teacher_user,
+    get_school_room_type_id,
     sync_test_engine,
 )
 
@@ -79,7 +80,7 @@ async def _assign_teacher(db_session, organization_id: int, teacher: models.Teac
     subject = models.Subject(
         organization_id=organization_id,
         name="Presence Subject",
-        required_room_type=models.RoomType.normal,
+        room_type_id=await get_school_room_type_id(db_session, organization_id, "Normal"),
     )
     db_session.add_all([course, subject])
     await db_session.flush()

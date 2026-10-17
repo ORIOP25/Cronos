@@ -455,6 +455,20 @@ async def create_org_and_user(
     return org, user
 
 
+async def get_school_room_type_id(db_session: AsyncSession, organization_id: int, name: str) -> int:
+    """Return a seeded room-type ID for a direct model fixture."""
+    room_type_id = await db_session.scalar(
+        select(models.SchoolRoomType.id).where(
+            models.SchoolRoomType.organization_id == organization_id,
+            models.SchoolRoomType.name == name,
+            models.SchoolRoomType.is_archived.is_(False),
+        )
+    )
+    if room_type_id is None:
+        raise AssertionError(f"Missing school room type {name!r} in organization {organization_id}")
+    return room_type_id
+
+
 async def accept_current_legal_documents(
     db_session: AsyncSession,
     *,

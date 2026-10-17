@@ -162,9 +162,7 @@ async def test_scheduler_change_to_room_type_stales_pending_proposal(db_session,
         schemas.RoomTypeCreate(name="Oficina"),
         seed.organization.id,
     )
-    seed.room.type = models.RoomType.lab
     seed.room.room_type_id = laboratory_type.id
-    seed.subject.required_room_type = models.RoomType.lab
     seed.subject.room_type_id = laboratory_type.id
     await db_session.commit()
     await _queue_generation(db_session, monkeypatch, seed, key="room-type-pending")

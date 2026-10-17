@@ -44,13 +44,6 @@ CASCADE_ALL_DELETE = "all, delete-orphan"
 ON_DELETE_SET_NULL = "SET NULL"
 
 
-class RoomType(enum.StrEnum):
-    normal = "normal"
-    lab = "lab"
-    gym = "gym"
-    art = "art"
-
-
 class CalendarEventType(enum.StrEnum):
     national_holiday = "national_holiday"
     school_break = "school_break"
@@ -1115,19 +1108,13 @@ class Room(Base):
     # Adicionamos a capacidade (Lotação)
     capacity: Mapped[int] = mapped_column(Integer, default=30, nullable=False)
 
-    # Usamos o Enum que definimos em cima
-    type: Mapped[RoomType] = mapped_column(
-        SAEnum(RoomType), nullable=False, default=RoomType.normal
-    )
-
     # Removida da gestão atual mas preservada para referências históricas.
     is_archived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
-    # Tipo de sala da escola (S1 nulo; obrigatório no fim do PR 1).
-    room_type_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    room_type_id: Mapped[int] = mapped_column(Integer, nullable=False)
 
     # Só de leitura; quem escreve é room_type_id e os leitores carregam-no em bloco.
-    room_type: Mapped[SchoolRoomType | None] = relationship(viewonly=True)
+    room_type: Mapped[SchoolRoomType] = relationship(viewonly=True)
 
     # Chave Estrangeira: Liga a Sala à sua Organization
     organization_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID))
@@ -1144,7 +1131,7 @@ class Room(Base):
     )
 
     def __repr__(self) -> str:
-        return f"<Room(id={self.id}, name='{self.name}', type='{self.type.value}')>"
+        return f"<Room(id={self.id}, name='{self.name}', room_type_id={self.room_type_id})>"
 
 
 # 8. Modelo "Subject" (Disciplina)
@@ -1154,20 +1141,13 @@ class Subject(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
 
-    # Define qual o tipo de sala ideal para esta disciplina.
-    # Default: Sala Normal.
-    required_room_type: Mapped[RoomType] = mapped_column(
-        SAEnum(RoomType), default=RoomType.normal, nullable=False
-    )
-
     # Removida da gestão atual mas preservada para referências históricas.
     is_archived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
-    # Tipo de sala da escola (S1 nulo; obrigatório no fim do PR 1).
-    room_type_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    room_type_id: Mapped[int] = mapped_column(Integer, nullable=False)
 
     # Só de leitura; quem escreve é room_type_id e os leitores carregam-no em bloco.
-    room_type: Mapped[SchoolRoomType | None] = relationship(viewonly=True)
+    room_type: Mapped[SchoolRoomType] = relationship(viewonly=True)
 
     modules: Mapped[list["Module"]] = relationship(
         back_populates="subject", cascade=CASCADE_ALL_DELETE

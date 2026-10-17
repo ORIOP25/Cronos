@@ -102,6 +102,10 @@ def test_principal_resolution_and_cross_tenant_write_denial(clean_database):
 
         account_a, org_a, membership_a = founder("a")
         _, org_b, _ = founder("b")
+        room_type_b = connection.execute(
+            text("SELECT id FROM room_type WHERE organization_id = :organization_id AND is_normal"),
+            {"organization_id": org_b},
+        ).scalar_one()
         connection.commit()
 
         principal = connection.execute(
@@ -121,10 +125,10 @@ def test_principal_resolution_and_cross_tenant_write_denial(clean_database):
         with pytest.raises(DBAPIError):
             connection.execute(
                 text(
-                    "INSERT INTO room(name, capacity, type, organization_id) "
-                    "VALUES ('cross tenant', 10, 'normal', :org)"
+                    "INSERT INTO room(name, capacity, room_type_id, organization_id) "
+                    "VALUES ('cross tenant', 10, :room_type_id, :org)"
                 ),
-                {"org": org_b},
+                {"room_type_id": room_type_b, "org": org_b},
             )
         connection.rollback()
 

@@ -19,6 +19,7 @@ from tests._support.db_fixtures import (
     TestingSessionLocal,
     create_completed_organization,
     create_teacher_profile,
+    get_school_room_type_id,
 )
 
 pytestmark = pytest.mark.postgresql
@@ -36,7 +37,11 @@ async def test_w02_execution_replay_and_invalid_adjustment_preserve_revisions(db
         )
     )
     course = models.Course(name="Course", abbreviation="C", organization_id=organization.id)
-    subject = models.Subject(name="Subject", organization_id=organization.id)
+    subject = models.Subject(
+        name="Subject",
+        organization_id=organization.id,
+        room_type_id=await get_school_room_type_id(db_session, organization.id, "Normal"),
+    )
     year = models.SchedulerSchoolYear(
         organization_id=organization.id,
         label="2026/27",
@@ -395,7 +400,11 @@ async def _seed_module_assignment(db_session, clerk_user_id: str, clerk_org_id: 
         )
     )
     course = models.Course(name="Course", abbreviation="C", organization_id=organization.id)
-    subject = models.Subject(name="Subject", organization_id=organization.id)
+    subject = models.Subject(
+        name="Subject",
+        organization_id=organization.id,
+        room_type_id=await get_school_room_type_id(db_session, organization.id, "Normal"),
+    )
     year = models.SchedulerSchoolYear(
         organization_id=organization.id,
         label="2026/27",

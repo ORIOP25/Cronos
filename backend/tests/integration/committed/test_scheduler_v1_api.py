@@ -219,7 +219,7 @@ async def test_generate_rejects_incompatible_room_without_dispatching(
             "class_name": "A",
             "subject_id": seed.subject.id,
             "subject_name": "Subject",
-            "required_room_type": "normal",
+            "required_room_type_name": "Normal",
             "required_capacity": 20,
             "max_available_capacity": 10,
             "reason": "INSUFFICIENT_CAPACITY",

@@ -57,7 +57,7 @@ State-version events detect changes that can invalidate a published schedule.
 - Lunch start and end must appear together.
 - Lunch end must follow lunch start.
 - Lunch minimum duration cannot exceed the configured window.
-- The requirement of a room or subject still uses the legacy `normal`, `lab`, `gym`, or `art` enum until the room-type slices migrate those readers.
+- Rooms and subjects reference a required room type owned by the same school; validators and scheduler rules compare the canonical room-type ID.
 - Each school owns its room types in `room_type`; foundation completion creates the initial ones defined by `DEFAULT_ROOM_TYPES` in `backend/app/services/room_type_service.py`.
 - Exactly one active Normal type exists per school and it can neither be renamed nor removed.
 - A room type name is unique per school ignoring case and accents.
@@ -168,10 +168,7 @@ subjects. A type kept only by archived objects is archived; creating the same na
 again restores it with the same identity and name. Editing the types records no
 scheduler change.
 
-Rooms and subjects name a school type through `room_type_id`, and the reads return
-the type they use (see the [API Reference](../05_backend_api/API_REFERENCE.md)).
-The legacy requirement enum stays in the database only as a bridge for the scheduler
-engine until the final slice removes it; the migration backfilled both columns.
+Rooms and subjects require a school-owned `room_type_id`; the legacy enum columns have been removed. API reads return the type referenced by that ID (see the [API Reference](../05_backend_api/API_REFERENCE.md)).
 
 ## Presença dos professores
 

@@ -10,6 +10,7 @@ from sqlalchemy.exc import DBAPIError, IntegrityError
 
 from app import models
 from app.config import settings
+from tests._support.db_fixtures import get_school_room_type_id
 
 pytestmark = pytest.mark.postgresql
 
@@ -118,8 +119,8 @@ async def _seed_class(
     if with_link:
         subject = models.Subject(
             name=f"Disciplina {name}",
-            required_room_type=models.RoomType.normal,
             organization_id=organization_id,
+            room_type_id=await get_school_room_type_id(db_session, organization_id, "Normal"),
         )
         db_session.add(subject)
         await db_session.flush()

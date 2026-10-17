@@ -25,7 +25,11 @@ from app.scheduler.infrastructure.models import (
     CurricularRequirement,
 )
 from app.services import class_service
-from tests._support.db_fixtures import TestingSessionLocal, create_teacher_profile
+from tests._support.db_fixtures import (
+    TestingSessionLocal,
+    create_teacher_profile,
+    get_school_room_type_id,
+)
 
 
 class TestClassSubjectLink:
@@ -55,7 +59,11 @@ class TestClassSubjectLink:
         db_session.add(cls)
         await db_session.flush()
 
-        subject = models.Subject(name="Matemática", organization_id=org.id)
+        subject = models.Subject(
+            name="Matemática",
+            organization_id=org.id,
+            room_type_id=await get_school_room_type_id(db_session, org.id, "Normal"),
+        )
         db_session.add(subject)
         await db_session.flush()
 

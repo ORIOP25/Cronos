@@ -10,7 +10,7 @@ from app.services.scheduler_fingerprint_service import (
     SchedulerFingerprintError,
     SchedulerFingerprintService,
 )
-from tests._support.db_fixtures import create_teacher_profile
+from tests._support.db_fixtures import create_teacher_profile, get_school_room_type_id
 
 
 def test_canonical_hash_is_stable_across_mapping_and_set_order():
@@ -56,7 +56,6 @@ async def test_generation_input_fingerprint_changes_only_for_canonical_inputs(db
     room = models.Room(
         organization_id=organization.id,
         name="Original name",
-        type=models.RoomType.lab,
         capacity=20,
         room_type_id=laboratory_type.id,
     )
@@ -419,7 +418,6 @@ async def test_class_subject_requirements_include_scheduler_inputs_and_ignore_ot
     subject = models.Subject(
         organization_id=organization.id,
         name="Canonical Subject",
-        required_room_type=models.RoomType.lab,
         room_type_id=laboratory_type.id,
     )
     teacher = await create_teacher_profile(
@@ -635,7 +633,7 @@ async def test_generation_input_snapshot_tracks_the_class_subject_module_selecti
     subject = models.Subject(
         organization_id=organization.id,
         name="Selection Subject",
-        required_room_type=models.RoomType.normal,
+        room_type_id=await get_school_room_type_id(db_session, organization.id, "Normal"),
     )
     db_session.add_all([school_year, course, subject])
     await db_session.flush()
@@ -747,7 +745,7 @@ async def test_fingerprint_adds_joint_groups_only_when_present(db_session):
     subject = models.Subject(
         organization_id=organization.id,
         name="Português",
-        required_room_type=models.RoomType.normal,
+        room_type_id=await get_school_room_type_id(db_session, organization.id, "Normal"),
     )
     db_session.add_all([school_year, course, subject])
     await db_session.flush()

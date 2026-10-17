@@ -1199,9 +1199,7 @@ async def test_substitution_room_compatibility_uses_school_type_ids(db_session):
     )
     db_session.add_all((room_type_a, room_type_b))
     await db_session.flush()
-    seed.room.type = models.RoomType.lab
     seed.room.room_type_id = room_type_a.id
-    subject.required_room_type = models.RoomType.lab
     subject.room_type_id = room_type_b.id
     await db_session.commit()
 

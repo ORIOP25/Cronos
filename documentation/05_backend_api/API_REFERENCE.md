@@ -246,9 +246,9 @@ Prevalidation reports `CLASS_SUBJECT_WITHOUT_MODULES` when an active class subje
 when every visible block of an eligible class is marked Impossível.
 
 For `NO_ELIGIBLE_ROOM` blockers, the issue context exposes
-`required_room_type_name` as the school’s room-type label. Compatibility is
-checked against the room-type catalogue entry, so custom room types remain distinct
-even when they share the same legacy category during migration.
+  `required_room_type_name` as the school’s room-type label. Compatibility is
+  checked against the room-type catalogue ID, so custom room types remain distinct
+  even when their labels are similar.
 
 `PUT /foundation/draft` accepts `expected_version`, `current_step` from 1 to 10, and a strict Foundation data object.
 The response returns the new version.

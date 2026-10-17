@@ -82,8 +82,8 @@ async def test_relevant_change_increments_once_and_records_event(db_session):
         entity_type="ROOM",
         entity_id=12,
         operation=models.SchedulerStateChangeOperation.UPDATE,
-        before={"capacity": 20, "type": models.RoomType.normal},
-        after={"type": models.RoomType.lab, "capacity": 20},
+        before={"capacity": 20, "room_type_id": 1},
+        after={"room_type_id": 2, "capacity": 20},
         changed_by_membership_id=membership.id,
     )
 

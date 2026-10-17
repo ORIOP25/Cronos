@@ -14,7 +14,8 @@ from app.scheduler.infrastructure.models import (
     SchedulerLessonLogV1,
     SchedulerLessonSliceV1,
 )
-from tests._support.db_fixtures import accept_current_legal_documents
+from app.services.room_type_service import ensure_initial_room_types
+from tests._support.db_fixtures import accept_current_legal_documents, get_school_room_type_id
 from tests._support.scheduler_v1 import add_lesson, add_version, lesson_interval
 
 pytestmark = pytest.mark.postgresql
@@ -56,6 +57,7 @@ async def _prepare_context(db_session):
     )
     db_session.add(org)
     await db_session.flush()
+    await ensure_initial_room_types(db_session, org.id)
     user = models.User(
         name="Flow API Admin",
         email="flow_api_admin@test.com",
@@ -95,13 +97,13 @@ async def _prepare_context(db_session):
     subject = models.Subject(
         organization_id=org.id,
         name="Subject",
-        required_room_type=models.RoomType.normal,
+        room_type_id=await get_school_room_type_id(db_session, org.id, "Normal"),
     )
     room = models.Room(
         organization_id=org.id,
         name="Room",
-        type=models.RoomType.normal,
         capacity=30,
+        room_type_id=await get_school_room_type_id(db_session, org.id, "Normal"),
     )
     slot = models.Timeslot(
         organization_id=org.id,

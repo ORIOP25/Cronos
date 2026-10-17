@@ -13,7 +13,11 @@ from app import models
 from app.config import settings
 from app.services.scheduler_fingerprint_service import SchedulerFingerprintService
 from app.services.scheduler_state_service import SchedulerStateService
-from tests._support.db_fixtures import create_org_and_user, create_teacher_profile
+from tests._support.db_fixtures import (
+    create_org_and_user,
+    create_teacher_profile,
+    get_school_room_type_id,
+)
 
 API = settings.API_V1_STR
 
@@ -150,7 +154,10 @@ async def test_bulk_import_reuses_archived_names_without_changing_history(
     )
     if resource == "subjects":
         archived = models.Subject(
-            organization_id=1, name=row["Nome da disciplina"], is_archived=True
+            organization_id=1,
+            name=row["Nome da disciplina"],
+            is_archived=True,
+            room_type_id=await get_school_room_type_id(db_session, 1, "Normal"),
         )
     else:
         archived = models.Course(
@@ -197,8 +204,17 @@ async def test_resource_update_reuses_archived_names(
     async_client: AsyncClient, db_session: AsyncSession, clerk_admin_headers: dict, resource: str
 ):
     if resource == "subjects":
-        archived = models.Subject(organization_id=1, name="Nome Livre", is_archived=True)
-        active = models.Subject(organization_id=1, name="Nome Atual")
+        archived = models.Subject(
+            organization_id=1,
+            name="Nome Livre",
+            is_archived=True,
+            room_type_id=await get_school_room_type_id(db_session, 1, "Normal"),
+        )
+        active = models.Subject(
+            organization_id=1,
+            name="Nome Atual",
+            room_type_id=await get_school_room_type_id(db_session, 1, "Normal"),
+        )
         payload = {"name": archived.name}
     else:
         archived = models.Course(
@@ -1245,7 +1261,9 @@ async def test_bulk_import_commit_records_bulk_import_and_changes_the_fingerprin
     teacher_id = teacher.id
     monday_first_id = _first_block(blocks, hours, 0)["id"]
     subject = models.Subject(
-        organization_id=1, name="Programação", required_room_type=models.RoomType.normal
+        organization_id=1,
+        name="Programação",
+        room_type_id=await get_school_room_type_id(db_session, 1, "Normal"),
     )
     course = models.Course(organization_id=1, name="Curso", abbreviation="TGEI")
     db_session.add_all([subject, course])

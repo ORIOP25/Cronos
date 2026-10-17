@@ -7,7 +7,7 @@ import pytest
 from app import models, schemas
 from app.core.exceptions import AppError
 from app.services import class_service
-from tests._support.db_fixtures import create_org_and_user
+from tests._support.db_fixtures import create_org_and_user, get_school_room_type_id
 
 pytestmark = pytest.mark.postgresql
 
@@ -19,7 +19,11 @@ async def _scenario(db_session, *, suffix: str, module_count: int = 2):
         clerk_org_id=f"selection-{suffix}-org",
     )
     course = models.Course(organization_id=org.id, name="Curso", abbreviation=suffix[:9].upper())
-    subject = models.Subject(organization_id=org.id, name="Disciplina")
+    subject = models.Subject(
+        organization_id=org.id,
+        name="Disciplina",
+        room_type_id=await get_school_room_type_id(db_session, org.id, "Normal"),
+    )
     db_session.add_all([course, subject])
     await db_session.flush()
     school_class = models.Class(
@@ -100,7 +104,11 @@ async def test_update_class_subject_rejects_duplicates_and_foreign_modules(db_se
         )
     assert duplicate.value.code == "bad_request"
 
-    other_subject = models.Subject(organization_id=org.id, name="Outra")
+    other_subject = models.Subject(
+        organization_id=org.id,
+        name="Outra",
+        room_type_id=await get_school_room_type_id(db_session, org.id, "Normal"),
+    )
     db_session.add(other_subject)
     await db_session.flush()
     foreign_module = models.Module(
@@ -128,7 +136,11 @@ async def test_update_class_subject_rejects_duplicates_and_foreign_modules(db_se
         clerk_user_id="selection-foreign-user",
         clerk_org_id="selection-foreign-org",
     )
-    foreign_org_subject = models.Subject(organization_id=other_org.id, name="Externa")
+    foreign_org_subject = models.Subject(
+        organization_id=other_org.id,
+        name="Externa",
+        room_type_id=await get_school_room_type_id(db_session, other_org.id, "Normal"),
+    )
     db_session.add(foreign_org_subject)
     await db_session.flush()
     foreign_org_module = models.Module(

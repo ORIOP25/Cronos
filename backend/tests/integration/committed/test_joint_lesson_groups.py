@@ -14,9 +14,11 @@ from app.scheduler.infrastructure.models import (
     CurricularExecutionCredit,
     CurricularRequirement,
 )
+from app.services.room_type_service import ensure_initial_room_types
 from tests._support.db_fixtures import (
     MOCK_ORG_ID,
     create_teacher_profile,
+    get_school_room_type_id,
 )
 
 API = settings.API_V1_STR
@@ -26,12 +28,13 @@ async def _seed_catalog(db_session, *, classes: int = 2, modules: int = 3):
     organization = await db_session.scalar(
         select(models.Organization).where(models.Organization.clerk_org_id == MOCK_ORG_ID)
     )
+    await ensure_initial_room_types(db_session, organization.id)
     course = models.Course(
         name="Curso", abbreviation="CRS", organization_id=organization.id, is_archived=False
     )
     subject = models.Subject(
         name="Português",
-        required_room_type=models.RoomType.normal,
+        room_type_id=await get_school_room_type_id(db_session, organization.id, "Normal"),
         organization_id=organization.id,
         is_archived=False,
     )
@@ -190,9 +193,21 @@ async def _seed_skewed_catalog(db_session):
     course = models.Course(
         name="Curso", abbreviation="CRS", organization_id=organization.id, is_archived=False
     )
-    subject = models.Subject(name="Português", organization_id=organization.id)
-    other_subject = models.Subject(name="Matemática", organization_id=organization.id)
-    third_subject = models.Subject(name="Inglês", organization_id=organization.id)
+    subject = models.Subject(
+        name="Português",
+        organization_id=organization.id,
+        room_type_id=await get_school_room_type_id(db_session, organization.id, "Normal"),
+    )
+    other_subject = models.Subject(
+        name="Matemática",
+        organization_id=organization.id,
+        room_type_id=await get_school_room_type_id(db_session, organization.id, "Normal"),
+    )
+    third_subject = models.Subject(
+        name="Inglês",
+        organization_id=organization.id,
+        room_type_id=await get_school_room_type_id(db_session, organization.id, "Normal"),
+    )
     db_session.add_all([course, subject, other_subject, third_subject])
     await db_session.flush()
     module = models.Module(
@@ -494,9 +509,10 @@ async def test_group_from_another_organization_is_not_found(
     )
     db_session.add(other_org)
     await db_session.flush()
+    await ensure_initial_room_types(db_session, other_org.id)
     other_subject = models.Subject(
         name="Português",
-        required_room_type=models.RoomType.normal,
+        room_type_id=await get_school_room_type_id(db_session, other_org.id, "Normal"),
         organization_id=other_org.id,
         is_archived=False,
     )
@@ -800,7 +816,11 @@ async def test_candidates_include_source_from_another_org_is_not_found(
     )
     db_session.add(other_org)
     await db_session.flush()
-    other_subject = models.Subject(name="Português", organization_id=other_org.id)
+    other_subject = models.Subject(
+        name="Português",
+        organization_id=other_org.id,
+        room_type_id=await get_school_room_type_id(db_session, other_org.id, "Normal"),
+    )
     other_course = models.Course(
         name="Outro curso", abbreviation="OC", organization_id=other_org.id
     )

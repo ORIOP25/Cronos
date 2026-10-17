@@ -10,7 +10,11 @@ from httpx import AsyncClient
 from sqlalchemy import func, select
 
 from app import models
-from tests._support.db_fixtures import create_org_and_user, create_teacher_profile
+from tests._support.db_fixtures import (
+    create_org_and_user,
+    create_teacher_profile,
+    get_school_room_type_id,
+)
 
 
 def _csv_payload(filename: str, content: str) -> dict[str, str]:
@@ -128,7 +132,12 @@ class TestTenantIsolation:
 
         sub_resp = await async_client.post(
             f"{API}/subjects/",
-            json={"name": "Física B", "required_room_type": "lab"},
+            json={
+                "name": "Física B",
+                "room_type_id": await get_school_room_type_id(
+                    db_session, org_b["organization_id"], "Laboratório"
+                ),
+            },
             headers=org_b["headers"],
         )
         sub_id = sub_resp.json()["id"]
