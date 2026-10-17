@@ -62,6 +62,7 @@ The 48-class correctness test `tests/unit/test_scheduler_typology_v1.py::test_fo
 It uses the production 900-second safety budget and stops at the first complete candidate.
 It validates curricular coverage and completion dates. Short optimization deadlines must not make correctness depend on host load.
 It carries the `slow_solver` marker. `fast` skips it, and the `e2e-runtime` CI job runs it by node id.
+The pilot-school case `test_the_availability_fixture_completes_forty_eight_classes_before_the_preferred_end` follows the same rule. It proves that `construct_schedule` completes the 48-class [availability priority](../03_scheduler_engine/AVAILABILITY_PRIORITY_TECH_SPEC.md) fixture before the preferred end date.
 Run it locally only to diagnose a failure of that job: `node scripts/test.mjs fast --scope backend -- -m slow_solver`.
 During a TDD cycle, select the files you changed with `node scripts/test.mjs fast --scope backend -- -k <expression>`.
 
@@ -91,7 +92,7 @@ This prevents organization activation during a sign-in navigation while the brow
 | `backend` | 45 min | PostgreSQL 18 and Redis 8.2 services, pinned by digest. Provisions roles and xdist databases. Installs locked dependencies; runs dependency audits, Ruff, Alembic upgrade/check/reset, trigger and integrity audits, and the backend critical gate. Fork pull requests also build the runtime image and verify the privacy task. |
 | `frontend` | 20 min | `npm ci --ignore-scripts`, `npm run verify:critical:fast`, then `node scripts/loc-report.mjs`. |
 | `e2e-browser` | 30 min | Skipped for Dependabot and fork pull requests (it needs Clerk). Builds `docker-compose.ci.yml`, verifies the production image and the privacy task, starts `db` and `redis`, provisions roles with the `provision-db` service, migrates with `db-maintenance`, starts `backend worker beat frontend`, prepares the Clerk test state, then runs `node scripts/test.mjs e2e` and `capacity-smoke`. |
-| `e2e-runtime` | 25 min | Needs no Clerk or provider credential, so it runs on every pull request. Native PostgreSQL/Redis. Runs `npm run lint`, `audit:production`, `test:scripts`, `lint:dead-code`, `lint:dead-code:production` and `build`; then `test_worker_process_recovery.py` plus `test_forty_eight_classes_generate_a_complete_valid_schedule`. A script fails the job if fewer than 10 cases were collected, if any case was skipped or failed, or if the three required case names are missing. |
+| `e2e-runtime` | 25 min | Needs no Clerk or provider credential, so it runs on every pull request. Native PostgreSQL/Redis. Runs `npm run lint`, `audit:production`, `test:scripts`, `lint:dead-code`, `lint:dead-code:production` and `build`; then `test_worker_process_recovery.py`, `test_forty_eight_classes_generate_a_complete_valid_schedule` and `test_the_availability_fixture_completes_forty_eight_classes_before_the_preferred_end`. A script fails the job if fewer than 10 cases were collected, if any case was skipped or failed, or if one of the four required case names is missing. |
 
 There is no aggregate job; the four suite checks are `backend`, `frontend`, `e2e-runtime` and `e2e-browser`.
 
