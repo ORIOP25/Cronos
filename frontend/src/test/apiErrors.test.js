@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { getApiErrorCode, getApiErrorMessage, getApiErrorPresentation, isApiErrorTransient } from '../utils/apiErrors'
+import { getApiErrorCode, getApiErrorMessage, getApiErrorPresentation, getRoomTypeErrorMessage, isApiErrorTransient } from '../utils/apiErrors'
 
 describe('api error contract', () => {
   it('names teachers with impossible presence using only validated business context', () => {
@@ -222,5 +222,24 @@ describe('api error contract', () => {
     expect(isApiErrorTransient({ response: { status: 409 } })).toBe(false)
     expect(isApiErrorTransient({ response: { status: 422 } })).toBe(false)
     expect(isApiErrorTransient({ response: { status: 404 } })).toBe(false)
+  })
+})
+
+describe('room type error messages', () => {
+  it('maps room type failures to their own copy', () => {
+    const roomTypeError = (status, detail) => ({ response: { status, data: { detail } } })
+
+    expect(getRoomTypeErrorMessage(roomTypeError(422, { code: 'validation_error' }))).toBe('Escreva um nome de tipo com até 60 caracteres.')
+    expect(getRoomTypeErrorMessage(roomTypeError(404, { code: 'resource_not_found' }))).toBe('Tipo de sala não encontrado.')
+    expect(getRoomTypeErrorMessage(roomTypeError(409, { code: 'room_type_name_taken' }))).toBe('Já existe um tipo de sala com este nome.')
+  })
+
+  it('names the rooms and subjects in use and keeps the generic copy elsewhere', () => {
+    const inUse = { response: { status: 409, data: { detail: { code: 'resource_in_use', context: { rooms: ['C4'], subjects: [] } } } } }
+
+    expect(getRoomTypeErrorMessage(inUse)).toBe('Este tipo é usado por: salas C4. Mude-lhes o tipo primeiro.')
+    expect(getApiErrorMessage(inUse)).toBe('Este item está a ser utilizado no horário atual. Remova ou republique o horário primeiro.')
+    expect(getApiErrorMessage({ response: { status: 404, data: { detail: { code: 'resource_not_found' } } } }))
+      .toBe('O item pedido já não existe ou não está disponível.')
   })
 })
