@@ -12,6 +12,7 @@ from app.scheduler.domain.candidate import (
     Assignment,
     CandidateSchedule,
     GridSlot,
+    HomeRoom,
     LunchRule,
     PlanningSnapshot,
     SchedulingStrategy,
@@ -20,7 +21,9 @@ from app.scheduler.domain.candidate import (
     UnavailableResource,
 )
 from app.scheduler.domain.candidate_validation import ValidationViolationCode, validate_candidate
+from app.scheduler.domain.home_rooms import avoidable_room_changes
 from app.scheduler.domain.projection import ModuleRequirement
+from app.scheduler.domain.recovery import measure_disruption
 from app.scheduler.infrastructure.recovery_construction import construct_recovery
 from tests.unit.test_scheduler_recovery_solver_v1 import POLICY
 from tests.unit.test_scheduler_resource_exclusivity_v1 import assignment, lesson, plan
@@ -469,3 +472,63 @@ def test_recovery_uses_evitar_only_when_the_class_cannot_fit_without_it():
         slot(3, 9),
         slot(4, 9),
     ]
+def _room_by_slot(candidate):
+    """Rooms by (assignment, start hour): repaired lessons may receive new identities."""
+    return {
+        (row.assignment_id, row.period.start_local.hour): row.room_id for row in candidate.lessons
+    }
+
+
+def _published_rooms_plan():
+    """Class 1 (protected 8h, then 9h and 10h) and class 2 (9h and 10h) use rooms 1 and 2."""
+    periods = (period(0, 8, 9), period(0, 9, 10), period(0, 10, 11))
+    protected = lesson(10, 1, periods[0], 1)
+    baseline = (
+        protected,
+        lesson(1, 1, periods[1], 1, offset=60),
+        lesson(2, 1, periods[2], 1, offset=120),
+        lesson(3, 2, periods[1], 2),
+        lesson(4, 2, periods[2], 2, offset=60),
+    )
+    assignments = [assignment(1, 1, 1, {1, 2, 3}, 180), assignment(2, 2, 2, {1, 2, 3}, 120)]
+    return periods, assignments, protected, baseline
+
+
+def test_r21_a_new_home_room_moves_the_future_editable_lessons_and_keeps_protected_ones():
+    """❌ R21: a sala nova da turma leva as aulas editáveis; a protegida fica; custo 0."""
+    periods, assignments, protected, baseline = _published_rooms_plan()
+
+    target, result = recover(
+        periods,
+        assignments,
+        baseline,
+        protected_lessons=(protected,),
+        home_rooms=(HomeRoom(class_id=1, room_id=3),),
+    )
+
+    assert _room_by_slot(result.candidate) == {
+        (1, 8): 1,
+        (1, 9): 3,
+        (1, 10): 3,
+        (2, 9): 2,
+        (2, 10): 2,
+    }
+    metrics = measure_disruption(target, CandidateSchedule(baseline), result.candidate, POLICY)
+    assert metrics.room_changes == 2
+    assert metrics.total_cost == 0
+
+
+def test_r23_without_home_room_changes_recovery_keeps_the_published_rooms_with_zero_avoidable():
+    """❌ R21/R23: sem mudanças, a recuperação mantém as salas publicadas e não cria mudanças."""
+    periods, assignments, protected, baseline = _published_rooms_plan()
+
+    target, result = recover(periods, assignments, baseline, protected_lessons=(protected,))
+
+    assert _room_by_slot(result.candidate) == {
+        (1, 8): 1,
+        (1, 9): 1,
+        (1, 10): 1,
+        (2, 9): 2,
+        (2, 10): 2,
+    }
+    assert avoidable_room_changes(target, result.candidate) == 0

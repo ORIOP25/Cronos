@@ -5,7 +5,9 @@ counts; they never enter the quality vector, and a justified room change costs
 nothing in the adaptive disruption.
 """
 
-from collections import defaultdict
+from collections import Counter, defaultdict
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
 from datetime import date
 from itertools import pairwise
 
@@ -83,3 +85,108 @@ def is_justified_room_change(
 
 def _is_flexible(assignments: dict[int, Assignment], lesson: ScheduledLesson) -> bool:
     return not assignments[lesson.assignment_id].needs_special_room
+
+
+@dataclass
+class RoomHabits:
+    """Rooms each class has used so far, recorded in chronological order (D03, D07)."""
+
+    last_on_day: dict[tuple[int, date], tuple[int, bool]] = field(default_factory=dict)
+    flexible_rooms: dict[int, Counter[int]] = field(default_factory=lambda: defaultdict(Counter))
+    subject_rooms: dict[tuple[int, int], Counter[int]] = field(
+        default_factory=lambda: defaultdict(Counter)
+    )
+
+    def record(self, assignment: Assignment, school_date: date, room_id: int) -> None:
+        flexible = not assignment.needs_special_room
+        for class_id in assignment.class_ids:
+            self.last_on_day[(class_id, school_date)] = (room_id, flexible)
+            if flexible:
+                self.flexible_rooms[class_id][room_id] += 1
+            else:
+                self.subject_rooms[(class_id, assignment.subject_id)][room_id] += 1
+
+
+def _most_used(counter: Counter[int] | None) -> int | None:
+    if not counter:
+        return None
+    return max(counter, key=lambda room: (counter[room], -room))
+
+
+def _habitual_room(
+    habits: RoomHabits, assignment: Assignment, class_id: int, homes: Mapping[int, int]
+) -> int | None:
+    if assignment.needs_special_room:
+        return _most_used(habits.subject_rooms.get((class_id, assignment.subject_id)))
+    if class_id in homes:
+        return None
+    return _most_used(habits.flexible_rooms.get(class_id))
+
+
+def foreign_home_claims(
+    homes: Mapping[int, int],
+    assignment: Assignment,
+    room_id: int,
+    others: Sequence[Assignment],
+) -> int:
+    """Other classes whose home room is ``room_id`` and whose lesson in the period fits it (D04)."""
+    own = set(assignment.class_ids)
+    return sum(
+        1
+        for other in others
+        if room_id in other.eligible_room_ids
+        for class_id in other.class_ids
+        if class_id not in own and homes.get(class_id) == room_id
+    )
+
+
+def room_choice_costs(
+    homes: Mapping[int, int],
+    habits: RoomHabits,
+    assignment: Assignment,
+    school_date: date,
+    room_id: int,
+    *,
+    foreign_claims: int,
+    published_change: int,
+) -> tuple[int, ...]:
+    """Priority costs of putting one lesson in one room.
+
+    1. home-room misses (D04); 2. leaving the published room, zero when justified
+    (recovery only, T09); 3. avoidable change from the class's previous lesson that
+    day (D03); 4. taking another class's home room (D04); 5. the habitual room of a
+    flexible lesson without a home room, or of a special-room subject (D07).
+    """
+    misses = sum(
+        1
+        for class_id in assignment.class_ids
+        if homes.get(class_id) in assignment.eligible_room_ids and homes[class_id] != room_id
+    )
+    avoidable = 0
+    if not assignment.needs_special_room:
+        for class_id in assignment.class_ids:
+            previous = habits.last_on_day.get((class_id, school_date))
+            if previous is not None and previous[1] and previous[0] != room_id:
+                avoidable += 1
+    habitual = sum(
+        1
+        for class_id in assignment.class_ids
+        if _habitual_room(habits, assignment, class_id, homes) not in (None, room_id)
+    )
+    return (misses, published_change, avoidable, foreign_claims, habitual)
+
+
+def lexicographic_weights(maxima: Sequence[int], lesson_count: int) -> tuple[int, ...]:
+    """Weights that let each priority outweigh every lower priority together.
+
+    ``maxima[k]`` bounds one lesson's component ``k``; a matching of
+    ``lesson_count`` lessons adds at most ``lesson_count * maxima[k]`` to it.
+    """
+    weights = [0] * len(maxima)
+    lower_bound = 0
+    for index in reversed(range(len(maxima))):
+        weights[index] = lower_bound + 1
+        lower_bound += weights[index] * lesson_count * maxima[index]
+    if lower_bound >= 2**62:
+        raise ValueError("Room choice costs exceed the solver's integer range.")
+    return tuple(weights)

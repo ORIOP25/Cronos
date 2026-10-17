@@ -73,6 +73,7 @@ from app.scheduler.infrastructure.placement_model import (
     solve_placement,
 )
 from app.scheduler.infrastructure.recovery_construction import construct_recovery
+from app.scheduler.infrastructure.room_assignment import assign_rooms_by_period
 
 MAX_FEEDBACK_ROUNDS = 6
 MIN_SEARCH_SECONDS = 0.05
@@ -372,6 +373,19 @@ def _stabilize_recovery(
     return current
 
 
+def _assign_rooms(
+    snapshot: PlanningSnapshot, profile: _SearchProfile, candidate: CandidateSchedule
+) -> CandidateSchedule:
+    """Room pass of the production routes (T11): no guard, times never change."""
+    return assign_rooms_by_period(
+        snapshot,
+        candidate,
+        baseline=profile.baseline,
+        policy=profile.policy,
+        prior_changes=profile.prior_changes,
+    )
+
+
 def _cancelled(start: float, message: str) -> SearchOutcome:
     return SearchOutcome(
         OUTCOME_CANCELLED,
@@ -453,6 +467,7 @@ def _joint_search(
         )
 
     if constructed is not None and stop_at_first_complete:
+        constructed = _assign_rooms(snapshot, profile, constructed)
         return constructive_outcome()
     while rounds < max_feedback_rounds:
         if should_cancel is not None and should_cancel():
@@ -520,6 +535,7 @@ def _joint_search(
                 )
             vector = profile.vector(snapshot, candidate)
             if stop_at_first_complete:
+                candidate = _assign_rooms(snapshot, profile, candidate)
                 return SearchOutcome(
                     OUTCOME_COMPLETE,
                     candidate,
@@ -815,6 +831,8 @@ def _unrestricted_fallback(
                 candidate = _stabilize_recovery(
                     snapshot, periods, profile, candidate, deadline=deadline
                 )
+            if stop_at_first_complete:
+                candidate = _assign_rooms(snapshot, profile, candidate)
             evidence = placement.evidence
             if evidence is not None:
                 evidence = replace(
@@ -959,7 +977,9 @@ def search_adaptive_schedule(
         )
         if should_cancel is not None and should_cancel():
             return _cancelled(start, "The request was cancelled during repair.")
-        candidates = [row for row in (local, rebuilt) if row is not None]
+        candidates = [
+            _assign_rooms(planning, profile, row) for row in (local, rebuilt) if row is not None
+        ]
         if not candidates:
             return _unrestricted_fallback(
                 planning,
