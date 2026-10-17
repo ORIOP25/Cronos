@@ -35,6 +35,7 @@ from app.scheduler.domain.candidate_validation import (
     validate_candidate,
 )
 from app.scheduler.domain.capacity import residual_minutes
+from app.scheduler.domain.home_rooms import is_justified_room_change
 from app.scheduler.domain.quality import (
     AdaptiveQualityPolicy,
     AdaptiveQualityVector,
@@ -394,6 +395,7 @@ def measure_disruption(
     published = [row for row in baseline.lessons if row.lesson_id not in protected_ids]
     planned = [row for row in candidate.lessons if row.lesson_id not in protected_ids]
     matched, extra, removed = _match_baseline(published, planned)
+    assignments = {row.assignment_id: row for row in snapshot.assignments}
     changes: list[LessonChange] = []
     for source, result in matched:
         prior = source.lesson_id in prior_changes
@@ -408,10 +410,21 @@ def measure_disruption(
                 )
             )
         elif source.room_id != result.room_id:
+            justified = is_justified_room_change(
+                snapshot,
+                assignments[source.assignment_id].class_ids,
+                source.room_id,
+                result.room_id,
+            )
+            cost = (
+                0
+                if justified
+                else policy.change_cost(policy.room_change_cost, snapshot, source, prior)
+            )
             changes.append(
                 LessonChange(
                     LessonChangeKind.ROOM_CHANGED,
-                    policy.change_cost(policy.room_change_cost, snapshot, source, prior),
+                    cost,
                     source.lesson_id,
                     result.lesson_id,
                 )

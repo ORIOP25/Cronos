@@ -8,6 +8,7 @@ from app.scheduler.application.recovery import repair_schedule
 from app.scheduler.domain.calendar import Period
 from app.scheduler.domain.candidate import (
     CandidateSchedule,
+    HomeRoom,
     ScheduledLesson,
     SchedulingStrategy,
     TeacherPresenceRule,
@@ -191,6 +192,23 @@ def test_a_room_change_is_not_a_movement():
     assert metrics.room_changes == 1
     assert metrics.moved_lessons == 0
     assert metrics.total_cost == POLICY.room_change_cost
+
+
+def test_a_justified_room_change_costs_nothing_but_stays_a_room_change():
+    """❌ T09/R21: entrar na sala da turma não custa perturbação, mas continua a ser sala alterada."""
+    when = period(0)
+    target = replace(
+        _recovery_snapshot((when,), rooms=(1, 2)),
+        home_rooms=(HomeRoom(class_id=1, room_id=2),),
+    )
+    baseline = CandidateSchedule((_lesson(1, when, room=1),))
+    candidate = CandidateSchedule((_lesson(9, when, room=2, source=1),))
+
+    metrics = measure_disruption(target, baseline, candidate, POLICY)
+
+    assert metrics.room_changes == 1
+    assert metrics.moved_lessons == 0
+    assert metrics.total_cost == 0
 
 
 def test_swapping_lesson_ids_does_not_hide_an_identical_position():

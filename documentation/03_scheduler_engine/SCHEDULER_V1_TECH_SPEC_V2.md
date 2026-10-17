@@ -278,6 +278,16 @@ The eligible rooms `K[a]` of an assignment are the rooms of the subject's type t
 - Readiness (`COMPATIBLE_ROOM`) reproduces the same rule in SQL for each class/subject link.
 - A substitution checks the lesson's room by type, or by a home room of its classes for a Normal substitute. It does not compare seats, as before.
 
+### Class home room measures
+
+`backend/app/scheduler/domain/home_rooms.py` measures a candidate against the home rooms. The proposal publishes both counts in `metrics`.
+
+- `home_room_misses`: for each lesson and each class of its unit whose home room is eligible for the unit and is not the lesson's room. A joint lesson counts once per class.
+- `avoidable_room_changes`: per class and day, consecutive lessons ordered by start. A pair counts when both lessons are flexible (`needs_special_room` false) and sit in different rooms.
+- A room change is justified when the lesson enters a home room of its classes, or leaves the home room of a class that is not its own. The adaptive disruption (`measure_recovery_quality`) charges such a change nothing, and the diff still lists it as a room change.
+
+The measures stay outside the quality vector: `quality.py`, `QUALITY_POLICY_VERSION` and the audit oracles are unchanged.
+
 ### Teacher presence rules
 
 `domain/teacher_presence.py` holds the pure rules; `domain/candidate.py` carries
