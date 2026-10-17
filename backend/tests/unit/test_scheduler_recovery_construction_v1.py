@@ -472,6 +472,8 @@ def test_recovery_uses_evitar_only_when_the_class_cannot_fit_without_it():
         slot(3, 9),
         slot(4, 9),
     ]
+
+
 def _room_by_slot(candidate):
     """Rooms by (assignment, start hour): repaired lessons may receive new identities."""
     return {
