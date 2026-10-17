@@ -215,6 +215,10 @@ def generate_complete(
                 f"class {class_id}: {minutes} minute(s)"
                 for class_id, minutes in sorted(capacity.class_deficits.items())
             ]
+            + [
+                f"teacher {teacher_id}: {minutes} minute(s)"
+                for teacher_id, minutes in sorted(capacity.teacher_deficits.items())
+            ]
         )
         return GenerationResult(
             OUTCOME_INFEASIBLE,

@@ -281,25 +281,32 @@ def _diagnosis_rank(row: dict) -> int:
 async def _job_diagnostics(
     db: AsyncSession, organization_id: int, diagnoses: list[dict] | None
 ) -> list[dict]:
-    """One proven diagnostic per affected class, plus one row per teacher.
+    """Class rows, then one row per teacher short of time, then presence rows.
 
-    The lookups are tenant-scoped. A class deleted after the failure keeps its
-    stored id and is returned with ``class_name = None``. A teacher-presence
-    estimate carries no class and no proven deficit, so it returns one row per
-    affected teacher with the current name.
+    A class gets one proven diagnostic. A teacher short of time gets one row with
+    its proven minimum; a teacher-presence estimate carries no class and no
+    proven deficit. The lookups are tenant-scoped. A class deleted after the
+    failure keeps its stored id and is returned with ``class_name = None``, and
+    a teacher from another organization is returned with ``teacher_name = None``.
     """
     if not diagnoses:
         return []
     chosen: dict[int, dict] = {}
-    teacher_ids: set[int] = set()
+    presence_teacher_ids: set[int] = set()
+    teacher_deficits: dict[int, int] = {}
     for row in diagnoses:
         if row.get("code") == DiagnosisCode.TEACHER_PRESENCE_RULES.value:
-            teacher_ids.update(row.get("affected_teacher_ids") or ())
+            presence_teacher_ids.update(row.get("affected_teacher_ids") or ())
+            continue
+        if row.get("code") == DiagnosisCode.INSUFFICIENT_TEACHER_TIME.value:
+            for teacher_id in row.get("affected_teacher_ids") or ():
+                teacher_deficits[teacher_id] = row.get("minimum_missing_minutes")
             continue
         for class_id in row.get("affected_class_ids") or ():
             current = chosen.get(class_id)
             if current is None or _diagnosis_rank(row) > _diagnosis_rank(current):
                 chosen[class_id] = row
+    teacher_ids = presence_teacher_ids | set(teacher_deficits)
     if not chosen and not teacher_ids:
         return []
     class_info: dict[int, tuple[str | None, int | None]] = {}
@@ -357,7 +364,16 @@ async def _job_diagnostics(
                 "subject_name": subject_names.get(row.get("affected_subject_id")),
             }
         )
-    for teacher_id in sorted(teacher_ids):
+    for teacher_id, minutes in sorted(teacher_deficits.items()):
+        result.append(
+            {
+                "code": DiagnosisCode.INSUFFICIENT_TEACHER_TIME.value,
+                "minimum_missing_minutes": minutes,
+                "teacher_id": teacher_id,
+                "teacher_name": teacher_names.get(teacher_id),
+            }
+        )
+    for teacher_id in sorted(presence_teacher_ids):
         result.append(
             {
                 "code": DiagnosisCode.TEACHER_PRESENCE_RULES.value,

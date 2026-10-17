@@ -499,7 +499,8 @@ Safety limits include construction, solve, memory, and finalization.
 Empirical marginal-return decisions require comparable measurements and uncertainty records.
 Uncalibrated families require conservative exploration. No p95 enters a stopping rule.
 
-Capacity prechecks can prove resource deficits and report affected classes and minimum missing minutes.
+Capacity prechecks can prove resource deficits and report affected classes, affected teachers and minimum missing minutes.
+A teacher deficit uses the same eligible periods as a class deficit: a teacher gives one lesson at a time, so the union of the periods of the teacher's assignments counts once. It is named only when it exceeds the shortages of the teacher's own assignments.
 Relaxations provide lower bounds, not exact deficits. Conflict sets need not be minimal.
 
 ```json
