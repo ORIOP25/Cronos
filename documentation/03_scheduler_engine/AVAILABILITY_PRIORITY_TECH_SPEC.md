@@ -5,7 +5,7 @@
 Quando um professor ou uma turma tem poucas horas disponíveis, o gerador passa a dar-lhe as horas disputadas primeiro.
 O gerador passa também a respeitar os blocos Evitar e Preferencial, e avisa antes da pesquisa quando um professor não tem horas suficientes.
 
-**Estado:** proposto. Aguarda a aprovação do responsável de produto.
+**Estado:** aprovado e em implementação.
 **Base:** `main` em `01a011e9`, Alembic `0005_teacher_presence`. Não há migração.
 **Origem:** item 7 dos pedidos da escola piloto (reunião de 13 de outubro de 2026). Decisões fechadas com o responsável de produto em 17 de outubro de 2026.
 A execução vive no [WBS](AVAILABILITY_PRIORITY_WBS.md).

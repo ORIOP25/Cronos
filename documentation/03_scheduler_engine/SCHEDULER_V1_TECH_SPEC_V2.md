@@ -57,6 +57,8 @@ The engine preserves execution, curricular minutes, debt, and protected physical
 | D29 | Use school language in the interface. Keep CP-SAT, scopes, fingerprints, workers, and mathematical gaps in technical evidence. |
 | D30 | Preserve proposals and administrative approval. Generation never publishes automatically. |
 | D31 | Develop and verify locally first. Verify Railway and Cloudflare after a solid local release candidate. |
+| D32 | When a shared hour is contested, the teacher or class with less availability in the school year takes it while it is on pace with its remaining lessons. Ahead of pace, it loses that priority until the pace catches up. Priority never advances lessons. |
+| D33 | Construction avoids Evitar blocks. A teacher or class uses one only when its remaining lessons would not fit before the end of the school year without it. An Evitar block still counts as available time. |
 
 Out of scope: simultaneous schedule solves, automatic teacher selection, automatic publication, and compatibility with old database schemas.
 Do not introduce new microservices, another broker, another solver, or machine learning without concrete evidence.
@@ -254,7 +256,8 @@ x[a,p] in {0,1} = assignment placed in period
 
 `capacity.eligible_periods` supplies prevalidation, annual planning, placement, and oracle eligibility.
 Eligibility intersects dates, timezone, grid weekdays, mandatory availability, rooms, and fixed-resource occupancy.
-Unfavorable preferences add cost without excluding a placement.
+Unfavorable preferences add cost without excluding a placement in the exact model.
+The constructive routes skip an Evitar block in their first pass and repeat without that skip only when it refuses an option and the pass fails (D33).
 New lessons cannot start before the final protected lesson ends.
 The validator independently recomputes eligibility. Never build the full annual assignment-period-room Cartesian product.
 Do not invent four-lesson daily, three-consecutive, or two-recovery limits.
@@ -368,7 +371,8 @@ no positive quota after the selected final week
 Weekly capacities subtract fixed occupancy for classes, teachers, and eligible room sets.
 Enough weekly capacity does not prove joint period feasibility. Detailed placement certifies the quota distribution.
 An earliest-week greedy hint seeds search without proving detailed feasibility.
-Chronological construction prioritizes less advanced classes through progress fractions and `started_classes`.
+Chronological construction ranks each period's options by availability priority (D32), then by Evitar, then by progress fractions and `started_classes`.
+Adaptive recovery applies the same ranking to the editable future after it retains the valid published positions.
 The annual master minimizes the latest completion week, then waste.
 Incumbent pruning permits the same completion week so later quality components can improve.
 Keep the relaxed bound separately from the incumbent.
