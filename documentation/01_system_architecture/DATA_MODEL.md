@@ -105,7 +105,7 @@ erDiagram
 - Timesheets use `OPEN`, `SUBMITTED`, or `APPROVED`.
 - Grid versions use `PENDING`, `ACTIVE`, or `REJECTED`.
 - Scheduler state change scopes are `FUTURE_IMPACTING`, `PAST_ONLY`, `NO_OP`, or `INACTIVE_RESOURCE`.
-- Room types are `normal`, `lab`, `gym`, or `art`.
+- Room types are school-owned `room_type` rows, not an enum (see the `room_type` note above).
 - Calendar event types are `national_holiday`, `school_break`, `exam_period`, `other`, or `internship_flow`.
 - Membership lifecycle states are `active` or `archived`.
 - Membership access states are `none`, `pending_invite`, `invite_expired`, `active`, `blocked`, or `sync_error`.
