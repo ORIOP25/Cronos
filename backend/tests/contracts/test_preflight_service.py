@@ -14,6 +14,7 @@ from app.services.preflight_service import (
     _validate_room_requirements,
     _validate_subject_requirements,
 )
+from app.services.room_type_service import ensure_initial_room_types
 from tests._support.db_fixtures import (
     accept_current_legal_documents,
     create_org_and_user,
@@ -35,6 +36,7 @@ async def _create_org_and_admin(db_session, org_name: str, clerk_org: str):
     )
     db_session.add(org)
     await db_session.flush()
+    await ensure_initial_room_types(db_session, org.id)
 
     user = models.User(
         name="Preflight Admin",
