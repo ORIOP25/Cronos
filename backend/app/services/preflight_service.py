@@ -382,17 +382,17 @@ async def _validate_subject_requirements(
 def _room_issue_message(issue: dict[str, object]) -> str:
     class_name = issue["class_name"]
     subject_name = issue["subject_name"]
-    room_type = issue["required_room_type"]
+    room_type_name = issue["required_room_type_name"]
     reason = issue["reason"]
     if reason == RoomEligibilityReason.NO_ROOM_OF_TYPE.value:
         return (
-            f"{class_name} / {subject_name}: não existe uma sala do tipo «{room_type}». "
+            f"{class_name} / {subject_name}: não existe uma sala do tipo «{room_type_name}». "
             "Adicione uma sala desse tipo em Salas."
         )
     if reason == RoomEligibilityReason.INSUFFICIENT_CAPACITY.value:
         return (
             f"{class_name} / {subject_name} ({issue['required_capacity']} alunos): "
-            f"a maior sala do tipo «{room_type}» tem "
+            f"a maior sala do tipo «{room_type_name}» tem "
             f"{issue['max_available_capacity']} lugares. Aumente a lotação em Salas."
         )
     return (
@@ -408,7 +408,7 @@ async def _validate_room_requirements(
 ) -> list[schemas.PreflightIssue]:
     """One structured NO_ELIGIBLE_ROOM diagnosis per active class/subject pair."""
     rooms = [
-        (room.id, room.type.value, room.capacity)
+        (room.id, room.room_type_id, room.capacity)
         for room in (
             await db.scalars(
                 sa_select(models.Room)
@@ -438,12 +438,14 @@ async def _validate_room_requirements(
                 models.Class.course_id.label("course_id"),
                 models.Subject.id.label("subject_id"),
                 models.Subject.name.label("subject_name"),
-                models.Subject.required_room_type.label("required_room_type"),
+                models.Subject.room_type_id.label("required_room_type_id"),
+                models.SchoolRoomType.name.label("required_room_type_name"),
                 models.joint_lesson_group_member.c.group_id.label("joint_group_id"),
             )
             .select_from(models.ClassSubjectLink)
             .join(models.Class, models.Class.id == models.ClassSubjectLink.class_id)
             .join(models.Subject, models.Subject.id == models.ClassSubjectLink.subject_id)
+            .join(models.Subject.room_type)
             .outerjoin(
                 models.joint_lesson_group_member,
                 and_(
@@ -473,7 +475,7 @@ async def _validate_room_requirements(
     for row in rows:
         eligibility = assess_room_eligibility(
             rooms,
-            required_room_type=row.required_room_type.value,
+            required_room_type=row.required_room_type_id,
             required_capacity=row.class_size,
             allowed_room_ids=specific_rooms.get((row.class_id, row.subject_id)),
         )
@@ -484,7 +486,7 @@ async def _validate_room_requirements(
             "class_name": row.class_name,
             "subject_id": row.subject_id,
             "subject_name": row.subject_name,
-            "required_room_type": row.required_room_type.value,
+            "required_room_type_name": row.required_room_type_name,
             "required_capacity": row.class_size,
             "max_available_capacity": eligibility.max_available_capacity,
             "reason": eligibility.reason.value,
@@ -502,17 +504,17 @@ async def _validate_room_requirements(
     return issues
 
 
-def _joint_room_message(subject_name, class_names, room_type, required_capacity) -> str:
+def _joint_room_message(subject_name, class_names, room_type_name, required_capacity) -> str:
     classes = ", ".join(class_names)
     return (
         f"A aula conjunta de {subject_name} ({classes}) precisa de uma sala de "
-        f"{room_type} com pelo menos {required_capacity} lugares."
+        f"{room_type_name} com pelo menos {required_capacity} lugares."
     )
 
 
 def _joint_requirements_from_rows(
     rows,
-    rooms: list[tuple[int, str, int]],
+    rooms: list[tuple[int, int | None, int]],
     specific_rooms: dict,
 ) -> list[schemas.PreflightIssue]:
     """Joint group diagnosis reusing the class/subject rows already loaded."""
@@ -555,7 +557,7 @@ def _joint_requirements_from_rows(
             allowed_room_ids = allowed
         eligibility = assess_room_eligibility(
             rooms,
-            required_room_type=first.required_room_type.value,
+            required_room_type=first.required_room_type_id,
             required_capacity=required_capacity,
             allowed_room_ids=allowed_room_ids,
         )
@@ -568,7 +570,7 @@ def _joint_requirements_from_rows(
                 message=_joint_room_message(
                     subject_name,
                     [member.class_name for member in active],
-                    first.required_room_type.value,
+                    first.required_room_type_name,
                     required_capacity,
                 ),
                 route="/rooms",

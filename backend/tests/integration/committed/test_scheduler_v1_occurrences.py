@@ -246,7 +246,11 @@ async def _lessons(db_session, seed: V1Seed) -> list[SchedulerLessonV1]:
 
 
 async def _second_assignment(db_session, seed: V1Seed):
-    subject = models.Subject(name="Matemática", organization_id=seed.organization.id)
+    subject = models.Subject(
+        name="Matemática",
+        organization_id=seed.organization.id,
+        room_type_id=seed.subject.room_type_id,
+    )
     db_session.add(subject)
     await db_session.flush()
     module = models.Module(
@@ -1174,6 +1178,42 @@ async def test_substitution_diagnostics_explain_the_excluded_candidate(db_sessio
     assert {exclusion["code"] for exclusion in candidate["exclusions"]} == {"unavailable"}
     assert diagnostics["setup_actions"] == ["availability"]
     assert diagnostics["eligible_count"] == 0
+
+
+async def test_substitution_room_compatibility_uses_school_type_ids(db_session):
+    seed = await _school(db_session, suffix="_room_type_ids")
+    await db_session.commit()
+    await seed_published_baseline(db_session, seed)
+    lesson = (await _lessons(db_session, seed))[0]
+    subject, _module, teacher, _assignment = await _second_assignment(db_session, seed)
+
+    room_type_a = models.SchoolRoomType(
+        organization_id=seed.organization.id,
+        name="Laboratório de Química",
+        is_normal=False,
+    )
+    room_type_b = models.SchoolRoomType(
+        organization_id=seed.organization.id,
+        name="Laboratório de Informática",
+        is_normal=False,
+    )
+    db_session.add_all((room_type_a, room_type_b))
+    await db_session.flush()
+    seed.room.type = models.RoomType.lab
+    seed.room.room_type_id = room_type_a.id
+    subject.required_room_type = models.RoomType.lab
+    subject.room_type_id = room_type_b.id
+    await db_session.commit()
+
+    await _occurrence(db_session, seed, lesson)
+    item = (await occurrences_v1.list_occurrences(db_session, seed.organization.id))["items"][0]
+    diagnostics = await occurrences_v1.get_substitute_diagnostics(
+        db_session, seed.organization.id, item["id"]
+    )
+
+    candidate = next(row for row in diagnostics["candidates"] if row["teacher_id"] == teacher.id)
+    assert candidate["eligible"] is False
+    assert {exclusion["code"] for exclusion in candidate["exclusions"]} == {"room_mismatch"}
 
 
 async def test_a_planned_substitution_reserves_resources_and_demand(db_session, monkeypatch):

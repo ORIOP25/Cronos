@@ -189,7 +189,7 @@ class SchoolReadinessService:
             .select_from(models.Room)
             .where(
                 models.Room.organization_id == organization_id,
-                models.Room.type == subject_alias.required_room_type,
+                models.Room.room_type_id == subject_alias.room_type_id,
                 models.Room.capacity >= class_alias.size,
                 models.Room.is_archived.is_(False),
             )

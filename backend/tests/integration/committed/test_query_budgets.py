@@ -13,6 +13,7 @@ from app.services import (
     class_service,
     dashboard_service,
     member_service,
+    room_type_service,
     timesheet_service,
 )
 from tests._support.db_fixtures import TestingSessionLocal, create_teacher_profile
@@ -542,6 +543,13 @@ async def test_populated_dashboard_skips_fingerprints_with_bounded_queries(db_se
     )
     db_session.add(organization)
     await db_session.flush()
+    await room_type_service.ensure_initial_room_types(db_session, organization.id)
+    normal_room_type_id = await db_session.scalar(
+        select(models.SchoolRoomType.id).where(
+            models.SchoolRoomType.organization_id == organization.id,
+            models.SchoolRoomType.is_normal.is_(True),
+        )
+    )
     db_session.add_all(
         [
             models.OrganizationSettings(
@@ -573,12 +581,14 @@ async def test_populated_dashboard_skips_fingerprints_with_bounded_queries(db_se
         organization_id=organization.id,
         name="Disciplina Populada",
         required_room_type=models.RoomType.normal,
+        room_type_id=normal_room_type_id,
     )
     room = models.Room(
         organization_id=organization.id,
         name="Sala Populada",
         type=models.RoomType.normal,
         capacity=30,
+        room_type_id=normal_room_type_id,
     )
     db_session.add_all([course, subject, room])
     await db_session.flush()

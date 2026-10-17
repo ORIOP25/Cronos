@@ -48,15 +48,31 @@ async def seed_v1_assignment(
             models.OrganizationMembership.account_id == user.id,
         )
     )
+    normal_room_type_id = await db_session.scalar(
+        select(models.SchoolRoomType.id).where(
+            models.SchoolRoomType.organization_id == organization.id,
+            models.SchoolRoomType.is_normal.is_(True),
+            models.SchoolRoomType.is_archived.is_(False),
+        )
+    )
     course = models.Course(name="Course", abbreviation="C", organization_id=organization.id)
-    subject = models.Subject(name="Subject", organization_id=organization.id)
+    subject = models.Subject(
+        name="Subject",
+        organization_id=organization.id,
+        room_type_id=normal_room_type_id,
+    )
     year = models.SchedulerSchoolYear(
         organization_id=organization.id,
         label=label,
         start_date=date(2026, 9, 1),
         hard_end_date=date(2027, 7, 31),
     )
-    room = models.Room(name="Sala", capacity=25, organization_id=organization.id)
+    room = models.Room(
+        name="Sala",
+        capacity=25,
+        organization_id=organization.id,
+        room_type_id=normal_room_type_id,
+    )
     db_session.add_all((course, subject, year, room))
     await db_session.flush()
     class_ = models.Class(
@@ -182,7 +198,12 @@ async def seed_joint_school(
         db_session, module_minutes=module_minutes, preferred_end_date=preferred_end_date
     )
     db_session.add(
-        models.Room(name="Sala Grande", capacity=60, organization_id=seed.organization.id)
+        models.Room(
+            name="Sala Grande",
+            capacity=60,
+            organization_id=seed.organization.id,
+            room_type_id=seed.room.room_type_id,
+        )
     )
     second_class = models.Class(
         name="B",

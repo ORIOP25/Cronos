@@ -232,11 +232,25 @@ async def test_preflight_rejects_room_that_cannot_fit_assigned_class(db_session)
         clerk_user_id="preflight-room-user",
         clerk_org_id="preflight-room-org",
     )
+    laboratory_type = await db_session.scalar(
+        select(models.SchoolRoomType).where(
+            models.SchoolRoomType.organization_id == org.id,
+            models.SchoolRoomType.name == "Laboratório",
+        )
+    )
+    oficina_type = models.SchoolRoomType(
+        organization_id=org.id,
+        name="Oficina",
+        is_normal=False,
+    )
+    db_session.add(oficina_type)
+    await db_session.flush()
     course = models.Course(organization_id=org.id, name="Curso", abbreviation="C")
     subject = models.Subject(
         organization_id=org.id,
         name="Laboratório",
         required_room_type=models.RoomType.lab,
+        room_type_id=laboratory_type.id,
     )
     db_session.add_all([course, subject])
     await db_session.flush()
@@ -278,6 +292,7 @@ async def test_preflight_rejects_room_that_cannot_fit_assigned_class(db_session)
             name="Lab pequeno",
             type=models.RoomType.lab,
             capacity=20,
+            room_type_id=laboratory_type.id,
         )
     )
     await db_session.flush()
@@ -292,13 +307,28 @@ async def test_preflight_rejects_room_that_cannot_fit_assigned_class(db_session)
         "class_name": "Turma grande",
         "subject_id": subject.id,
         "subject_name": "Laboratório",
-        "required_room_type": "lab",
+        "required_room_type_name": "Laboratório",
         "required_capacity": 30,
         "max_available_capacity": 20,
         "reason": "INSUFFICIENT_CAPACITY",
     }
     assert "30 alunos" in issues[0].message
     assert "20 lugares" in issues[0].message
+
+    subject.room_type_id = oficina_type.id
+    await db_session.flush()
+    mismatched_type_issues = await _validate_room_requirements(db_session, org.id)
+    assert mismatched_type_issues[0].context == {
+        "class_id": school_class.id,
+        "class_name": "Turma grande",
+        "subject_id": subject.id,
+        "subject_name": "Laboratório",
+        "required_room_type_name": "Oficina",
+        "required_capacity": 30,
+        "max_available_capacity": None,
+        "reason": "NO_ROOM_OF_TYPE",
+    }
+    assert "Oficina" in mismatched_type_issues[0].message
 
     assert await _validate_subject_requirements(db_session, org.id, {subject.id}) == []
 
@@ -450,7 +480,7 @@ async def test_preflight_reports_the_exact_room_shortage(db_session):
         "class_name": "TDESP 10",
         "subject_id": subject.id,
         "subject_name": "Treino Desportivo",
-        "required_room_type": "gym",
+        "required_room_type_name": "Ginásio",
         "required_capacity": 27,
         "max_available_capacity": 26,
         "reason": "INSUFFICIENT_CAPACITY",
@@ -504,7 +534,7 @@ async def test_load_snapshot_carries_public_room_context(db_session):
             "class_name": "A",
             "subject_id": seed.subject.id,
             "subject_name": "Subject",
-            "required_room_type": "normal",
+            "required_room_type_name": "Normal",
             "required_capacity": 20,
             "max_available_capacity": 10,
             "reason": "INSUFFICIENT_CAPACITY",

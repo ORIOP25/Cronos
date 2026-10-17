@@ -11,7 +11,7 @@ from app.services.scheduler_state_service import record_scheduler_change
 
 def _subject_demand_snapshot(subject: models.Subject) -> dict:
     return {
-        "required_room_type": subject.required_room_type,
+        "room_type_id": subject.room_type_id,
         "module_sequence": [
             {
                 "id": module.id,

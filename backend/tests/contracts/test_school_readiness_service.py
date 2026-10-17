@@ -1,6 +1,7 @@
 from datetime import date, time
 
 import pytest
+from sqlalchemy import select
 
 from app import models
 from app.services.availability_matrix_service import (
@@ -599,13 +600,32 @@ async def test_readiness_requires_an_active_compatible_room(db_session):
         clerk_user_id="readiness-room-archive-user",
         clerk_org_id="readiness-room-archive-org",
     )
+    laboratory_type = await db_session.scalar(
+        select(models.SchoolRoomType).where(
+            models.SchoolRoomType.organization_id == organization.id,
+            models.SchoolRoomType.name == "Laboratório",
+        )
+    )
+    other_type = models.SchoolRoomType(
+        organization_id=organization.id,
+        name="Oficina",
+        is_normal=False,
+    )
+    db_session.add(other_type)
+    await db_session.flush()
     course = models.Course(organization_id=organization.id, name="Curso Sala", abbreviation="CS")
-    subject = models.Subject(organization_id=organization.id, name="Disciplina Sala")
+    subject = models.Subject(
+        organization_id=organization.id,
+        name="Disciplina Sala",
+        required_room_type=models.RoomType.lab,
+        room_type_id=laboratory_type.id,
+    )
     room = models.Room(
         organization_id=organization.id,
         name="Sala Compatível",
         capacity=30,
-        type=models.RoomType.normal,
+        type=models.RoomType.lab,
+        room_type_id=other_type.id,
     )
     db_session.add_all([course, subject, room])
     await db_session.flush()
@@ -672,8 +692,14 @@ async def test_readiness_requires_an_active_compatible_room(db_session):
 
     room.is_archived = False
     await db_session.flush()
-    active_report = await service.evaluate_bases(organization.id)
+    mismatched_report = await service.evaluate_bases(organization.id)
 
+    assert mismatched_report.depth == 4
+    assert mismatched_report.issues[0].code == "COMPATIBLE_ROOM_REQUIRED"
+
+    room.room_type_id = laboratory_type.id
+    await db_session.flush()
+    active_report = await service.evaluate_bases(organization.id)
     assert active_report.depth == 6
     assert "COMPATIBLE_ROOM_REQUIRED" not in {issue.code for issue in active_report.issues}
 

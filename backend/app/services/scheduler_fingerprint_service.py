@@ -257,7 +257,7 @@ class SchedulerFingerprintService:
         subject_rows = (
             (
                 await self._db.execute(
-                    select(models.Subject.id, models.Subject.required_room_type).where(
+                    select(models.Subject.id, models.Subject.room_type_id).where(
                         models.Subject.organization_id == organization_id,
                         models.Subject.is_archived.is_(False),
                         models.Subject.id.in_(subject_ids),
@@ -504,7 +504,7 @@ class SchedulerFingerprintService:
                 select(
                     models.Room.id,
                     models.Room.capacity,
-                    models.Room.type,
+                    models.Room.room_type_id,
                 ).where(
                     models.Room.organization_id == organization_id,
                     models.Room.is_archived.is_(False),
@@ -654,7 +654,7 @@ class SchedulerFingerprintService:
                 for row in sorted(class_rows, key=lambda row: row.id)
             ],
             "subjects": [
-                {"id": row.id, "required_room_type": row.required_room_type}
+                {"id": row.id, "room_type_id": row.room_type_id}
                 for row in sorted(subject_rows, key=lambda row: row.id)
             ],
             "teachers": [
@@ -727,7 +727,7 @@ class SchedulerFingerprintService:
                 )
             ],
             "rooms": [
-                {"id": row.id, "capacity": row.capacity, "type": row.type}
+                {"id": row.id, "capacity": row.capacity, "room_type_id": row.room_type_id}
                 for row in sorted(room_rows, key=lambda row: row.id)
             ],
             "module_accounting": [

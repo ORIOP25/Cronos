@@ -10,7 +10,7 @@ from app.services.scheduler_state_service import record_scheduler_change
 
 
 def _room_snapshot(room: models.Room) -> dict:
-    return {"type": room.type, "capacity": room.capacity}
+    return {"room_type_id": room.room_type_id, "capacity": room.capacity}
 
 
 async def _room_with_type(

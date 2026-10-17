@@ -1,5 +1,6 @@
 from datetime import date
 
+import pytest
 from sqlalchemy import select
 
 from app import models, schemas
@@ -7,6 +8,7 @@ from app.services import (
     class_service,
     room_service,
     room_type_service,
+    schedule_service,
     settings_service,
     subject_service,
     teacher_service,
@@ -302,3 +304,70 @@ async def test_module_selection_records_a_class_subject_assignment_update(db_ses
 
     await db_session.refresh(state)
     assert state.scheduler_state_version == version_before + 3
+
+
+async def test_specific_room_requires_the_same_school_room_type_id(db_session):
+    organization = models.Organization(name="Specific Room School", plan_status="active")
+    db_session.add(organization)
+    await db_session.flush()
+    await room_type_service.ensure_initial_room_types(db_session, organization.id)
+    first_type = models.SchoolRoomType(
+        organization_id=organization.id,
+        name="Laboratório de Química",
+        is_normal=False,
+    )
+    second_type = models.SchoolRoomType(
+        organization_id=organization.id,
+        name="Laboratório de Informática",
+        is_normal=False,
+    )
+    course = models.Course(name="Curso", abbreviation="CUR", organization_id=organization.id)
+    subject = models.Subject(
+        name="Química",
+        required_room_type=models.RoomType.lab,
+        organization_id=organization.id,
+    )
+    db_session.add_all((first_type, second_type, course, subject))
+    await db_session.flush()
+    subject.room_type_id = second_type.id
+    room = models.Room(
+        name="Química 1",
+        type=models.RoomType.lab,
+        room_type_id=first_type.id,
+        capacity=30,
+        organization_id=organization.id,
+    )
+    school_class = models.Class(
+        name="10A",
+        size=20,
+        start_year=2025,
+        end_year=2026,
+        grade_level=10,
+        course_id=course.id,
+        organization_id=organization.id,
+    )
+    db_session.add_all((room, school_class))
+    await db_session.flush()
+    db_session.add(
+        models.ClassSubjectLink(
+            organization_id=organization.id,
+            class_id=school_class.id,
+            subject_id=subject.id,
+            grade_level=10,
+        )
+    )
+    await db_session.flush()
+
+    with pytest.raises(schedule_service.ConstraintSemanticValidationError):
+        await schedule_service.create_constraint(
+            db_session,
+            schemas.SpecificRoomConstraintCreate(
+                rule_type=schemas.SupportedConstraintType.specific_room,
+                rule_payload=schemas.SpecificRoomPayload(
+                    class_id=school_class.id,
+                    subject_id=subject.id,
+                    room_id=room.id,
+                ),
+            ),
+            organization.id,
+        )
