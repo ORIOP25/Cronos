@@ -1,4 +1,4 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClient, QueryClientProvider, focusManager } from '@tanstack/react-query'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { resetClerkState, setClerkState } from './setup'
@@ -42,6 +42,7 @@ import {
   useApproveDraft,
   useCancelScheduleTask,
   useCurrentDraftSummary,
+  useRejectDraft,
   useScheduleDiff,
   useSchedulerStatus,
   useScheduleTaskStatus,
@@ -586,6 +587,87 @@ describe('vertical feature data hooks', () => {
     expect(jobQuery.options.refetchInterval({ state: { data: { status: 'STALE' } } })).toBe(false)
   })
 
+  it('keeps polling a job that starts without data after a transient failure and recovers to SUCCEEDED', async () => {
+    vi.useFakeTimers()
+    focusManager.setFocused(true)
+    const { queryClient, wrapper } = createHarness()
+    apiClient.get
+      .mockRejectedValueOnce(Object.assign(new Error('transient'), { response: { status: 503 } }))
+      .mockResolvedValue({ status: 'SUCCEEDED' })
+    const read = renderHook(() => useScheduleTaskStatus(77), { wrapper })
+    try {
+      await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+      expect(read.result.current.isError).toBe(true)
+
+      const jobQuery = queryClient.getQueryCache().find({ queryKey: ['scheduler-job', 'org-a', 77] })
+      expect(jobQuery.options.refetchInterval(jobQuery)).toBe(5000)
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(5001) })
+      expect(read.result.current.data).toEqual({ status: 'SUCCEEDED' })
+
+      const callsAfterSucceeded = apiClient.get.mock.calls.length
+      await act(async () => { await vi.advanceTimersByTimeAsync(10001) })
+      expect(apiClient.get.mock.calls.length).toBe(callsAfterSucceeded)
+    } finally {
+      read.unmount()
+      queryClient.clear()
+      vi.useRealTimers()
+      focusManager.setFocused(undefined)
+    }
+  })
+
+  it('keeps polling a running job after a transient failure and recovers to SUCCEEDED', async () => {
+    vi.useFakeTimers()
+    focusManager.setFocused(true)
+    const { queryClient, wrapper } = createHarness()
+    apiClient.get
+      .mockResolvedValueOnce({ status: 'RUNNING' })
+      .mockRejectedValueOnce(Object.assign(new Error('transient'), { response: { status: 503 } }))
+      .mockResolvedValue({ status: 'SUCCEEDED' })
+    const read = renderHook(() => useScheduleTaskStatus(78), { wrapper })
+    try {
+      await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+      expect(read.result.current.data).toEqual({ status: 'RUNNING' })
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(5001) })
+      const jobQuery = queryClient.getQueryCache().find({ queryKey: ['scheduler-job', 'org-a', 78] })
+      expect(read.result.current.data).toEqual({ status: 'RUNNING' })
+      expect(jobQuery.state.error).toBeTruthy()
+      expect(jobQuery.options.refetchInterval(jobQuery)).toBe(5000)
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(5001) })
+      expect(read.result.current.data).toEqual({ status: 'SUCCEEDED' })
+
+      const callsAfterSucceeded = apiClient.get.mock.calls.length
+      await act(async () => { await vi.advanceTimersByTimeAsync(10001) })
+      expect(apiClient.get.mock.calls.length).toBe(callsAfterSucceeded)
+    } finally {
+      read.unmount()
+      queryClient.clear()
+      vi.useRealTimers()
+      focusManager.setFocused(undefined)
+    }
+  })
+
+  it('stops job polling on permanent errors and terminal statuses even after a failed poll', async () => {
+    const { queryClient, wrapper } = createHarness()
+    const read = renderHook(() => useScheduleTaskStatus(79), { wrapper })
+    await waitFor(() => expect(read.result.current.isSuccess).toBe(true))
+
+    const jobQuery = queryClient.getQueryCache().find({ queryKey: ['scheduler-job', 'org-a', 79] })
+    const intervalFor = (state) => jobQuery.options.refetchInterval({ state })
+
+    for (const status of [401, 403, 404, 422]) {
+      expect(intervalFor({ data: { status: 'RUNNING' }, error: { response: { status } } })).toBe(false)
+    }
+    for (const status of ['SUCCEEDED', 'FAILED', 'CANCELLED', 'STALE', 'INFEASIBLE', 'INCONCLUSIVE']) {
+      expect(intervalFor({ data: { status }, error: { response: { status: 503 } } })).toBe(false)
+    }
+    for (const status of [undefined, 408, 429, 500, 503]) {
+      expect(intervalFor({ data: { status: 'RUNNING' }, error: { response: { status } } })).toBe(5000)
+    }
+  })
+
   it('owns draft and cancellation invalidation in scheduling mutations', async () => {
     const { queryClient, wrapper } = createHarness()
     const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
@@ -602,6 +684,43 @@ describe('vertical feature data hooks', () => {
       ['weekSchedule', 'org-a'],
       ['scheduler-job', 'org-a', 22],
     ]))
+  })
+
+  it('clears the pending-draft prevalidation warning after rejecting a draft without touching another organization', async () => {
+    const { queryClient, wrapper } = createHarness()
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
+    queryClient.setQueryData(['scheduler-prevalidation', 'org-b', 'ADAPTIVE_REPAIR'], {
+      status: 'READY_WITH_WARNINGS',
+      issues: [{ code: 'PENDING_DRAFT' }],
+    })
+    apiClient.get
+      .mockResolvedValueOnce({
+        status: 'READY_WITH_WARNINGS',
+        issues: [{ code: 'PENDING_DRAFT', severity: 'WARNING', message: 'Existe um rascunho pendente.', route: '/schedules' }],
+      })
+      .mockResolvedValue({ status: 'READY', issues: [] })
+    const prevalidation = renderHook(() => usePrevalidation({ strategy: 'ADAPTIVE_REPAIR' }), { wrapper })
+    await waitFor(() => expect(prevalidation.result.current.isSuccess).toBe(true))
+    expect(prevalidation.result.current.data.issues).toHaveLength(1)
+
+    const reject = renderHook(() => useRejectDraft(), { wrapper })
+    await act(() => reject.result.current.mutateAsync(77))
+
+    expect(apiClient.post).toHaveBeenCalledWith('/scheduler/drafts/77/reject')
+    await waitFor(() => expect(prevalidation.result.current.data.issues).toHaveLength(0))
+    expect(prevalidation.result.current.data.status).toBe('READY')
+
+    const keys = invalidate.mock.calls.map(([options]) => options.queryKey)
+    expect(keys).toEqual(expect.arrayContaining([
+      ['scheduler-status', 'org-a'],
+      ['scheduler-current-draft', 'org-a'],
+      ['schedule-diff', 'org-a'],
+      ['scheduler-prevalidation', 'org-a'],
+    ]))
+    expect(keys.every((key) => key[1] === 'org-a')).toBe(true)
+    expect(keys).not.toEqual(expect.arrayContaining([['weekSchedule', 'org-a']]))
+    expect(queryClient.getQueryData(['scheduler-prevalidation', 'org-b', 'ADAPTIVE_REPAIR']))
+      .toEqual({ status: 'READY_WITH_WARNINGS', issues: [{ code: 'PENDING_DRAFT' }] })
   })
 
   it('reads and saves a teacher presence rule by teacher id with member and readiness invalidations', async () => {

@@ -15,7 +15,7 @@ from app.scheduler.domain.candidate import (
     Unavailability,
     UnavailableResource,
 )
-from app.scheduler.domain.candidate_validation import validate_candidate
+from app.scheduler.domain.candidate_validation import ValidationViolationCode, validate_candidate
 from app.scheduler.infrastructure.recovery_construction import construct_recovery
 from tests.unit.test_scheduler_recovery_solver_v1 import POLICY
 from tests.unit.test_scheduler_resource_exclusivity_v1 import assignment, lesson, plan
@@ -267,6 +267,70 @@ def test_joint_availability_repair_moves_other_lessons_to_free_the_only_shared_p
         (1, periods[3], 1),
     }
     assert result.evidence.stop_reason == "FALLBACK_UNRESTRICTED"
+
+
+def test_exact_search_consolidates_a_presence_invalid_baseline_onto_one_day():
+    """A newly added presence minimum invalidates the baseline and forces a real repair.
+
+    The setup proof below shows the same baseline is valid without the rule and
+    invalid only through `TEACHER_PRESENCE_VIOLATION` with it, so no other
+    constraint causes the change. The baseline keeps the shared teacher's two
+    lessons on separate days, which the new 120-minute minimum forbids. The
+    unrestricted exact search repairs it (`FALLBACK_UNRESTRICTED` is returned
+    only when both constructions decline). No CP-SAT call is mocked.
+    """
+    periods = (
+        period(0, start=9, end=10),
+        period(0, start=10, end=11),
+        period(1, start=9, end=10),
+        period(1, start=10, end=11),
+    )
+    presence = (
+        TeacherPresenceRule(
+            teacher_id=7, lunch_required=False, minimum_minutes=120, max_gap_minutes=0
+        ),
+    )
+    history = lesson(30, 3, periods[3], 3)
+    baseline = (lesson(10, 1, periods[0], 1), lesson(11, 2, periods[2], 2), history)
+    assignments = [
+        assignment(1, 1, 7, {1}, 60),
+        assignment(2, 2, 7, {2}, 60),
+        assignment(3, 3, 8, {3}, 60),
+    ]
+
+    target, result = recover(
+        periods,
+        assignments,
+        baseline,
+        teacher_presence=presence,
+        protected_lessons=(history,),
+        unavailable=(Unavailability(UnavailableResource.CLASS, 2, periods[1]),),
+    )
+
+    # Setup: the baseline is valid under the old (absent) rule and rejected
+    # solely by the new minimum, so the repair is caused by teacher presence.
+    assert validate_candidate(
+        replace(target, teacher_presence=()), CandidateSchedule(baseline)
+    ).valid
+    setup = validate_candidate(target, CandidateSchedule(baseline))
+    assert not setup.valid
+    assert {row.code for row in setup.violations} == {
+        ValidationViolationCode.TEACHER_PRESENCE_VIOLATION
+    }
+
+    assert result.evidence.stop_reason == "FALLBACK_UNRESTRICTED"
+    assert positions(result.candidate) != positions(CandidateSchedule(baseline))
+    assert {row.period for row in result.candidate.lessons if row.assignment_id in (1, 2)} == {
+        periods[2],
+        periods[3],
+    }
+    assert history in result.candidate.lessons
+    assert any(row.kind.value == "MOVED" for row in result.quality.disruption.changes)
+    assert sorted((row.assignment_id, row.credit_minutes) for row in result.candidate.lessons) == [
+        (1, 60),
+        (2, 60),
+        (3, 60),
+    ]
 
 
 @pytest.mark.parametrize(

@@ -94,6 +94,8 @@ Import downloads show preparation on the selected model and success or failure t
 Mobile debt cards show the class, subject, teacher, gaps, and duration without a wide table.
 Dashboard debt values use the same duration formatter and debt tab as the occurrence page.
 Published schedule conflicts require attention. Schedule health identifies the affected blocks and links to each teacher week.
+Generation job polling keeps the last known job state and retries a transient poll failure on the fixed interval. The indicator shows the inline error meanwhile. Polling stops on a terminal status or a permanent client error. See [scheduling data hooks](../../frontend/src/features/scheduling/data.js).
+Rejecting a draft refreshes the active organization's status, current-draft, diff, and preparation caches without invalidating the published `weekSchedule`. Another organization's caches stay untouched, and the pending-draft prevalidation warning clears once the preparation query refetches.
 
 ## Failure Modes
 
