@@ -47,6 +47,12 @@ Other client responses stay in context.
 | Remove a row | Transient failure | Network, 429, 5xx | Toast, 6 s | `SmartTable` | Retry |
 | Create or edit a catalog record | Success | — | Toast, 4 s | Page | — |
 | Create or edit a catalog record | Transient failure | Network, 429, 5xx | Toast, 6 s | Page | Form stays open |
+| Create, rename, or remove a room type | Success | — | Toast, 4 s | `RoomTypesModal` | — |
+| Create or rename a room type | Invalid, duplicate, or fixed name | `validation_error`, `room_type_name_taken`, `room_type_fixed` | Field feedback in the modal: "Escreva um nome de tipo com até 60 caracteres.", "Já existe um tipo de sala com este nome.", "O tipo Normal é fixo: não pode mudar de nome nem ser removido." | `RoomTypesModal` | Fix the name |
+| Create or rename a room type | Not found | `resource_not_found` | Field feedback in the modal: "Tipo de sala não encontrado." | `RoomTypesModal` | Reopen the window |
+| Remove a room type | Business block | `resource_in_use` | Banner in the modal: "Este tipo é usado por: salas {salas}; disciplinas {disciplinas}. Mude-lhes o tipo primeiro." | `RoomTypesModal` | Change the rooms and subjects first |
+| Remove a room type | Not found or fixed | `resource_not_found`, `room_type_fixed` | Banner in the modal: "Tipo de sala não encontrado." or the fixed-type message | `RoomTypesModal` | Reopen the window |
+| Save or remove a room type | Transient failure | Network, 429, 5xx | Toast, 6 s | `RoomTypesModal` | Retry |
 | Assign a teacher | Missing competency | `teacher_competency_missing` | Field feedback | `ClassSubjects` | Choose an eligible teacher |
 | Assign a teacher | Transient failure | Network, 429, 5xx | Toast, 6 s | `ClassSubjects` | Retry |
 | Update a class subject's modules | Success | — | Toast, 4 s, one fixed `id` | `ClassSubjects` | — |

@@ -163,3 +163,35 @@ export function getApiErrorMessage(error, fallbackMessage = TXT.ERROR_UNKNOWN, c
   if (!error?.response && !error?.code && fallbackMessage) return fallbackMessage
   return presentation.message
 }
+
+export const ROOM_TYPE_NAME_MESSAGE = 'Escreva um nome de tipo com até 60 caracteres.'
+
+// Scoped to the room type window: these codes and statuses read differently on
+// other screens, so the generic presentations above stay unchanged.
+const ROOM_TYPE_MESSAGES = {
+  validation_error: ROOM_TYPE_NAME_MESSAGE,
+  resource_not_found: 'Tipo de sala não encontrado.',
+  room_type_name_taken: 'Já existe um tipo de sala com este nome.',
+  room_type_fixed: 'O tipo Normal é fixo: não pode mudar de nome nem ser removido.',
+}
+
+const joinNames = (names) => (names.length > 1 ? `${names.slice(0, -1).join(', ')} e ${names.at(-1)}` : names[0])
+
+const namesOf = (value) => (Array.isArray(value) ? value.filter(isText) : [])
+
+function roomTypeInUseMessage(context) {
+  const rooms = namesOf(context?.rooms)
+  const subjects = namesOf(context?.subjects)
+  const groups = []
+  if (rooms.length) groups.push(`salas ${joinNames(rooms)}`)
+  if (subjects.length) groups.push(`disciplinas ${joinNames(subjects)}`)
+  return groups.length ? `Este tipo é usado por: ${groups.join('; ')}. Mude-lhes o tipo primeiro.` : null
+}
+
+export function getRoomTypeErrorMessage(error) {
+  const code = getApiErrorCode(error) ?? STATUS_CODES[error?.response?.status]
+  if (code === 'resource_in_use') {
+    return roomTypeInUseMessage(detailOf(error)?.context) ?? getApiErrorMessage(error)
+  }
+  return Object.hasOwn(ROOM_TYPE_MESSAGES, code) ? ROOM_TYPE_MESSAGES[code] : getApiErrorMessage(error)
+}

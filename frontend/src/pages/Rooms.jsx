@@ -10,6 +10,7 @@ import SmartTable from '../components/SmartTable'
 import GenericModalForm from '../components/GenericModalForm'
 import RoomForm from '../components/Forms/RoomForm'
 import RoomTypeBadge from '../components/RoomTypeBadge'
+import RoomTypesModal from '../components/RoomTypesModal'
 import { getApiErrorMessage } from '../utils/apiErrors'
 import { useAttemptScope } from '../hooks/useAttemptScope'
 
@@ -25,6 +26,7 @@ const Rooms = ({ readOnly = false, allowedActions }) => {
   const navigate = useNavigate()
   const [modalVisible, setModalVisible] = useState(false)
   const [selectedItem, setSelectedItem] = useState(null)
+  const [roomTypesVisible, setRoomTypesVisible] = useState(false)
 
   // 1. Hooks de Dados
   const { data: rooms, isLoading, isError, error, refetch } = useRooms()
@@ -86,6 +88,7 @@ const Rooms = ({ readOnly = false, allowedActions }) => {
       <PageHeader preTitle="Gestão" title="Salas" />
       {canCreate && <div className="d-flex justify-content-end gap-2 mb-4">
         <CButton color="secondary" variant="outline" onClick={() => navigate('/imports?resource=rooms')}>Importar CSV</CButton>
+        <CButton color="secondary" variant="outline" onClick={() => setRoomTypesVisible(true)}>Tipos de sala</CButton>
         <CButton color="primary" onClick={handleCreate} className="d-flex align-items-center gap-2" data-tutorial-target="new-room">
           <CIcon icon={cilPlus} />
           Nova Sala
@@ -118,6 +121,8 @@ const Rooms = ({ readOnly = false, allowedActions }) => {
         isLoading={activeMutation.isPending}
         tutorialTarget="room-form"
       />
+
+      {roomTypesVisible && <RoomTypesModal onClose={() => setRoomTypesVisible(false)} />}
     </div>
   )
 }
