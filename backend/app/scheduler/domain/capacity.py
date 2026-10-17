@@ -26,12 +26,15 @@ from app.scheduler.domain.candidate import (
 class CapacityCheck:
     deficits: Mapping[int, int]
     class_deficits: Mapping[int, int] = field(default_factory=dict)
+    teacher_deficits: Mapping[int, int] = field(default_factory=dict)
     evidence_kind: str = "PROVEN_LOWER_BOUND"
 
     @property
     def proven_infeasible(self) -> bool:
-        return any(minutes > 0 for minutes in self.deficits.values()) or any(
-            minutes > 0 for minutes in self.class_deficits.values()
+        return any(
+            minutes > 0
+            for deficit_map in (self.deficits, self.class_deficits, self.teacher_deficits)
+            for minutes in deficit_map.values()
         )
 
 
@@ -185,19 +188,29 @@ def eligible_periods(
     return tuple(eligible)
 
 
+def _add_union_minutes(union: dict[tuple, int], periods: tuple[Period, ...]) -> None:
+    for period in periods:
+        union[(period.start_utc, period.end_utc)] = period.duration_minutes
+
+
 def aggregate_capacity_check(
     snapshot: PlanningSnapshot, periods: tuple[Period, ...]
 ) -> CapacityCheck:
-    """Per-assignment and per-class proven deficits in one eligibility pass.
+    """Per-assignment, per-class and per-teacher proven deficits in one pass.
 
-    A class only attends one lesson at a time, so the periods where its
-    residual demand fits are the union of its assignments' eligible periods,
-    counted once. The class deficit is a lower bound: it never uses the lunch
-    rule, so it can only name a class when the shortage is demonstrated.
+    A class or a teacher only takes one lesson at a time, so the periods where
+    their residual demand fits are the union of their assignments' eligible
+    periods, counted once. These lower bounds never use the lunch rule, so they
+    only name a resource when the shortage is demonstrated. A teacher is named
+    only when its shortage is larger than the shortages of its own assignments,
+    so one lone short assignment is not reported twice.
     """
     deficits: dict[int, int] = {}
     class_remaining: dict[int, int] = {}
     class_periods: dict[int, dict[tuple, int]] = {}
+    teacher_remaining: dict[int, int] = {}
+    teacher_periods: dict[int, dict[tuple, int]] = {}
+    teacher_assignment_deficits: dict[int, int] = {}
     for assignment in snapshot.assignments:
         remaining = residual_minutes(snapshot, assignment.assignment_id)
         if remaining <= 0:
@@ -206,14 +219,23 @@ def aggregate_capacity_check(
         available = sum(period.duration_minutes for period in eligible)
         if available < remaining:
             deficits[assignment.assignment_id] = remaining - available
+        teacher_id = assignment.teacher_id
+        teacher_remaining[teacher_id] = teacher_remaining.get(teacher_id, 0) + remaining
+        teacher_assignment_deficits[teacher_id] = teacher_assignment_deficits.get(
+            teacher_id, 0
+        ) + deficits.get(assignment.assignment_id, 0)
+        _add_union_minutes(teacher_periods.setdefault(teacher_id, {}), eligible)
         for class_id in assignment.class_ids:
             class_remaining[class_id] = class_remaining.get(class_id, 0) + remaining
-            union = class_periods.setdefault(class_id, {})
-            for period in eligible:
-                union[(period.start_utc, period.end_utc)] = period.duration_minutes
+            _add_union_minutes(class_periods.setdefault(class_id, {}), eligible)
     class_deficits: dict[int, int] = {}
     for class_id, remaining in class_remaining.items():
         shared = sum(class_periods[class_id].values())
         if shared < remaining:
             class_deficits[class_id] = remaining - shared
-    return CapacityCheck(deficits, class_deficits)
+    teacher_deficits: dict[int, int] = {}
+    for teacher_id, remaining in teacher_remaining.items():
+        shortage = remaining - sum(teacher_periods[teacher_id].values())
+        if shortage > teacher_assignment_deficits[teacher_id]:
+            teacher_deficits[teacher_id] = shortage
+    return CapacityCheck(deficits, class_deficits, teacher_deficits)

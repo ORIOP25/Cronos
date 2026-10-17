@@ -27,6 +27,7 @@ from app.scheduler.domain.teacher_presence import impossible_presence_teacher_id
 class DiagnosisCode(StrEnum):
     INSUFFICIENT_INTERSECTION = "INSUFFICIENT_INTERSECTION"
     INSUFFICIENT_CLASS_TIME = "INSUFFICIENT_CLASS_TIME"
+    INSUFFICIENT_TEACHER_TIME = "INSUFFICIENT_TEACHER_TIME"
     INFEASIBLE_PROVEN = "INFEASIBLE_PROVEN"
     SEARCH_INCONCLUSIVE = "SEARCH_INCONCLUSIVE"
     BASELINE_STALE = "BASELINE_STALE"
@@ -162,6 +163,23 @@ def diagnose_capacity(
                 minimum_missing_minutes=deficit,
                 affected_class_ids=(class_id,),
                 suggestions=(REVIEW_AVAILABILITY, REVIEW_ROOMS, REVIEW_END_DATE),
+            )
+        )
+    for teacher_id, deficit in sorted(capacity.teacher_deficits.items()):
+        if deficit <= 0:
+            continue
+        diagnoses.append(
+            Diagnosis(
+                code=DiagnosisCode.INSUFFICIENT_TEACHER_TIME,
+                evidence_kind=EvidenceKind.PROVEN_LOWER_BOUND,
+                message=(
+                    f"At least {deficit} minute(s) of teacher demand have no eligible "
+                    "period: a teacher gives one lesson at a time."
+                ),
+                scope=f"TEACHER:{teacher_id}",
+                minimum_missing_minutes=deficit,
+                affected_teacher_ids=(teacher_id,),
+                suggestions=(REVIEW_AVAILABILITY, REVIEW_END_DATE),
             )
         )
     return tuple(diagnoses)
