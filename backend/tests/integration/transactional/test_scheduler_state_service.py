@@ -98,7 +98,8 @@ async def test_relevant_change_increments_once_and_records_event(db_session):
         )
     )
     assert stored is not None
-    assert stored.before_metadata_json == {"capacity": 20, "type": "normal"}
+    assert stored.before_metadata_json == {"capacity": 20, "room_type_id": 1}
+    assert stored.after_metadata_json == {"room_type_id": 2, "capacity": 20}
 
 
 async def test_noop_and_repair_policy_changes_do_not_increment(db_session):

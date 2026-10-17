@@ -618,6 +618,7 @@ async def test_generation_input_snapshot_tracks_the_class_subject_module_selecti
     organization = models.Organization(name="Selection Fingerprint", plan_status="active")
     db_session.add(organization)
     await db_session.flush()
+    await room_type_service.ensure_initial_room_types(db_session, organization.id)
     school_year = models.SchedulerSchoolYear(
         organization_id=organization.id,
         label="2025/2026",
@@ -734,6 +735,7 @@ async def test_fingerprint_adds_joint_groups_only_when_present(db_session):
     organization = models.Organization(name="Joint Fingerprint", plan_status="active")
     db_session.add(organization)
     await db_session.flush()
+    await room_type_service.ensure_initial_room_types(db_session, organization.id)
     school_year = models.SchedulerSchoolYear(
         organization_id=organization.id,
         label="2025/2026",

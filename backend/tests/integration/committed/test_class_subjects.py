@@ -25,6 +25,7 @@ from app.scheduler.infrastructure.models import (
     CurricularRequirement,
 )
 from app.services import class_service
+from app.services.room_type_service import ensure_initial_room_types
 from tests._support.db_fixtures import (
     TestingSessionLocal,
     create_teacher_profile,
@@ -40,6 +41,7 @@ class TestClassSubjectLink:
         org = models.Organization(name="Escola Teste", plan_status="active")
         db_session.add(org)
         await db_session.flush()
+        await ensure_initial_room_types(db_session, org.id)
 
         course = models.Course(
             name="Técnico em Informática", abbreviation="TI", organization_id=org.id

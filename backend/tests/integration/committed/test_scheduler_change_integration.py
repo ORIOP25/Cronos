@@ -227,6 +227,7 @@ async def test_module_selection_records_a_class_subject_assignment_update(db_ses
     organization = models.Organization(name="Selection Change School", plan_status="active")
     db_session.add(organization)
     await db_session.commit()
+    await room_type_service.ensure_initial_room_types(db_session, organization.id)
 
     await settings_service.upsert_settings(
         db_session,

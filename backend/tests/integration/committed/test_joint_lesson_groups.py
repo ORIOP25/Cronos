@@ -816,6 +816,7 @@ async def test_candidates_include_source_from_another_org_is_not_found(
     )
     db_session.add(other_org)
     await db_session.flush()
+    await ensure_initial_room_types(db_session, other_org.id)
     other_subject = models.Subject(
         name="Português",
         organization_id=other_org.id,
