@@ -33,7 +33,7 @@ Separate scheduler v1 records preserve curricular demand, execution evidence, de
 | Legal evidence | `organization_legal_acceptance` |
 | Curriculum | `course`, `class`, `subject`, `module`, `course_subject_link`, `teacher_subject_link`, `class_subject_link`, `class_subject_module` |
 | Joint lessons | `joint_lesson_group`, `joint_lesson_group_member`, `joint_lesson_group_module` |
-| Resources | `room`, `timeslot`, `grid_version`, `availability`, `class_availability`, `constraint` |
+| Resources | `room`, `room_type`, `timeslot`, `grid_version`, `availability`, `class_availability`, `constraint` |
 | School calendar | `organization_settings`, `organization_grid_settings`, `school_calendar_event`, `school_calendar_event_class` |
 | Scheduler lifecycle | `scheduler_school_year`, `scheduler_school_year_state`, `scheduler_state_version_events` |
 | Operational records | `lesson_occurrence`, `operational_schedule_block` |
@@ -43,6 +43,8 @@ Separate scheduler v1 records preserve curricular demand, execution evidence, de
 | Definitions | `backend/app/models.py` and `backend/app/scheduler/infrastructure/models.py` |
 
 `class_subject_module` marks the modules selected on a class/subject link. Its primary key is `(organization_id, class_subject_link_id, module_id)`, and forced row-level security isolates the tenant. The migration `0002_class_subject_modules` fills every existing link with all its subject modules. `curricular_requirement.planned` is `false` for a retired module that keeps executed history; see [Professional Education](../02_domain_model/PROFESSIONAL_EDUCATION.md).
+
+`room_type` is a room type owned by one school: `name`, `is_normal` and `is_archived`. A unique index on `lower(name)` per organization rejects a duplicate name ignoring letter case, and a partial unique index keeps at most one active Normal type per school. The service compares names with case and accents folded (`fold_text`), so it also rejects a name that only differs by accents; because that rule is not expressible in the index, every room-type write locks the organization row before the lookup. Migration `0006_room_types` creates the table, seeds the initial types of every existing school (`INITIAL_TYPES` in that file, exactly one of them Normal), and adds the nullable `room.room_type_id` and `subject.room_type_id` (organization-scoped composite foreign key) backfilled from the legacy `roomtype` enum. The enum still decides the requirement for rooms and subjects until the final pass. See [School Configuration](../02_domain_model/SCHOOL_CONFIGURATION.md).
 
 `joint_lesson_group` is one joint lesson: a subject, its member class/subject links and its joint modules. `joint_lesson_group_member` has primary key `(organization_id, class_subject_link_id)`, so a link belongs to at most one group. `joint_lesson_group_module` has primary key `(organization_id, group_id, module_id)`. The member and module foreign keys do not cascade, so the database refuses removing a link or module that a joint lesson uses. The migration `0004_joint_lesson_groups` creates the three tables and adds `scheduler_lesson_v1.teaching_unit_key` (backfilled as `A:{assignment_id}`); the lesson identity becomes `(version_id, stable_key, assignment_id)` so sibling lessons of a joint lesson share a `stable_key`. See [Professional Education](../02_domain_model/PROFESSIONAL_EDUCATION.md).
 

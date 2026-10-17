@@ -651,6 +651,29 @@ class RoomRead(RoomBase):
     model_config = model_config
 
 
+# --- ROOM TYPE (TIPO DE SALA) ---
+class RoomTypeRef(BaseModel):
+    id: int
+    name: str
+    is_normal: bool
+    model_config = model_config
+
+
+class RoomTypeRead(RoomTypeRef):
+    room_count: int = 0
+    subject_count: int = 0
+
+
+class RoomTypeCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    name: str = Field(..., min_length=1, max_length=60)
+
+
+class RoomTypeUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    name: str = Field(..., min_length=1, max_length=60)
+
+
 # ==========================================
 #  HORÁRIOS (Complexo)
 # ==========================================

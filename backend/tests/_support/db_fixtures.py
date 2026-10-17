@@ -390,6 +390,13 @@ async def create_org_and_user(
             membership_id=membership.id,
         )
 
+    async def _ensure_room_types(org: models.Organization) -> None:
+        if org.foundation_status != models.OrganizationFoundationStatus.COMPLETED:
+            return
+        from app.services import room_type_service
+
+        await room_type_service.ensure_initial_room_types(db_session, org.id)
+
     # Verificar se user já existe
     existing_user = (
         await db_session.execute(
@@ -407,6 +414,7 @@ async def create_org_and_user(
         if org is not None:
             membership = await _ensure_membership(org, existing_user)
             await _ensure_legal_acceptance(org, membership)
+            await _ensure_room_types(org)
         return org, existing_user
 
     # Verificar se org já existe
@@ -443,6 +451,7 @@ async def create_org_and_user(
     await db_session.flush()
     membership = await _ensure_membership(org, user)
     await _ensure_legal_acceptance(org, membership)
+    await _ensure_room_types(org)
     return org, user
 
 

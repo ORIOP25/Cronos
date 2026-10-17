@@ -70,7 +70,9 @@ def _unique_column_sets(inspector, table: str) -> set[tuple[str, ...]]:
     for index in inspector.get_indexes(table, schema="public"):
         columns = tuple(index.get("column_names") or ())
         is_partial = bool(index.get("dialect_options", {}).get("postgresql_where"))
-        if index.get("unique") and columns and not is_partial:
+        # Expression indexes expose ``None`` in ``column_names``; there is no
+        # plain column to quote, and the database already enforces them.
+        if index.get("unique") and columns and None not in columns and not is_partial:
             column_sets.add(columns)
 
     return column_sets

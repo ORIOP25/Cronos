@@ -368,7 +368,7 @@ def _key(value: str) -> str:
     return _clean(value).casefold()
 
 
-def _fold(value: str) -> str:
+def fold_text(value: str) -> str:
     """Lowercase and strip accents, so users may type ``Impossível`` or ``impossivel``."""
     return "".join(
         character
@@ -383,7 +383,7 @@ def normalize_room_type(value: str) -> str | None:
         "laboratorio": "lab",
         "ginasio": "gym",
         "artes": "art",
-    }.get(_fold(value))
+    }.get(fold_text(value))
 
 
 def normalize_hour(value: str) -> str | None:
@@ -396,7 +396,7 @@ def normalize_hour(value: str) -> str | None:
 
 def normalize_day(value: str) -> int | None:
     """Accept a Portuguese day name with or without ``-feira``, accents or case."""
-    plain = _fold(value)
+    plain = fold_text(value)
     for suffix in ("-feira", "feira"):
         if plain.endswith(suffix):
             plain = plain[: -len(suffix)]
@@ -405,12 +405,12 @@ def normalize_day(value: str) -> int | None:
 
 
 def normalize_level(value: str) -> int | None:
-    return _LEVEL_SCORES.get(_fold(value))
+    return _LEVEL_SCORES.get(fold_text(value))
 
 
 def normalize_yes_no(value: str) -> bool | None:
     """Accept ``Sim``/``Não`` without case or accents; an empty cell means Sim."""
-    folded = _fold(value)
+    folded = fold_text(value)
     if not folded:
         return True
     if folded == "sim":

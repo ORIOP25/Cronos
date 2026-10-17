@@ -1069,6 +1069,42 @@ class Class(Base):
         return f"<Class(id={self.id}, name='{self.name}')>"
 
 
+# 6b. Modelo "SchoolRoomType" (Tipo de Sala da escola)
+class SchoolRoomType(Base):
+    """School-owned room type. Exactly one active Normal type per school."""
+
+    __tablename__ = "room_type"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+
+    organization_id: Mapped[int] = mapped_column(
+        ForeignKey(FK_ORG_ID, ondelete="CASCADE"), nullable=False
+    )
+
+    name: Mapped[str] = mapped_column(String(60), nullable=False)
+
+    # The single Normal type; the partial unique index keeps it unique per school.
+    is_normal: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    # Archiving only happens through removal; creating the same name restores it.
+    is_archived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("organization_id", "id", name="uq_room_type_org_id"),
+        Index("ix_room_type_organization_id", "organization_id"),
+        Index("uq_room_type_org_name", "organization_id", func.lower(name), unique=True),
+        Index(
+            "uq_room_type_org_normal",
+            "organization_id",
+            unique=True,
+            postgresql_where=is_normal.is_(True),
+        ),
+    )
+
+    def __repr__(self) -> str:
+        return f"<SchoolRoomType(id={self.id}, name='{self.name}', is_normal={self.is_normal})>"
+
+
 # 7. Modelo "Room" (Sala)
 class Room(Base):
     __tablename__ = "room"
@@ -1087,11 +1123,22 @@ class Room(Base):
     # Removida da gestão atual mas preservada para referências históricas.
     is_archived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
+    # Tipo de sala da escola (S1 nulo; obrigatório no fim do PR 1).
+    room_type_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
     # Chave Estrangeira: Liga a Sala à sua Organization
     organization_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID))
 
     # Relacionamento: Permite-nos fazer my_room.organization
     organization: Mapped["Organization"] = relationship(back_populates="rooms")
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id", "room_type_id"],
+            ["room_type.organization_id", "room_type.id"],
+            name="fk_room_room_type_org",
+        ),
+    )
 
     def __repr__(self) -> str:
         return f"<Room(id={self.id}, name='{self.name}', type='{self.type.value}')>"
@@ -1113,6 +1160,9 @@ class Subject(Base):
     # Removida da gestão atual mas preservada para referências históricas.
     is_archived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
+    # Tipo de sala da escola (S1 nulo; obrigatório no fim do PR 1).
+    room_type_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
     modules: Mapped[list["Module"]] = relationship(
         back_populates="subject", cascade=CASCADE_ALL_DELETE
     )
@@ -1130,6 +1180,14 @@ class Subject(Base):
 
     teachers: Mapped[list[Teacher]] = relationship(
         secondary=teacher_subject_link, back_populates="subjects"
+    )
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id", "room_type_id"],
+            ["room_type.organization_id", "room_type.id"],
+            name="fk_subject_room_type_org",
+        ),
     )
 
     def __repr__(self) -> str:

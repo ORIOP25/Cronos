@@ -16,6 +16,7 @@ from app.api.v1.endpoints import (
     occurrences,
     org_settings,
     readiness,
+    room_types,
     rooms,
     schedule,
     scheduler,
@@ -47,6 +48,7 @@ api_router.include_router(
     tags=["Aulas Conjuntas"],
 )
 api_router.include_router(rooms.router, prefix="/rooms", tags=["Salas"])
+api_router.include_router(room_types.router, prefix="/room-types", tags=["Tipos de Sala"])
 api_router.include_router(timeslots.router, prefix="/timeslots", tags=["timeslots"])
 api_router.include_router(scheduler.router, prefix="/scheduler", tags=["Scheduler"])
 

@@ -176,6 +176,53 @@ async def subject_has_history(db: AsyncSession, organization_id: int, subject_id
     )
 
 
+# --- ROOM TYPES ---
+def _room_type_references(model, organization_id: int, room_type_id: int):
+    return select(model.id).where(
+        model.organization_id == organization_id,
+        model.room_type_id == room_type_id,
+    )
+
+
+async def room_type_active_references(
+    db: AsyncSession, organization_id: int, room_type_id: int
+) -> dict[str, list[str]]:
+    """Names of the active rooms and subjects that still use this type."""
+    rooms = (
+        await db.scalars(
+            select(models.Room.name)
+            .where(
+                models.Room.organization_id == organization_id,
+                models.Room.room_type_id == room_type_id,
+                models.Room.is_archived.is_(False),
+            )
+            .order_by(models.Room.name)
+        )
+    ).all()
+    subjects = (
+        await db.scalars(
+            select(models.Subject.name)
+            .where(
+                models.Subject.organization_id == organization_id,
+                models.Subject.room_type_id == room_type_id,
+                models.Subject.is_archived.is_(False),
+            )
+            .order_by(models.Subject.name)
+        )
+    ).all()
+    return {"rooms": list(rooms), "subjects": list(subjects)}
+
+
+async def room_type_has_history(db: AsyncSession, organization_id: int, room_type_id: int) -> bool:
+    return await _any(
+        db,
+        [
+            _room_type_references(models.Room, organization_id, room_type_id),
+            _room_type_references(models.Subject, organization_id, room_type_id),
+        ],
+    )
+
+
 # --- CLASSES ---
 async def class_in_use(db: AsyncSession, organization_id: int, class_id: int) -> bool:
     return await _any(
