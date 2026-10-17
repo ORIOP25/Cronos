@@ -239,6 +239,35 @@ describe('ClassDetails composition', () => {
       expect(screen.getByText('A sala P2 tem 20 lugares e a turma tem 24 alunos. Até corrigir, o Cronos escolhe a sala.')).toBeInTheDocument()
     })
 
+    it.each([
+      ['Sala 101', 'Sala 101', 'A Sala 101 tem 20 lugares e a turma tem 24 alunos. Até corrigir, o Cronos escolhe a sala.'],
+      ['L-03', 'Sala L-03', 'A sala L-03 tem 20 lugares e a turma tem 24 alunos. Até corrigir, o Cronos escolhe a sala.'],
+    ])('does not double the Sala prefix for room "%s"', (roomName, heading, warning) => {
+      hooks.classDetails.mockReturnValue({ data: withHomeRoom({ id: 32, name: roomName, capacity: 20, room_type: normalType }), isLoading: false, error: null })
+      renderClassDetails()
+
+      expect(screen.getByText(heading)).toBeInTheDocument()
+      expect(screen.queryByText(`Sala ${heading}`)).toBeNull()
+      expect(screen.getByText(warning)).toBeInTheDocument()
+    })
+
+    it('keeps the capacity message natural for a room named Sala 101', () => {
+      const mutation = createMutationState()
+      mutation.mutate.mockImplementation((_variables, options) => options.onError(apiError(422, {
+        code: 'home_room_capacity',
+        context: { room_name: 'Sala 101', room_capacity: 20, class_size: 24 },
+      })))
+      hooks.updateClass.mockReturnValue(mutation)
+      hooks.rooms.mockReturnValue({ data: createRooms(), isLoading: false, error: null })
+      renderClassDetails()
+
+      openEditHeader()
+      fireEvent.change(screen.getByLabelText('Sala da turma'), { target: { value: '31' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Guardar' }))
+
+      expect(screen.getByText('A Sala 101 tem 20 lugares e a turma tem 24 alunos.')).toBeInTheDocument()
+    })
+
     it('shows the exact capacity message when the server refuses the home room', () => {
       const mutation = createMutationState()
       mutation.mutate.mockImplementation((_variables, options) => options.onError(apiError(422, {

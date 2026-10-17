@@ -119,6 +119,8 @@ Other client responses stay in context.
 | Submit a form | Invalid field or group | Local validator | Field feedback and focus | Form component | Fix the value |
 | Prevalidate a generation | Blockers or warnings | — | List panel | `Schedules` | Consult each item |
 
+The home room sentences above depend on the room name. When the name already starts with "Sala" (for example "Sala 101"), they read "A {nome} tem …" and the header reads "{nome}", so "Sala" never appears twice. Otherwise the header reads "Sala {nome}" and the sentences keep "A sala {nome}".
+
 ## Justified Exceptions
 
 `CAlert` remains only in `BulkImport.jsx` and `Schedules.jsx`, for structured lists.

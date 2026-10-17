@@ -26,7 +26,7 @@ import RoomTypeBadge from '../components/RoomTypeBadge'
 import ClassAvailabilityModal from '../components/ClassAvailabilityModal'
 import { getApiErrorMessage, getClassHomeRoomErrorMessage, joinNames } from '../utils/apiErrors'
 import { useAttemptScope } from '../hooks/useAttemptScope'
-import { formatGradeLevel } from '../utils/presentation'
+import { formatGradeLevel, homeRoomHeading, homeRoomSentenceSubject } from '../utils/presentation'
 
 // ==========================================
 //  HELPERS
@@ -485,13 +485,13 @@ const ClassDetails = () => {
                     <span>{classData.size} alunos</span>
                   </div>
                   <div className="d-flex align-items-center gap-1 text-muted">
-                    <span>{homeRoom ? `Sala ${homeRoom.name}` : 'Sala automática'}</span>
+                    <span>{homeRoom ? homeRoomHeading(homeRoom.name) : 'Sala automática'}</span>
                   </div>
                 </div>
                 {homeRoomTooSmall && (
                   <div className="mt-2">
                     <FeedbackBanner tone="warning">
-                      {`A sala ${homeRoom.name} tem ${homeRoom.capacity} lugares e a turma tem ${classData.size} alunos. Até corrigir, o Cronos escolhe a sala.`}
+                      {`${homeRoomSentenceSubject(homeRoom.name)} tem ${homeRoom.capacity} lugares e a turma tem ${classData.size} alunos. Até corrigir, o Cronos escolhe a sala.`}
                     </FeedbackBanner>
                   </div>
                 )}

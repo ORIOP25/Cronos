@@ -1,4 +1,5 @@
 import { humanizeOperationalDetail, TXT } from './terminology'
+import { homeRoomSentenceSubject } from './presentation'
 
 const PRESENTATIONS = {
   authentication_required: { title: 'Sessão terminada', message: 'A sua sessão terminou. Entre novamente para continuar.', retryable: true },
@@ -204,7 +205,7 @@ export function getClassHomeRoomErrorMessage(error) {
   if (code === 'home_room_capacity') {
     const { room_name: roomName, room_capacity: roomCapacity, class_size: classSize } = detailOf(error)?.context ?? {}
     if (isText(roomName) && isPositiveInt(roomCapacity) && isPositiveInt(classSize)) {
-      return `A sala ${roomName} tem ${roomCapacity} lugares e a turma tem ${classSize} alunos.`
+      return `${homeRoomSentenceSubject(roomName)} tem ${roomCapacity} lugares e a turma tem ${classSize} alunos.`
     }
   }
   return null
