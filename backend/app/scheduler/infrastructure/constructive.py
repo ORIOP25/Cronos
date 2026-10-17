@@ -1,6 +1,7 @@
 """Chronological construction with parallel curricular progress.
 
-Subjects with less progress take priority when competing for shared resources.
+Teachers and classes with less availability take priority while on pace, then
+lessons outside Evitar blocks, then subjects with less progress (D32, D33).
 Repeating the weekly pattern may compensate for one lesson of progress.
 Free resource combinations remain eligible even when other subjects must wait.
 Construction failure is inconclusive; every returned plan is independently valid.
