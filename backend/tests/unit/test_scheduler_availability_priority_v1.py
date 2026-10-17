@@ -12,7 +12,9 @@ from app.scheduler.domain.candidate import (
     Unavailability,
     UnavailableResource,
 )
+from app.scheduler.domain.candidate_validation import validate_candidate
 from app.scheduler.domain.projection import ModuleRequirement
+from app.scheduler.infrastructure.constructive import construct_schedule
 
 TZ = "Europe/Lisbon"
 MONDAY = date(2026, 9, 14)
@@ -30,23 +32,55 @@ def week_periods():
     return tuple(period(day, hour) for day in range(5) for hour in HOURS)
 
 
-def assignment(identity: int, teacher_id: int, class_ids: tuple[int, ...]) -> Assignment:
+def assignment(
+    identity: int, teacher_id: int, class_ids: tuple[int, ...], minutes: int = 60
+) -> Assignment:
     return Assignment(
         identity,
         class_ids,
         identity,
         teacher_id,
         frozenset({100 + identity}),
-        (ModuleRequirement(identity * 10, 1, 60),),
+        (ModuleRequirement(identity * 10, 1, minutes),),
     )
 
 
-def snapshot(assignments, soft=()) -> PlanningSnapshot:
+def school_days(weeks: int) -> tuple[date, ...]:
+    days = (MONDAY + timedelta(days=offset) for offset in range(weeks * 7))
+    return tuple(day for day in days if day.weekday() < 5)
+
+
+def horizon_periods(weeks: int) -> tuple:
+    return tuple(
+        normalize_period(day, time(hour), time(hour + 1), TZ)
+        for day in school_days(weeks)
+        for hour in HOURS
+    )
+
+
+def block(resource, identity: int, offset: int, start: int, end: int) -> Unavailability:
+    """A block on the school day ``offset`` days after the Monday of the origin."""
+    day = MONDAY + timedelta(days=offset)
+    return Unavailability(resource, identity, normalize_period(day, time(start), time(end), TZ))
+
+
+def daily(resource, identity: int, start: int, end: int, weeks: int = 1) -> tuple:
+    return tuple(
+        block(resource, identity, (day - MONDAY).days, start, end) for day in school_days(weeks)
+    )
+
+
+def week_of(lesson) -> int:
+    return (lesson.period.school_date - MONDAY).days // 7 + 1
+
+
+def snapshot(assignments, soft=(), unavailable=(), weeks: int = 1) -> PlanningSnapshot:
+    last_day = school_days(weeks)[-1]
     return PlanningSnapshot(
         strategy=SchedulingStrategy.COMPLETE_GENERATION,
         origin=MONDAY,
-        preferred_end_date=MONDAY + timedelta(days=4),
-        hard_end_date=MONDAY + timedelta(days=4),
+        preferred_end_date=last_day,
+        hard_end_date=last_day,
         timezone_name=TZ,
         grid_slots=tuple(
             GridSlot(day, time(hour), time(hour + 1)) for day in range(5) for hour in HOURS
@@ -54,7 +88,7 @@ def snapshot(assignments, soft=()) -> PlanningSnapshot:
         assignments=tuple(assignments),
         executed_minutes={},
         blocked_dates=frozenset(),
-        unavailable=(),
+        unavailable=tuple(unavailable),
         soft_unavailable=tuple(soft),
     )
 
@@ -180,3 +214,157 @@ def test_unfavorable_flags_a_period_inside_the_evitar_of_the_teacher_or_a_class(
 
     assert ledger.unfavorable(joint, first_days[0]) is True
     assert ledger.unfavorable(joint, first_days[1]) is False
+
+
+# Risk scenarios R01, R02, R03, R05, R06, R07. Each returned candidate also passes validate_candidate.
+
+R01_TEACHERS = {"R1": 1, "R2": 2, "R3": 3, "M1": 4, "M2": 5, "F1": 6, "F2": 7, "F3": 8, "F4": 9}
+R01_WINDOW_END = {"R1": 11, "R2": 11, "R3": 12, "M1": 13, "M2": 13, "L": 11}
+# (class, teacher, minutes per week). R1 and R2 are 9h-11h, R3 9h-12h, M1 and M2 9h-13h.
+R01_ROWS = (
+    (1, "R1", 300),
+    (2, "R1", 300),
+    (3, "R2", 300),
+    (4, "R2", 300),
+    (1, "M1", 360),
+    (2, "M1", 360),
+    (3, "M2", 360),
+    (4, "M2", 360),
+    (1, "R3", 210),
+    (2, "R3", 210),
+    (3, "R3", 210),
+    (4, "R3", 210),
+    (1, "F1", 1290),
+    (2, "F2", 1290),
+    (3, "F3", 1290),
+    (4, "F4", 1290),
+)
+
+
+def r01_case(weeks: int, rows, teachers: dict[str, int]):
+    """Each restricted teacher is unavailable from its window end to 18h, every school day."""
+    assignments = tuple(
+        assignment(
+            index,
+            teacher_id=teachers[name],
+            class_ids=(class_id,),
+            minutes=per_week * weeks,
+        )
+        for index, (class_id, name, per_week) in enumerate(rows, start=1)
+    )
+    unavailable = tuple(
+        row
+        for name, end in R01_WINDOW_END.items()
+        if name in teachers
+        for row in daily(TEACHER, teachers[name], end, 18, weeks)
+    )
+    return snapshot(assignments, unavailable=unavailable, weeks=weeks), horizon_periods(weeks)
+
+
+def test_r01_scarce_teachers_are_served_and_the_last_lesson_falls_in_week_12():
+    scenario, periods = r01_case(12, R01_ROWS, R01_TEACHERS)
+
+    candidate = construct_schedule(scenario, periods)
+
+    assert candidate is not None
+    assert validate_candidate(scenario, candidate).valid is True
+    assert max(week_of(lesson) for lesson in candidate.lessons) == 12
+
+
+def test_r02_pace_keeps_the_scarce_teacher_until_the_last_weeks():
+    # Teacher L (9h-11h) gives 2 h per week to class 1; F1 drops to 19.5 h per week.
+    rows = tuple(
+        (class_id, name, 1170 if name == "F1" else per_week)
+        for class_id, name, per_week in (*R01_ROWS, (1, "L", 120))
+    )
+    teachers = {**R01_TEACHERS, "L": 10}
+    scenario, periods = r01_case(12, rows, teachers)
+
+    candidate = construct_schedule(scenario, periods)
+
+    assert candidate is not None
+    assert validate_candidate(scenario, candidate).valid is True
+    assert max(week_of(lesson) for lesson in candidate.lessons) <= 12
+    last_of_l = max(
+        week_of(lesson) for lesson in candidate.lessons if lesson.assignment_id == len(rows)
+    )
+    assert last_of_l >= 10
+
+
+def test_r03_a_scarce_class_wins_the_morning_over_a_class_with_more_hours():
+    # One teacher gives 20 h to class 1 (all day) and 20 h to class 2 (only 9h-13h).
+    scenario = snapshot(
+        (
+            assignment(1, teacher_id=1, class_ids=(1,), minutes=1200),
+            assignment(2, teacher_id=1, class_ids=(2,), minutes=1200),
+        ),
+        unavailable=daily(CLASS, 2, 13, 18),
+    )
+
+    candidate = construct_schedule(scenario, horizon_periods(1))
+
+    assert candidate is not None
+    assert validate_candidate(scenario, candidate).valid is True
+    assert len(candidate.lessons) == 40
+    class_two = [lesson for lesson in candidate.lessons if lesson.assignment_id == 2]
+    assert len(class_two) == 20
+    assert all(lesson.period.start_local.hour < 13 for lesson in class_two)
+
+
+def test_r05_evitar_is_used_only_as_many_times_as_the_hours_need():
+    # 34 h of demand in one week; the teacher's Evitar covers 16h-18h every day (10 blocks).
+    scenario = snapshot(
+        (assignment(1, teacher_id=1, class_ids=(1,), minutes=34 * 60),),
+        soft=daily(TEACHER, 1, 16, 18),
+    )
+
+    candidate = construct_schedule(scenario, horizon_periods(1))
+
+    assert candidate is not None
+    assert validate_candidate(scenario, candidate).valid is True
+    assert len(candidate.lessons) == 34
+    inside_evitar = [lesson for lesson in candidate.lessons if lesson.period.start_local.hour >= 16]
+    assert len(inside_evitar) == 4
+
+
+def test_r06_preferred_blocks_take_every_lesson_when_they_have_room():
+    # 8 h of demand; the teacher prefers 9h-11h, so 11h-18h is Evitar every day.
+    scenario = snapshot(
+        (assignment(1, teacher_id=1, class_ids=(1,), minutes=8 * 60),),
+        soft=daily(TEACHER, 1, 11, 18),
+    )
+
+    candidate = construct_schedule(scenario, horizon_periods(1))
+
+    assert candidate is not None
+    assert validate_candidate(scenario, candidate).valid is True
+    assert len(candidate.lessons) == 8
+    assert all(lesson.period.start_local.hour in (9, 10) for lesson in candidate.lessons)
+
+
+def test_r07_a_dead_end_caused_by_evitar_is_repaired_by_the_relaxed_pass():
+    # T1 (teacher 7): Evitar on Monday and Tuesday, only 9h on Wednesday-Friday.
+    # T2 (teacher 8): only 9h on Wednesday-Friday. Both teach class 1, 3 h each.
+    scenario = snapshot(
+        (
+            assignment(1, teacher_id=7, class_ids=(1,), minutes=180),
+            assignment(2, teacher_id=8, class_ids=(1,), minutes=180),
+        ),
+        soft=(block(TEACHER, 7, 0, 9, 18), block(TEACHER, 7, 1, 9, 18)),
+        unavailable=(
+            *(block(TEACHER, 7, offset, 10, 18) for offset in (2, 3, 4)),
+            *(block(TEACHER, 8, offset, 9, 18) for offset in (0, 1)),
+            *(block(TEACHER, 8, offset, 10, 18) for offset in (2, 3, 4)),
+        ),
+    )
+
+    candidate = construct_schedule(scenario, horizon_periods(1))
+
+    assert candidate is not None
+    assert validate_candidate(scenario, candidate).valid is True
+    first = [lesson for lesson in candidate.lessons if lesson.assignment_id == 1]
+    second = [lesson for lesson in candidate.lessons if lesson.assignment_id == 2]
+    assert len(first) == 3
+    assert all(lesson.period.school_date == MONDAY for lesson in first)
+    assert len(second) == 3
+    assert all(lesson.period.school_date.weekday() in (2, 3, 4) for lesson in second)

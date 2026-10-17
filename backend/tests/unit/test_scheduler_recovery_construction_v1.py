@@ -266,18 +266,20 @@ def test_joint_availability_repair_moves_other_lessons_to_free_the_only_shared_p
         (1, periods[2], 1),
         (1, periods[3], 1),
     }
-    assert result.evidence.stop_reason == "FALLBACK_UNRESTRICTED"
+    # The joint unit's teacher has the only shared period, so the availability
+    # priority (spec D01, D10) lets the rebuild construction place it first.
+    assert result.evidence.stop_reason == "CONSTRUCTIVE_RECOVERY"
 
 
-def test_exact_search_consolidates_a_presence_invalid_baseline_onto_one_day():
+def test_a_repair_consolidates_a_presence_invalid_baseline_onto_one_day():
     """A newly added presence minimum invalidates the baseline and forces a real repair.
 
     The setup proof below shows the same baseline is valid without the rule and
     invalid only through `TEACHER_PRESENCE_VIOLATION` with it, so no other
     constraint causes the change. The baseline keeps the shared teacher's two
-    lessons on separate days, which the new 120-minute minimum forbids. The
-    unrestricted exact search repairs it (`FALLBACK_UNRESTRICTED` is returned
-    only when both constructions decline). No CP-SAT call is mocked.
+    lessons on separate days, which the new 120-minute minimum forbids. With the
+    availability priority (spec D01, D10) a validated construction repairs it
+    (`CONSTRUCTIVE_RECOVERY`). No CP-SAT call is mocked.
     """
     periods = (
         period(0, start=9, end=10),
@@ -318,7 +320,7 @@ def test_exact_search_consolidates_a_presence_invalid_baseline_onto_one_day():
         ValidationViolationCode.TEACHER_PRESENCE_VIOLATION
     }
 
-    assert result.evidence.stop_reason == "FALLBACK_UNRESTRICTED"
+    assert result.evidence.stop_reason == "CONSTRUCTIVE_RECOVERY"
     assert positions(result.candidate) != positions(CandidateSchedule(baseline))
     assert {row.period for row in result.candidate.lessons if row.assignment_id in (1, 2)} == {
         periods[2],

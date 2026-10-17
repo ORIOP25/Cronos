@@ -17,6 +17,7 @@ from time import monotonic
 from ortools.graph.python import min_cost_flow
 from ortools.sat.python import cp_model
 
+from app.scheduler.domain.availability_priority import AvailabilityLedger
 from app.scheduler.domain.calendar import Period
 from app.scheduler.domain.candidate import (
     Assignment,
@@ -260,6 +261,12 @@ def _select_period(
     ]
 
 
+def _interrupted(deadline: float | None, should_cancel: Callable[[], bool] | None) -> bool:
+    return (should_cancel is not None and should_cancel()) or (
+        deadline is not None and monotonic() >= deadline
+    )
+
+
 def construct_schedule(
     snapshot: PlanningSnapshot,
     periods: tuple[Period, ...],
@@ -268,7 +275,42 @@ def construct_schedule(
     should_cancel: Callable[[], bool] | None = None,
     weekly_reference: CandidateSchedule | None = None,
 ) -> CandidateSchedule | None:
-    """Construct one complete plan, preserving hard rules and protected credit."""
+    """Construct one complete plan, preserving hard rules and protected credit.
+
+    The strict pass skips an Evitar block that a teacher or class needs for its
+    own hours (tech spec T08). If that filter refused an option and the pass
+    failed, one relaxed pass repeats the construction without it (T09).
+    """
+    candidate, refused = _construct_pass(
+        snapshot,
+        periods,
+        deadline=deadline,
+        should_cancel=should_cancel,
+        weekly_reference=weekly_reference,
+        strict=True,
+    )
+    if candidate is None and refused and not _interrupted(deadline, should_cancel):
+        candidate, _refused = _construct_pass(
+            snapshot,
+            periods,
+            deadline=deadline,
+            should_cancel=should_cancel,
+            weekly_reference=weekly_reference,
+            strict=False,
+        )
+    return candidate
+
+
+def _construct_pass(
+    snapshot: PlanningSnapshot,
+    periods: tuple[Period, ...],
+    *,
+    deadline: float | None,
+    should_cancel: Callable[[], bool] | None,
+    weekly_reference: CandidateSchedule | None,
+    strict: bool,
+) -> tuple[CandidateSchedule | None, int]:
+    """One construction pass; returns the plan and the options the Evitar filter refused."""
     canonical = canonical_periods(periods)
     slots = sorted(
         snapshot.grid_slots, key=lambda slot: (slot.day_of_week, slot.start_local, slot.end_local)
@@ -366,17 +408,17 @@ def construct_schedule(
         )
 
     options_by_period: dict[Period, list[Assignment]] = defaultdict(list)
+    eligible_by_assignment: dict[int, tuple[Period, ...]] = {}
     room_pressure: dict[int, Fraction] = defaultdict(Fraction)
     class_remaining: dict[int, int] = defaultdict(int)
     teacher_remaining: dict[int, int] = defaultdict(int)
     for identity, assignment in assignments.items():
-        if (should_cancel is not None and should_cancel()) or (
-            deadline is not None and monotonic() >= deadline
-        ):
-            return None
+        if _interrupted(deadline, should_cancel):
+            return None, 0
         if remaining[identity] <= 0:
             continue
         eligible = eligible_periods(snapshot, assignment, canonical)
+        eligible_by_assignment[identity] = eligible
         for period in eligible:
             options_by_period[period].append(assignment)
         for class_id in assignment.class_ids:
@@ -385,16 +427,15 @@ def construct_schedule(
         for room in assignment.eligible_room_ids:
             room_pressure[room] += Fraction(remaining[identity], len(assignment.eligible_room_ids))
 
+    ledger = AvailabilityLedger.build(snapshot, eligible_by_assignment, remaining)
     ranks: dict[int, int] = defaultdict(int)
     lessons: list[ScheduledLesson] = []
     dispensed_teachers = snapshot.lunch_dispensed_teacher_ids
     minimum_teachers = _minimum_presence_teachers(snapshot)
     slots_by_day = _slots_by_day(snapshot)
     for period in canonical:
-        if (should_cancel is not None and should_cancel()) or (
-            deadline is not None and monotonic() >= deadline
-        ):
-            return None
+        if _interrupted(deadline, should_cancel):
+            return None, ledger.refused
         active = [
             row
             for row in options_by_period[period]
@@ -437,6 +478,8 @@ def construct_schedule(
                 )
             )
             return (
+                ledger.priority(assignment, current_period),
+                ledger.unfavorable(assignment, current_period),
                 any(class_id in started_classes for class_id in assignment.class_ids),
                 initial_remaining[identity] != remaining[identity],
                 Fraction(
@@ -490,8 +533,9 @@ def construct_schedule(
                     key=lambda room: (room != preferred_room, room_pressure[room], room),
                 )
             )
-            if rooms:
-                options.append((assignment, rooms))
+            if not rooms or (strict and not ledger.allows(assignment, period)):
+                continue
+            options.append((assignment, rooms))
         for assignment, room in _select_period(options, deadline=deadline):
             identity = assignment.assignment_id
             credit = min(remaining[identity], period.duration_minutes)
@@ -502,7 +546,7 @@ def construct_schedule(
             while unallocated > 0:
                 module_index = _next_module(assignment.modules, cursor[identity])
                 if module_index is None:
-                    return None
+                    return None, ledger.refused
                 module = assignment.modules[module_index]
                 offset = cursor[identity][module.module_id]
                 take = min(unallocated, module.required_minutes - offset)
@@ -513,6 +557,7 @@ def construct_schedule(
                 ScheduledLesson(lesson_id, identity, period, room, credit, tuple(slices))
             )
             remaining[identity] -= credit
+            ledger.place(assignment, credit)
             for class_id in assignment.class_ids:
                 class_remaining[class_id] -= credit
                 started_classes.add(class_id)
@@ -524,6 +569,7 @@ def construct_schedule(
         if not any(remaining.values()):
             break
     if any(remaining.values()):
-        return None
+        return None, ledger.refused
     candidate = CandidateSchedule((*snapshot.protected_lessons, *lessons))
-    return candidate if validate_candidate(snapshot, candidate).valid else None
+    valid = validate_candidate(snapshot, candidate).valid
+    return (candidate if valid else None), ledger.refused

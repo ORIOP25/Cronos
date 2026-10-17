@@ -7,6 +7,7 @@ and Easter breaks blocked. The generator must return a complete, independently
 validated schedule for the 12-class and 48-class topologies.
 """
 
+import hashlib
 from datetime import date
 from time import monotonic
 
@@ -15,6 +16,7 @@ import pytest
 from app.scheduler.composition import generate_schedule
 from app.scheduler.domain.candidate import TeacherPresenceRule
 from app.scheduler.domain.candidate_validation import validate_candidate
+from app.scheduler.infrastructure.constructive import construct_schedule
 from app.scheduler.lab.typology import (
     CHRISTMAS_BREAK,
     EASTER_BREAK,
@@ -41,6 +43,26 @@ def test_the_fixture_follows_the_product_typology():
     assert fixture.snapshot.preferred_end_date == PREFERRED_END
     for day in CHRISTMAS_BREAK[0], EASTER_BREAK[0]:
         assert day in fixture.snapshot.blocked_dates
+
+
+# R14: the product typology without availability differences or Evitar keeps the
+# construction output of main at 01a011e9 (tech spec I02, D11).
+TWELVE_CLASS_CONSTRUCTION_DIGEST = (
+    "eece1d47e0a03ace985f0582552ab033d39cb1fa8bdb117fb7563a20a368477d"
+)
+
+
+def test_the_typology_construction_output_is_unchanged_without_availability_rules():
+    fixture = build_typology_fixture(12)
+
+    candidate = construct_schedule(fixture.snapshot, fixture.periods)
+
+    assert candidate is not None
+    lessons = sorted(
+        (lesson.assignment_id, lesson.period.start_utc.isoformat(), lesson.room_id)
+        for lesson in candidate.lessons
+    )
+    assert hashlib.sha256(repr(lessons).encode()).hexdigest() == TWELVE_CLASS_CONSTRUCTION_DIGEST
 
 
 def test_classes_are_always_multiples_of_three():
