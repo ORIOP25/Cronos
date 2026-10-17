@@ -36,6 +36,7 @@ const TERMINAL_MESSAGES = {
 
 const JOINT_NO_COMMON_TIME = 'JOINT_NO_COMMON_TIME'
 const TEACHER_PRESENCE_RULES = 'TEACHER_PRESENCE_RULES'
+const INSUFFICIENT_TEACHER_TIME = 'INSUFFICIENT_TEACHER_TIME'
 // T09: the presence estimate is shown only in these no-schedule terminal states.
 const PRESENCE_ADVISORY_STATUSES = new Set(['INFEASIBLE', 'FAILED', 'INCONCLUSIVE'])
 
@@ -71,6 +72,26 @@ const provenClassDiagnostics = (diagnostics) => (Array.isArray(diagnostics) ? di
     && Number.isFinite(item.minimum_missing_minutes)
     && item.minimum_missing_minutes > 0
   ))
+
+// A teacher row without a current name belongs to a deleted teacher or to another
+// organization, so the panel never lists it.
+const provenTeacherDiagnostics = (diagnostics) => (Array.isArray(diagnostics) ? diagnostics : [])
+  .filter((item) => (
+    item.code === INSUFFICIENT_TEACHER_TIME
+    && item.teacher_name
+    && typeof item.minimum_missing_minutes === 'number'
+    && Number.isFinite(item.minimum_missing_minutes)
+    && item.minimum_missing_minutes > 0
+  ))
+
+const TeacherDiagnosticLine = ({ diagnostic }) => (
+  <li>
+    <Link to={`/members?teacher_id=${diagnostic.teacher_id}&panel=availability`}>
+      {diagnostic.teacher_name}
+    </Link>
+    {`: faltam pelo menos ${formatDurationMinutes(Math.ceil(diagnostic.minimum_missing_minutes))}.`}
+  </li>
+)
 
 const DiagnosticLine = ({ diagnostic }) => {
   const isIntersection = diagnostic.code === 'INSUFFICIENT_INTERSECTION' && diagnostic.subject_name
@@ -157,6 +178,9 @@ const GenerationStatusPanel = ({ jobId }) => {
     const classDiagnostics = status === 'INFEASIBLE' && !roomBlocked
       ? provenClassDiagnostics(job.diagnostics)
       : []
+    const teacherDiagnostics = status === 'INFEASIBLE' && !roomBlocked
+      ? provenTeacherDiagnostics(job.diagnostics)
+      : []
     return (
       <div className="mb-4" data-testid="generation-terminal">
         <FeedbackBanner tone={isStaleLike ? 'warning' : 'danger'}>
@@ -183,15 +207,30 @@ const GenerationStatusPanel = ({ jobId }) => {
               Reveja as disponibilidades das turmas e do professor.{' '}
               <Link to="/config">Abrir Configuração</Link>.
             </>
-          ) : classDiagnostics.length > 0 ? (
+          ) : classDiagnostics.length > 0 || teacherDiagnostics.length > 0 ? (
             <>
-              Turmas sem tempo suficiente:
-              <ul className="mb-1 mt-1 ps-3">
-                {classDiagnostics.map((diagnostic) => (
-                  <DiagnosticLine key={diagnostic.class_id} diagnostic={diagnostic} />
-                ))}
-              </ul>
-              Reveja a disponibilidade destas turmas.
+              {classDiagnostics.length > 0 && (
+                <>
+                  Turmas sem tempo suficiente:
+                  <ul className="mb-1 mt-1 ps-3">
+                    {classDiagnostics.map((diagnostic) => (
+                      <DiagnosticLine key={diagnostic.class_id} diagnostic={diagnostic} />
+                    ))}
+                  </ul>
+                  {teacherDiagnostics.length === 0 && 'Reveja a disponibilidade destas turmas.'}
+                </>
+              )}
+              {teacherDiagnostics.length > 0 && (
+                <>
+                  Professores sem tempo suficiente:
+                  <ul className="mb-1 mt-1 ps-3">
+                    {teacherDiagnostics.map((diagnostic) => (
+                      <TeacherDiagnosticLine key={diagnostic.teacher_id} diagnostic={diagnostic} />
+                    ))}
+                  </ul>
+                  Reveja a disponibilidade destes professores, das suas turmas ou as atribuições.
+                </>
+              )}
             </>
           ) : (TERMINAL_MESSAGES[status] || '')}
           {presenceAdvisory.length > 0 && (

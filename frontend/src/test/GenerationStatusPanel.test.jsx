@@ -510,4 +510,59 @@ describe('GenerationStatusPanel', () => {
     expect(screen.getByText(/aulas protegidas.*Impossível/)).toBeInTheDocument()
     expect(screen.getByText(/Professores com mínimo de horas: Ana Silva\./)).toBeInTheDocument()
   })
+
+  it('lists named teachers with minutes missing and links to their availability', () => {
+    useScheduleTaskStatus.mockReturnValue({
+      data: {
+        status: 'INFEASIBLE',
+        diagnostics: [
+          { code: 'INSUFFICIENT_TEACHER_TIME', minimum_missing_minutes: 60, teacher_id: 7, teacher_name: 'Ana Silva' },
+          { code: 'INSUFFICIENT_TEACHER_TIME', minimum_missing_minutes: 60, teacher_id: 8, teacher_name: null },
+          { code: 'INSUFFICIENT_TEACHER_TIME', minimum_missing_minutes: 0, teacher_id: 9, teacher_name: 'Bruno Costa' },
+        ],
+      },
+      isLoading: false,
+    })
+
+    render(
+      <MemoryRouter>
+        <GenerationStatusPanel jobId={70} />
+      </MemoryRouter>,
+    )
+
+    expect(screen.getByText(/Professores sem tempo suficiente:/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Ana Silva' })).toHaveAttribute(
+      'href',
+      '/members?teacher_id=7&panel=availability',
+    )
+    expect(screen.getAllByText(/faltam pelo menos/)).toHaveLength(1)
+    expect(screen.getByText(/faltam pelo menos 1 h\./)).toBeInTheDocument()
+    expect(screen.queryByText(/Bruno Costa/)).toBeNull()
+    expect(
+      screen.getByText(/Reveja a disponibilidade destes professores, das suas turmas ou as atribuições\./),
+    ).toBeInTheDocument()
+  })
+
+  it('shows only the room message when a room blocks generation alongside a teacher row', () => {
+    useScheduleTaskStatus.mockReturnValue({
+      data: {
+        status: 'INFEASIBLE',
+        stop_reason: 'NO_ELIGIBLE_ROOM',
+        diagnostics: [
+          { code: 'INSUFFICIENT_TEACHER_TIME', minimum_missing_minutes: 60, teacher_id: 7, teacher_name: 'Ana Silva' },
+        ],
+      },
+      isLoading: false,
+    })
+
+    render(
+      <MemoryRouter>
+        <GenerationStatusPanel jobId={71} />
+      </MemoryRouter>,
+    )
+
+    expect(screen.getByRole('link', { name: /abrir salas/i })).toHaveAttribute('href', '/rooms')
+    expect(screen.queryByText(/Professores sem tempo suficiente/)).toBeNull()
+    expect(screen.queryByRole('link', { name: 'Ana Silva' })).toBeNull()
+  })
 })

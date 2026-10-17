@@ -465,6 +465,66 @@ async def test_job_diagnostics_return_one_row_per_presence_teacher(db_session):
     ]
 
 
+async def test_job_diagnostics_return_one_row_per_short_teacher_with_tenant_scoped_names(
+    db_session,
+):
+    seed = await _minimal_school(db_session)
+    other = await _minimal_school(
+        db_session, clerk_user_id="s6_other", clerk_org_id="s6_other_org", module_minutes=50
+    )
+    short_teacher = await create_teacher_profile(
+        db_session, organization_id=seed.organization.id, name="Docente Sem Horas"
+    )
+    other_teacher = await create_teacher_profile(
+        db_session, organization_id=other.organization.id, name="Docente Alheio"
+    )
+    await db_session.commit()
+    queued = await _enqueue(db_session, seed)
+    await db_session.commit()
+    claim = await claim_next_job(db_session, now_utc=MOMENT)
+    assert claim is not None
+    await finish_job(
+        db_session,
+        organization_id=seed.organization.id,
+        job_id=queued.job.id,
+        attempt_token=claim.attempt_token,
+        status="INFEASIBLE",
+        result_code="INFEASIBLE",
+        diagnostics=[
+            {
+                "code": "INSUFFICIENT_TEACHER_TIME",
+                "minimum_missing_minutes": 60,
+                "affected_class_ids": [],
+                "affected_teacher_ids": [short_teacher.id],
+                "scope": f"TEACHER:{short_teacher.id}",
+            },
+            {
+                "code": "INSUFFICIENT_TEACHER_TIME",
+                "minimum_missing_minutes": 60,
+                "affected_class_ids": [],
+                "affected_teacher_ids": [other_teacher.id],
+                "scope": f"TEACHER:{other_teacher.id}",
+            },
+        ],
+        now_utc=MOMENT,
+    )
+    await db_session.commit()
+
+    payload = await get_job(db_session, seed.organization.id, queued.job.id)
+
+    rows = {row["teacher_id"]: row for row in payload["diagnostics"]}
+    assert len(payload["diagnostics"]) == 2
+    assert all("class_id" not in row for row in payload["diagnostics"])
+    assert rows[short_teacher.id] == {
+        "code": "INSUFFICIENT_TEACHER_TIME",
+        "minimum_missing_minutes": 60,
+        "teacher_id": short_teacher.id,
+        "teacher_name": "Docente Sem Horas",
+    }
+    assert rows[other_teacher.id]["teacher_name"] is None
+    assert rows[other_teacher.id]["minimum_missing_minutes"] == 60
+
+
 async def test_a_deleted_class_keeps_its_diagnostic_id_without_a_name(db_session, monkeypatch):
     seed = await _minimal_school(db_session)
     await db_session.commit()
