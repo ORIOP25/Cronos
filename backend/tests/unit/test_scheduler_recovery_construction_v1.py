@@ -327,9 +327,11 @@ def test_a_repair_consolidates_a_presence_invalid_baseline_onto_one_day():
 
     assert result.evidence.stop_reason == "CONSTRUCTIVE_RECOVERY"
     assert positions(result.candidate) != positions(CandidateSchedule(baseline))
+    # The construction finishes as early as possible (scheduler D10), so the
+    # shared teacher's day is the first one.
     assert {row.period for row in result.candidate.lessons if row.assignment_id in (1, 2)} == {
-        periods[2],
-        periods[3],
+        periods[0],
+        periods[1],
     }
     assert history in result.candidate.lessons
     assert any(row.kind.value == "MOVED" for row in result.quality.disruption.changes)
