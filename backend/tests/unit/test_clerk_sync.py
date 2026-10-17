@@ -1,3 +1,5 @@
+import subprocess
+import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -6,6 +8,21 @@ import pytest
 from app import models
 from app.services import clerk_sync
 from app.services.clerk_sync import clerk_user_exists
+
+
+def test_member_service_imports_in_a_fresh_interpreter():
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from app.services.member_service import _normalize_capability_policy",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
 
 
 class DummyClerkError(Exception):
