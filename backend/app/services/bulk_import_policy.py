@@ -131,7 +131,7 @@ ROOM_TYPE_NAME_LENGTH_MESSAGE = "Escreva um nome de tipo com até 60 caracteres.
 HOME_ROOM_NOT_FOUND_MESSAGE = (
     "Sala não encontrada. Escreva o nome de uma sala existente ou do ficheiro de salas."
 )
-HOME_ROOM_CAPACITY_MESSAGE = "A sala {name} não tem lugares para os {size} alunos da turma."
+HOME_ROOM_CAPACITY_MESSAGE = "{subject} não tem lugares para os {size} alunos da turma."
 AVAILABILITY_DAY_ERROR_MESSAGE = "Escreva um dia com blocos na grelha, por exemplo Segunda."
 AVAILABILITY_LEVEL_ERROR_MESSAGE = "Escreva Impossível, Evitar, Neutro ou Preferencial."
 TEACHER_PRESENCE_LUNCH_ERROR_MESSAGE = "Escreva Sim ou Não."
@@ -1097,6 +1097,15 @@ def _validate_subjects(
     return tuple(result)
 
 
+_SALA_WORD = re.compile(r"sala(?![a-z])")
+
+
+def _home_room_subject(room_name: str) -> str:
+    """Como no ecrã: «Sala 101» já diz o que é; «L-03» precisa do prefixo «sala»."""
+    name = _clean(room_name)
+    return f"A {name}" if _SALA_WORD.match(fold_text(name)) else f"A sala {name}"
+
+
 def _home_room_issue(
     home_room: str, size: int | None, rooms: dict[str, ExistingRoom | RoomImport], *, line: int
 ) -> BulkImportIssue | None:
@@ -1114,7 +1123,7 @@ def _home_room_issue(
         return _issue(
             "courses",
             "home_room_capacity",
-            HOME_ROOM_CAPACITY_MESSAGE.format(name=room.name, size=size),
+            HOME_ROOM_CAPACITY_MESSAGE.format(subject=_home_room_subject(room.name), size=size),
             line=line,
             field="home_room",
         )

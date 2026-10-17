@@ -59,7 +59,7 @@ A coluna `Sala da turma` do ficheiro Cursos e turmas é opcional e é a última.
 - O valor é o nome de uma sala ativa da escola ou de uma sala do ficheiro de salas do mesmo lote. Não distingue maiúsculas nem acentos.
 - A sala tem de ter lugares para os alunos da turma, indicados em `Número de alunos`.
 - Um nome sem sala devolve `home_room_not_found`, com a mensagem «Sala não encontrada. Escreva o nome de uma sala existente ou do ficheiro de salas.».
-- Uma sala sem lugares devolve `home_room_capacity`, com a mensagem «A sala {nome} não tem lugares para os {n} alunos da turma.».
+- Uma sala sem lugares devolve `home_room_capacity`, com a mensagem «A sala {nome} não tem lugares para os {n} alunos da turma.». Se o nome já começa por «Sala», a mensagem usa «A {nome}», como no ecrã da turma.
 - Os dois erros indicam a linha e a coluna `Sala da turma`.
 - Preencher a sala sem os outros campos da turma devolve `class_partial`.
 - A coluna só se aplica a turmas novas. As turmas existentes não mudam; altere-as na página da turma.

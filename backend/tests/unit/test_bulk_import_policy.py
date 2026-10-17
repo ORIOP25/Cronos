@@ -1,6 +1,8 @@
 import base64
 from datetime import time
 
+import pytest
+
 from app.services.bulk_import_policy import (
     CLASS_AVAILABILITY,
     IMPORT_RESOURCES,
@@ -304,9 +306,54 @@ def test_home_room_must_seat_every_student_of_the_class():
             "home_room_capacity",
             2,
             "home_room",
-            "A sala Sala Pequena não tem lugares para os 25 alunos da turma.",
+            "A Sala Pequena não tem lugares para os 25 alunos da turma.",
         )
     ]
+
+
+@pytest.mark.parametrize(
+    ("room_name", "expected_subject"),
+    [
+        ("L-03", "A sala L-03"),
+        ("Sala Pequena", "A Sala Pequena"),
+        ("Sála 3", "A Sála 3"),
+        ("Salão 2", "A sala Salão 2"),
+    ],
+)
+def test_capacity_message_names_the_room_like_the_screen(room_name, expected_subject):
+    rooms = parse_resource_file(
+        "rooms", "salas.csv", encoded(ROOMS_HEADER + f"{room_name};Normal;24\r\n")
+    )
+    courses = parse_resource_file(
+        "courses",
+        "cursos.csv",
+        encoded(COURSES_HEADER + f"TGEI;Curso;TGEI 25/28;10;2025;2028;25;{room_name}\r\n"),
+    )
+
+    result = validate_import(
+        {"rooms": rooms, "courses": courses}, ImportSnapshot(room_types=list(INITIAL_ROOM_TYPES))
+    )
+
+    assert [issue.message for issue in result.issues] == [
+        f"{expected_subject} não tem lugares para os 25 alunos da turma."
+    ]
+
+
+def test_old_seven_column_courses_header_is_refused():
+    """Regressão: o cabeçalho antigo, sem a coluna Sala da turma, não é aceite."""
+    old_header = (
+        "Sigla do curso;Nome do curso;Nome da turma;Ano escolar;Ano de início;"
+        "Ano de fim;Número de alunos\r\n"
+    )
+
+    parsed = parse_resource_file(
+        "courses",
+        "cursos_antigo.csv",
+        encoded(old_header + "TGEI;Curso;TGEI 25/28;10;2025;2028;25\r\n"),
+    )
+
+    assert not parsed.rows
+    assert [issue.code for issue in parsed.issues] == ["header_invalid"]
 
 
 def test_home_room_without_class_fields_is_reported_instead_of_ignored():
