@@ -286,6 +286,17 @@ The eligible rooms `K[a]` of an assignment are the rooms of the subject's type t
 - `avoidable_room_changes`: per class and day, consecutive lessons ordered by start. A pair counts when both lessons are flexible (`needs_special_room` false) and sit in different rooms.
 - A room change is justified when the lesson enters a home room of its classes, or leaves the home room of a class that is not its own. The adaptive disruption (`measure_recovery_quality`) charges such a change nothing, and the diff still lists it as a room change.
 
+### Class home room assignment
+
+`backend/app/scheduler/infrastructure/room_assignment.py` `assign_rooms_by_period` changes only the `room_id` of editable lessons. Periods, identities and credits stay, so a valid candidate stays valid. It runs period by period in chronological order. Each period is a minimum-cost matching between its editable lessons and their free eligible rooms. A date whose editable lessons overlap only partly keeps the construction's rooms. The cost of a room for a lesson is a lexicographic key defined by `domain/home_rooms.py` `room_choice_costs`: home-room misses, leaving the published room in recovery (a justified change costs nothing), avoidable change from the class's previous lesson that day, taking another class's home room, and the habitual room. The room identifier breaks ties.
+
+Routes:
+
+- Stop-at-first-complete (production): the pass runs without a guard on the constructive candidate, on both recovery candidates before the vector minimum, and on the unrestricted fallback placement.
+- Exact path: the pass runs after `_stabilize_recovery` and on the published incumbent. It is kept only when the quality vector does not get worse (`search.py` `_room_pass`). The room stages of the placement model do not change.
+
+Known ceiling: `room_change_cost` in the quality vector still counts a home-room change inside a day whose protected or given lesson stays in the old room. The exact-path guard then refuses that move, and the certified result keeps the old room. Whether a justified change should leave that term is an open product question.
+
 The measures stay outside the quality vector: `quality.py`, `QUALITY_POLICY_VERSION` and the audit oracles are unchanged.
 
 ### Teacher presence rules

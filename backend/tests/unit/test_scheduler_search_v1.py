@@ -1,7 +1,9 @@
+from dataclasses import replace
 from datetime import date, time, timedelta
 
+import app.scheduler.infrastructure.search as search_module
 from app.scheduler.composition import generate_schedule
-from app.scheduler.domain.candidate import SchedulingStrategy
+from app.scheduler.domain.candidate import CandidateSchedule, HomeRoom, SchedulingStrategy
 from app.scheduler.infrastructure.placement_model import (
     STATUS_COMPLETE,
     STATUS_INCONCLUSIVE,
@@ -14,6 +16,9 @@ from app.scheduler.lab.fixtures import (
     FixtureSpec,
     build_fixture,
 )
+from tests.unit.test_scheduler_recovery_solver_v1 import POLICY
+from tests.unit.test_scheduler_resource_exclusivity_v1 import assignment, lesson, plan
+from tests.unit.test_scheduler_w04_w05_regressions_v1 import period
 
 TZ = "Europe/Lisbon"
 ORIGIN = date(2026, 9, 21)
@@ -84,3 +89,39 @@ def test_only_a_proven_infeasibility_becomes_a_cut():
     assert feedback_cut(STATUS_INFEASIBLE) is True
     assert feedback_cut(STATUS_INCONCLUSIVE) is False
     assert feedback_cut(STATUS_COMPLETE) is False
+
+
+def test_r21_the_exact_path_published_incumbent_takes_the_new_home_room():
+    """❌ R21: no caminho exato, o incumbente publicado também recebe a sala nova da turma.
+
+    No protected lesson shares A's day here: a protected lesson in the old room would add
+    a room change to the certified room cost, and the guard would refuse the move (T12).
+    """
+    periods = (period(0, 9, 10), period(0, 10, 11))
+    assignments = [assignment(1, 1, 1, {1, 2, 3}, 120), assignment(2, 2, 2, {1, 2, 3}, 120)]
+    baseline = CandidateSchedule(
+        (
+            lesson(1, 1, periods[0], 1),
+            lesson(2, 1, periods[1], 1, offset=60),
+            lesson(3, 2, periods[0], 2),
+            lesson(4, 2, periods[1], 2, offset=60),
+        )
+    )
+    target = replace(
+        plan(periods, assignments),
+        strategy=SchedulingStrategy.ADAPTIVE_RECOVERY,
+        baseline_lessons=baseline.lessons,
+        home_rooms=(HomeRoom(class_id=1, room_id=3),),
+    )
+    profile = search_module._SearchProfile(
+        baseline, replace(POLICY, daily_slopes=tuple(range(1, 21)))
+    )
+
+    incumbent = search_module._baseline_incumbent(target, profile)
+
+    assert incumbent is not None
+    outcome, _vector = incumbent
+    assert {
+        (row.assignment_id, row.period.start_local.hour): row.room_id
+        for row in outcome.candidate.lessons
+    } == {(1, 9): 3, (1, 10): 3, (2, 9): 2, (2, 10): 2}

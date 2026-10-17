@@ -4,6 +4,7 @@ import random
 from dataclasses import replace
 from datetime import date, time, timedelta
 
+import app.scheduler.infrastructure.search as search_module
 from app.scheduler.domain.calendar import normalize_period
 from app.scheduler.domain.candidate import (
     Assignment,
@@ -18,7 +19,9 @@ from app.scheduler.domain.candidate_validation import validate_candidate
 from app.scheduler.domain.home_rooms import avoidable_room_changes, home_room_misses
 from app.scheduler.domain.projection import ModuleRequirement, ModuleSlice
 from app.scheduler.domain.recovery import measure_disruption
+from app.scheduler.infrastructure.constructive import construct_schedule
 from app.scheduler.infrastructure.room_assignment import assign_rooms_by_period
+from tests.unit.test_scheduler_generation_quality_v1 import home_room_fixture
 from tests.unit.test_scheduler_recovery_v1 import POLICY
 
 ORIGIN = date(2026, 9, 21)
@@ -277,3 +280,43 @@ def test_i09_a_class_without_home_room_and_only_normal_subjects_never_gets_more_
         assert avoidable_room_changes(snapshot, result) <= avoidable_room_changes(
             snapshot, candidate
         ), f"seed {seed}"
+
+
+def _exact_path_candidate():
+    """Construction of the R23 instance with class 1 in home room 1 (T11, T12)."""
+    fixture = home_room_fixture()
+    snapshot = replace(fixture.snapshot, home_rooms=(HomeRoom(class_id=1, room_id=NORMAL_1),))
+    certified = construct_schedule(snapshot, fixture.periods)
+    assert certified is not None
+    return snapshot, certified
+
+
+def test_r16_on_the_exact_path_a_room_pass_that_worsens_the_vector_is_refused(monkeypatch):
+    """❌ R16: no caminho exato, um passe que piora o vetor é recusado; o certificado fica."""
+    snapshot, certified = _exact_path_candidate()
+    profile = search_module._SearchProfile()
+    first = min(
+        (row for row in certified.lessons if row.assignment_id == 1),
+        key=lambda row: row.period.start_utc,
+    )
+    other_room = NORMAL_2 if first.room_id == NORMAL_1 else NORMAL_1
+    worse = CandidateSchedule(
+        tuple(
+            replace(row, room_id=other_room) if row is first else row for row in certified.lessons
+        )
+    )
+    assert profile.vector(snapshot, worse) > profile.vector(snapshot, certified)
+    monkeypatch.setattr(search_module, "assign_rooms_by_period", lambda *_a, **_k: worse)
+
+    assert search_module._room_pass(snapshot, profile, certified, guarded=True) is certified
+    assert search_module._room_pass(snapshot, profile, certified, guarded=False) is worse
+
+
+def test_r16_on_the_exact_path_a_room_pass_that_does_not_worsen_the_vector_is_kept():
+    """❌ R16: no caminho exato, um passe que não piora o vetor fica."""
+    snapshot, certified = _exact_path_candidate()
+    profile = search_module._SearchProfile()
+    passed = assign_rooms_by_period(snapshot, certified)
+    assert profile.vector(snapshot, passed) <= profile.vector(snapshot, certified)
+
+    assert search_module._room_pass(snapshot, profile, certified, guarded=True) == passed
