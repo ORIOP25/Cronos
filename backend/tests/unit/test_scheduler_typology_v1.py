@@ -25,6 +25,7 @@ from app.scheduler.lab.typology import (
     PREFERRED_END,
     SCHOOL_YEAR_START,
     SUBJECT_COUNT,
+    build_availability_typology_fixture,
     build_typology_fixture,
 )
 
@@ -182,3 +183,30 @@ def test_the_school_year_break_dates_are_within_the_calendar():
 
     for day in (date(2026, 12, 21), date(2027, 1, 1), date(2027, 4, 12), date(2027, 4, 23)):
         assert day not in {period.school_date for period in fixture.periods}
+
+
+def test_the_availability_fixture_completes_twelve_classes_before_the_preferred_end():
+    # R13: the pilot-school availability case (tech spec T13). Feasibility is shown
+    # by the construction itself, because the fixture has no witness.
+    fixture = build_availability_typology_fixture(12)
+
+    candidate = construct_schedule(fixture.snapshot, fixture.periods)
+
+    assert candidate is not None
+    assert validate_candidate(fixture.snapshot, candidate).valid is True
+    assert max(lesson.period.school_date for lesson in candidate.lessons) <= PREFERRED_END
+
+
+@pytest.mark.slow_solver
+def test_the_availability_fixture_completes_forty_eight_classes_before_the_preferred_end():
+    fixture = build_availability_typology_fixture(48)
+
+    started = monotonic()
+    candidate = construct_schedule(fixture.snapshot, fixture.periods)
+    elapsed = monotonic() - started
+
+    # The slice proof records this construction time.
+    print(f"availability48 construct_seconds={elapsed:.1f}")
+    assert candidate is not None
+    assert validate_candidate(fixture.snapshot, candidate).valid is True
+    assert max(lesson.period.school_date for lesson in candidate.lessons) <= PREFERRED_END
