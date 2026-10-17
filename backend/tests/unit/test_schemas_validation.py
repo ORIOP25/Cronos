@@ -344,6 +344,19 @@ class TestRoomValidation:
         with pytest.raises(ValidationError):
             RoomUpdate(capacity=capacity)
 
+    @pytest.mark.parametrize(
+        ("schema", "payload"),
+        [
+            (RoomCreate, {"name": "Lab 1", "type": "lab"}),
+            (RoomUpdate, {"type": "lab"}),
+            (SubjectCreate, {"name": "Química", "required_room_type": "lab"}),
+            (SubjectUpdate, {"required_room_type": "lab"}),
+        ],
+    )
+    def test_write_schemas_reject_removed_room_type_keys(self, schema, payload):
+        with pytest.raises(ValidationError):
+            schema(**payload)
+
 
 class TestCourseUpdateValidation:
     @pytest.mark.parametrize("abbreviation", ["AI", "TGEI", "LONGTENCHR"])

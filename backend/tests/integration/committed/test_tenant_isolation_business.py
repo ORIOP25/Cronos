@@ -89,11 +89,12 @@ class TestTenantIsolation:
             db_session, "admin_b@escola.pt", "Escola B", "tenant_iso_b"
         )
 
-        await async_client.post(
+        created = await async_client.post(
             f"{API}/rooms/",
-            json={"name": "Lab A", "room_type": "lab"},
+            json={"name": "Lab A"},
             headers=org_a["headers"],
         )
+        assert created.status_code == 200
         resp = await async_client.get(f"{API}/rooms/", headers=org_b["headers"])
         assert resp.status_code == 200
         assert len(resp.json()) == 0

@@ -91,6 +91,16 @@ class TestRoomsCRUD:
         resp = await async_client.post(f"{API}/rooms/", json=payload, headers=clerk_admin_headers)
         assert resp.status_code == 422
 
+    async def test_create_room_rejects_removed_type_key_422(
+        self, async_client: AsyncClient, clerk_admin_headers: dict
+    ):
+        """❌ A chave removida `type` devolve 422 e não grava a sala"""
+        payload = {"name": "Lab Removida", "type": "lab", "capacity": 20}
+        resp = await async_client.post(f"{API}/rooms/", json=payload, headers=clerk_admin_headers)
+        assert resp.status_code == 422
+        rooms = await async_client.get(f"{API}/rooms/", headers=clerk_admin_headers)
+        assert all(room["name"] != "Lab Removida" for room in rooms.json())
+
     # ---------- READ ----------
 
     async def test_list_rooms(self, async_client: AsyncClient, clerk_admin_headers: dict):

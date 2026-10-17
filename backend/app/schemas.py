@@ -593,6 +593,8 @@ class SubjectBase(BaseModel):
 
 
 class SubjectCreate(SubjectBase):
+    model_config = ConfigDict(extra="forbid")
+
     modules: list[ModuleCreate] = Field(
         default_factory=list, description="Lista de módulos iniciais"
     )
@@ -623,6 +625,8 @@ class SubjectCreate(SubjectBase):
 
 
 class SubjectUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     name: str | None = None
     room_type_id: int | None = None
     modules: list[ModuleUpsert] | None = None
@@ -658,10 +662,12 @@ class RoomBase(BaseModel):
 
 
 class RoomCreate(RoomBase):
-    pass
+    model_config = ConfigDict(extra="forbid")
 
 
 class RoomUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     name: str | None = None
     room_type_id: int | None = None
     capacity: int | None = Field(None, gt=0)

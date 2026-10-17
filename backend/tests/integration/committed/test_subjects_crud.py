@@ -81,6 +81,18 @@ class TestSubjectsCRUD:
         )
         assert resp.status_code == 422
 
+    async def test_create_subject_rejects_removed_required_room_type_key_422(
+        self, async_client: AsyncClient, clerk_admin_headers: dict
+    ):
+        """❌ A chave removida `required_room_type` devolve 422 e não grava a disciplina"""
+        payload = {"name": "Química", "required_room_type": "lab"}
+        resp = await async_client.post(
+            f"{API}/subjects/", json=payload, headers=clerk_admin_headers
+        )
+        assert resp.status_code == 422
+        subjects = await async_client.get(f"{API}/subjects/", headers=clerk_admin_headers)
+        assert all(subject["name"] != "Química" for subject in subjects.json())
+
     async def test_create_subject_modules_gap_order_422(
         self, async_client: AsyncClient, clerk_admin_headers: dict
     ):
