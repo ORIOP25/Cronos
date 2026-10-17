@@ -25,7 +25,7 @@ describe('tutorial v3 local API adapter', () => {
     const runtime = makeRuntime('class_plan')
     const subjects = (await runtime.request('/subjects/')).data
     expect(subjects).toHaveLength(2)
-    expect(subjects[0]).toMatchObject({ id: 1, name: 'Programação', required_room_type: 'lab' })
+    expect(subjects[0]).toMatchObject({ id: 1, name: 'Programação', room_type: { id: 2, name: 'Laboratório', is_normal: false } })
     expect(subjects[0].modules[0]).toMatchObject({ hours_total: 2 })
 
     const course = (await runtime.request('/courses/1')).data
@@ -37,6 +37,7 @@ describe('tutorial v3 local API adapter', () => {
       expect.objectContaining({ subject_id: 1, teacher_id: 1 }),
     ]))
     const programming = classSubjects.subjects.find((subject) => subject.subject_id === 1)
+    expect(programming.room_type).toEqual({ id: 2, name: 'Laboratório', is_normal: false })
     expect(programming.modules.length).toBeGreaterThan(0)
     expect(programming.modules.every((module) => module.selected === true)).toBe(true)
     expect(programming.joint_group).toBeNull()
@@ -73,11 +74,31 @@ describe('tutorial v3 local API adapter', () => {
     const runtime = makeRuntime('rooms')
     const response = await runtime.request('/rooms/1', {
       method: 'patch',
-      data: JSON.stringify({ name: 'Laboratório atualizado', type: 'lab', capacity: 30 }),
+      data: JSON.stringify({ name: 'Laboratório atualizado', room_type_id: 2, capacity: 30 }),
     })
     expect(response.status).toBe(200)
-    expect(response.data).toMatchObject({ name: 'Laboratório atualizado', capacity: 30 })
-    expect((await runtime.request('/rooms/')).data[0]).toMatchObject({ name: 'Laboratório atualizado', capacity: 30 })
+    expect(response.data).toMatchObject({ name: 'Laboratório atualizado', room_type: { id: 2, name: 'Laboratório', is_normal: false }, capacity: 30 })
+    expect((await runtime.request('/rooms/')).data[0]).toMatchObject({ name: 'Laboratório atualizado', room_type: { id: 2, name: 'Laboratório', is_normal: false }, capacity: 30 })
+  })
+
+  it('serves the school room types through the room type collection route', async () => {
+    const runtime = makeRuntime('rooms')
+    const response = await runtime.request('/room-types/')
+
+    expect(response.data).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 1, name: 'Normal', is_normal: true }),
+      expect.objectContaining({ id: 2, name: 'Laboratório', is_normal: false }),
+    ]))
+  })
+
+  it('updates a tutorial subject using the room type id contract', async () => {
+    const runtime = makeRuntime('curriculum')
+    const response = await runtime.request('/subjects/1', {
+      method: 'patch',
+      data: JSON.stringify({ room_type_id: 5 }),
+    })
+
+    expect(response.data.room_type).toEqual({ id: 5, name: 'Oficina', is_normal: false })
   })
 
   it('supports availability writes with the same array payload as the live page', async () => {

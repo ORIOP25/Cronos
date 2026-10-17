@@ -61,6 +61,7 @@ PRIVACY_TABLES = {
     "organization_membership": "delete",
     "organization_settings": "delete",
     "room": "delete",
+    "room_type": "delete",
     "scheduler_school_year": "delete",
     "school_calendar_event": "delete",
     "school_calendar_event_class": "delete",

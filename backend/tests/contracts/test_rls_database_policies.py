@@ -102,6 +102,17 @@ def test_principal_resolution_and_cross_tenant_write_denial(clean_database):
 
         account_a, org_a, membership_a = founder("a")
         _, org_b, _ = founder("b")
+        connection.execute(
+            text("SELECT set_config('app.current_organization_id', :org, true)"),
+            {"org": str(org_b)},
+        )
+        room_type_b = connection.execute(
+            text(
+                "INSERT INTO room_type(organization_id, name, is_normal, is_archived) "
+                "VALUES (:organization_id, 'Normal', true, false) RETURNING id"
+            ),
+            {"organization_id": org_b},
+        ).scalar_one()
         connection.commit()
 
         principal = connection.execute(
@@ -118,14 +129,15 @@ def test_principal_resolution_and_cross_tenant_write_denial(clean_database):
             {"org": str(org_a)},
         )
         assert connection.execute(text("SELECT id FROM organization")).scalars().all() == [org_a]
-        with pytest.raises(DBAPIError):
+        with pytest.raises(DBAPIError) as error:
             connection.execute(
                 text(
-                    "INSERT INTO room(name, capacity, type, organization_id) "
-                    "VALUES ('cross tenant', 10, 'normal', :org)"
+                    "INSERT INTO room(name, capacity, room_type_id, organization_id) "
+                    "VALUES ('cross tenant', 10, :room_type_id, :org)"
                 ),
-                {"org": org_b},
+                {"room_type_id": room_type_b, "org": org_b},
             )
+        assert error.value.orig.pgcode == "42501"
         connection.rollback()
 
 

@@ -7,13 +7,15 @@ Valida endpoints da API:
 - GET /subjects/ (listar)
 - PATCH /subjects/{id} (atualizar nome, tipo de sala, módulos)
 - DELETE /subjects/{id} (apagar, proteção de dependências)
-- 404 para IDs inexistentes
-- 422 para payloads inválidos
+- 404 para IDs inexistentes, 422 para payloads inválidos
 """
 
 from httpx import AsyncClient
+from sqlalchemy import select
 
+from app import models
 from app.config import settings
+from tests.factories import room_type_ids
 
 API = settings.API_V1_STR
 
@@ -25,23 +27,25 @@ class TestSubjectsCRUD:
         self, async_client: AsyncClient, clerk_admin_headers: dict
     ):
         """✅ Criar disciplina sem módulos"""
-        payload = {"name": "Matemática", "required_room_type": "normal"}
+        types = await room_type_ids(async_client, clerk_admin_headers)
+        payload = {"name": "Matemática", "room_type_id": types["normal"]}
         resp = await async_client.post(
             f"{API}/subjects/", json=payload, headers=clerk_admin_headers
         )
         assert resp.status_code == 200
         data = resp.json()
         assert data["name"] == "Matemática"
-        assert data["required_room_type"] == "normal"
+        assert data["room_type"]["name"] == "Normal"
         assert data["modules"] == []
 
     async def test_create_subject_with_modules(
         self, async_client: AsyncClient, clerk_admin_headers: dict
     ):
         """✅ Criar disciplina com módulos sequenciais"""
+        types = await room_type_ids(async_client, clerk_admin_headers)
         payload = {
             "name": "Programação",
-            "required_room_type": "lab",
+            "room_type_id": types["laboratorio"],
             "modules": [
                 {"name": "Python Básico", "code": "P001", "hours_total": 40, "order": 0},
                 {"name": "Python Avançado", "code": "P002", "hours_total": 30, "order": 1},
@@ -55,17 +59,39 @@ class TestSubjectsCRUD:
         assert len(data["modules"]) == 2
         assert data["modules"][0]["name"] == "Python Básico"
         assert data["modules"][1]["order"] == 1
-        assert data["required_room_type"] == "lab"
+        assert data["room_type"]["name"] == "Laboratório"
+
+    async def test_create_subject_without_type_defaults_to_normal(
+        self, async_client: AsyncClient, clerk_admin_headers: dict
+    ):
+        """✅ Disciplina sem tipo usa o tipo Normal da escola"""
+        resp = await async_client.post(
+            f"{API}/subjects/", json={"name": "Sem Tipo"}, headers=clerk_admin_headers
+        )
+        assert resp.status_code == 200
+        assert resp.json()["room_type"]["name"] == "Normal"
 
     async def test_create_subject_invalid_room_type_422(
         self, async_client: AsyncClient, clerk_admin_headers: dict
     ):
-        """❌ Tipo de sala inválido devolve 422"""
-        payload = {"name": "X", "required_room_type": "piscina"}
+        """❌ Tipo de sala que não é um identificador devolve 422"""
+        payload = {"name": "X", "room_type_id": "piscina"}
         resp = await async_client.post(
             f"{API}/subjects/", json=payload, headers=clerk_admin_headers
         )
         assert resp.status_code == 422
+
+    async def test_create_subject_rejects_removed_required_room_type_key_422(
+        self, async_client: AsyncClient, clerk_admin_headers: dict
+    ):
+        """❌ A chave removida `required_room_type` devolve 422 e não grava a disciplina"""
+        payload = {"name": "Química", "required_room_type": "lab"}
+        resp = await async_client.post(
+            f"{API}/subjects/", json=payload, headers=clerk_admin_headers
+        )
+        assert resp.status_code == 422
+        subjects = await async_client.get(f"{API}/subjects/", headers=clerk_admin_headers)
+        assert all(subject["name"] != "Química" for subject in subjects.json())
 
     async def test_create_subject_modules_gap_order_422(
         self, async_client: AsyncClient, clerk_admin_headers: dict
@@ -73,7 +99,6 @@ class TestSubjectsCRUD:
         """❌ Módulos com ordem não sequencial (0, 2) devolvem 422"""
         payload = {
             "name": "Teste",
-            "required_room_type": "normal",
             "modules": [
                 {"name": "M1", "code": "T01", "hours_total": 10, "order": 0},
                 {"name": "M2", "code": "T02", "hours_total": 10, "order": 2},
@@ -88,17 +113,18 @@ class TestSubjectsCRUD:
 
     async def test_list_subjects(self, async_client: AsyncClient, clerk_admin_headers: dict):
         """✅ Listar disciplinas da organização"""
-        # Criar uma disciplina primeiro
+        types = await room_type_ids(async_client, clerk_admin_headers)
         await async_client.post(
             f"{API}/subjects/",
-            json={"name": "Física", "required_room_type": "lab"},
+            json={"name": "Física", "room_type_id": types["laboratorio"]},
             headers=clerk_admin_headers,
         )
         resp = await async_client.get(f"{API}/subjects/", headers=clerk_admin_headers)
         assert resp.status_code == 200
         data = resp.json()
         assert isinstance(data, list)
-        assert any(s["name"] == "Física" for s in data)
+        subject = next(s for s in data if s["name"] == "Física")
+        assert subject["room_type"]["name"] == "Laboratório"
 
     # ---------- UPDATE ----------
 
@@ -106,7 +132,7 @@ class TestSubjectsCRUD:
         """✅ PATCH do nome da disciplina"""
         create_resp = await async_client.post(
             f"{API}/subjects/",
-            json={"name": "Velha", "required_room_type": "normal"},
+            json={"name": "Velha"},
             headers=clerk_admin_headers,
         )
         sid = create_resp.json()["id"]
@@ -119,12 +145,38 @@ class TestSubjectsCRUD:
         assert resp.status_code == 200
         assert resp.json()["name"] == "Nova"
 
+    async def test_update_subject_type_keeps_the_other_fields(
+        self, async_client: AsyncClient, clerk_admin_headers: dict
+    ):
+        """✅ PATCH do tipo de sala mantém o nome e os módulos"""
+        types = await room_type_ids(async_client, clerk_admin_headers)
+        create_resp = await async_client.post(
+            f"{API}/subjects/",
+            json={
+                "name": "Programação",
+                "modules": [{"name": "M1", "code": "T01", "hours_total": 10, "order": 0}],
+            },
+            headers=clerk_admin_headers,
+        )
+        sid = create_resp.json()["id"]
+
+        resp = await async_client.patch(
+            f"{API}/subjects/{sid}",
+            json={"room_type_id": types["ginasio"]},
+            headers=clerk_admin_headers,
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["name"] == "Programação"
+        assert data["room_type"]["name"] == "Ginásio"
+        assert [module["code"] for module in data["modules"]] == ["T01"]
+
     async def test_update_subject_modules_gap_order_422(
         self, async_client: AsyncClient, clerk_admin_headers: dict
     ):
         create_resp = await async_client.post(
             f"{API}/subjects/",
-            json={"name": "Modular", "required_room_type": "normal"},
+            json={"name": "Modular"},
             headers=clerk_admin_headers,
         )
         sid = create_resp.json()["id"]
@@ -159,7 +211,7 @@ class TestSubjectsCRUD:
         """✅ Apagar disciplina sem dependências"""
         create_resp = await async_client.post(
             f"{API}/subjects/",
-            json={"name": "Descartável", "required_room_type": "normal"},
+            json={"name": "Descartável"},
             headers=clerk_admin_headers,
         )
         sid = create_resp.json()["id"]
@@ -178,3 +230,77 @@ class TestSubjectsCRUD:
         """❌ Apagar disciplina inexistente devolve 404"""
         resp = await async_client.delete(f"{API}/subjects/99999", headers=clerk_admin_headers)
         assert resp.status_code == 404
+
+
+async def _create_type(client: AsyncClient, headers: dict, name: str = "Oficina") -> int:
+    resp = await client.post(f"{API}/room-types/", json={"name": name}, headers=headers)
+    assert resp.status_code == 201
+    return resp.json()["id"]
+
+
+class TestSchoolRoomTypes:
+    """S2: a disciplina exige uma sala pelo tipo da escola."""
+
+    async def test_custom_type_subject_is_created_and_listed(
+        self, async_client: AsyncClient, clerk_admin_headers: dict
+    ):
+        oficina = await _create_type(async_client, clerk_admin_headers)
+
+        created = await async_client.post(
+            f"{API}/subjects/",
+            json={"name": "Oficina de Artes", "room_type_id": oficina},
+            headers=clerk_admin_headers,
+        )
+        assert created.status_code == 200
+        assert created.json()["room_type"] == {
+            "id": oficina,
+            "name": "Oficina",
+            "is_normal": False,
+        }
+
+        listed = await async_client.get(f"{API}/subjects/", headers=clerk_admin_headers)
+        subject = next(item for item in listed.json() if item["name"] == "Oficina de Artes")
+        assert subject["room_type"] == {
+            "id": oficina,
+            "name": "Oficina",
+            "is_normal": False,
+        }
+
+    async def test_unknown_subject_room_type_is_rejected(
+        self, async_client: AsyncClient, clerk_admin_headers: dict
+    ):
+        resp = await async_client.post(
+            f"{API}/subjects/",
+            json={"name": "Sem Dono", "room_type_id": 999999},
+            headers=clerk_admin_headers,
+        )
+        assert resp.status_code == 404
+        assert resp.json()["detail"]["code"] == "resource_not_found"
+
+    async def test_subject_room_type_of_another_school_is_rejected(
+        self, async_client: AsyncClient, db_session, clerk_admin_headers: dict
+    ):
+        from tests._support.db_fixtures import create_org_and_user
+
+        await create_org_and_user(
+            db_session,
+            clerk_user_id="subjects_admin_b",
+            clerk_org_id="org_subjects_b",
+            org_name="Escola Secundária",
+        )
+        await db_session.commit()
+        headers_b = {"Authorization": "Bearer test_subjects_admin_b"}
+        foreign_type = await _create_type(async_client, headers_b)
+
+        resp = await async_client.post(
+            f"{API}/subjects/",
+            json={"name": "Isolada", "room_type_id": foreign_type},
+            headers=clerk_admin_headers,
+        )
+        assert resp.status_code == 404
+        assert resp.json()["detail"]["code"] == "resource_not_found"
+
+        exists = await db_session.scalar(
+            select(models.Subject.id).where(models.Subject.name == "Isolada")
+        )
+        assert exists is None

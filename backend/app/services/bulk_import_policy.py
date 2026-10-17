@@ -116,7 +116,8 @@ FILE_READ_ERROR_MESSAGE = (
 RESOURCE_MISMATCH_MESSAGE = (
     "Este ficheiro não corresponde à secção escolhida. Selecione o modelo correspondente."
 )
-ROOM_TYPE_ERROR_MESSAGE = "Escreva Normal, Laboratório, Ginásio ou Artes."
+ROOM_TYPE_MISSING_MESSAGE = "Escreva o tipo de sala."
+ROOM_TYPE_UNKNOWN_MESSAGE = "Não existe um tipo de sala com esse nome."
 AVAILABILITY_DAY_ERROR_MESSAGE = "Escreva um dia com blocos na grelha, por exemplo Segunda."
 AVAILABILITY_LEVEL_ERROR_MESSAGE = "Escreva Impossível, Evitar, Neutro ou Preferencial."
 TEACHER_PRESENCE_LUNCH_ERROR_MESSAGE = "Escreva Sim ou Não."
@@ -178,7 +179,7 @@ class ParsedResourceFile:
 @dataclass(frozen=True)
 class RoomImport:
     name: str
-    room_type: str
+    room_type_id: int
     capacity: int
     line: int
 
@@ -195,7 +196,7 @@ class ModuleImport:
 @dataclass(frozen=True)
 class SubjectImport:
     name: str
-    room_type: str
+    room_type_id: int
     modules: tuple[ModuleImport, ...]
     line: int
 
@@ -237,6 +238,12 @@ class AssignmentImport:
 
 @dataclass(frozen=True)
 class ExistingRoom:
+    id: int
+    name: str
+
+
+@dataclass(frozen=True)
+class ExistingRoomType:
     id: int
     name: str
 
@@ -318,6 +325,7 @@ class TeacherPresenceImport:
 class ImportSnapshot:
     rooms: list[ExistingRoom] = field(default_factory=list)
     subjects: list[ExistingSubject] = field(default_factory=list)
+    room_types: list[ExistingRoomType] = field(default_factory=list)
     courses: list[ExistingCourse] = field(default_factory=list)
     classes: list[ExistingClass] = field(default_factory=list)
     teachers: list[ExistingTeacher] = field(default_factory=list)
@@ -368,7 +376,7 @@ def _key(value: str) -> str:
     return _clean(value).casefold()
 
 
-def _fold(value: str) -> str:
+def fold_text(value: str) -> str:
     """Lowercase and strip accents, so users may type ``Impossível`` or ``impossivel``."""
     return "".join(
         character
@@ -377,13 +385,13 @@ def _fold(value: str) -> str:
     )
 
 
-def normalize_room_type(value: str) -> str | None:
-    return {
-        "normal": "normal",
-        "laboratorio": "lab",
-        "ginasio": "gym",
-        "artes": "art",
-    }.get(_fold(value))
+def normalize_room_type(value: str, snapshot: ImportSnapshot) -> ExistingRoomType | None:
+    """O tipo de sala da escola com este nome, dobrado por maiúsculas e acentos."""
+    folded = fold_text(value)
+    for room_type in snapshot.room_types:
+        if fold_text(room_type.name) == folded:
+            return room_type
+    return None
 
 
 def normalize_hour(value: str) -> str | None:
@@ -396,7 +404,7 @@ def normalize_hour(value: str) -> str | None:
 
 def normalize_day(value: str) -> int | None:
     """Accept a Portuguese day name with or without ``-feira``, accents or case."""
-    plain = _fold(value)
+    plain = fold_text(value)
     for suffix in ("-feira", "feira"):
         if plain.endswith(suffix):
             plain = plain[: -len(suffix)]
@@ -405,12 +413,12 @@ def normalize_day(value: str) -> int | None:
 
 
 def normalize_level(value: str) -> int | None:
-    return _LEVEL_SCORES.get(_fold(value))
+    return _LEVEL_SCORES.get(fold_text(value))
 
 
 def normalize_yes_no(value: str) -> bool | None:
     """Accept ``Sim``/``Não`` without case or accents; an empty cell means Sim."""
-    folded = _fold(value)
+    folded = fold_text(value)
     if not folded:
         return True
     if folded == "sim":
@@ -869,6 +877,26 @@ def _int_value(
     return value
 
 
+def _room_type_issue(
+    resource: str,
+    value: str,
+    room_type: ExistingRoomType | None,
+    *,
+    line: int,
+    field: str,
+) -> BulkImportIssue | None:
+    """O tipo em branco é campo obrigatório; o desconhecido não existe na escola."""
+    if not _clean(value):
+        return _issue(
+            resource, "room_type_invalid", ROOM_TYPE_MISSING_MESSAGE, line=line, field=field
+        )
+    if room_type is None:
+        return _issue(
+            resource, "room_type_unknown", ROOM_TYPE_UNKNOWN_MESSAGE, line=line, field=field
+        )
+    return None
+
+
 def _validate_rooms(
     parsed: ParsedResourceFile, snapshot: ImportSnapshot, issues: list[BulkImportIssue]
 ) -> tuple[RoomImport, ...]:
@@ -878,22 +906,16 @@ def _validate_rooms(
     for row in parsed.rows:
         line = int(row["line"])
         name = _value(row, "name")
-        room_type = normalize_room_type(_value(row, "type"))
+        raw_type = _value(row, "type")
+        room_type = normalize_room_type(raw_type, snapshot)
         capacity = _int_value(row, "rooms", "capacity", issues, minimum=1)
         if not name:
             issues.append(
                 _issue("rooms", "field_required", "Campo obrigatório.", line=line, field="name")
             )
-        if room_type is None:
-            issues.append(
-                _issue(
-                    "rooms",
-                    "room_type_invalid",
-                    ROOM_TYPE_ERROR_MESSAGE,
-                    line=line,
-                    field="type",
-                )
-            )
+        type_issue = _room_type_issue("rooms", raw_type, room_type, line=line, field="type")
+        if type_issue is not None:
+            issues.append(type_issue)
         normalized = _key(name)
         if normalized in seen:
             issues.append(
@@ -917,7 +939,7 @@ def _validate_rooms(
             )
         seen.add(normalized)
         if name and room_type is not None and capacity is not None:
-            result.append(RoomImport(name, room_type, capacity, line))
+            result.append(RoomImport(name, room_type.id, capacity, line))
     return tuple(result)
 
 
@@ -933,21 +955,17 @@ def _validate_subjects(
         first = rows[0]
         line = int(first["line"])
         name = _value(first, "name")
-        room_type = normalize_room_type(_value(first, "required_room_type"))
+        raw_type = _value(first, "required_room_type")
+        room_type = normalize_room_type(raw_type, snapshot)
         if not name:
             issues.append(
                 _issue("subjects", "field_required", "Campo obrigatório.", line=line, field="name")
             )
-        if room_type is None:
-            issues.append(
-                _issue(
-                    "subjects",
-                    "room_type_invalid",
-                    ROOM_TYPE_ERROR_MESSAGE,
-                    line=line,
-                    field="required_room_type",
-                )
-            )
+        type_issue = _room_type_issue(
+            "subjects", raw_type, room_type, line=line, field="required_room_type"
+        )
+        if type_issue is not None:
+            issues.append(type_issue)
         if normalized in existing:
             issues.append(
                 _issue(
@@ -962,7 +980,7 @@ def _validate_subjects(
         seen_orders = set()
         for row in rows:
             row_line = int(row["line"])
-            current_type = normalize_room_type(_value(row, "required_room_type"))
+            current_type = normalize_room_type(_value(row, "required_room_type"), snapshot)
             if current_type != room_type:
                 issues.append(
                     _issue(
@@ -1037,7 +1055,10 @@ def _validate_subjects(
         if name and room_type is not None:
             result.append(
                 SubjectImport(
-                    name, room_type, tuple(sorted(modules, key=lambda item: item.order)), line
+                    name,
+                    room_type.id,
+                    tuple(sorted(modules, key=lambda item: item.order)),
+                    line,
                 )
             )
     return tuple(result)

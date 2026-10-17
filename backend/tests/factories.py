@@ -7,9 +7,17 @@ from uuid import uuid4
 from httpx import AsyncClient
 
 from app.config import settings
+from app.services.bulk_import_policy import fold_text
 from tests._support.db_fixtures import create_teacher_user
 
 API = settings.API_V1_STR
+
+
+async def room_type_ids(client: AsyncClient, headers: dict) -> dict[str, int]:
+    """IDs dos tipos de sala da escola, por nome dobrado (minúsculas sem acentos)."""
+    resp = await client.get(f"{API}/room-types/", headers=headers)
+    resp.raise_for_status()
+    return {fold_text(item["name"]): item["id"] for item in resp.json()}
 
 
 async def _create_teacher_auth_headers(
@@ -33,11 +41,12 @@ async def _create_teacher_auth_headers(
 
 async def _setup_course_class_subject(client: AsyncClient, headers: dict):
     """Cria Curso + Turma + Disciplina com módulos, devolve IDs."""
+    types = await room_type_ids(client, headers)
     sub_resp = await client.post(
         f"{API}/subjects/",
         json={
             "name": "Programação",
-            "required_room_type": "lab",
+            "room_type_id": types["laboratorio"],
             "modules": [
                 {"name": "M1", "code": "P01", "hours_total": 25, "order": 0},
                 {"name": "M2", "code": "P02", "hours_total": 50, "order": 1},

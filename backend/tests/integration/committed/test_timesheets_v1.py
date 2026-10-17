@@ -10,7 +10,7 @@ from app import models
 from app.core.exceptions import AppError
 from app.scheduler.infrastructure.models import SchedulerLessonLogV1
 from app.services import timesheet_service
-from tests._support.db_fixtures import TestingSessionLocal
+from tests._support.db_fixtures import TestingSessionLocal, get_school_room_type_id
 from tests._support.scheduler_v1 import (
     add_lesson,
     add_version,
@@ -187,7 +187,11 @@ async def _add_substitute(db_session, seed):
     from app.scheduler.infrastructure.models import CurricularAssignment, CurricularRequirement
     from tests._support.db_fixtures import create_teacher_profile
 
-    subject = models.Subject(name="Matemática", organization_id=seed.organization.id)
+    subject = models.Subject(
+        name="Matemática",
+        organization_id=seed.organization.id,
+        room_type_id=await get_school_room_type_id(db_session, seed.organization.id, "Normal"),
+    )
     db_session.add(subject)
     await db_session.flush()
     module = models.Module(

@@ -135,7 +135,7 @@ async def _validate_constraint_references(
         if (
             room is None
             or room.capacity < class_row.size
-            or room.type != subject_row.required_room_type
+            or room.room_type_id != subject_row.room_type_id
         ):
             invalid = True
 

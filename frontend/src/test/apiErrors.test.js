@@ -104,7 +104,7 @@ describe('api error contract', () => {
               room_issues: [{
                 class_name: 'TDESP 10',
                 subject_name: 'Treino Desportivo',
-                required_room_type: 'gym',
+                required_room_type_name: 'Oficina',
                 required_capacity: 27,
                 max_available_capacity: 26,
                 reason: 'INSUFFICIENT_CAPACITY',
@@ -120,7 +120,7 @@ describe('api error contract', () => {
     expect(presentation.message).toContain('Treino Desportivo')
     expect(presentation.message).toContain('27 alunos')
     expect(presentation.message).toContain('26 lugares')
-    expect(presentation.message).toContain('Ginásio')
+    expect(presentation.message).toContain('Oficina')
     expect(presentation.message).toContain('Salas')
     expect(presentation.reference).toBe('ROOMREF12345')
     expect(presentation.supportRequired).toBe(false)

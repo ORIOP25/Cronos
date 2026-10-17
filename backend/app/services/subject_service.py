@@ -1,16 +1,17 @@
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import joinedload, selectinload
 
 from app import models, schemas
 from app.core.exceptions import AppError
 from app.services import resource_removal
+from app.services.room_type_service import resolve_active_room_type
 from app.services.scheduler_state_service import record_scheduler_change
 
 
 def _subject_demand_snapshot(subject: models.Subject) -> dict:
     return {
-        "required_room_type": subject.required_room_type,
+        "room_type_id": subject.room_type_id,
         "module_sequence": [
             {
                 "id": module.id,
@@ -44,6 +45,18 @@ async def _subject_is_scheduled(db: AsyncSession, organization_id: int, subject_
     return course_link.first() is not None
 
 
+def _subject_response_stmt(subject_id: int, organization_id: int):
+    """A disciplina da escola com módulos e tipo, para a resposta ao cliente."""
+    return (
+        select(models.Subject)
+        .options(selectinload(models.Subject.modules), joinedload(models.Subject.room_type))
+        .where(
+            models.Subject.id == subject_id,
+            models.Subject.organization_id == organization_id,
+        )
+    )
+
+
 # --- ASYNC (API) ---
 async def get_subjects_by_org(db: AsyncSession, organization_id: int):
     stmt = (
@@ -53,7 +66,7 @@ async def get_subjects_by_org(db: AsyncSession, organization_id: int):
             models.Subject.is_archived.is_(False),
         )
         .order_by(models.Subject.name)
-        .options(selectinload(models.Subject.modules))
+        .options(selectinload(models.Subject.modules), joinedload(models.Subject.room_type))
     )
     result = await db.execute(stmt)
     return result.scalars().all()
@@ -68,7 +81,10 @@ async def create_subject(
     """
     Cria uma disciplina e os seus módulos (Library) atomicamente.
     """
-    # 0. Verificar duplicados
+    # 0. Tipo de sala da escola (sem identificador, vale o Normal)
+    room_type = await resolve_active_room_type(db, organization_id, item.room_type_id)
+
+    # 0.1 Verificar duplicados
     query_check = select(models.Subject).where(
         models.Subject.name == item.name,
         models.Subject.organization_id == organization_id,
@@ -85,9 +101,14 @@ async def create_subject(
     # O 'pop' remove 'modules' do dicionário para não dar erro ao criar o objeto Subject
     subject_data = item.model_dump()
     modules_data = subject_data.pop("modules", [])
+    subject_data.pop("room_type_id", None)
 
     # 2. Criar a Disciplina
-    db_subject = models.Subject(**subject_data, organization_id=organization_id)
+    db_subject = models.Subject(
+        **subject_data,
+        room_type_id=room_type.id,
+        organization_id=organization_id,
+    )
     db.add(db_subject)
     await db.flush()  # Flush gera o ID da disciplina (db_subject.id)
 
@@ -119,12 +140,7 @@ async def create_subject(
 
     # 5. Refresh com Eager Loading
     # Precisamos de recarregar o objeto para garantir que devolvemos os módulos na resposta
-    query = (
-        select(models.Subject)
-        .where(models.Subject.id == db_subject.id)
-        .options(selectinload(models.Subject.modules))
-    )
-    result = await db.execute(query)
+    result = await db.execute(_subject_response_stmt(db_subject.id, organization_id))
     return result.scalars().first()
 
 
@@ -215,6 +231,10 @@ async def update_subject(
     changed_by_membership_id: int | None = None,
 ):
     # 1. Buscar a disciplina com módulos
+    room_type = None
+    if "room_type_id" in subject_in.model_fields_set:
+        room_type = await resolve_active_room_type(db, organization_id, subject_in.room_type_id)
+
     query = (
         select(models.Subject)
         .where(models.Subject.id == subject_id, models.Subject.organization_id == organization_id)
@@ -249,6 +269,8 @@ async def update_subject(
 
     # 3. Atualizar campos simples
     update_data = subject_in.model_dump(exclude_unset=True, exclude={"modules"})
+    if room_type is not None:
+        update_data["room_type_id"] = room_type.id
     for field, value in update_data.items():
         setattr(subject, field, value)
 
@@ -276,12 +298,7 @@ async def update_subject(
 
     # subject já está tracked pela sessão — commit grava todas as alterações
     await db.flush()
-    stmt = (
-        select(models.Subject)
-        .options(selectinload(models.Subject.modules))
-        .where(models.Subject.id == subject.id)
-    )
-    result = await db.execute(stmt)
+    result = await db.execute(_subject_response_stmt(subject.id, organization_id))
     return result.scalars().first()
 
 

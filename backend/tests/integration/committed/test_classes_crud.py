@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models
 from app.config import settings
+from tests._support.db_fixtures import get_school_room_type_id
 
 API = settings.API_V1_STR
 
@@ -208,7 +209,11 @@ class TestClassesCRUD:
         assert db_class is not None
         org_id = db_class.organization_id
 
-        subject = models.Subject(name="Tecnologias Web", organization_id=org_id)
+        subject = models.Subject(
+            name="Tecnologias Web",
+            organization_id=org_id,
+            room_type_id=await get_school_room_type_id(db_session, org_id, "Normal"),
+        )
         db_session.add(subject)
         await db_session.flush()
 

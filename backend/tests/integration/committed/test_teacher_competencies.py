@@ -7,7 +7,7 @@ from factories import API, _setup_course_class_subject
 from httpx import AsyncClient
 
 from app import models
-from tests._support.db_fixtures import create_teacher_profile
+from tests._support.db_fixtures import create_teacher_profile, get_school_room_type_id
 
 
 class TestCompetencies:
@@ -86,7 +86,10 @@ class TestCompetencies:
         ctx = await _setup_course_class_subject(async_client, clerk_admin_headers)
         other_sub = await async_client.post(
             f"{API}/subjects/",
-            json={"name": "Educação Física", "required_room_type": "gym"},
+            json={
+                "name": "Educação Física",
+                "room_type_id": await get_school_room_type_id(db_session, 1, "Ginásio"),
+            },
             headers=clerk_admin_headers,
         )
         other_sub_id = other_sub.json()["id"]

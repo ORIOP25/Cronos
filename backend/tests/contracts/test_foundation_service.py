@@ -245,6 +245,23 @@ async def test_foundation_complete_transactional_generates_grid(db_session):
     assert refreshed_org.foundation_status == models.OrganizationFoundationStatus.COMPLETED
     assert refreshed_org.foundation_completed_at is not None
 
+    # Completing the foundation seeds the four room types with a single Normal.
+    room_types = (
+        await db_session.scalars(
+            select(models.SchoolRoomType).where(
+                models.SchoolRoomType.organization_id == org.id,
+                models.SchoolRoomType.is_archived.is_(False),
+            )
+        )
+    ).all()
+    assert {room_type.name for room_type in room_types} == {
+        "Normal",
+        "Laboratório",
+        "Ginásio",
+        "Artes",
+    }
+    assert [room_type.name for room_type in room_types if room_type.is_normal] == ["Normal"]
+
     # Idempotent completion call returns same result
     repeat = await service.complete_foundation(org.id, command, membership_id=mem.id)
     assert repeat.foundation_status == "COMPLETED"

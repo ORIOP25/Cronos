@@ -1071,14 +1071,17 @@ async def _build_assignments(
         ).all()
     }
     subject_types = {
-        subject_id: (required_room_type, name)
-        for subject_id, required_room_type, name in (
+        subject_id: (room_type_id, room_type_name, name)
+        for subject_id, room_type_id, room_type_name, name in (
             await db.execute(
                 select(
                     models.Subject.id,
-                    models.Subject.required_room_type,
+                    models.Subject.room_type_id,
+                    models.SchoolRoomType.name,
                     models.Subject.name,
-                ).where(
+                )
+                .join(models.Subject.room_type)
+                .where(
                     models.Subject.organization_id == organization_id,
                     models.Subject.id.in_({row.subject_id for row in assignments}),
                 )
@@ -1086,9 +1089,9 @@ async def _build_assignments(
         ).all()
     }
     rooms = [
-        (room.id, room.type.value, room.capacity)
+        (room.id, room.room_type_id, room.capacity)
         for room in (
-            await db.scalars(
+            await db.execute(
                 select(models.Room)
                 .where(
                     models.Room.organization_id == organization_id,
@@ -1096,7 +1099,9 @@ async def _build_assignments(
                 )
                 .order_by(models.Room.id)
             )
-        ).all()
+        )
+        .scalars()
+        .all()
     ]
     grouped_ids = {member for group in groups for member in group.member_assignment_ids}
     retired = await _retired_modules(db, organization_id, grouped_ids)
@@ -1153,7 +1158,7 @@ async def _build_assignments(
             raise SnapshotConfigurationError(
                 "UNKNOWN_SUBJECT", "Uma atribuição curricular refere uma disciplina desconhecida."
             )
-        required_type, subject_name = subject
+        required_type_id, required_type_name, subject_name = subject
         if any(class_id not in class_sizes for class_id in unit.class_ids):
             raise SnapshotConfigurationError(
                 "UNKNOWN_CLASS", "Uma atribuição curricular refere uma turma desconhecida."
@@ -1172,7 +1177,7 @@ async def _build_assignments(
         )
         eligibility = assess_room_eligibility(
             rooms,
-            required_room_type=required_type.value,
+            required_room_type=required_type_id,
             required_capacity=required_capacity,
             allowed_room_ids=allowed,
         )
@@ -1182,7 +1187,7 @@ async def _build_assignments(
                 "class_name": ", ".join(name for name in names if name),
                 "subject_id": unit.subject_id,
                 "subject_name": subject_name,
-                "required_room_type": required_type.value,
+                "required_room_type_name": required_type_name,
                 "required_capacity": required_capacity,
                 "max_available_capacity": eligibility.max_available_capacity,
                 "reason": eligibility.reason.value,

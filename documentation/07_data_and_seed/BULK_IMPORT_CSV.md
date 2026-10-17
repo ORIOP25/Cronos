@@ -41,16 +41,12 @@ Depois da importação, ajuste a seleção em `/courses/:courseId/classes/:class
 
 ## Tipos de sala
 
-Salas e disciplinas aceitam estes valores, sem distinguir maiúsculas ou acentos:
+A coluna `Tipo de sala` escreve o **nome** de um tipo de sala ativo da escola, igual ao nome que aparece em `/api/v1/room-types`: `Normal`, `Laboratório`, `Ginásio`, `Artes` ou um tipo criado pela escola. O nome é comparado sem distinguir maiúsculas ou acentos. Códigos internos como `lab`, `gym` ou `art` não são nomes de tipos e são recusados.
 
-| Valor aceite | Valor guardado |
-| --- | --- |
-| `Normal` | `normal` |
-| `Laboratório` ou `Laboratorio` | `lab` |
-| `Ginásio` ou `Ginasio` | `gym` |
-| `Artes` | `art` |
+- Uma célula vazia devolve `room_type_invalid`, com a mensagem «Escreva o tipo de sala.».
+- Um nome que não existe nos tipos ativos da escola, incluindo o nome de um tipo de outra escola, devolve `room_type_unknown`, com a mensagem «Não existe um tipo de sala com esse nome.».
 
-Os códigos internos `lab`, `gym` e `art` não são aceites no ficheiro.
+Salas e disciplinas ficam ligadas ao tipo pelo identificador; o resto da secção não muda.
 
 ## Disponibilidade das turmas
 

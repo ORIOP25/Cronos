@@ -19,6 +19,7 @@ from tests._support.db_fixtures import (
     _alembic_config,
     create_completed_organization,
     create_teacher_profile,
+    get_school_room_type_id,
     runtime_sync_test_engine,
     sync_test_engine,
 )
@@ -121,7 +122,11 @@ async def test_w02_assignment_rejects_other_school_class_and_rls_hides_rows(db_s
     )
     course_a = models.Course(name="Course A", abbreviation="A", organization_id=organization.id)
     course_b = models.Course(name="Course B", abbreviation="B", organization_id=other.id)
-    subject = models.Subject(name="Mathematics", organization_id=organization.id)
+    subject = models.Subject(
+        name="Mathematics",
+        organization_id=organization.id,
+        room_type_id=await get_school_room_type_id(db_session, organization.id, "Normal"),
+    )
     year = models.SchedulerSchoolYear(
         organization_id=organization.id,
         label="2026/27",
@@ -190,8 +195,18 @@ async def test_w02_assignment_rejects_other_school_class_and_rls_hides_rows(db_s
     assert visible_here == 1
     assert visible_elsewhere == 0
 
-    room = models.Room(name="A1", capacity=25, organization_id=organization.id)
-    other_room = models.Room(name="B1", capacity=25, organization_id=other.id)
+    room = models.Room(
+        name="A1",
+        capacity=25,
+        organization_id=organization.id,
+        room_type_id=await get_school_room_type_id(db_session, organization.id, "Normal"),
+    )
+    other_room = models.Room(
+        name="B1",
+        capacity=25,
+        organization_id=other.id,
+        room_type_id=await get_school_room_type_id(db_session, other.id, "Normal"),
+    )
     db_session.add_all((room, other_room))
     await db_session.flush()
     approved_at = datetime(2026, 9, 23, 10, tzinfo=UTC)

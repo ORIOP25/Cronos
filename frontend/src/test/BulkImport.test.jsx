@@ -67,6 +67,13 @@ describe('BulkImport', () => {
     expect(screen.queryByText(/UTF-8|BOM|backend|atómica|Recurso|JSON/i)).not.toBeInTheDocument()
   })
 
+  it('describes room types by the school-defined name instead of a fixed list', () => {
+    renderPage()
+
+    expect(screen.getAllByText('Tipo de sala: escreva o nome definido pela escola.')).toHaveLength(2)
+    expect(screen.queryByText(/Laboratório, Ginásio ou Artes/)).not.toBeInTheDocument()
+  })
+
   it('lists the class availability section with its instructions', () => {
     renderPage()
 

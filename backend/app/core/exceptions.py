@@ -25,6 +25,10 @@ PUBLIC_ERROR_CATALOG: dict[str, dict[str, Any]] = {
     "validation_error": {"message": "Reveja os dados indicados e tente novamente."},
     "bad_request": {"message": "Não foi possível processar o pedido."},
     "course_has_classes": {"message": "Apague primeiro as turmas deste curso."},
+    "room_type_name_taken": {"message": "Já existe um tipo de sala com este nome."},
+    "room_type_fixed": {
+        "message": "O tipo Normal é fixo: não pode mudar de nome nem ser removido.",
+    },
     "too_many_requests": {
         "message": "Foram efetuadas demasiadas tentativas. Aguarde e tente novamente.",
         "retryable": True,

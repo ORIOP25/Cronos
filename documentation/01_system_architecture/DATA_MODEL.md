@@ -33,7 +33,7 @@ Separate scheduler v1 records preserve curricular demand, execution evidence, de
 | Legal evidence | `organization_legal_acceptance` |
 | Curriculum | `course`, `class`, `subject`, `module`, `course_subject_link`, `teacher_subject_link`, `class_subject_link`, `class_subject_module` |
 | Joint lessons | `joint_lesson_group`, `joint_lesson_group_member`, `joint_lesson_group_module` |
-| Resources | `room`, `timeslot`, `grid_version`, `availability`, `class_availability`, `constraint` |
+| Resources | `room`, `room_type`, `timeslot`, `grid_version`, `availability`, `class_availability`, `constraint` |
 | School calendar | `organization_settings`, `organization_grid_settings`, `school_calendar_event`, `school_calendar_event_class` |
 | Scheduler lifecycle | `scheduler_school_year`, `scheduler_school_year_state`, `scheduler_state_version_events` |
 | Operational records | `lesson_occurrence`, `operational_schedule_block` |
@@ -43,6 +43,8 @@ Separate scheduler v1 records preserve curricular demand, execution evidence, de
 | Definitions | `backend/app/models.py` and `backend/app/scheduler/infrastructure/models.py` |
 
 `class_subject_module` marks the modules selected on a class/subject link. Its primary key is `(organization_id, class_subject_link_id, module_id)`, and forced row-level security isolates the tenant. The migration `0002_class_subject_modules` fills every existing link with all its subject modules. `curricular_requirement.planned` is `false` for a retired module that keeps executed history; see [Professional Education](../02_domain_model/PROFESSIONAL_EDUCATION.md).
+
+`room_type` is the school-owned catalogue for room and subject types. Its uniqueness, row-level security, seed values, and organization-scoped references are defined by `backend/alembic/versions/0006_room_types.py` and `backend/app/services/room_type_service.py`. Both `room.room_type_id` and `subject.room_type_id` are required references; the legacy enum columns have been removed. See [School Configuration](../02_domain_model/SCHOOL_CONFIGURATION.md).
 
 `joint_lesson_group` is one joint lesson: a subject, its member class/subject links and its joint modules. `joint_lesson_group_member` has primary key `(organization_id, class_subject_link_id)`, so a link belongs to at most one group. `joint_lesson_group_module` has primary key `(organization_id, group_id, module_id)`. The member and module foreign keys do not cascade, so the database refuses removing a link or module that a joint lesson uses. The migration `0004_joint_lesson_groups` creates the three tables and adds `scheduler_lesson_v1.teaching_unit_key` (backfilled as `A:{assignment_id}`); the lesson identity becomes `(version_id, stable_key, assignment_id)` so sibling lessons of a joint lesson share a `stable_key`. See [Professional Education](../02_domain_model/PROFESSIONAL_EDUCATION.md).
 
@@ -103,7 +105,7 @@ erDiagram
 - Timesheets use `OPEN`, `SUBMITTED`, or `APPROVED`.
 - Grid versions use `PENDING`, `ACTIVE`, or `REJECTED`.
 - Scheduler state change scopes are `FUTURE_IMPACTING`, `PAST_ONLY`, `NO_OP`, or `INACTIVE_RESOURCE`.
-- Room types are `normal`, `lab`, `gym`, or `art`.
+- Room types are school-owned `room_type` rows, not an enum (see the `room_type` note above).
 - Calendar event types are `national_holiday`, `school_break`, `exam_period`, `other`, or `internship_flow`.
 - Membership lifecycle states are `active` or `archived`.
 - Membership access states are `none`, `pending_invite`, `invite_expired`, `active`, `blocked`, or `sync_error`.

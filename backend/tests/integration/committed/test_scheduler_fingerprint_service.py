@@ -1,14 +1,16 @@
 from datetime import UTC, date, datetime, time
 
 import pytest
+from sqlalchemy import select
 
 from app import models
 from app.scheduler.domain.serialization import canonical_json, payload_digest
+from app.services import room_type_service
 from app.services.scheduler_fingerprint_service import (
     SchedulerFingerprintError,
     SchedulerFingerprintService,
 )
-from tests._support.db_fixtures import create_teacher_profile
+from tests._support.db_fixtures import create_teacher_profile, get_school_room_type_id
 
 
 def test_canonical_hash_is_stable_across_mapping_and_set_order():
@@ -23,6 +25,20 @@ def test_canonical_hash_is_stable_across_mapping_and_set_order():
 async def test_generation_input_fingerprint_changes_only_for_canonical_inputs(db_session):
     organization = models.Organization(name="Fingerprint School", plan_status="active")
     db_session.add(organization)
+    await db_session.flush()
+    await room_type_service.ensure_initial_room_types(db_session, organization.id)
+    laboratory_type = await db_session.scalar(
+        select(models.SchoolRoomType).where(
+            models.SchoolRoomType.organization_id == organization.id,
+            models.SchoolRoomType.name == "Laboratório",
+        )
+    )
+    oficina_type = models.SchoolRoomType(
+        organization_id=organization.id,
+        name="Oficina",
+        is_normal=False,
+    )
+    db_session.add(oficina_type)
     await db_session.flush()
     school_year = models.SchedulerSchoolYear(
         organization_id=organization.id,
@@ -40,8 +56,8 @@ async def test_generation_input_fingerprint_changes_only_for_canonical_inputs(db
     room = models.Room(
         organization_id=organization.id,
         name="Original name",
-        type=models.RoomType.normal,
         capacity=20,
+        room_type_id=laboratory_type.id,
     )
     slot = models.Timeslot(
         organization_id=organization.id,
@@ -75,6 +91,27 @@ async def test_generation_input_fingerprint_changes_only_for_canonical_inputs(db
         models.ScheduleGenerationStrategy.COMPLETE_GENERATION,
     )
     assert resized.value != first.value
+
+    room.room_type_id = oficina_type.id
+    await db_session.flush()
+    changed_type = await service.generation_input_fingerprint(
+        organization.id,
+        school_year.id,
+        models.ScheduleGenerationStrategy.COMPLETE_GENERATION,
+    )
+    assert changed_type.value != resized.value
+    assert changed_type.snapshot["rooms"] == [
+        {"id": room.id, "capacity": 25, "room_type_id": oficina_type.id}
+    ]
+
+    oficina_type.name = "Oficina técnica"
+    await db_session.flush()
+    renamed_type = await service.generation_input_fingerprint(
+        organization.id,
+        school_year.id,
+        models.ScheduleGenerationStrategy.COMPLETE_GENERATION,
+    )
+    assert renamed_type.value == changed_type.value
 
 
 async def test_strategy_changes_snapshot_without_retired_active_schedule(db_session):
@@ -352,6 +389,20 @@ async def test_class_subject_requirements_include_scheduler_inputs_and_ignore_ot
     organization = models.Organization(name="Canonical Inputs", plan_status="active")
     db_session.add(organization)
     await db_session.flush()
+    await room_type_service.ensure_initial_room_types(db_session, organization.id)
+    laboratory_type = await db_session.scalar(
+        select(models.SchoolRoomType).where(
+            models.SchoolRoomType.organization_id == organization.id,
+            models.SchoolRoomType.name == "Laboratório",
+        )
+    )
+    oficina_type = models.SchoolRoomType(
+        organization_id=organization.id,
+        name="Oficina",
+        is_normal=False,
+    )
+    db_session.add(oficina_type)
+    await db_session.flush()
     school_year = models.SchedulerSchoolYear(
         organization_id=organization.id,
         label="2025/2026",
@@ -367,7 +418,7 @@ async def test_class_subject_requirements_include_scheduler_inputs_and_ignore_ot
     subject = models.Subject(
         organization_id=organization.id,
         name="Canonical Subject",
-        required_room_type=models.RoomType.normal,
+        room_type_id=laboratory_type.id,
     )
     teacher = await create_teacher_profile(
         db_session,
@@ -435,7 +486,7 @@ async def test_class_subject_requirements_include_scheduler_inputs_and_ignore_ot
         school_year.id,
         models.ScheduleGenerationStrategy.COMPLETE_GENERATION,
     )
-    assert first.snapshot["subjects"] == [{"id": subject.id, "required_room_type": "normal"}]
+    assert first.snapshot["subjects"] == [{"id": subject.id, "room_type_id": laboratory_type.id}]
     assert first.snapshot["class_subject_requirements"] == [
         {
             "class_id": class_.id,
@@ -450,6 +501,27 @@ async def test_class_subject_requirements_include_scheduler_inputs_and_ignore_ot
     ]
     assert first.snapshot["calendar_events"] == []
 
+    subject.room_type_id = oficina_type.id
+    await db_session.flush()
+    changed_type = await service.generation_input_fingerprint(
+        organization.id,
+        school_year.id,
+        models.ScheduleGenerationStrategy.COMPLETE_GENERATION,
+    )
+    assert changed_type.value != first.value
+    assert changed_type.snapshot["subjects"] == [
+        {"id": subject.id, "room_type_id": oficina_type.id}
+    ]
+
+    oficina_type.name = "Oficina técnica"
+    await db_session.flush()
+    renamed_type = await service.generation_input_fingerprint(
+        organization.id,
+        school_year.id,
+        models.ScheduleGenerationStrategy.COMPLETE_GENERATION,
+    )
+    assert renamed_type.value == changed_type.value
+
     old_event.start_date = date(2024, 2, 1)
     old_event.end_date = date(2024, 2, 1)
     await db_session.flush()
@@ -458,7 +530,7 @@ async def test_class_subject_requirements_include_scheduler_inputs_and_ignore_ot
         school_year.id,
         models.ScheduleGenerationStrategy.COMPLETE_GENERATION,
     )
-    assert after_irrelevant_event.value == first.value
+    assert after_irrelevant_event.value == renamed_type.value
 
 
 async def test_fingerprint_tracks_class_availability_and_ignores_archived_classes(db_session):
@@ -546,6 +618,7 @@ async def test_generation_input_snapshot_tracks_the_class_subject_module_selecti
     organization = models.Organization(name="Selection Fingerprint", plan_status="active")
     db_session.add(organization)
     await db_session.flush()
+    await room_type_service.ensure_initial_room_types(db_session, organization.id)
     school_year = models.SchedulerSchoolYear(
         organization_id=organization.id,
         label="2025/2026",
@@ -561,7 +634,7 @@ async def test_generation_input_snapshot_tracks_the_class_subject_module_selecti
     subject = models.Subject(
         organization_id=organization.id,
         name="Selection Subject",
-        required_room_type=models.RoomType.normal,
+        room_type_id=await get_school_room_type_id(db_session, organization.id, "Normal"),
     )
     db_session.add_all([school_year, course, subject])
     await db_session.flush()
@@ -662,6 +735,7 @@ async def test_fingerprint_adds_joint_groups_only_when_present(db_session):
     organization = models.Organization(name="Joint Fingerprint", plan_status="active")
     db_session.add(organization)
     await db_session.flush()
+    await room_type_service.ensure_initial_room_types(db_session, organization.id)
     school_year = models.SchedulerSchoolYear(
         organization_id=organization.id,
         label="2025/2026",
@@ -673,7 +747,7 @@ async def test_fingerprint_adds_joint_groups_only_when_present(db_session):
     subject = models.Subject(
         organization_id=organization.id,
         name="Português",
-        required_room_type=models.RoomType.normal,
+        room_type_id=await get_school_room_type_id(db_session, organization.id, "Normal"),
     )
     db_session.add_all([school_year, course, subject])
     await db_session.flush()

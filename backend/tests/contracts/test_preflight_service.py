@@ -14,10 +14,12 @@ from app.services.preflight_service import (
     _validate_room_requirements,
     _validate_subject_requirements,
 )
+from app.services.room_type_service import ensure_initial_room_types
 from tests._support.db_fixtures import (
     accept_current_legal_documents,
     create_org_and_user,
     create_teacher_profile,
+    get_school_room_type_id,
 )
 from tests._support.scheduler_v1 import MOMENT, seed_generatable_school
 
@@ -34,6 +36,7 @@ async def _create_org_and_admin(db_session, org_name: str, clerk_org: str):
     )
     db_session.add(org)
     await db_session.flush()
+    await ensure_initial_room_types(db_session, org.id)
 
     user = models.User(
         name="Preflight Admin",
@@ -232,11 +235,24 @@ async def test_preflight_rejects_room_that_cannot_fit_assigned_class(db_session)
         clerk_user_id="preflight-room-user",
         clerk_org_id="preflight-room-org",
     )
+    laboratory_type = await db_session.scalar(
+        select(models.SchoolRoomType).where(
+            models.SchoolRoomType.organization_id == org.id,
+            models.SchoolRoomType.name == "Laboratório",
+        )
+    )
+    oficina_type = models.SchoolRoomType(
+        organization_id=org.id,
+        name="Oficina",
+        is_normal=False,
+    )
+    db_session.add(oficina_type)
+    await db_session.flush()
     course = models.Course(organization_id=org.id, name="Curso", abbreviation="C")
     subject = models.Subject(
         organization_id=org.id,
         name="Laboratório",
-        required_room_type=models.RoomType.lab,
+        room_type_id=laboratory_type.id,
     )
     db_session.add_all([course, subject])
     await db_session.flush()
@@ -276,8 +292,8 @@ async def test_preflight_rejects_room_that_cannot_fit_assigned_class(db_session)
         models.Room(
             organization_id=org.id,
             name="Lab pequeno",
-            type=models.RoomType.lab,
             capacity=20,
+            room_type_id=laboratory_type.id,
         )
     )
     await db_session.flush()
@@ -292,13 +308,28 @@ async def test_preflight_rejects_room_that_cannot_fit_assigned_class(db_session)
         "class_name": "Turma grande",
         "subject_id": subject.id,
         "subject_name": "Laboratório",
-        "required_room_type": "lab",
+        "required_room_type_name": "Laboratório",
         "required_capacity": 30,
         "max_available_capacity": 20,
         "reason": "INSUFFICIENT_CAPACITY",
     }
     assert "30 alunos" in issues[0].message
     assert "20 lugares" in issues[0].message
+
+    subject.room_type_id = oficina_type.id
+    await db_session.flush()
+    mismatched_type_issues = await _validate_room_requirements(db_session, org.id)
+    assert mismatched_type_issues[0].context == {
+        "class_id": school_class.id,
+        "class_name": "Turma grande",
+        "subject_id": subject.id,
+        "subject_name": "Laboratório",
+        "required_room_type_name": "Oficina",
+        "required_capacity": 30,
+        "max_available_capacity": None,
+        "reason": "NO_ROOM_OF_TYPE",
+    }
+    assert "Oficina" in mismatched_type_issues[0].message
 
     assert await _validate_subject_requirements(db_session, org.id, {subject.id}) == []
 
@@ -310,10 +341,11 @@ async def test_preflight_ignores_archived_room(db_session):
         clerk_org_id="preflight-archived-room-org",
     )
     course = models.Course(organization_id=org.id, name="Curso Sala", abbreviation="CSA")
+    laboratory_type_id = await get_school_room_type_id(db_session, org.id, "Laboratório")
     subject = models.Subject(
         organization_id=org.id,
         name="Laboratório Arquivado",
-        required_room_type=models.RoomType.lab,
+        room_type_id=laboratory_type_id,
     )
     db_session.add_all([course, subject])
     await db_session.flush()
@@ -329,9 +361,9 @@ async def test_preflight_ignores_archived_room(db_session):
     room = models.Room(
         organization_id=org.id,
         name="Lab arquivado",
-        type=models.RoomType.lab,
         capacity=30,
         is_archived=True,
+        room_type_id=laboratory_type_id,
     )
     db_session.add_all([school_class, room])
     await db_session.flush()
@@ -385,7 +417,7 @@ async def _create_gym_scenario(
     subject = models.Subject(
         organization_id=org.id,
         name="Treino Desportivo",
-        required_room_type=models.RoomType.gym,
+        room_type_id=await get_school_room_type_id(db_session, org.id, "Ginásio"),
     )
     db_session.add_all([course, subject])
     await db_session.flush()
@@ -426,8 +458,8 @@ async def _create_gym_scenario(
         room = models.Room(
             organization_id=org.id,
             name=f"G-{index + 1:02d}",
-            type=models.RoomType.gym,
             capacity=capacity,
+            room_type_id=await get_school_room_type_id(db_session, org.id, "Ginásio"),
         )
         db_session.add(room)
         rooms.append(room)
@@ -450,7 +482,7 @@ async def test_preflight_reports_the_exact_room_shortage(db_session):
         "class_name": "TDESP 10",
         "subject_id": subject.id,
         "subject_name": "Treino Desportivo",
-        "required_room_type": "gym",
+        "required_room_type_name": "Ginásio",
         "required_capacity": 27,
         "max_available_capacity": 26,
         "reason": "INSUFFICIENT_CAPACITY",
@@ -504,7 +536,7 @@ async def test_load_snapshot_carries_public_room_context(db_session):
             "class_name": "A",
             "subject_id": seed.subject.id,
             "subject_name": "Subject",
-            "required_room_type": "normal",
+            "required_room_type_name": "Normal",
             "required_capacity": 20,
             "max_available_capacity": 10,
             "reason": "INSUFFICIENT_CAPACITY",
@@ -571,18 +603,18 @@ async def test_preflight_blocks_invalid_teacher_assignment_archived_or_unqualifi
     subject = models.Subject(
         organization_id=org.id,
         name="Programação",
-        required_room_type=models.RoomType.normal,
+        room_type_id=await get_school_room_type_id(db_session, org.id, "Normal"),
     )
     subject_without_teacher = models.Subject(
         organization_id=org.id,
         name="Redes",
-        required_room_type=models.RoomType.normal,
+        room_type_id=await get_school_room_type_id(db_session, org.id, "Normal"),
     )
     room = models.Room(
         organization_id=org.id,
         name="Sala A",
         capacity=30,
-        type=models.RoomType.normal,
+        room_type_id=await get_school_room_type_id(db_session, org.id, "Normal"),
     )
     db_session.add_all(
         [school_year, settings, timeslot, course, subject, subject_without_teacher, room]
@@ -819,8 +851,16 @@ async def test_teacher_archive_restore_and_qualifications_invalidate_scheduler(d
         scheduler_state_version=1,
     )
 
-    subject1 = models.Subject(organization_id=organization.id, name="Sub1")
-    subject2 = models.Subject(organization_id=organization.id, name="Sub2")
+    subject1 = models.Subject(
+        organization_id=organization.id,
+        name="Sub1",
+        room_type_id=await get_school_room_type_id(db_session, organization.id, "Normal"),
+    )
+    subject2 = models.Subject(
+        organization_id=organization.id,
+        name="Sub2",
+        room_type_id=await get_school_room_type_id(db_session, organization.id, "Normal"),
+    )
     db_session.add_all([school_year_state, subject1, subject2])
     await db_session.flush()
 
@@ -964,13 +1004,13 @@ async def _seed_class_availability_preflight(db_session, *, suffix: str):
     subject = models.Subject(
         organization_id=org.id,
         name=f"Disciplina {suffix}",
-        required_room_type=models.RoomType.normal,
+        room_type_id=await get_school_room_type_id(db_session, org.id, "Normal"),
     )
     room = models.Room(
         organization_id=org.id,
         name=f"Sala {suffix}",
         capacity=30,
-        type=models.RoomType.normal,
+        room_type_id=await get_school_room_type_id(db_session, org.id, "Normal"),
     )
     slots = [
         models.Timeslot(
@@ -1047,13 +1087,21 @@ async def test_preflight_blocks_class_subject_without_selected_modules(db_sessio
         )
     )
     course = models.Course(organization_id=org.id, name="Curso Módulos", abbreviation="CM")
-    subject = models.Subject(organization_id=org.id, name="UFCD Programação")
-    other_subject = models.Subject(organization_id=org.id, name="UFCD Redes")
+    subject = models.Subject(
+        organization_id=org.id,
+        name="UFCD Programação",
+        room_type_id=await get_school_room_type_id(db_session, org.id, "Normal"),
+    )
+    other_subject = models.Subject(
+        organization_id=org.id,
+        name="UFCD Redes",
+        room_type_id=await get_school_room_type_id(db_session, org.id, "Normal"),
+    )
     room = models.Room(
         organization_id=org.id,
         name="Sala",
         capacity=30,
-        type=models.RoomType.normal,
+        room_type_id=await get_school_room_type_id(db_session, org.id, "Normal"),
     )
     db_session.add_all([course, subject, other_subject, room])
     await db_session.flush()
@@ -1297,7 +1345,7 @@ async def _create_joint_scenario(
     subject = models.Subject(
         organization_id=org.id,
         name="Português",
-        required_room_type=models.RoomType.normal,
+        room_type_id=await get_school_room_type_id(db_session, org.id, "Normal"),
     )
     db_session.add_all([course, subject])
     await db_session.flush()
@@ -1346,7 +1394,7 @@ async def _create_joint_scenario(
     room = models.Room(
         organization_id=org.id,
         name="Sala J",
-        type=models.RoomType.normal,
+        room_type_id=await get_school_room_type_id(db_session, org.id, "Normal"),
         capacity=room_capacity,
     )
     db_session.add(room)
@@ -1438,7 +1486,7 @@ async def test_preflight_blocks_a_teacher_whose_minimum_cannot_fit_the_visible_g
     subject = models.Subject(
         organization_id=org.id,
         name="Disciplina Presença",
-        required_room_type=models.RoomType.normal,
+        room_type_id=await get_school_room_type_id(db_session, org.id, "Normal"),
     )
     db_session.add_all([course, subject])
     await db_session.flush()
@@ -1466,8 +1514,8 @@ async def test_preflight_blocks_a_teacher_whose_minimum_cannot_fit_the_visible_g
         models.Room(
             organization_id=org.id,
             name="Sala Presença",
-            type=models.RoomType.normal,
             capacity=30,
+            room_type_id=await get_school_room_type_id(db_session, org.id, "Normal"),
         )
     )
     await db_session.commit()

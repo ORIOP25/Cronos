@@ -1347,9 +1347,19 @@ async def _substitute_exclusions(
                 "availability",
             )
         )
-    room = await db.get(models.Room, lesson.room_id)
-    subject = await db.get(models.Subject, subject_id)
-    if room is not None and subject is not None and room.type != subject.required_room_type:
+    room = await db.scalar(
+        select(models.Room).where(
+            models.Room.id == lesson.room_id,
+            models.Room.organization_id == organization_id,
+        )
+    )
+    subject = await db.scalar(
+        select(models.Subject).where(
+            models.Subject.id == subject_id,
+            models.Subject.organization_id == organization_id,
+        )
+    )
+    if room is not None and subject is not None and room.room_type_id != subject.room_type_id:
         exclusions.append(
             _substitution_exclusion(
                 "room_mismatch",

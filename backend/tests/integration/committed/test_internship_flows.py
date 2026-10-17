@@ -16,8 +16,9 @@ from app.scheduler.infrastructure.models import (
     SchedulerLessonSliceV1,
 )
 from app.scheduler.infrastructure.operations import record_lesson_log, week_schedule
-from app.services import internship_flow_service, settings_service
+from app.services import internship_flow_service, room_type_service, settings_service
 from app.services.scheduler_fingerprint_service import SchedulerFingerprintService
+from tests._support.db_fixtures import get_school_room_type_id
 from tests._support.scheduler_v1 import add_lesson, add_version
 
 pytestmark = pytest.mark.postgresql
@@ -35,6 +36,7 @@ async def _flow_context(db_session):
     )
     db_session.add(organization)
     await db_session.flush()
+    await room_type_service.ensure_initial_room_types(db_session, organization.id)
     user = models.User(name="Flow Admin", email="flow-admin@example.com")
     school_year = models.SchedulerSchoolYear(
         organization_id=organization.id,
@@ -51,13 +53,13 @@ async def _flow_context(db_session):
     subject = models.Subject(
         organization_id=organization.id,
         name="Subject",
-        required_room_type=models.RoomType.normal,
+        room_type_id=await get_school_room_type_id(db_session, organization.id, "Normal"),
     )
     room = models.Room(
         organization_id=organization.id,
         name="Room",
-        type=models.RoomType.normal,
         capacity=30,
+        room_type_id=await get_school_room_type_id(db_session, organization.id, "Normal"),
     )
     slot = models.Timeslot(
         organization_id=organization.id,

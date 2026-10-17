@@ -77,7 +77,7 @@ async def test_published_schedule_can_be_regenerated_after_configuration_changes
     elif change == "room":
         await room_service.create_room(
             db_session,
-            schemas.RoomCreate(name="Nova sala", capacity=25, type=seed.room.type),
+            schemas.RoomCreate(name="Nova sala", capacity=25, room_type_id=seed.room.room_type_id),
             seed.organization.id,
         )
         await room_service.update_room(
@@ -86,7 +86,9 @@ async def test_published_schedule_can_be_regenerated_after_configuration_changes
     elif change == "room_added":
         await room_service.create_room(
             db_session,
-            schemas.RoomCreate(name="Sala adicional", capacity=25, type=seed.room.type),
+            schemas.RoomCreate(
+                name="Sala adicional", capacity=25, room_type_id=seed.room.room_type_id
+            ),
             seed.organization.id,
         )
     elif change == "teacher":

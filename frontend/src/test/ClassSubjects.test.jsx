@@ -49,14 +49,14 @@ const baseSubjects = {
     grade_level: 10,
     subjects: [
       {
-        id: 1, subject_id: 1, subject_name: 'Português', required_room_type: 'normal', teacher_id: 5, teacher_name: 'Ana Silva',
+        id: 1, subject_id: 1, subject_name: 'Português', room_type: { id: 1, name: 'Normal', is_normal: true }, teacher_id: 5, teacher_name: 'Ana Silva',
         modules: [
           { id: 11, name: 'Módulo 1', code: 'M1', hours_total: 25, order: 1, selected: true },
           { id: 12, name: 'Módulo 2', code: null, hours_total: 30, order: 2, selected: false },
         ],
       },
       {
-        id: 2, subject_id: 2, subject_name: 'Programação', required_room_type: 'normal', teacher_id: 5, teacher_name: 'Ana Silva',
+        id: 2, subject_id: 2, subject_name: 'Programação', room_type: { id: 1, name: 'Normal', is_normal: true }, teacher_id: 5, teacher_name: 'Ana Silva',
         modules: [
           { id: 21, name: 'Módulo A', code: 'A', hours_total: 50, order: 1, selected: true },
         ],
@@ -77,7 +77,7 @@ const subjectsWithModules = {
         id: 1,
         subject_id: 1,
         subject_name: 'Português',
-        required_room_type: 'normal',
+        room_type: { id: 1, name: 'Normal', is_normal: true },
         teacher_id: 5,
         teacher_name: 'Ana Silva',
         modules: [
@@ -90,7 +90,7 @@ const subjectsWithModules = {
         id: 2,
         subject_id: 2,
         subject_name: 'Programação',
-        required_room_type: 'normal',
+        room_type: { id: 1, name: 'Normal', is_normal: true },
         teacher_id: null,
         teacher_name: null,
         modules: [
@@ -113,7 +113,7 @@ const subjectsWithJoint = {
         id: 1,
         subject_id: 1,
         subject_name: 'Português',
-        required_room_type: 'normal',
+        room_type: { id: 1, name: 'Normal', is_normal: true },
         teacher_id: 5,
         teacher_name: 'Ana Silva',
         modules: [
@@ -169,6 +169,7 @@ describe('ClassSubjects', () => {
     })
     renderWithRouter(<ClassSubjects courseIdOverride="9" classIdOverride="11" />, { withToaster: true })
 
+    expect(screen.getAllByText('Normal').length).toBeGreaterThan(0)
     const select = screen.getByRole('combobox', { name: 'Professor de Português' })
     fireEvent.change(select, { target: { value: '5' } })
 
@@ -199,8 +200,8 @@ describe('ClassSubjects', () => {
         course_name: 'Técnico de Eletrónica',
         grade_level: 10,
         subjects: [
-          { id: 1, subject_id: 1, subject_name: 'Português', required_room_type: 'normal', teacher_id: 5, teacher_name: 'Ana Silva' },
-          { id: 2, subject_id: 2, subject_name: 'Programação', required_room_type: 'normal', teacher_id: 5, teacher_name: 'Ana Silva' },
+          { id: 1, subject_id: 1, subject_name: 'Português', room_type: { id: 1, name: 'Normal', is_normal: true }, teacher_id: 5, teacher_name: 'Ana Silva' },
+          { id: 2, subject_id: 2, subject_name: 'Programação', room_type: { id: 1, name: 'Normal', is_normal: true }, teacher_id: 5, teacher_name: 'Ana Silva' },
         ],
       },
       error: null,
@@ -345,7 +346,7 @@ describe('ClassSubjects', () => {
         grade_level: 10,
         subjects: [
           {
-            id: 1, subject_id: 1, subject_name: 'Português', required_room_type: 'normal', teacher_id: 5, teacher_name: 'Ana Silva',
+            id: 1, subject_id: 1, subject_name: 'Português', room_type: { id: 1, name: 'Normal', is_normal: true }, teacher_id: 5, teacher_name: 'Ana Silva',
             modules: [{ id: 11, name: 'M1', code: 'M1', hours_total: 25, order: 1, selected: false }],
           },
         ],
@@ -367,7 +368,7 @@ describe('ClassSubjects', () => {
         course_name: 'Técnico de Eletrónica',
         grade_level: 10,
         subjects: [
-          { id: 1, subject_id: 1, subject_name: 'Português', required_room_type: 'normal', teacher_id: null, teacher_name: null, modules: [] },
+          { id: 1, subject_id: 1, subject_name: 'Português', room_type: { id: 1, name: 'Normal', is_normal: true }, teacher_id: null, teacher_name: null, modules: [] },
         ],
       },
       error: null,
@@ -567,7 +568,7 @@ describe('ClassSubjects', () => {
             id: 1,
             subject_id: 1,
             subject_name: 'Português',
-            required_room_type: 'normal',
+            room_type: { id: 1, name: 'Normal', is_normal: true },
             teacher_id: null,
             teacher_name: null,
             modules: [{ id: 11, name: 'Módulo 1', code: 'M1', hours_total: 25, order: 0, selected: true }],

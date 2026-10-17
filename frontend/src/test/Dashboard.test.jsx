@@ -49,7 +49,7 @@ describe('Dashboard', () => {
           courses_count: 1,
           subjects_count: 4,
           rooms_count: 5,
-          rooms_by_type: {},
+          rooms_by_type: { Normal: 3, Oficina: 2 },
         },
         schedule_health: {
           generation_id: 'generation-123',
@@ -93,6 +93,7 @@ describe('Dashboard', () => {
     expect(screen.getByText(/Inclui 1 turma arquivada.*catálogo.*turmas ativas/i)).toBeInTheDocument()
     expect(screen.getByText(/14\/09\/2026/)).toBeInTheDocument()
     expect(screen.getByText('Escola Exemplo')).toBeInTheDocument()
+    expect(screen.getByTestId('resource-counts')).toHaveTextContent('Normal: 3 · Oficina: 2')
     expect(screen.queryByText('Escola: Escola Exemplo')).not.toBeInTheDocument()
   })
 

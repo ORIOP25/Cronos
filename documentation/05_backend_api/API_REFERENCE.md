@@ -99,12 +99,18 @@ Stable route families keep frontend features and provider webhooks independent f
 | `PUT` / `DELETE` | `/api/v1/joint-lesson-groups/{group_id}` | Admin |
 | `GET` / `POST` | `/api/v1/rooms/` | Active / Admin |
 | `PATCH` / `DELETE` | `/api/v1/rooms/{room_id}` | Admin |
+| `GET` / `POST` | `/api/v1/room-types/` | Admin; `POST` returns `201` |
+| `PATCH` / `DELETE` | `/api/v1/room-types/{room_type_id}` | Admin |
 | `GET` | `/api/v1/timeslots/` | Active |
 | `GET` | `/api/v1/timeslots/range` | Active |
 
 Each subject in `GET /api/v1/classes/{class_id}/subjects` carries `modules`, ordered by `order`, with `selected` per module. `POST` selects every module of the subject (D03). `PATCH /api/v1/classes/{class_id}/subjects/{subject_id}` accepts `module_ids`: an empty list is valid, repeated IDs or a module of another subject return `400 bad_request`, and a module of another organization returns `404 resource_not_found`. The write stores the selection on `class_subject_module` and records a scheduler change. `GET /api/v1/classes/{class_id}` and `PATCH /api/v1/classes/{class_id}/progress` count only the selected modules.
 
 A joint lesson group joins two or more classes of one subject for a set of modules. `POST /api/v1/joint-lesson-groups` creates it, `PUT` replaces its classes, modules and teacher, and `DELETE` undoes it. `GET /api/v1/subjects/{subject_id}/joint-candidates?class_id={id}` lists the classes that can join the given class; the optional `group_id` includes the current members of that group (and the source class) so the editor can show the current selection and started modules, while the default excludes the source class and every joined class. In create mode, `include_source=true` adds the source class to the result so its selected, started and teacher facts are available; the default still excludes it. A source class without a current link in the organization returns `404`. Configuration rules return `400` with a `JOINT_*` code, except `JOINT_MODULE_STARTED` and `JOINT_CLASS_STARTED`, which return `409`. A group, teacher or module of another organization returns `404 resource_not_found`. `teacher_id` is required and positive; repeated `class_ids` or `module_ids` return `400`. Each subject in `GET /api/v1/classes/{class_id}/subjects` carries `joint_group` (or `null`). Changing the teacher of a member link changes every member link in one transaction. Removing a joint module from the checklist returns `409 JOINT_MODULE_LOCKED`, and removing a member link, archiving a member class, removing a joint module or deleting a subject in a joint group returns `409 resource_in_use`.
+
+Every `/api/v1/room-types` route, including the list, is administrator-only. The list returns the active types of the caller's school, with `room_count` and `subject_count` of the active rooms and subjects that use each type. `POST` creates a type with a name of 1 to 60 characters, `PATCH` renames it, and `DELETE` removes it. A name already used by another type of the same school returns `409 room_type_name_taken` (compared ignoring case and accents); a blank or over-long name returns `422`. Renaming or removing the fixed Normal type returns `409 room_type_fixed`. Removing a type used by an active room or subject returns `409 resource_in_use` with the names in `context.rooms` and `context.subjects`; a type kept only by archived objects is archived, and creating the same name again restores it with the same `id` and name. A type of another school returns `404 resource_not_found`. A non-administrator returns `403`.
+
+A room or a subject takes the school type it needs as `room_type_id`. `POST /api/v1/rooms/` and `POST /api/v1/subjects/` without the field, or with `null`, use the school's Normal type; `PATCH` without the field keeps the current type, and an explicit `null` goes back to Normal. The write bodies reject unknown fields with `422`, so the removed `type` (rooms) and `required_room_type` (subjects) keys never save a Normal room or subject silently. Every room and subject read returns the nested `room_type` (`id`, `name`, `is_normal`), including `GET /api/v1/courses/{course_id}`, `GET /api/v1/classes/{class_id}`, the subject list of `GET /api/v1/classes/{class_id}/subjects` and the teacher progress reads. An identifier that does not exist, belongs to another school or is archived returns `404 resource_not_found` and changes nothing.
 
 ### Members and teachers
 
@@ -238,6 +244,11 @@ Prevalidation reports `CLASS_SUBJECT_WITHOUT_MODULES` when an active class subje
 
 `GET /readiness/prevalidation` adds the `CLASS_WITHOUT_AVAILABILITY` blocker
 when every visible block of an eligible class is marked Impossível.
+
+For `NO_ELIGIBLE_ROOM` blockers, the issue context exposes
+  `required_room_type_name` as the school’s room-type label. Compatibility is
+  checked against the room-type catalogue ID, so custom room types remain distinct
+  even when their labels are similar.
 
 `PUT /foundation/draft` accepts `expected_version`, `current_step` from 1 to 10, and a strict Foundation data object.
 The response returns the new version.

@@ -25,7 +25,12 @@ from app.scheduler.infrastructure.models import (
     CurricularRequirement,
 )
 from app.services import class_service
-from tests._support.db_fixtures import TestingSessionLocal, create_teacher_profile
+from app.services.room_type_service import ensure_initial_room_types
+from tests._support.db_fixtures import (
+    TestingSessionLocal,
+    create_teacher_profile,
+    get_school_room_type_id,
+)
 
 
 class TestClassSubjectLink:
@@ -36,6 +41,7 @@ class TestClassSubjectLink:
         org = models.Organization(name="Escola Teste", plan_status="active")
         db_session.add(org)
         await db_session.flush()
+        await ensure_initial_room_types(db_session, org.id)
 
         course = models.Course(
             name="Técnico em Informática", abbreviation="TI", organization_id=org.id
@@ -55,7 +61,11 @@ class TestClassSubjectLink:
         db_session.add(cls)
         await db_session.flush()
 
-        subject = models.Subject(name="Matemática", organization_id=org.id)
+        subject = models.Subject(
+            name="Matemática",
+            organization_id=org.id,
+            room_type_id=await get_school_room_type_id(db_session, org.id, "Normal"),
+        )
         db_session.add(subject)
         await db_session.flush()
 
@@ -264,7 +274,6 @@ class TestClassSubjectModuleSelection:
             f"{API}/subjects/",
             json={
                 "name": "Educação Física",
-                "required_room_type": "normal",
                 "modules": [{"name": "M1", "code": "EF1", "hours_total": 10, "order": 0}],
             },
             headers=clerk_admin_headers,
@@ -551,7 +560,6 @@ class TestClassSubjectModuleSelectionQueryBudget:
                 f"{API}/subjects/",
                 json={
                     "name": f"Extra {index}",
-                    "required_room_type": "normal",
                     "modules": [
                         {"name": f"E{index}", "code": f"E{index}", "hours_total": 10, "order": 0}
                     ],

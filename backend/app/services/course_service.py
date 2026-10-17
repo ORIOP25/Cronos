@@ -7,6 +7,11 @@ from app.core.exceptions import AppError
 from app.services import resource_removal
 from app.services.scheduler_state_service import record_scheduler_change
 
+# As disciplinas do curso com o tipo de sala da escola, em bloco.
+COURSE_SUBJECT_OPTIONS = (
+    selectinload(models.Course.subjects).joinedload(models.Subject.room_type),
+)
+
 
 async def _course_demand_snapshot(db: AsyncSession, organization_id: int, course_id: int) -> dict:
     subject_ids = await db.scalars(
@@ -69,7 +74,7 @@ async def get_courses_by_org(
             models.Course.organization_id == organization_id,
             models.Course.is_archived.is_(False),
         )
-        .options(selectinload(models.Course.subjects), selectinload(models.Course.classes))
+        .options(*COURSE_SUBJECT_OPTIONS, selectinload(models.Course.classes))
         .order_by(models.Course.name)
         .offset(skip)
         .limit(limit)
@@ -84,7 +89,7 @@ async def get_course_details(db: AsyncSession, course_id: int, organization_id: 
         select(models.Course)
         .where(models.Course.id == course_id, models.Course.organization_id == organization_id)
         .options(
-            selectinload(models.Course.subjects),
+            *COURSE_SUBJECT_OPTIONS,
             selectinload(models.Course.classes),  # Carregar turmas
             with_loader_criteria(models.Class, models.Class.is_archived.is_(False)),
             with_loader_criteria(models.Subject, models.Subject.is_archived.is_(False)),

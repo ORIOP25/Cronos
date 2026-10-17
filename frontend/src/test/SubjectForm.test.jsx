@@ -1,8 +1,17 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import SubjectForm from '../components/Forms/SubjectForm'
 import { EMPTY_MODULE, normalizeModule } from '../utils/subjectModules'
+
+const { useRoomTypesMock } = vi.hoisted(() => ({ useRoomTypesMock: vi.fn() }))
+
+vi.mock('../features/catalog/data', () => ({ useRoomTypes: useRoomTypesMock }))
+
+const roomTypes = [
+  { id: 11, name: 'Normal', is_normal: true },
+  { id: 24, name: 'Oficina', is_normal: false },
+]
 
 const renderForm = (props = {}) => render(<SubjectForm initialData={null} onSubmit={vi.fn()} onCancel={vi.fn()} isLoading={false} {...props} />)
 
@@ -15,12 +24,16 @@ describe('SubjectForm helpers', () => {
 })
 
 describe('SubjectForm', () => {
+  beforeEach(() => {
+    useRoomTypesMock.mockReturnValue({ data: roomTypes, isLoading: false, isError: false, refetch: vi.fn() })
+  })
+
   it('shows both sections and initializes edit data lazily', () => {
-    renderForm({ initialData: { name: 'Matemática', required_room_type: 'lab', modules: [{ id: 1, name: 'M1', code: 'P01', hours_total: 25, order: 9 }] } })
+    renderForm({ initialData: { name: 'Matemática', room_type: roomTypes[1], modules: [{ id: 1, name: 'M1', code: 'P01', hours_total: 25, order: 9 }] } })
     expect(screen.getByRole('group', { name: 'Dados gerais' })).toBeInTheDocument()
     expect(screen.getByRole('group', { name: 'Módulos' })).toBeInTheDocument()
     expect(screen.getByLabelText(/nome da disciplina/i)).toHaveValue('Matemática')
-    expect(screen.getByLabelText(/tipo de sala/i)).toHaveValue('lab')
+    expect(screen.getByLabelText(/tipo de sala/i)).toHaveValue('24')
     expect(screen.getByText('M1')).toBeInTheDocument()
     expect(screen.getByText('P01')).toBeInTheDocument()
     expect(screen.getByText('25h')).toBeInTheDocument()
@@ -40,7 +53,7 @@ describe('SubjectForm', () => {
     fireEvent.click(screen.getByRole('button', { name: /guardar disciplina/i }))
     expect(onSubmit).toHaveBeenCalledWith({
       name: 'Programação',
-      required_room_type: 'normal',
+      room_type_id: 11,
       modules: [{ name: 'Módulo 1', code: 'C1', hours_total: 25, order: 0 }],
     })
     fireEvent.click(screen.getByRole('button', { name: /remover módulo 1/i }))
@@ -90,7 +103,7 @@ describe('SubjectForm', () => {
       readOnly: true,
       initialData: {
         name: 'Programação',
-        required_room_type: 'lab',
+        room_type: roomTypes[1],
         modules: [{ id: 1, name: 'Fundamentos de programação', code: 'UFCD-PROG-1', hours_total: 2 }],
       },
     })
@@ -113,5 +126,41 @@ describe('SubjectForm', () => {
     expect(actionsContainer).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /editar dwadadawdawdawdawdaw/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /remover dwadadawdawdawdawdaw/i })).toBeInTheDocument()
+  })
+
+  it('uses the school types and sends the selected type id', () => {
+    const onSubmit = vi.fn()
+    renderForm({ onSubmit })
+
+    expect(screen.getByLabelText(/tipo de sala/i)).toHaveValue('11')
+    expect(screen.getByRole('option', { name: 'Oficina' })).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText(/tipo de sala/i), { target: { value: '24' } })
+    fireEvent.change(screen.getByLabelText(/nome da disciplina/i), { target: { value: 'Cerâmica' } })
+    fireEvent.click(screen.getByRole('button', { name: /guardar disciplina/i }))
+
+    expect(onSubmit).toHaveBeenCalledWith({ name: 'Cerâmica', room_type_id: 24, modules: [] })
+  })
+
+  it('anuncia o carregamento e impede submissao enquanto carrega os tipos', () => {
+    useRoomTypesMock.mockReturnValue({ data: undefined, isLoading: true, isError: false, refetch: vi.fn() })
+    renderForm()
+
+    expect(screen.getByRole('status')).toHaveTextContent(/a carregar tipos de sala/i)
+    expect(screen.getByLabelText(/tipo de sala/i)).toBeDisabled()
+    expect(screen.getByLabelText(/tipo de sala/i)).toHaveAttribute('aria-describedby', 'room-types-loading')
+    expect(screen.getByRole('button', { name: /guardar disciplina/i })).toBeDisabled()
+  })
+
+  it('anuncia o erro e permite voltar a carregar os tipos', () => {
+    const refetch = vi.fn()
+    useRoomTypesMock.mockReturnValue({ data: undefined, isLoading: false, isError: true, refetch })
+    renderForm()
+
+    expect(screen.getByRole('alert')).toHaveTextContent(/não foi possível carregar os tipos de sala/i)
+    expect(screen.getByLabelText(/tipo de sala/i)).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.getByLabelText(/tipo de sala/i)).toHaveAttribute('aria-describedby', 'room-types-error')
+    fireEvent.click(screen.getByRole('button', { name: /tentar novamente/i }))
+    expect(refetch).toHaveBeenCalledOnce()
+    expect(screen.getByRole('button', { name: /guardar disciplina/i })).toBeDisabled()
   })
 })

@@ -34,6 +34,7 @@ State-version events detect changes that can invalidate a published schedule.
 | Foundation status | `organization.foundation_status`, `backend/app/services/foundation_service.py` |
 | Foundation draft | `organization_foundation_draft` (payload, version, current step) |
 | Rooms | `backend/app/api/v1/endpoints/rooms.py` |
+| Room types | `room_type`, `backend/app/services/room_type_service.py`, `backend/app/api/v1/endpoints/room_types.py` |
 | Timeslots | `backend/app/api/v1/endpoints/timeslots.py` |
 | Class availability | `class_availability`, `backend/app/services/class_availability_service.py`, `backend/app/api/v1/endpoints/classes.py` |
 | Configuration UI | `frontend/src/pages/SchoolConfig.jsx` |
@@ -56,7 +57,11 @@ State-version events detect changes that can invalidate a published schedule.
 - Lunch start and end must appear together.
 - Lunch end must follow lunch start.
 - Lunch minimum duration cannot exceed the configured window.
-- Room types are `normal`, `lab`, `gym`, or `art`.
+- Rooms and subjects reference a required room type owned by the same school; validators and scheduler rules compare the canonical room-type ID.
+- Each school owns its room types in `room_type`; foundation completion creates the initial ones defined by `DEFAULT_ROOM_TYPES` in `backend/app/services/room_type_service.py`.
+- Exactly one active Normal type exists per school and it can neither be renamed nor removed.
+- A room type name is unique per school ignoring case and accents.
+- A room type in use by an active room or subject cannot be removed; one kept only by archived objects is archived and restored by creating the same name.
 - Calendar events use `national_holiday`, `school_break`, `exam_period`, `other`, or `internship_flow`.
 - Only an `internship_flow` event can link classes.
 - Internship impact previews reference published v1 `lesson_id` values and protect completed execution.
@@ -147,6 +152,23 @@ Grid regeneration and grid changes treat class rows like teacher rows.
 A block with the same signature keeps the class level.
 A changed block requires an administrator decision.
 See the [Class Availability Tech Spec](CLASS_AVAILABILITY_TECH_SPEC.md) and the [Scheduler Engine](../03_scheduler_engine/README.md).
+
+## Tipos de sala da escola
+
+Each school owns the list of room types it uses. Foundation completion creates the
+initial types defined in `backend/app/services/room_type_service.py`, with exactly
+one Normal type. Only an administrator reads or writes the list, through
+`/api/v1/room-types` (see the [API Reference](../05_backend_api/API_REFERENCE.md)).
+
+The administrator creates a type, renames one, or removes one. Names are compared
+ignoring case and accents, so `laboratorio` collides with `Laboratório`. The Normal
+type is fixed: it can neither be renamed nor removed. A type still used by an active
+room or subject cannot be removed, and the response names the blocking rooms and
+subjects. A type kept only by archived objects is archived; creating the same name
+again restores it with the same identity and name. Editing the types records no
+scheduler change.
+
+Rooms and subjects require a school-owned `room_type_id`; the legacy enum columns have been removed. API reads return the type referenced by that ID (see the [API Reference](../05_backend_api/API_REFERENCE.md)).
 
 ## Presença dos professores
 

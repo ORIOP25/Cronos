@@ -31,7 +31,7 @@ from app.scheduler.infrastructure.progress import (
     settle_open_debt,
 )
 from app.services import dashboard_service, grid_change_service
-from tests._support.db_fixtures import create_teacher_profile
+from tests._support.db_fixtures import create_teacher_profile, get_school_room_type_id
 from tests._support.scheduler_v1 import (
     MOMENT,
     V1Seed,
@@ -148,6 +148,7 @@ async def _substitute_assignment(
     subject = models.Subject(
         name=f"Substituto {planned_minutes}/{retired_minutes}",
         organization_id=seed.organization.id,
+        room_type_id=await get_school_room_type_id(db_session, seed.organization.id, "Normal"),
     )
     db_session.add(subject)
     await db_session.flush()

@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models, schemas
 from app.scheduler.domain.timetable import BreakOverride, TimetableConfigError, build_daily_slots
-from app.services import internship_flow_service, settings_service
+from app.services import internship_flow_service, room_type_service, settings_service
 from app.services.scheduler_state_service import record_scheduler_change
 
 logger = structlog.get_logger(__name__)
@@ -376,7 +376,10 @@ class FoundationService:
             membership_id,
         )
 
-        # 4. Transition to COMPLETED
+        # 4. Create the initial school room types
+        await room_type_service.ensure_initial_room_types(self.db, organization_id)
+
+        # 5. Transition to COMPLETED
         now = datetime.now(UTC)
         org.foundation_status = models.OrganizationFoundationStatus.COMPLETED
         org.foundation_completed_at = now

@@ -15,6 +15,7 @@ from app.services import (
     class_availability_service,
     grid_version_service,
     room_service,
+    room_type_service,
     schedule_service,
 )
 from tests._support.scheduler_v1 import (
@@ -142,6 +143,44 @@ async def test_a_rule_change_invalidates_a_pending_proposal(db_session, monkeypa
             now_utc=MOMENT,
         )
     assert conflict.value.code == "proposal_stale"
+
+
+async def test_scheduler_change_to_room_type_stales_pending_proposal(db_session, monkeypatch):
+    seed = await seed_generatable_school(
+        db_session,
+        clerk_user_id="room_type_pending",
+        clerk_org_id="room_type_org_pending",
+    )
+    laboratory_type = await db_session.scalar(
+        select(models.SchoolRoomType).where(
+            models.SchoolRoomType.organization_id == seed.organization.id,
+            models.SchoolRoomType.name == "Laboratório",
+        )
+    )
+    oficina_type = await room_type_service.create_room_type(
+        db_session,
+        schemas.RoomTypeCreate(name="Oficina"),
+        seed.organization.id,
+    )
+    seed.room.room_type_id = laboratory_type.id
+    seed.subject.room_type_id = laboratory_type.id
+    await db_session.commit()
+    await _queue_generation(db_session, monkeypatch, seed, key="room-type-pending")
+
+    proposal = await current_proposal(db_session, seed.organization.id)
+    assert proposal is not None and proposal["can_approve"] is True
+
+    await room_service.update_room(
+        db_session,
+        seed.room.id,
+        schemas.RoomUpdate(room_type_id=oficina_type.id),
+        seed.organization.id,
+    )
+    await db_session.commit()
+
+    stale = await current_proposal(db_session, seed.organization.id)
+    assert stale["can_approve"] is False
+    assert stale["stale_reason"] == "REVISIONS_CHANGED"
 
 
 async def test_a_past_rule_does_not_consume_a_planning_revision(db_session, monkeypatch):

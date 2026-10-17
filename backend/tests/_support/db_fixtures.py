@@ -390,6 +390,13 @@ async def create_org_and_user(
             membership_id=membership.id,
         )
 
+    async def _ensure_room_types(org: models.Organization) -> None:
+        if org.foundation_status != models.OrganizationFoundationStatus.COMPLETED:
+            return
+        from app.services import room_type_service
+
+        await room_type_service.ensure_initial_room_types(db_session, org.id)
+
     # Verificar se user já existe
     existing_user = (
         await db_session.execute(
@@ -407,6 +414,7 @@ async def create_org_and_user(
         if org is not None:
             membership = await _ensure_membership(org, existing_user)
             await _ensure_legal_acceptance(org, membership)
+            await _ensure_room_types(org)
         return org, existing_user
 
     # Verificar se org já existe
@@ -443,7 +451,22 @@ async def create_org_and_user(
     await db_session.flush()
     membership = await _ensure_membership(org, user)
     await _ensure_legal_acceptance(org, membership)
+    await _ensure_room_types(org)
     return org, user
+
+
+async def get_school_room_type_id(db_session: AsyncSession, organization_id: int, name: str) -> int:
+    """Return a seeded room-type ID for a direct model fixture."""
+    room_type_id = await db_session.scalar(
+        select(models.SchoolRoomType.id).where(
+            models.SchoolRoomType.organization_id == organization_id,
+            models.SchoolRoomType.name == name,
+            models.SchoolRoomType.is_archived.is_(False),
+        )
+    )
+    if room_type_id is None:
+        raise AssertionError(f"Missing school room type {name!r} in organization {organization_id}")
+    return room_type_id
 
 
 async def accept_current_legal_documents(

@@ -16,11 +16,13 @@ import {
   useCopyClassAvailability,
   useCourses,
   useCreateJointGroup,
+  useCreateRoom,
   useCreateSubject,
   useDeleteJointGroup,
   useEligibleTeachers,
   useJointCandidates,
   useRooms,
+  useRoomTypes,
   useSaveClassAvailability,
   useSubjects,
   useTimeslots,
@@ -227,6 +229,7 @@ describe('vertical feature data hooks', () => {
     renderHook(() => ({
       current: useCurrentMember(),
       courses: useCourses(),
+      roomTypes: useRoomTypes(),
       occurrences: useOccurrences(),
       scheduler: useSchedulerStatus(),
     }), { wrapper })
@@ -243,6 +246,7 @@ describe('vertical feature data hooks', () => {
       courses: useCourses(),
       eligible: useEligibleTeachers(7),
       rooms: useRooms(),
+      roomTypes: useRoomTypes(),
       subjects: useSubjects(),
       timeslots: useTimeslots(),
     }), { wrapper })
@@ -251,6 +255,7 @@ describe('vertical feature data hooks', () => {
     const keys = queryClient.getQueryCache().getAll().map(({ queryKey }) => queryKey)
     expect(keys).toEqual(expect.arrayContaining([
       ['rooms', 'org-a'],
+      ['room-types', 'org-a'],
       ['subjects', 'org-a'],
       ['courses', 'org-a'],
       ['classes', 'org-a'],
@@ -260,6 +265,7 @@ describe('vertical feature data hooks', () => {
       ['eligible-teachers', 'org-a', 7],
     ]))
     expect(apiClient.get).toHaveBeenCalledWith('/rooms/')
+    expect(apiClient.get).toHaveBeenCalledWith('/room-types/')
     expect(apiClient.get).toHaveBeenCalledWith('/subjects/')
   })
 
@@ -290,6 +296,16 @@ describe('vertical feature data hooks', () => {
     await waitFor(() => expect(apiClient.get).not.toHaveBeenCalled())
   })
 
+  it('refreshes room type counts after room mutations', async () => {
+    const { queryClient, wrapper } = createHarness()
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
+    const mutation = renderHook(() => useCreateRoom(), { wrapper })
+
+    await act(() => mutation.result.current.mutateAsync({ name: 'Sala 2', room_type_id: 11, capacity: 24 }))
+
+    expect(invalidate.mock.calls.map(([options]) => options.queryKey)).toContainEqual(['room-types', 'org-a'])
+  })
+
   it('keeps subject-dependent course invalidation inside catalog mutations', async () => {
     const { queryClient, wrapper } = createHarness()
     const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
@@ -301,6 +317,7 @@ describe('vertical feature data hooks', () => {
     expect(invalidate.mock.calls.map(([options]) => options.queryKey)).toEqual(expect.arrayContaining([
       ['subjects', 'org-a'],
       ['courses', 'org-a'],
+      ['room-types', 'org-a'],
     ]))
   })
 

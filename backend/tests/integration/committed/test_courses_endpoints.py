@@ -5,6 +5,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models
+from tests._support.db_fixtures import get_school_room_type_id
 
 
 @pytest.mark.usefixtures("clerk_admin_headers")
@@ -64,7 +65,11 @@ class TestCoursesEndpoints:
         db_session: AsyncSession,
         clerk_admin_headers,
     ):
-        subject = models.Subject(name="Matematica", organization_id=1)
+        subject = models.Subject(
+            name="Matematica",
+            organization_id=1,
+            room_type_id=await get_school_room_type_id(db_session, 1, "Normal"),
+        )
         course = models.Course(name="Ciencias", abbreviation="CT-CIE", organization_id=1)
         db_session.add_all([subject, course])
         await db_session.flush()
@@ -142,8 +147,16 @@ class TestCoursesEndpoints:
         db_session: AsyncSession,
         clerk_admin_headers,
     ):
-        first = models.Subject(name="Mat", organization_id=1)
-        second = models.Subject(name="Port", organization_id=1)
+        first = models.Subject(
+            name="Mat",
+            organization_id=1,
+            room_type_id=await get_school_room_type_id(db_session, 1, "Normal"),
+        )
+        second = models.Subject(
+            name="Port",
+            organization_id=1,
+            room_type_id=await get_school_room_type_id(db_session, 1, "Normal"),
+        )
         course = models.Course(name="Curso Misto", abbreviation="CM", organization_id=1)
         db_session.add_all([first, second, course])
         await db_session.flush()
@@ -208,7 +221,11 @@ class TestCoursesEndpoints:
         db_session: AsyncSession,
         clerk_admin_headers,
     ):
-        subject = models.Subject(name="Matematica", organization_id=1)
+        subject = models.Subject(
+            name="Matematica",
+            organization_id=1,
+            room_type_id=await get_school_room_type_id(db_session, 1, "Normal"),
+        )
         course = models.Course(name="Curso Misto", abbreviation="CM", organization_id=1)
         db_session.add_all([subject, course])
         await db_session.flush()

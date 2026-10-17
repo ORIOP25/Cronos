@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models
 from app.config import settings
-from tests._support.db_fixtures import create_org_and_user
+from tests._support.db_fixtures import create_org_and_user, get_school_room_type_id
 
 API = settings.API_V1_STR
 
@@ -55,7 +55,7 @@ async def test_rooms_isolated_between_orgs(async_client: AsyncClient, db_session
         f"{API}/rooms/",
         json={
             "name": "Sala Exclusiva A",
-            "type": "normal",
+            "room_type_id": await get_school_room_type_id(db_session, _org_a.id, "Normal"),
             "capacity": 30,
         },
         headers=_hdr("user_rooms_a"),
@@ -66,7 +66,7 @@ async def test_rooms_isolated_between_orgs(async_client: AsyncClient, db_session
         f"{API}/rooms/",
         json={
             "name": "Sala Exclusiva B",
-            "type": "lab",
+            "room_type_id": await get_school_room_type_id(db_session, _org_b.id, "Laboratório"),
             "capacity": 20,
         },
         headers=_hdr("user_rooms_b"),
@@ -224,7 +224,7 @@ async def test_cannot_access_room_from_other_org(
         f"{API}/rooms/",
         json={
             "name": "Sala IDOR",
-            "type": "normal",
+            "room_type_id": await get_school_room_type_id(db_session, _org_a.id, "Normal"),
             "capacity": 30,
         },
         headers=_hdr("user_idor_room_a"),

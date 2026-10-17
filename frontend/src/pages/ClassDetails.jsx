@@ -144,7 +144,7 @@ const SubjectCard = ({ subject, isEditing, editMap, onChangeHours }) => {
           <div className="d-flex align-items-center gap-2">
             <CIcon icon={cilBook} className="text-info" size="sm" />
             <strong style={{ fontSize: '0.95rem' }}>{subject.name}</strong>
-            <RoomTypeBadge type={subject.required_room_type} />
+            <RoomTypeBadge roomType={subject.room_type} />
           </div>
           <div className="d-flex align-items-center gap-2">
             <span className="text-muted" style={{ fontSize: '0.85rem' }}>

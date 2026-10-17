@@ -3,12 +3,20 @@ import {
   CForm, CFormFeedback, CRow, CCol, CFormInput, CButton, CModalFooter, CFormSelect
 } from '@coreui/react'
 import { portugueseValidityProps } from '../../utils/formValidity'
-import { ROOM_TYPES } from '../../utils/presentation'
+import { useRoomTypes } from '../../features/catalog/data'
 
 const RoomForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
+  const { data: roomTypes = [], isLoading: roomTypesLoading, isError: roomTypesError, refetch } = useRoomTypes()
+  const normalRoomType = roomTypes.find((roomType) => roomType.is_normal)
+  const roomTypesUnavailable = !roomTypesLoading && (roomTypesError || !normalRoomType)
+  const roomTypesErrorMessage = roomTypesError
+    ? 'Não foi possível carregar os tipos de sala.'
+    : !roomTypesLoading && !normalRoomType
+      ? 'Não existem tipos de sala disponíveis.'
+      : ''
   const [formData, setFormData] = useState(() => ({
     name: initialData?.name || '',
-    type: initialData?.type || 'normal',
+    room_type_id: initialData?.room_type?.id ?? initialData?.room_type_id ?? '',
     capacity: initialData?.capacity || 30,
   }))
   const [error, setError] = useState('')
@@ -24,6 +32,7 @@ const RoomForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
 
   const handleSubmit = (e) => {
     e.preventDefault()
+    if (roomTypesLoading || roomTypesError || !normalRoomType) return
     const name = String(formData.name ?? '').trim()
     if (!name) {
       setError('Nome da sala é obrigatório.')
@@ -33,6 +42,7 @@ const RoomForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
     onSubmit({
       ...formData,
       name,
+      room_type_id: Number(formData.room_type_id || normalRoomType.id),
       capacity: Number(formData.capacity),
     })
   }
@@ -77,15 +87,26 @@ const RoomForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
         </CCol>
 
         <CCol md={12}>
-          <CFormSelect 
+          <CFormSelect
             id="room-type"
-            label="Tipo de Sala" 
-            name="type"
-            value={formData.type}
+            label="Tipo de Sala"
+            name="room_type_id"
+            value={String(formData.room_type_id || normalRoomType?.id || '')}
             onChange={handleChange}
+            disabled={roomTypesLoading || roomTypesUnavailable}
+            required
+            aria-invalid={roomTypesErrorMessage ? 'true' : undefined}
+            aria-describedby={roomTypesLoading ? 'room-types-loading' : roomTypesErrorMessage ? 'room-types-error' : undefined}
           >
-            {Object.entries(ROOM_TYPES).map(([value, metadata]) => <option key={value} value={value}>{metadata.label}</option>)}
+            {roomTypes.map((roomType) => <option key={roomType.id} value={roomType.id}>{roomType.name}</option>)}
           </CFormSelect>
+          {roomTypesLoading && <div id="room-types-loading" role="status" aria-live="polite" className="form-text">A carregar tipos de sala…</div>}
+          {roomTypesErrorMessage && (
+            <div id="room-types-error">
+              <CFormFeedback invalid className="d-block" role="alert">{roomTypesErrorMessage}</CFormFeedback>
+              {roomTypesError && <CButton type="button" color="secondary" variant="ghost" size="sm" onClick={() => refetch()}>Tentar novamente</CButton>}
+            </div>
+          )}
         </CCol>
       </CRow>
 
@@ -93,7 +114,7 @@ const RoomForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
         <CButton color="secondary" variant="ghost" onClick={onCancel}>
           Cancelar
         </CButton>
-        <CButton color="primary" type="submit" disabled={isLoading}>
+        <CButton color="primary" type="submit" disabled={isLoading || roomTypesLoading || roomTypesUnavailable}>
           {submitLabel}
         </CButton>
       </CModalFooter>

@@ -7,6 +7,7 @@ import {
 } from '../utils/clerk-helpers.js'
 import {
   apiRequest,
+  getNormalRoomTypeId,
   generateAndApproveThroughUi,
   seedMinimalSchedulerInputs,
 } from '../utils/scheduler-fixtures.js'
@@ -31,7 +32,7 @@ async function ensureTwoModuleSubject(page) {
     hours_total: 2,
     order,
   }))
-  const payload = { name: SUBJECT_NAME, required_room_type: 'normal', modules }
+  const payload = { name: SUBJECT_NAME, room_type_id: await getNormalRoomTypeId(page), modules }
   return existing
     ? apiRequest(page, 'PATCH', `/subjects/${existing.id}`, payload)
     : apiRequest(page, 'POST', '/subjects/', payload)

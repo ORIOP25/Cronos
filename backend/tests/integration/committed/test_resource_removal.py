@@ -26,7 +26,7 @@ from app import models
 from app.config import settings
 from app.scheduler.infrastructure.models import CurricularAssignment
 from app.services import class_service, room_service, subject_service
-from tests._support.db_fixtures import create_teacher_profile
+from tests._support.db_fixtures import create_teacher_profile, get_school_room_type_id
 from tests._support.scheduler_v1 import (
     add_lesson,
     add_version,
@@ -42,6 +42,7 @@ API = settings.API_V1_STR
 async def _seed_scheduler(db_session: AsyncSession) -> dict:
     """Cria um contexto mínimo de planeamento sob a organização 1."""
     org_id = 1
+    normal_room_type_id = await get_school_room_type_id(db_session, org_id, "Normal")
     school_year = models.SchedulerSchoolYear(
         organization_id=org_id,
         label="2025/2026",
@@ -50,12 +51,15 @@ async def _seed_scheduler(db_session: AsyncSession) -> dict:
         timezone="Europe/Lisbon",
     )
     room = models.Room(
-        organization_id=org_id, name="Sala Histórica", type=models.RoomType.normal, capacity=30
+        organization_id=org_id,
+        name="Sala Histórica",
+        room_type_id=normal_room_type_id,
+        capacity=30,
     )
     subject = models.Subject(
         organization_id=org_id,
         name="Disciplina Histórica",
-        required_room_type=models.RoomType.normal,
+        room_type_id=normal_room_type_id,
     )
     course = models.Course(organization_id=org_id, name="Curso Histórico", abbreviation="HIS")
     slot = models.Timeslot(

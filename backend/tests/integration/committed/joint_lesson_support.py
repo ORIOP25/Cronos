@@ -185,7 +185,11 @@ async def add_joint_subject(
     module_minutes: int = 100,
 ):
     """A second subject with an assignment per class and an optional joint group."""
-    subject = models.Subject(name=name, organization_id=seed.organization.id)
+    subject = models.Subject(
+        name=name,
+        organization_id=seed.organization.id,
+        room_type_id=seed.room.room_type_id,
+    )
     teacher = await create_teacher_profile(
         db_session, organization_id=seed.organization.id, name=f"Prof. {name}"
     )

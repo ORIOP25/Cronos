@@ -44,13 +44,6 @@ CASCADE_ALL_DELETE = "all, delete-orphan"
 ON_DELETE_SET_NULL = "SET NULL"
 
 
-class RoomType(enum.StrEnum):
-    normal = "normal"
-    lab = "lab"
-    gym = "gym"
-    art = "art"
-
-
 class CalendarEventType(enum.StrEnum):
     national_holiday = "national_holiday"
     school_break = "school_break"
@@ -1069,6 +1062,42 @@ class Class(Base):
         return f"<Class(id={self.id}, name='{self.name}')>"
 
 
+# 6b. Modelo "SchoolRoomType" (Tipo de Sala da escola)
+class SchoolRoomType(Base):
+    """School-owned room type. Exactly one active Normal type per school."""
+
+    __tablename__ = "room_type"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+
+    organization_id: Mapped[int] = mapped_column(
+        ForeignKey(FK_ORG_ID, ondelete="CASCADE"), nullable=False
+    )
+
+    name: Mapped[str] = mapped_column(String(60), nullable=False)
+
+    # The single Normal type; the partial unique index keeps it unique per school.
+    is_normal: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    # Archiving only happens through removal; creating the same name restores it.
+    is_archived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("organization_id", "id", name="uq_room_type_org_id"),
+        Index("ix_room_type_organization_id", "organization_id"),
+        Index("uq_room_type_org_name", "organization_id", func.lower(name), unique=True),
+        Index(
+            "uq_room_type_org_normal",
+            "organization_id",
+            unique=True,
+            postgresql_where=is_normal.is_(True),
+        ),
+    )
+
+    def __repr__(self) -> str:
+        return f"<SchoolRoomType(id={self.id}, name='{self.name}', is_normal={self.is_normal})>"
+
+
 # 7. Modelo "Room" (Sala)
 class Room(Base):
     __tablename__ = "room"
@@ -1079,13 +1108,13 @@ class Room(Base):
     # Adicionamos a capacidade (Lotação)
     capacity: Mapped[int] = mapped_column(Integer, default=30, nullable=False)
 
-    # Usamos o Enum que definimos em cima
-    type: Mapped[RoomType] = mapped_column(
-        SAEnum(RoomType), nullable=False, default=RoomType.normal
-    )
-
     # Removida da gestão atual mas preservada para referências históricas.
     is_archived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    room_type_id: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    # Só de leitura; quem escreve é room_type_id e os leitores carregam-no em bloco.
+    room_type: Mapped[SchoolRoomType] = relationship(viewonly=True)
 
     # Chave Estrangeira: Liga a Sala à sua Organization
     organization_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID))
@@ -1093,8 +1122,16 @@ class Room(Base):
     # Relacionamento: Permite-nos fazer my_room.organization
     organization: Mapped["Organization"] = relationship(back_populates="rooms")
 
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id", "room_type_id"],
+            ["room_type.organization_id", "room_type.id"],
+            name="fk_room_room_type_org",
+        ),
+    )
+
     def __repr__(self) -> str:
-        return f"<Room(id={self.id}, name='{self.name}', type='{self.type.value}')>"
+        return f"<Room(id={self.id}, name='{self.name}', room_type_id={self.room_type_id})>"
 
 
 # 8. Modelo "Subject" (Disciplina)
@@ -1104,14 +1141,13 @@ class Subject(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
 
-    # Define qual o tipo de sala ideal para esta disciplina.
-    # Default: Sala Normal.
-    required_room_type: Mapped[RoomType] = mapped_column(
-        SAEnum(RoomType), default=RoomType.normal, nullable=False
-    )
-
     # Removida da gestão atual mas preservada para referências históricas.
     is_archived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    room_type_id: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    # Só de leitura; quem escreve é room_type_id e os leitores carregam-no em bloco.
+    room_type: Mapped[SchoolRoomType] = relationship(viewonly=True)
 
     modules: Mapped[list["Module"]] = relationship(
         back_populates="subject", cascade=CASCADE_ALL_DELETE
@@ -1130,6 +1166,14 @@ class Subject(Base):
 
     teachers: Mapped[list[Teacher]] = relationship(
         secondary=teacher_subject_link, back_populates="subjects"
+    )
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id", "room_type_id"],
+            ["room_type.organization_id", "room_type.id"],
+            name="fk_subject_room_type_org",
+        ),
     )
 
     def __repr__(self) -> str:

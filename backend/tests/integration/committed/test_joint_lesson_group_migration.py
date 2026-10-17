@@ -21,6 +21,7 @@ def _seed_lesson(
     connection,
     marker: str,
     *,
+    room_type_schema: str,
     teaching_unit_key: str | None = None,
     siblings: bool = False,
 ) -> dict:
@@ -63,13 +64,45 @@ def _seed_lesson(
         ),
         {"abbreviation": marker.upper()[:10], "organization_id": organization_id},
     ).scalar_one()
-    subject_id = connection.execute(
-        text(
-            "INSERT INTO public.subject(name, required_room_type, organization_id, is_archived) "
-            "VALUES ('Subject', 'normal', :organization_id, false) RETURNING id"
-        ),
-        {"organization_id": organization_id},
-    ).scalar_one()
+    if room_type_schema == "legacy":
+        subject_id = connection.execute(
+            text(
+                "INSERT INTO public.subject(name, required_room_type, organization_id, is_archived) "
+                "VALUES ('Subject', 'normal', :organization_id, false) RETURNING id"
+            ),
+            {"organization_id": organization_id},
+        ).scalar_one()
+        room_id = connection.execute(
+            text(
+                "INSERT INTO public.room(name, capacity, type, organization_id, is_archived) "
+                "VALUES ('A1', 25, 'normal', :organization_id, false) RETURNING id"
+            ),
+            {"organization_id": organization_id},
+        ).scalar_one()
+    elif room_type_schema == "school":
+        room_type_id = connection.execute(
+            text(
+                "INSERT INTO public.room_type(organization_id, name, is_normal, is_archived) "
+                "VALUES (:organization_id, 'Normal', true, false) RETURNING id"
+            ),
+            {"organization_id": organization_id},
+        ).scalar_one()
+        subject_id = connection.execute(
+            text(
+                "INSERT INTO public.subject(name, room_type_id, organization_id, is_archived) "
+                "VALUES ('Subject', :room_type_id, :organization_id, false) RETURNING id"
+            ),
+            {"organization_id": organization_id, "room_type_id": room_type_id},
+        ).scalar_one()
+        room_id = connection.execute(
+            text(
+                "INSERT INTO public.room(name, capacity, room_type_id, organization_id, is_archived) "
+                "VALUES ('A1', 25, :room_type_id, :organization_id, false) RETURNING id"
+            ),
+            {"organization_id": organization_id, "room_type_id": room_type_id},
+        ).scalar_one()
+    else:
+        raise ValueError(f"Unsupported room type schema: {room_type_schema}")
     year_id = connection.execute(
         text(
             "INSERT INTO public.scheduler_school_year("
@@ -88,13 +121,6 @@ def _seed_lesson(
             ":digest, now()) RETURNING id"
         ),
         {"organization_id": organization_id, "year_id": year_id, "digest": "a" * 64},
-    ).scalar_one()
-    room_id = connection.execute(
-        text(
-            "INSERT INTO public.room(name, capacity, type, organization_id, is_archived) "
-            "VALUES ('A1', 25, 'normal', :organization_id, false) RETURNING id"
-        ),
-        {"organization_id": organization_id},
     ).scalar_one()
 
     def _insert_class(name: str) -> int:
@@ -190,7 +216,7 @@ def test_upgrade_backfills_existing_lessons_with_the_assignment_unit(clean_datab
     try:
         command.downgrade(config, PREVIOUS_REVISION)
         with sync_test_engine.begin() as connection:
-            seed = _seed_lesson(connection, "joint-backfill")
+            seed = _seed_lesson(connection, "joint-backfill", room_type_schema="legacy")
 
         command.upgrade(config, "head")
 
@@ -235,7 +261,12 @@ def test_downgrade_succeeds_for_a_single_joint_unit_without_siblings(clean_datab
     config = _alembic_config()
     try:
         with sync_test_engine.begin() as connection:
-            _seed_lesson(connection, "joint-single", teaching_unit_key="J:1:1")
+            _seed_lesson(
+                connection,
+                "joint-single",
+                room_type_schema="school",
+                teaching_unit_key="J:1:1",
+            )
 
         command.downgrade(config, PREVIOUS_REVISION)
 
@@ -254,7 +285,7 @@ def test_downgrade_refuses_when_siblings_share_a_stable_key(clean_database):
     config = _alembic_config()
     try:
         with sync_test_engine.begin() as connection:
-            _seed_lesson(connection, "joint-siblings", siblings=True)
+            _seed_lesson(connection, "joint-siblings", room_type_schema="school", siblings=True)
 
         with pytest.raises(RuntimeError, match="refused"):
             command.downgrade(config, PREVIOUS_REVISION)

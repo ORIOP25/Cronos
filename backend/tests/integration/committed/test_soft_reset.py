@@ -2,6 +2,7 @@ from sqlalchemy import func, select
 
 from app import models
 from app.config import settings
+from tests._support.db_fixtures import get_school_room_type_id
 
 RESET_URL = f"{settings.API_V1_STR}/school/settings/soft-reset"
 CONFIRMATION = {"confirm_phrase": "Confirmo"}
@@ -52,7 +53,7 @@ async def test_soft_reset_reverses_progress_without_mutating_history(
     subject = models.Subject(
         organization_id=organization.id,
         name="Reset Subject",
-        required_room_type=models.RoomType.normal,
+        room_type_id=await get_school_room_type_id(db_session, organization.id, "Normal"),
     )
     db_session.add_all([course, subject])
     await db_session.flush()

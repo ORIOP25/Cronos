@@ -36,6 +36,17 @@ export const useSubjects = () => {
   })
 }
 
+export const useRoomTypes = () => {
+  const apiClient = useApiClient()
+  const orgId = useOrganization().organization?.id
+  return useQuery({
+    queryKey: orgQueryKey('room-types', orgId),
+    queryFn: async () => apiClient.get('/room-types/'),
+    enabled: Boolean(orgId),
+    ...STATIC_OPTS,
+  })
+}
+
 export const useClasses = ({ enabled = true } = {}) => {
   const apiClient = useApiClient()
   const orgId = useOrganization().organization?.id
@@ -165,12 +176,12 @@ const useDeleteEntity = (entityKey, dependentRoots = []) => {
   })
 }
 
-export const useCreateRoom = () => useCreateEntity('rooms')
-export const useUpdateRoom = () => useUpdateEntity('rooms')
-export const useDeleteRoom = () => useDeleteEntity('rooms')
-export const useCreateSubject = () => useCreateEntity('subjects', ['courses'])
-export const useUpdateSubject = () => useUpdateEntity('subjects', ['courses'])
-export const useDeleteSubject = () => useDeleteEntity('subjects', ['courses'])
+export const useCreateRoom = () => useCreateEntity('rooms', ['room-types'])
+export const useUpdateRoom = () => useUpdateEntity('rooms', ['room-types'])
+export const useDeleteRoom = () => useDeleteEntity('rooms', ['room-types'])
+export const useCreateSubject = () => useCreateEntity('subjects', ['courses', 'room-types'])
+export const useUpdateSubject = () => useUpdateEntity('subjects', ['courses', 'room-types'])
+export const useDeleteSubject = () => useDeleteEntity('subjects', ['courses', 'room-types'])
 export const useCreateCourse = () => useCreateEntity('courses')
 
 // ==========================================

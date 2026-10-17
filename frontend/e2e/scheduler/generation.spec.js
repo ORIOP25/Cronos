@@ -11,6 +11,7 @@ import {
   loginAsAdminReal,
 } from '../utils/clerk-helpers.js'
 import {
+  getNormalRoomTypeId,
   firstPublishedFutureSlot,
   waitForJobToSucceed as waitForSchedulerJob,
 } from '../utils/scheduler-fixtures.js'
@@ -225,7 +226,7 @@ async function ensureFixtureSubject(page) {
   const existing = subjects.find((subject) => subject.name === FIXTURE.subjectName)
   const payload = {
     name: FIXTURE.subjectName,
-    required_room_type: 'normal',
+    room_type_id: await getNormalRoomTypeId(page),
     modules: [singleFixtureModule(existing)],
   }
   if (!existing) {
@@ -273,7 +274,7 @@ async function ensureFixtureRoom(page) {
   const existing = rooms.find((room) => room.name === FIXTURE.roomName)
   const payload = {
     name: FIXTURE.roomName,
-    type: 'normal',
+    room_type_id: await getNormalRoomTypeId(page),
     capacity: 30,
   }
   if (!existing) {
