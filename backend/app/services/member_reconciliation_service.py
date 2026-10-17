@@ -11,7 +11,7 @@ from app import models
 from app.config import settings
 from app.db.tenant import set_async_tenant_context
 from app.services import member_webhook_service
-from app.services.member_service import ClerkAccessService
+from app.services.clerk_access_service import ClerkAccessService
 
 
 def _now() -> datetime:

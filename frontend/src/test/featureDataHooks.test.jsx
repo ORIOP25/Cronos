@@ -51,6 +51,12 @@ import {
 } from '../features/scheduling/data'
 import { useCompleteFoundation } from '../features/foundation/foundationData'
 import { usePrevalidation } from '../features/readiness/data'
+import {
+  getMemberRoute,
+  ROUTE_DASHBOARD,
+  ROUTE_FOUNDATION,
+  ROUTE_FOUNDATION_WAITING,
+} from '../roleAccess'
 
 vi.mock('../apiClient', () => ({
   default: {
@@ -123,6 +129,62 @@ describe('vertical feature data hooks', () => {
       ['teachers', 'org-a'],
       ['eligible-teachers', 'org-a'],
     ]))
+  })
+
+  it('loads the current member while the organization session is still pending', async () => {
+    setClerkState({ orgId: 'org-a', isSignedIn: true, isLoaded: true, sessionStatus: 'pending' })
+    const { wrapper } = createHarness()
+    const current = renderHook(() => useCurrentMember(), { wrapper })
+
+    await waitFor(() => expect(current.result.current.isSuccess).toBe(true))
+    expect(apiClient.get).toHaveBeenCalledWith('/members/me', {
+      headers: { Authorization: 'Bearer test_token_123' },
+    })
+  })
+
+  it('drops the previous organization member when switching into a completed school', async () => {
+    const { wrapper } = createHarness()
+    apiClient.get.mockResolvedValueOnce({
+      foundation_status: 'IN_PROGRESS',
+      access_status: 'active',
+      lifecycle_status: 'active',
+      capabilities: ['admin'],
+      default_mode: 'admin',
+      can_manage_foundation: true,
+    })
+    const current = renderHook(() => useCurrentMember(), { wrapper })
+    await waitFor(() => expect(current.result.current.isSuccess).toBe(true))
+    expect(getMemberRoute(current.result.current.data)).toBe(ROUTE_FOUNDATION)
+
+    let resolveOrgB
+    apiClient.get.mockImplementation(
+      () => new Promise((resolve) => { resolveOrgB = resolve }),
+    )
+    setClerkState({ orgId: 'org-b' })
+    current.rerender()
+
+    // The incomplete organization of the previous tenant must never leak into
+    // the new school while its member request is still pending.
+    await waitFor(() => expect(current.result.current.data).toBeUndefined())
+    expect(current.result.current.isPending).toBe(true)
+    expect(getMemberRoute(current.result.current.data)).toBe(ROUTE_FOUNDATION_WAITING)
+
+    await act(async () => {
+      resolveOrgB({
+        foundation_status: 'COMPLETED',
+        access_status: 'active',
+        lifecycle_status: 'active',
+        capabilities: ['admin'],
+        default_mode: 'admin',
+        can_manage_foundation: false,
+      })
+    })
+
+    await waitFor(() =>
+      expect(current.result.current.data?.foundation_status).toBe('COMPLETED'),
+    )
+    expect(getMemberRoute(current.result.current.data)).toBe(ROUTE_DASHBOARD)
+    expect(current.result.current.data.can_manage_foundation).toBe(false)
   })
 
   it('keeps member mutations pending until invalidated queries finish', async () => {

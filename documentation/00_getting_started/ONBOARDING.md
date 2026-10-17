@@ -15,7 +15,7 @@ This document targets developers, QA engineers, support engineers, and school ad
 
 - Start the local stack or use the deployed environment.
 - Configure Clerk with a test user and an active organization.
-- Use an organization administrator for the Foundation flow.
+- Use the active administrator who created the Clerk organization for the Foundation flow.
 - Read [Routes and Permissions](../06_frontend_ux/ROUTES_AND_PERMISSIONS.md) for the complete access matrix.
 
 ## What the System Does
@@ -26,7 +26,7 @@ It keeps the optional product tutorial separate from operational data.
 ## Why the Behavior Exists
 
 The route gate protects operational features until the organization has a valid calendar grid.
-The draft protocol protects concurrent administrators.
+The draft protocol protects against stale writes from concurrent tabs or requests.
 The local tutorial lets users learn the product without mutating the tenant.
 
 ## Components and Ownership
@@ -49,7 +49,7 @@ The route decision and the six onboarding phases below describe the request flow
 Cronos uses four separate milestones:
 
 1. Clerk authenticates the user and selects an organization.
-2. An organization administrator completes the Foundation.
+2. The active Clerk organization creator completes the Foundation.
 3. The administrator may use the local tutorial to learn the product.
 4. The school configures the operational bases and approves the first real schedule.
 
@@ -68,10 +68,19 @@ Do not interpret a loading screen as a missing permission.
 | User has a pending Clerk organization task | `/login/tasks/choose-organization` | The user must create or select an organization. |
 | User has no organization or membership after the task | Organization selector or Foundation route guard | The gate waits for the active organization and bootstraps it. |
 | User has memberships but no active organization | Organization selector | The user must choose the tenant context. |
-| Active organization, administrator, Foundation incomplete | `/foundation` | The administrator can complete the required setup. |
-| Active organization, non-administrator, Foundation incomplete | `/foundation/waiting` | Only a Foundation administrator can complete setup. |
-| Active organization, Foundation complete, administrator | `/dashboard` | The user can use administrative features. |
+| Active organization, Foundation founder, Foundation incomplete | `/foundation` | Only the founder can complete the required setup. |
+| Active organization, member who is not the Foundation founder, Foundation incomplete | `/foundation/waiting` | Only the founder can complete setup. |
+| Active organization, Foundation complete, administrator | `/dashboard` | The signed-in landing uses the role default; school parameters stay at `/config`. |
 | Active organization, Foundation complete, teacher | `/my-availability` | The default teacher route is teacher availability. |
+
+The Foundation founder is the active administrator whose Clerk user id matches the Clerk organization's `created_by` value.
+The local membership inviter marker does not establish the founder.
+Legacy self-markers may belong to an invited administrator, and the creator may have joined later.
+The backend exposes the verified founder capability as `can_manage_foundation` on the current member.
+
+Foundation completes once per organization.
+After completion, the wizard never opens again.
+Administrators land on `/dashboard`, and school parameters remain at `/config`.
 
 `/guide` is an explicit tutorial route. The real dashboard does not redirect to it automatically after Foundation completion.
 The dashboard provides **Repetir guia** and **Retomar guia** actions when applicable.
@@ -112,16 +121,18 @@ The bootstrap and acceptance actions are idempotent and can be retried after a t
 failure; no legal proof is kept in browser storage.
 The backend bootstrap requires the Clerk subject, the active organization claim, and an administrator role.
 It reconciles the provider organization and membership with the tenant database.
+When the organization still needs its first local membership, the backend founds it only for the Clerk organization's creator.
 
 ### Bootstrap response
 
 `POST /api/v1/session/bootstrap` returns:
 
 - the local organization;
-- the current member;
+- the current member, including `can_manage_foundation`;
 - the current `foundation_status`.
 
 The backend returns `503` when the Clerk provider directory is unavailable.
+An administrator who is not the Clerk organization's creator receives `403` when the organization is not founded yet.
 The frontend must show a recoverable session error and allow the user to retry.
 
 ## Phase 2: Complete the Foundation
@@ -132,12 +143,13 @@ The Foundation has three states:
 
 | State | Meaning | Admin access |
 | :--- | :--- | :--- |
-| `NOT_STARTED` | No completed setup exists. | Open `/foundation`. |
-| `IN_PROGRESS` | A draft exists. | Resume the draft. |
-| `COMPLETED` | The grid and settings are committed. | Continue to `/dashboard`. |
+| `NOT_STARTED` | No completed setup exists. | The founder opens `/foundation`. |
+| `IN_PROGRESS` | A draft exists. | The founder resumes the draft. |
+| `COMPLETED` | The grid and settings are committed. | Administrators land on `/dashboard`; school parameters stay at `/config`. |
 
-The Foundation administrator can open the draft before completion.
-Other members see `/foundation/waiting` until an administrator completes it.
+Only the Foundation founder can open the draft before completion.
+Other members see `/foundation/waiting` until the founder completes it.
+After completion, no member is sent back to the wizard.
 
 ### Ten wizard steps
 
@@ -168,9 +180,11 @@ The API contract is:
 | Operation | Endpoint | Permission | Result |
 | :--- | :--- | :--- | :--- |
 | Read status | `GET /api/v1/foundation/status` | Signed-in organization member | Current status and completion timestamps. |
-| Read draft | `GET /api/v1/foundation/draft` | Foundation administrator | Version, current step, and data. |
-| Save draft | `PUT /api/v1/foundation/draft` | Foundation administrator | New version and saved snapshot. |
-| Complete | `POST /api/v1/foundation/complete` | Foundation administrator | Committed settings and generated timeslot count. |
+| Read draft | `GET /api/v1/foundation/draft` | Foundation founder | Version, current step, and data. |
+| Save draft | `PUT /api/v1/foundation/draft` | Foundation founder | New version and saved snapshot. |
+| Complete | `POST /api/v1/foundation/complete` | Foundation founder | Committed settings and generated timeslot count. |
+
+A non-founder administrator receives `403` from the draft and complete endpoints.
 
 Every draft write includes `expected_version`.
 The server locks the draft row, checks the version, validates the data, and flushes the new version.
@@ -178,7 +192,7 @@ The function-scoped database dependency commits before the HTTP response is sent
 
 ### Version conflict
 
-If another tab or administrator updates the draft first, the API returns `409` with code `FOUNDATION_DRAFT_VERSION_CONFLICT`.
+If another tab or request updates the draft first, the API returns `409` with code `FOUNDATION_DRAFT_VERSION_CONFLICT`.
 
 Recover as follows:
 
@@ -329,7 +343,7 @@ The following matrix maps the visible symptom to the first recovery action.
 | :--- | :--- | :--- |
 | Organization form appears and disappears | Clerk memberships are still loading | Wait for the organization selector to settle, then retry. |
 | `503` during bootstrap | Clerk provider directory is unavailable | Retry session activation. Check Clerk configuration and logs. |
-| Non-admin cannot open Foundation | Expected permission boundary | Ask an organization administrator to complete Foundation. |
+| Non-founder cannot open Foundation | Expected permission boundary | Ask the active Clerk organization creator to complete Foundation. |
 | `409 FOUNDATION_DRAFT_VERSION_CONFLICT` | Another writer changed the draft | Reload the remote version and save again. |
 | `422 FOUNDATION_INCOMPLETE` | Required Foundation field or interval is invalid | Correct the highlighted data and submit again. |
 | `409 FOUNDATION_ALREADY_COMPLETED` | A completed organization received another draft write | Refresh member and Foundation status. |
@@ -341,7 +355,7 @@ The following matrix maps the visible symptom to the first recovery action.
 - Every tenant-owned Foundation, member, readiness, and dashboard record is scoped by `organization_id`.
 - PostgreSQL RLS protects tenant rows for the application role.
 - Clerk provides identity and organization claims; the backend resolves the local member before protected operations.
-- Foundation routes allow an uncompleted organization only through the explicit Foundation administrator allowlist.
+- Foundation draft and completion routes allow an uncompleted organization only after Clerk confirms that the active administrator is the organization creator.
 - Normal admin and teacher routes require a completed Foundation.
 - Draft writes use optimistic versioning and row locks.
 - The API commits database writes before it returns a successful response.

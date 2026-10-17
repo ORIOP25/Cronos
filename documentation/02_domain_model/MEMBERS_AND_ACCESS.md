@@ -48,6 +48,12 @@ Local state supports tenant queries, route guards, operational permissions, and 
 - Clerk organization roles are `org:member` and `org:admin`.
 - A teacher route requires a linked `teacher_id`.
 - A member can hold both capabilities.
+- The Foundation founder is the active administrator whose Clerk user id matches the Clerk organization's `created_by` value.
+  `created_by_membership_id` records the local inviter and does not prove who created the Clerk organization.
+  The backend reports `can_manage_foundation` only for the verified creator with active admin access while Foundation is incomplete.
+  Other administrators receive `403` from the Foundation draft and completion endpoints, including after completion.
+- Completed organizations return `can_manage_foundation=false` from `/members/me` without another Clerk organization lookup.
+  The Foundation endpoint dependencies still verify the creator before serving draft or completion requests.
 - `scheduler_only` teacher access does not imply platform login access.
 - Member operations record provider and local outcomes.
 

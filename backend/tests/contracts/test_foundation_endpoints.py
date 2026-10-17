@@ -1,4 +1,5 @@
-from datetime import date
+from datetime import UTC, date, datetime
+from unittest.mock import AsyncMock
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -7,7 +8,7 @@ from sqlalchemy import select
 from app import models
 from app.api import deps
 from app.main import app
-from app.services import settings_service
+from app.services import clerk_sync, settings_service
 from tests._support.db_fixtures import accept_current_legal_documents
 
 pytestmark = pytest.mark.postgresql
@@ -45,6 +46,9 @@ async def _create_org_and_admin(
     )
     db_session.add(mem)
     await db_session.flush()
+    # The bootstrapping admin is the founder: created_by_membership_id points at itself.
+    mem.created_by_membership_id = mem.id
+    await db_session.flush()
     await accept_current_legal_documents(
         db_session,
         organization_id=org.id,
@@ -54,7 +58,22 @@ async def _create_org_and_admin(
 
 
 @pytest.fixture
-def override_auth_actor(db_session):
+def override_auth_actor(db_session, monkeypatch):
+    provider_creator = [None]
+
+    async def fetch_organization_profile(_clerk_org_id, _gateway=None):
+        return clerk_sync.ClerkOrganizationProfile(
+            name="Foundation test organization",
+            created_by=provider_creator[0],
+        )
+
+    monkeypatch.setattr(
+        clerk_sync,
+        "fetch_clerk_organization_profile",
+        AsyncMock(side_effect=fetch_organization_profile),
+    )
+    app.dependency_overrides[deps.get_clerk_gateway] = lambda: None
+
     async def _get_db():
         try:
             yield db_session
@@ -66,6 +85,8 @@ def override_auth_actor(db_session):
     app.dependency_overrides[deps.get_db] = _get_db
 
     def _override(actor: deps.Actor):
+        provider_creator[0] = actor.clerk_user_id
+
         async def _get_current_user_override():
             return actor
 
@@ -73,6 +94,7 @@ def override_auth_actor(db_session):
 
     yield _override
     app.dependency_overrides.pop(deps.get_current_user, None)
+    app.dependency_overrides.pop(deps.get_clerk_gateway, None)
     app.dependency_overrides.pop(deps.get_db, None)
 
 
@@ -108,6 +130,7 @@ async def test_foundation_endpoints_full_lifecycle(db_session, override_auth_act
         me_resp = await request("GET", "/api/v1/members/me")
         assert me_resp.status_code == 200
         assert me_resp.json()["foundation_status"] == "NOT_STARTED"
+        assert me_resp.json()["can_manage_foundation"] is True
 
         # 3. Operational endpoints return 409 FOUNDATION_REQUIRED
         classes_resp = await request("GET", "/api/v1/classes/")
@@ -177,6 +200,312 @@ async def test_foundation_endpoints_full_lifecycle(db_session, override_auth_act
         # 11. Operational endpoints are now accessible
         classes_resp = await request("GET", "/api/v1/classes/")
         assert classes_resp.status_code == 200
+
+
+async def test_foundation_wizard_is_founder_only(db_session, override_auth_actor, monkeypatch):
+    org, founder, founder_mem = await _create_org_and_admin(
+        db_session,
+        "Founder Guard Org",
+        "org_founder_guard",
+        models.OrganizationFoundationStatus.NOT_STARTED,
+    )
+    invited_user = models.User(
+        name="Invited Admin",
+        email="invited_admin@test.com",
+        clerk_user_id="user_invited_admin",
+    )
+    db_session.add(invited_user)
+    await db_session.flush()
+    invited = models.OrganizationMembership(
+        organization_id=org.id,
+        account_id=invited_user.id,
+        organization_display_name="Invited Admin",
+        lifecycle_status=models.MembershipLifecycleStatus.active,
+        access_status=models.MembershipAccessStatus.active,
+        clerk_membership_id="mem_invited_admin",
+        can_admin=True,
+        can_teach=False,
+        created_by_membership_id=founder_mem.id,
+    )
+    db_session.add(invited)
+    await db_session.flush()
+    await accept_current_legal_documents(
+        db_session,
+        organization_id=org.id,
+        membership_id=invited.id,
+    )
+    actor = deps.Actor(
+        account_id=invited_user.id,
+        clerk_user_id=invited_user.clerk_user_id,
+        organization_id=org.id,
+        membership_id=invited.id,
+        can_admin=True,
+        can_teach=False,
+        teacher_id=None,
+    )
+    override_auth_actor(actor)
+    monkeypatch.setattr(
+        clerk_sync,
+        "fetch_clerk_organization_profile",
+        AsyncMock(
+            return_value=clerk_sync.ClerkOrganizationProfile(
+                name=org.name,
+                created_by=founder.clerk_user_id,
+            )
+        ),
+    )
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        me_resp = await ac.get("/api/v1/members/me")
+        assert me_resp.status_code == 200
+        assert me_resp.json()["can_manage_foundation"] is False
+
+        draft_resp = await ac.get("/api/v1/foundation/draft")
+        assert draft_resp.status_code == 403
+
+        save_resp = await ac.put(
+            "/api/v1/foundation/draft",
+            json={"expected_version": 0, "current_step": 1, "data": {}},
+        )
+        assert save_resp.status_code == 403
+
+        complete_resp = await ac.post(
+            "/api/v1/foundation/complete",
+            json={"expected_version": 0, "confirmed": True},
+        )
+        assert complete_resp.status_code == 403
+
+
+async def test_completed_foundation_routes_stay_founder_only(
+    db_session, override_auth_actor, monkeypatch
+):
+    org, creator, founder_membership = await _create_org_and_admin(
+        db_session,
+        "Completed Founder Guard Org",
+        "org_completed_founder_guard",
+        models.OrganizationFoundationStatus.NOT_STARTED,
+    )
+    invited_admin = models.User(
+        name="Completed Invited Admin",
+        email="completed_invited_admin@test.com",
+        clerk_user_id="user_completed_invited_admin",
+    )
+    db_session.add(invited_admin)
+    await db_session.flush()
+    invited_membership = models.OrganizationMembership(
+        organization_id=org.id,
+        account_id=invited_admin.id,
+        organization_display_name=invited_admin.name,
+        lifecycle_status=models.MembershipLifecycleStatus.active,
+        access_status=models.MembershipAccessStatus.active,
+        clerk_membership_id="mem_completed_invited_admin",
+        can_admin=True,
+        can_teach=False,
+        created_by_membership_id=founder_membership.id,
+    )
+    db_session.add(invited_membership)
+    await db_session.flush()
+    await accept_current_legal_documents(
+        db_session,
+        organization_id=org.id,
+        membership_id=invited_membership.id,
+    )
+    org.foundation_status = models.OrganizationFoundationStatus.COMPLETED
+    org.foundation_completed_at = datetime.now(UTC)
+    override_auth_actor(
+        deps.Actor(
+            account_id=invited_admin.id,
+            clerk_user_id=invited_admin.clerk_user_id,
+            organization_id=org.id,
+            membership_id=invited_membership.id,
+            can_admin=True,
+            can_teach=False,
+            teacher_id=None,
+        )
+    )
+    monkeypatch.setattr(
+        clerk_sync,
+        "fetch_clerk_organization_profile",
+        AsyncMock(
+            return_value=clerk_sync.ClerkOrganizationProfile(
+                name=org.name,
+                created_by=creator.clerk_user_id,
+            )
+        ),
+    )
+    await db_session.commit()
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        draft_resp = await ac.get("/api/v1/foundation/draft")
+        assert draft_resp.status_code == 403
+
+        save_resp = await ac.put(
+            "/api/v1/foundation/draft",
+            json={"expected_version": 1, "current_step": 1, "data": {}},
+        )
+        assert save_resp.status_code == 403
+
+        complete_resp = await ac.post(
+            "/api/v1/foundation/complete",
+            json={"expected_version": 1, "confirmed": True},
+        )
+        assert complete_resp.status_code == 403
+
+
+async def test_foundation_wizard_rejects_cross_organization_founder_reference(
+    db_session, override_auth_actor
+):
+    """A membership id from another organization must never authorize the wizard."""
+    _org_a, _user_a, founder_mem_a = await _create_org_and_admin(
+        db_session,
+        "Cross Org A",
+        "org_cross_a",
+        models.OrganizationFoundationStatus.NOT_STARTED,
+    )
+    org_b, _founder_b, founder_mem_b = await _create_org_and_admin(
+        db_session,
+        "Cross Org B",
+        "org_cross_b",
+        models.OrganizationFoundationStatus.NOT_STARTED,
+    )
+    actor_user = models.User(
+        name="Cross Org Actor",
+        email="cross_org_actor@test.com",
+        clerk_user_id="user_cross_org_actor",
+    )
+    db_session.add(actor_user)
+    await db_session.flush()
+    actor_membership = models.OrganizationMembership(
+        organization_id=org_b.id,
+        account_id=actor_user.id,
+        organization_display_name="Cross Org Actor",
+        lifecycle_status=models.MembershipLifecycleStatus.active,
+        access_status=models.MembershipAccessStatus.active,
+        clerk_membership_id="mem_cross_org_actor",
+        can_admin=True,
+        can_teach=False,
+        created_by_membership_id=founder_mem_b.id,
+    )
+    db_session.add(actor_membership)
+    await db_session.flush()
+
+    actor = deps.Actor(
+        account_id=actor_user.id,
+        clerk_user_id=actor_user.clerk_user_id,
+        organization_id=org_b.id,
+        membership_id=founder_mem_a.id,
+        can_admin=True,
+        can_teach=False,
+        teacher_id=None,
+    )
+    override_auth_actor(actor)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        draft_resp = await ac.get("/api/v1/foundation/draft")
+        assert draft_resp.status_code == 403
+
+
+async def test_clerk_creator_can_manage_foundation_without_legacy_self_marker(
+    db_session, override_auth_actor, monkeypatch
+):
+    org, legacy_admin, legacy_membership = await _create_org_and_admin(
+        db_session,
+        "Legacy Founder Org",
+        "org_legacy_founder",
+        models.OrganizationFoundationStatus.NOT_STARTED,
+    )
+    creator_user = models.User(
+        name="Clerk Organization Creator",
+        email="creator_legacy@test.com",
+        clerk_user_id="user_actual_creator",
+    )
+    db_session.add(creator_user)
+    await db_session.flush()
+    creator_membership = models.OrganizationMembership(
+        organization_id=org.id,
+        account_id=creator_user.id,
+        organization_display_name="Clerk Organization Creator",
+        lifecycle_status=models.MembershipLifecycleStatus.active,
+        access_status=models.MembershipAccessStatus.active,
+        clerk_membership_id="mem_actual_creator",
+        can_admin=True,
+        can_teach=False,
+        created_by_membership_id=legacy_membership.id,
+    )
+    db_session.add(creator_membership)
+    await db_session.flush()
+    await accept_current_legal_documents(
+        db_session,
+        organization_id=org.id,
+        membership_id=creator_membership.id,
+    )
+
+    provider_profile = [
+        clerk_sync.ClerkOrganizationProfile(name=org.name, created_by=creator_user.clerk_user_id)
+    ]
+    get_profile = AsyncMock(side_effect=lambda *_args, **_kwargs: provider_profile[0])
+    monkeypatch.setattr(clerk_sync, "fetch_clerk_organization_profile", get_profile)
+
+    def actor_for(user, membership):
+        return deps.Actor(
+            account_id=user.id,
+            clerk_user_id=user.clerk_user_id,
+            organization_id=org.id,
+            membership_id=membership.id,
+            can_admin=True,
+            can_teach=False,
+            teacher_id=None,
+        )
+
+    legacy_actor = actor_for(legacy_admin, legacy_membership)
+    creator_actor = actor_for(creator_user, creator_membership)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        override_auth_actor(legacy_actor)
+        legacy_member = await ac.get("/api/v1/members/me")
+        assert legacy_member.status_code == 200
+        assert legacy_member.json()["can_manage_foundation"] is False
+        assert (await ac.get("/api/v1/foundation/draft")).status_code == 403
+
+        override_auth_actor(creator_actor)
+        creator_member = await ac.get("/api/v1/members/me")
+        assert creator_member.status_code == 200
+        assert creator_member.json()["can_manage_foundation"] is True
+        assert (await ac.get("/api/v1/foundation/draft")).status_code == 200
+
+
+async def test_foundation_creator_lookup_failure_fails_closed(
+    db_session, override_auth_actor, monkeypatch
+):
+    org, user, membership = await _create_org_and_admin(
+        db_session,
+        "Foundation Provider Outage",
+        "org_foundation_outage",
+        models.OrganizationFoundationStatus.NOT_STARTED,
+    )
+    override_auth_actor(
+        deps.Actor(
+            account_id=user.id,
+            clerk_user_id=user.clerk_user_id,
+            organization_id=org.id,
+            membership_id=membership.id,
+            can_admin=True,
+            can_teach=False,
+            teacher_id=None,
+        )
+    )
+    monkeypatch.setattr(
+        clerk_sync,
+        "fetch_clerk_organization_profile",
+        AsyncMock(return_value=None),
+    )
+    await db_session.commit()
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        member_response = await ac.get("/api/v1/members/me")
+        assert member_response.status_code == 503
+
+        draft_response = await ac.get("/api/v1/foundation/draft")
+        assert draft_response.status_code == 503
 
 
 async def test_foundation_draft_automatic_holidays_failure_rolls_back_and_recovers(

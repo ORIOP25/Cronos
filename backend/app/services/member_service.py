@@ -9,15 +9,18 @@ from sqlalchemy.orm import selectinload
 
 from app import models, schemas
 from app.core.auth import Actor
+from app.core.clerk import ClerkGateway
 from app.core.exceptions import AppError
 from app.db.tenant import set_async_tenant_context
 from app.scheduler.infrastructure.models import CurricularAssignment
+from app.services import clerk_sync
 from app.services.clerk_access_service import (
     SAFE_PROVIDER_ERROR,
     ClerkAccessResult,
     ClerkAccessService,
     normalize_clerk_datetime,
 )
+from app.services.foundation_service import can_manage_foundation
 from app.services.member_access_operation_service import (
     UNRESOLVED_STATUSES,
     MemberAccessOperationService,
@@ -1900,7 +1903,12 @@ async def retry_sync(
     return _to_read(updated)
 
 
-async def current_member(db: AsyncSession, *, current_user: Actor) -> schemas.CurrentMemberRead:
+async def current_member(
+    db: AsyncSession,
+    *,
+    current_user: Actor,
+    clerk: ClerkGateway | None = None,
+) -> schemas.CurrentMemberRead:
     member = await db.scalar(
         select(models.OrganizationMembership)
         .where(
@@ -1918,12 +1926,36 @@ async def current_member(db: AsyncSession, *, current_user: Actor) -> schemas.Cu
     if "teacher" in caps:
         modes.append("teacher")
 
-    foundation_status = await db.scalar(
-        select(models.Organization.foundation_status).where(
-            models.Organization.id == current_user.organization_id
+    organization = (
+        await db.execute(
+            select(
+                models.Organization.foundation_status,
+                models.Organization.clerk_org_id,
+            ).where(models.Organization.id == current_user.organization_id)
         )
-    )
+    ).one_or_none()
+    foundation_status = organization[0] if organization else None
     status_str = foundation_status.value if foundation_status else "NOT_STARTED"
+    can_manage = False
+    if foundation_status != models.OrganizationFoundationStatus.COMPLETED:
+        clerk_org_id = organization[1] if organization else None
+        profile = (
+            await clerk_sync.fetch_clerk_organization_profile(clerk_org_id, clerk)
+            if clerk_org_id
+            else None
+        )
+        if profile is None:
+            raise member_error(
+                "unavailable",
+                "CLERK_DIRECTORY_UNAVAILABLE",
+                "The organization creator could not be verified.",
+                retryable=True,
+            )
+        can_manage = can_manage_foundation(
+            clerk_user_id=current_user.clerk_user_id,
+            organization_creator_clerk_user_id=profile.created_by,
+            can_admin=member.can_admin,
+        )
 
     return schemas.CurrentMemberRead(
         member_id=member.id,
@@ -1936,4 +1968,5 @@ async def current_member(db: AsyncSession, *, current_user: Actor) -> schemas.Cu
         default_mode="admin" if "admin" in caps else "teacher",
         available_modes=modes,
         foundation_status=status_str,
+        can_manage_foundation=can_manage,
     )

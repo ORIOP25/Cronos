@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useOrganization } from '@clerk/react'
 import { useCurrentMember } from '../features/members/data'
+import { getMemberRoute, ROUTE_FOUNDATION_WAITING } from '../roleAccess'
 import PageHeader from '../components/PageHeader'
 import StatePanel from '../components/StatePanel'
 
@@ -9,12 +10,16 @@ export default function FoundationWaiting() {
   const navigate = useNavigate()
   const { organization } = useOrganization()
   const memberQuery = useCurrentMember({ refetchInterval: 30_000 })
+  // Leave the waiting page once the member belongs elsewhere: a completed
+  // organization sends them to their role default, and a founder sends them
+  // back into the wizard.
+  const landingRoute = memberQuery.data ? getMemberRoute(memberQuery.data) : null
 
   useEffect(() => {
-    if (memberQuery.data?.foundation_status === 'COMPLETED') {
-      navigate('/dashboard', { replace: true })
+    if (landingRoute && landingRoute !== ROUTE_FOUNDATION_WAITING) {
+      navigate(landingRoute, { replace: true })
     }
-  }, [memberQuery.data?.foundation_status, navigate])
+  }, [landingRoute, navigate])
 
   if (memberQuery.isLoading) {
     return <StatePanel state="loading" title="A verificar a fundação da escola" description="Aguarde enquanto um administrador conclui a configuração base." />

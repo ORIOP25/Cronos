@@ -29,6 +29,7 @@ class ClerkUser:
 class ClerkOrganization:
     id: str
     name: str
+    created_by: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -248,6 +249,7 @@ class SdkClerkDirectory:
         return ClerkOrganization(
             id=getattr(raw_org, "id", organization_id),
             name=getattr(raw_org, "name", None) or "E2E Organization",
+            created_by=getattr(raw_org, "created_by", None),
         )
 
     async def list_user_organization_memberships(
@@ -299,7 +301,11 @@ class SdkClerkDirectory:
         organization_id = getattr(raw, "id", None)
         if not organization_id:
             raise E2EClerkPreflightError("Clerk organization creation returned no organization ID.")
-        return ClerkOrganization(id=organization_id, name=getattr(raw, "name", None) or name)
+        return ClerkOrganization(
+            id=organization_id,
+            name=getattr(raw, "name", None) or name,
+            created_by=getattr(raw, "created_by", None) or created_by,
+        )
 
     async def create_organization_membership(
         self,
@@ -423,9 +429,9 @@ async def _upsert_organization(
         )
         db.add(organization)
         await db.flush()
-    else:
-        organization.name = clerk_org.name
-        organization.plan_status = models.OrganizationPlanStatus.active
+        return organization
+    organization.name = clerk_org.name
+    organization.plan_status = models.OrganizationPlanStatus.active
     return organization
 
 
@@ -473,6 +479,7 @@ async def _upsert_membership(
     expected_role: models.ClerkOrganizationRole,
     clerk_membership: ClerkOrganizationMembership,
     capability: models.MembershipCapability,
+    is_founder: bool = False,
 ) -> models.OrganizationMembership:
     membership = await db.scalar(
         select(models.OrganizationMembership).where(
@@ -495,6 +502,12 @@ async def _upsert_membership(
         )
         db.add(membership)
         await db.flush()
+        if is_founder:
+            # Mirror app_security.bootstrap_organization_admin: the Clerk
+            # organization's creator owns the Foundation wizard.
+            membership.created_by_membership_id = membership.id
+            membership.updated_by_membership_id = membership.id
+            await db.flush()
 
     membership.organization_display_name = display_name
     membership.lifecycle_status = models.MembershipLifecycleStatus.active
@@ -600,6 +613,9 @@ async def prepare_e2e_clerk_state(
         expected_role=models.ClerkOrganizationRole.admin,
         clerk_membership=admin_provider_membership,
         capability=models.MembershipCapability.admin,
+        # Mirror app_security.bootstrap_organization_admin and the session
+        # creator gate: the founder is the Clerk organization's creator.
+        is_founder=clerk_org.created_by == admin.id,
     )
     teacher_membership = await _upsert_membership(
         db,

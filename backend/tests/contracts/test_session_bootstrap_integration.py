@@ -16,7 +16,7 @@ from tests._support.db_fixtures import TestingSessionLocal
 pytestmark = pytest.mark.postgresql
 
 
-async def _provider_stubs(monkeypatch, organization):
+async def _provider_stubs(monkeypatch, organization, *, created_by):
     monkeypatch.setattr(
         SessionBootstrapService,
         "_verify_provider_membership",
@@ -24,8 +24,13 @@ async def _provider_stubs(monkeypatch, organization):
     )
     monkeypatch.setattr(
         clerk_sync,
-        "fetch_clerk_organization_name",
-        AsyncMock(return_value=organization.name),
+        "fetch_clerk_organization_profile",
+        AsyncMock(
+            return_value=clerk_sync.ClerkOrganizationProfile(
+                name=organization.name,
+                created_by=created_by,
+            )
+        ),
     )
     monkeypatch.setattr(
         clerk_sync,
@@ -50,8 +55,13 @@ async def test_bootstrap_creates_founder_graph_from_empty_baseline(
     )
     monkeypatch.setattr(
         clerk_sync,
-        "fetch_clerk_organization_name",
-        AsyncMock(return_value="Empty Baseline School"),
+        "fetch_clerk_organization_profile",
+        AsyncMock(
+            return_value=clerk_sync.ClerkOrganizationProfile(
+                name="Empty Baseline School",
+                created_by="user_empty",
+            )
+        ),
     )
     monkeypatch.setattr(
         clerk_sync,
@@ -73,10 +83,122 @@ async def test_bootstrap_creates_founder_graph_from_empty_baseline(
 
     assert result.organization["clerk_org_id"] == "org_empty"
     assert result.member["capabilities"] == ["admin"]
+    assert result.member["can_manage_foundation"] is True
     assert result.foundation_status == "NOT_STARTED"
     assert await db_session.scalar(select(func.count(models.User.id))) == 1
     assert await db_session.scalar(select(func.count(models.Organization.id))) == 1
     assert await db_session.scalar(select(func.count(models.OrganizationMembership.id))) == 1
+
+
+async def test_bootstrap_rejects_a_non_creator_admin_before_founding(
+    db_session,
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        SessionBootstrapService,
+        "_verify_provider_membership",
+        AsyncMock(return_value="orgmem_creator"),
+    )
+    monkeypatch.setattr(
+        clerk_sync,
+        "fetch_clerk_organization_profile",
+        AsyncMock(
+            return_value=clerk_sync.ClerkOrganizationProfile(
+                name="Creator School",
+                created_by="user_creator",
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        clerk_sync,
+        "fetch_clerk_user_profile",
+        AsyncMock(
+            return_value=clerk_sync.ClerkUserProfile(
+                email="other@example.com",
+                name="Other Admin",
+            )
+        ),
+    )
+    service = SessionBootstrapService(db_session)
+
+    with pytest.raises(ActiveOrganizationAccessDeniedError):
+        await service.bootstrap(
+            {"sub": "user_other_admin", "o": {"id": "org_creator", "rol": "org:admin"}}
+        )
+
+    assert await db_session.scalar(select(func.count(models.Organization.id))) == 0
+    assert await db_session.scalar(select(func.count(models.User.id))) == 0
+    assert await db_session.scalar(select(func.count(models.OrganizationMembership.id))) == 0
+
+    monkeypatch.setattr(
+        clerk_sync,
+        "fetch_clerk_user_profile",
+        AsyncMock(
+            return_value=clerk_sync.ClerkUserProfile(
+                email="creator@example.com",
+                name="Creator",
+            )
+        ),
+    )
+
+    result = await service.bootstrap(
+        {"sub": "user_creator", "o": {"id": "org_creator", "rol": "org:admin"}}
+    )
+
+    assert result.organization["clerk_org_id"] == "org_creator"
+    assert result.member["can_manage_foundation"] is True
+    assert await db_session.scalar(select(func.count(models.Organization.id))) == 1
+
+
+async def test_bootstrap_never_founds_without_trusted_creator_evidence(
+    db_session,
+    monkeypatch,
+):
+    await _provider_stubs(
+        monkeypatch,
+        models.Organization(name="No Creator", clerk_org_id="org_nocreator"),
+        created_by=None,
+    )
+
+    with pytest.raises(ActiveOrganizationAccessDeniedError):
+        await SessionBootstrapService(db_session).bootstrap(
+            {"sub": "user_founder", "o": {"id": "org_nocreator", "rol": "org:admin"}}
+        )
+
+    assert await db_session.scalar(select(func.count(models.Organization.id))) == 0
+    assert await db_session.scalar(select(func.count(models.User.id))) == 0
+
+
+async def test_bootstrap_organization_directory_outage_returns_503(
+    db_session,
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        SessionBootstrapService,
+        "_verify_provider_membership",
+        AsyncMock(return_value="orgmem_outage"),
+    )
+    monkeypatch.setattr(
+        clerk_sync,
+        "fetch_clerk_user_profile",
+        AsyncMock(
+            return_value=clerk_sync.ClerkUserProfile(email="outage@example.com", name="Outage")
+        ),
+    )
+    monkeypatch.setattr(
+        clerk_sync,
+        "fetch_clerk_organization_profile",
+        AsyncMock(return_value=None),
+    )
+
+    from app.services.session_bootstrap_service import ClerkDirectoryUnavailableError
+
+    with pytest.raises(ClerkDirectoryUnavailableError):
+        await SessionBootstrapService(db_session).bootstrap(
+            {"sub": "user_outage", "o": {"id": "org_outage", "rol": "org:admin"}}
+        )
+
+    assert await db_session.scalar(select(func.count(models.Organization.id))) == 0
 
 
 async def test_bootstrap_is_idempotent_and_creates_one_founder_graph(
@@ -90,7 +212,7 @@ async def test_bootstrap_is_idempotent_and_creates_one_founder_graph(
     )
     db_session.add(organization)
     await db_session.flush()
-    await _provider_stubs(monkeypatch, organization)
+    await _provider_stubs(monkeypatch, organization, created_by="user_founder")
     service = SessionBootstrapService(db_session)
     payload = {"sub": "user_founder", "o": {"id": "org_fresh", "rol": "org:admin"}}
 
@@ -135,7 +257,7 @@ async def test_bootstrap_never_grants_founder_access_to_established_tenant(
         )
     )
     await db_session.flush()
-    await _provider_stubs(monkeypatch, organization)
+    await _provider_stubs(monkeypatch, organization, created_by="user_founder")
 
     with pytest.raises(ActiveOrganizationAccessDeniedError):
         await SessionBootstrapService(db_session).bootstrap(
@@ -184,7 +306,7 @@ async def test_bootstrap_reclaims_identity_after_clerk_user_was_deleted(
         )
     )
     await db_session.flush()
-    await _provider_stubs(monkeypatch, old_organization)
+    await _provider_stubs(monkeypatch, old_organization, created_by="user_recreated")
     monkeypatch.setattr(clerk_sync, "clerk_user_exists", AsyncMock(return_value=False))
 
     result = await SessionBootstrapService(db_session).bootstrap(
@@ -225,6 +347,7 @@ async def test_bootstrap_does_not_reclaim_an_existing_clerk_identity(
     await _provider_stubs(
         monkeypatch,
         models.Organization(name="New School", clerk_org_id="org_new"),
+        created_by="user_recreated",
     )
     monkeypatch.setattr(clerk_sync, "clerk_user_exists", AsyncMock(return_value=True))
 
@@ -272,6 +395,7 @@ async def test_bootstrap_directory_outage_does_not_modify_local_identities(
     await _provider_stubs(
         monkeypatch,
         models.Organization(name="New School", clerk_org_id="org_new"),
+        created_by="user_recreated",
     )
     monkeypatch.setattr(clerk_sync, "clerk_user_exists", AsyncMock(return_value=None))
 
@@ -319,8 +443,13 @@ async def test_concurrent_bootstrap_calls_create_exactly_one_founder_graph(
 
     monkeypatch.setattr(
         clerk_sync,
-        "fetch_clerk_organization_name",
-        AsyncMock(return_value=organization.name),
+        "fetch_clerk_organization_profile",
+        AsyncMock(
+            return_value=clerk_sync.ClerkOrganizationProfile(
+                name=organization.name,
+                created_by="user_concurrent",
+            )
+        ),
     )
     monkeypatch.setattr(
         clerk_sync,
@@ -384,8 +513,13 @@ async def test_directory_failure_endpoint_rolls_back_partial_bootstrap(
     )
     monkeypatch.setattr(
         clerk_sync,
-        "fetch_clerk_organization_name",
-        AsyncMock(return_value="Partial"),
+        "fetch_clerk_organization_profile",
+        AsyncMock(
+            return_value=clerk_sync.ClerkOrganizationProfile(
+                name="Partial",
+                created_by="user_outage",
+            )
+        ),
     )
 
     try:

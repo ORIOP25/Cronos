@@ -10,6 +10,7 @@ from app import models
 from app.core.clerk import ClerkGateway, get_clerk_sdk
 from app.db.tenant import set_async_tenant_context
 from app.services import clerk_sync
+from app.services.foundation_service import can_manage_foundation
 
 
 class SessionBootstrapError(RuntimeError):
@@ -60,14 +61,24 @@ class SessionBootstrapService:
                 "Active organization administrator access is required."
             )
 
-        provider_membership_id, profile, organization_name = await asyncio.gather(
+        provider_membership_id, profile, organization_profile = await asyncio.gather(
             self._verify_provider_membership(clerk_org_id, clerk_user_id),
             clerk_sync.fetch_clerk_user_profile(clerk_user_id, self.clerk),
-            clerk_sync.fetch_clerk_organization_name(clerk_org_id, self.clerk),
+            clerk_sync.fetch_clerk_organization_profile(clerk_org_id, self.clerk),
         )
-        if profile is None or organization_name is None:
+        if profile is None or organization_profile is None or organization_profile.name is None:
             raise ClerkDirectoryUnavailableError(
                 "The provider directory is temporarily unavailable."
+            )
+        # The one-time Foundation graph is created for the Clerk organization
+        # creator. A different administrator may never found it, and an
+        # unverifiable creator must never be trusted.
+        if await self._requires_founding(clerk_org_id, clerk_user_id) and (
+            organization_profile.created_by is None
+            or clerk_user_id != organization_profile.created_by
+        ):
+            raise ActiveOrganizationAccessDeniedError(
+                "Only the organization creator can run the initial setup."
             )
         await self._reconcile_deleted_identity(profile.email, clerk_user_id)
         principal = (
@@ -85,7 +96,7 @@ class SessionBootstrapService:
                     {
                         "clerk_user_id": clerk_user_id,
                         "clerk_org_id": clerk_org_id,
-                        "organization_name": organization_name,
+                        "organization_name": organization_profile.name,
                         "email": profile.email,
                         "profile_name": profile.name,
                         "provider_membership_id": provider_membership_id,
@@ -122,6 +133,12 @@ class SessionBootstrapService:
                 "capabilities": capabilities,
                 "default_mode": "admin",
                 "teacher_id": None,
+                "can_manage_foundation": can_manage_foundation(
+                    clerk_user_id=clerk_user_id,
+                    organization_creator_clerk_user_id=organization_profile.created_by,
+                    can_admin=membership.can_admin,
+                )
+                and organization.foundation_status != models.OrganizationFoundationStatus.COMPLETED,
             },
             foundation_status=organization.foundation_status.value,
         )
@@ -177,6 +194,29 @@ class SessionBootstrapService:
             ),
             {"clerk_user_id": candidate_clerk_user_id},
         )
+
+    async def _requires_founding(
+        self,
+        clerk_org_id: str,
+        clerk_user_id: str,
+    ) -> bool:
+        """Report whether this bootstrap would create the organization founder.
+
+        The caller already has an active local membership in an established
+        organization: that path only loads the existing membership. Without one,
+        the bootstrap either creates the founder graph or denies access. Reads
+        go through the definer lookup because the tenant context is not set yet.
+        """
+        membership_id = await self.db.scalar(
+            text(
+                """
+                SELECT membership_id
+                FROM app_security.resolve_principal(:clerk_user_id, :clerk_org_id)
+                """
+            ),
+            {"clerk_user_id": clerk_user_id, "clerk_org_id": clerk_org_id},
+        )
+        return membership_id is None
 
     async def _load_membership(
         self,

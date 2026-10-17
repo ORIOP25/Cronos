@@ -40,8 +40,9 @@ class FakeClerkDirectory:
         )
 
     async def create_organization(self, *, name, created_by):
-        del created_by
-        organization = self.provisioned_org or ClerkOrganization("org_provisioned", name)
+        organization = self.provisioned_org or ClerkOrganization(
+            "org_provisioned", name, created_by=created_by
+        )
         self.organizations[organization.id] = organization
         self.provisioned_org = organization
         self.memberships.append(
@@ -65,10 +66,10 @@ class FakeClerkDirectory:
         return membership
 
 
-def _directory(*, extra_admin_org=False, teacher_role="org:member"):
+def _directory(*, extra_admin_org=False, teacher_role="org:member", org_creator="user_admin"):
     orgs = [
-        ClerkOrganization(id="org_e2e", name="Escola E2E"),
-        ClerkOrganization(id="org_other", name="Outra Escola"),
+        ClerkOrganization(id="org_e2e", name="Escola E2E", created_by=org_creator),
+        ClerkOrganization(id="org_other", name="Outra Escola", created_by="user_someone"),
     ]
     memberships = [
         ClerkOrganizationMembership(
@@ -213,10 +214,31 @@ async def test_prepare_e2e_clerk_state_creates_admin_teacher_membership_idempote
 
     assert admin_membership.can_admin is True
     assert admin_membership.can_teach is False
+    # The admin created the Clerk organization, so it is the foundation founder.
+    assert admin_membership.created_by_membership_id == admin_membership.id
     assert teacher_membership.can_admin is False
     assert teacher_membership.can_teach is True
+    assert teacher_membership.created_by_membership_id is None
     assert teacher_profile is not None
     assert teacher_profile.organization_membership_id is not None
+
+
+async def test_prepare_e2e_clerk_state_does_not_mark_a_non_creator_admin_as_founder(db_session):
+    directory = _directory(org_creator="user_someone_else")
+
+    await prepare_e2e_clerk_state(db_session, directory=directory, config=_config())
+    await db_session.commit()
+
+    admin_user = await db_session.scalar(
+        select(models.User).where(models.User.clerk_user_id == "user_admin")
+    )
+    admin_membership = await db_session.scalar(
+        select(models.OrganizationMembership).where(
+            models.OrganizationMembership.account_id == admin_user.id
+        )
+    )
+
+    assert admin_membership.created_by_membership_id is None
 
 
 async def test_prepare_e2e_clerk_state_requires_org_id_when_admin_has_multiple_orgs(db_session):

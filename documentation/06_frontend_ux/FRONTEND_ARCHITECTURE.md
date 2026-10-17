@@ -134,6 +134,8 @@ Rejecting a draft refreshes the active organization's status, current-draft, dif
 The onboarding path is split into independent features:
 
 - `routeGuards.jsx` waits for Clerk, the active organization, and `/members/me` before routing.
+- For an incomplete organization, `/members/me` exposes `can_manage_foundation` after the backend verifies the active administrator against Clerk's organization creator.
+  Completed organizations route by member role without another creator lookup.
 - `useOnboardingCompletion.js` waits for the Clerk organization, bootstraps the local member, and completes legal acceptance without an intermediate route.
 - `FoundationWizard.jsx` owns the ten-step interaction, autosave queue, version conflict state, and completion navigation.
 - `foundationModel.js` contains pure step and validation rules.
