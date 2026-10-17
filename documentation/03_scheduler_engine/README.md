@@ -7,6 +7,7 @@ The scheduler v1 is active in production. The original execution plan and work b
 ## Documents
 
 - [SCHEDULER_V1_TECH_SPEC_V2.md](SCHEDULER_V1_TECH_SPEC_V2.md): Technical specification — product decisions, contracts, models, quality policy, queue, API and operations.
+- [AVAILABILITY_PRIORITY_TECH_SPEC.md](AVAILABILITY_PRIORITY_TECH_SPEC.md) and [AVAILABILITY_PRIORITY_WBS.md](AVAILABILITY_PRIORITY_WBS.md): Proposed plan — priority to teachers and classes with little availability, Evitar and Preferencial in construction, and the per-teacher time proof.
 
 ## Engine
 
