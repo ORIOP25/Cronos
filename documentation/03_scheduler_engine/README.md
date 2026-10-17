@@ -95,7 +95,7 @@ Endpoints under `/api/v1/scheduler` (`backend/app/api/v1/endpoints/scheduler.py`
 | :--- | :--- |
 | `GET /status` | State, eligibility reasons and current proposal. |
 | `POST /generate` | Manual, idempotent request; returns `202` and the job; admin only. |
-| `GET /jobs/{job_id}` | Phase, result, summary and proven per-class diagnostics. |
+| `GET /jobs/{job_id}` | Phase, result, summary and proven per-class and per-teacher diagnostics. |
 | `POST /jobs/{job_id}/cancel` | Idempotent cancellation. |
 | `GET /drafts/current` | Current pending proposal. |
 | `GET /drafts/{proposal_id}/diff` | Physical changes and modular updates, separated. |
