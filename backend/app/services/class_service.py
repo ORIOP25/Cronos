@@ -31,6 +31,7 @@ def _class_demand_snapshot(item: models.Class) -> dict:
         "grade_level": item.grade_level,
         "course_id": item.course_id,
         "is_archived": item.is_archived,
+        "home_room_id": item.home_room_id,
     }
 
 
@@ -120,6 +121,24 @@ async def _get_class_by_org(db: AsyncSession, class_id: int, organization_id: in
         )
     )
     return result.scalars().first()
+
+
+async def _active_room_of_school(db: AsyncSession, room_id: int, organization_id: int):
+    """Sala ativa da escola; outra escola, arquivada ou um id de tipo dão 404."""
+    room = await db.scalar(
+        select(models.Room).where(
+            models.Room.id == room_id,
+            models.Room.organization_id == organization_id,
+            models.Room.is_archived.is_(False),
+        )
+    )
+    if room is None:
+        raise AppError(
+            kind="not_found",
+            code="resource_not_found",
+            detail=f"Room {room_id} was not found in organization {organization_id}.",
+        )
+    return room
 
 
 async def _get_course_by_org(db: AsyncSession, course_id: int, organization_id: int):
@@ -314,6 +333,22 @@ async def update_class_in_course(
             detail="The class end year must be greater than its start year.",
         )
 
+    home_room_id = update_data.get("home_room_id")
+    if home_room_id is not None:
+        home_room = await _active_room_of_school(db, home_room_id, organization_id)
+        class_size = update_data.get("size", db_class.size)
+        if home_room.capacity < class_size:
+            raise AppError(
+                kind="validation",
+                code="home_room_capacity",
+                detail=f"Room {home_room.id} has {home_room.capacity} seats for a class of {class_size}.",
+                public_context={
+                    "room_name": home_room.name,
+                    "room_capacity": home_room.capacity,
+                    "class_size": class_size,
+                },
+            )
+
     before = _class_demand_snapshot(db_class)
     for field, value in update_data.items():
         setattr(db_class, field, value)
@@ -333,6 +368,41 @@ async def update_class_in_course(
     await db.flush()
     await db.refresh(db_class)
     return db_class
+
+
+async def clear_home_room(
+    db: AsyncSession,
+    organization_id: int,
+    room_id: int,
+    changed_by_membership_id: int | None = None,
+) -> None:
+    """Deixa em Automática as turmas que tinham a sala como sala da turma (D09).
+
+    Corre na mesma transação da remoção da sala e regista cada turma como alteração.
+    """
+    classes = (
+        await db.scalars(
+            select(models.Class).where(
+                models.Class.organization_id == organization_id,
+                models.Class.home_room_id == room_id,
+            )
+        )
+    ).all()
+    for db_class in classes:
+        before = _class_demand_snapshot(db_class)
+        db_class.home_room_id = None
+        await record_scheduler_change(
+            db,
+            organization_id,
+            entity_type="CLASS_DEMAND",
+            entity_id=db_class.id,
+            operation=models.SchedulerStateChangeOperation.UPDATE,
+            before=before,
+            after=_class_demand_snapshot(db_class),
+            changed_by_membership_id=changed_by_membership_id,
+            active_resource=not db_class.is_archived,
+        )
+    await db.flush()
 
 
 async def delete_class_in_course(
@@ -494,6 +564,7 @@ async def get_class_full_details(db: AsyncSession, class_id: int, organization_i
         .where(models.Class.id == class_id, models.Class.organization_id == organization_id)
         .options(
             selectinload(models.Class.course),
+            joinedload(models.Class.home_room).joinedload(models.Room.room_type),
         )
     )
     result = await db.execute(query)
@@ -513,6 +584,8 @@ async def get_class_full_details(db: AsyncSession, class_id: int, organization_i
         "organization_id": db_class.organization_id,
         "course_id": db_class.course_id,
         "course": db_class.course,
+        "home_room_id": db_class.home_room_id,
+        "home_room": db_class.home_room,
         "subjects": [],
     }
 

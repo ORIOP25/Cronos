@@ -170,6 +170,10 @@ scheduler change.
 
 Rooms and subjects require a school-owned `room_type_id`; the legacy enum columns have been removed. API reads return the type referenced by that ID (see the [API Reference](../05_backend_api/API_REFERENCE.md)).
 
+## Sala da turma
+
+Each class may have a home room, the room it keeps whenever a lesson does not need its own room. A class without one is Automática (`home_room_id` null). The administrator sets it in the class update (`PATCH /api/v1/courses/{course_id}/classes/{class_id}`, see the [API Reference](../05_backend_api/API_REFERENCE.md)). Only an active room of the same school qualifies, and the room must have at least as many seats as the class has students when it is set. Two classes may share a home room. Removing a room sets its classes back to Automática.
+
 ## Presença dos professores
 
 The administrator sets an optional presence rule on each teacher.

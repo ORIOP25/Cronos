@@ -13,10 +13,15 @@ from app.services import (
     class_service,
     dashboard_service,
     member_service,
+    room_service,
     room_type_service,
     timesheet_service,
 )
-from tests._support.db_fixtures import TestingSessionLocal, create_teacher_profile
+from tests._support.db_fixtures import (
+    TestingSessionLocal,
+    create_teacher_profile,
+    get_school_room_type_id,
+)
 from tests._support.scheduler_v1 import add_lesson, add_version, lesson_interval, seed_v1_assignment
 
 
@@ -682,3 +687,73 @@ async def test_populated_dashboard_skips_fingerprints_with_bounded_queries(db_se
     # Room prevalidation adds two constant set queries (rooms and rules); the
     # budget stays bounded and independent of the number of assignments.
     assert len(statements) <= 22
+
+
+async def test_room_listing_statement_count_does_not_grow_with_home_classes(db_session):
+    """R29: a lista de salas com as turmas da sala usa a mesma consulta, sem uma por sala."""
+    organization = models.Organization(name="Room Listing Budget", plan_status="active")
+    db_session.add(organization)
+    await db_session.flush()
+    await room_type_service.ensure_initial_room_types(db_session, organization.id)
+    normal_type_id = await get_school_room_type_id(db_session, organization.id, "Normal")
+    course = models.Course(organization_id=organization.id, name="Curso Salas", abbreviation="CSA")
+    db_session.add_all(
+        [
+            course,
+            models.Room(
+                organization_id=organization.id,
+                name="Sala Sem Turmas",
+                capacity=30,
+                room_type_id=normal_type_id,
+            ),
+        ]
+    )
+    await db_session.flush()
+    organization_id = organization.id
+    course_id = course.id
+
+    async def count_listing_statements() -> int:
+        db_session.expire_all()
+        engine = db_session.get_bind()
+        statements: list[str] = []
+
+        def record(_connection, _cursor, statement, _parameters, _context, _many):
+            statements.append(statement)
+
+        event.listen(engine, "before_cursor_execute", record)
+        try:
+            await room_service.get_rooms_by_org(db_session, organization_id)
+        finally:
+            event.remove(engine, "before_cursor_execute", record)
+        return len(statements)
+
+    alone = await count_listing_statements()
+
+    for index in range(5):
+        room = models.Room(
+            organization_id=organization_id,
+            name=f"Sala da turma {index}",
+            capacity=30,
+            room_type_id=normal_type_id,
+        )
+        db_session.add(room)
+        await db_session.flush()
+        for class_index in range(2):
+            db_session.add(
+                models.Class(
+                    organization_id=organization_id,
+                    name=f"Turma {index}-{class_index}",
+                    size=20,
+                    start_year=2025,
+                    end_year=2026,
+                    grade_level=10,
+                    course_id=course_id,
+                    home_room_id=room.id,
+                )
+            )
+    await db_session.flush()
+
+    with_home_classes = await count_listing_statements()
+
+    assert alone == 1
+    assert with_home_classes == alone

@@ -343,3 +343,45 @@ class TestSchoolRoomTypes:
             select(models.Room.room_type_id).where(models.Room.id == rid)
         )
         assert current != foreign_type
+
+
+class TestRoomHomeClasses:
+    """S8/T14: a sala lista as turmas ativas que a têm como sala da turma."""
+
+    async def test_room_lists_its_active_home_classes(
+        self, async_client: AsyncClient, db_session, clerk_admin_headers: dict
+    ):
+        course = await async_client.post(
+            f"{API}/courses/",
+            json={"name": "Curso Salas", "abbreviation": "CSA"},
+            headers=clerk_admin_headers,
+        )
+        course_id = course.json()["id"]
+        room = await async_client.post(
+            f"{API}/rooms/",
+            json={"name": "Sala de Turma", "capacity": 30},
+            headers=clerk_admin_headers,
+        )
+        room_id = room.json()["id"]
+        class_ids = []
+        for name in ("Turma Ativa", "Turma Arquivada"):
+            created = await async_client.post(
+                f"{API}/courses/{course_id}/classes",
+                json={"name": name, "grade_level": 10, "start_year": 2025, "end_year": 2028},
+                headers=clerk_admin_headers,
+            )
+            class_ids.append(created.json()["id"])
+            await async_client.patch(
+                f"{API}/courses/{course_id}/classes/{created.json()['id']}",
+                json={"home_room_id": room_id},
+                headers=clerk_admin_headers,
+            )
+        archived = await db_session.get(models.Class, class_ids[1])
+        archived.is_archived = True
+        await db_session.commit()
+
+        listed = await async_client.get(f"{API}/rooms/", headers=clerk_admin_headers)
+
+        assert listed.status_code == 200
+        row = next(item for item in listed.json() if item["id"] == room_id)
+        assert row["home_classes"] == [{"id": class_ids[0], "name": "Turma Ativa"}]

@@ -19,6 +19,7 @@ from sqlalchemy import (
     Text,
     Time,
     UniqueConstraint,
+    and_,
     event,
     func,
     select,
@@ -29,7 +30,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.hybrid import hybrid_property
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, foreign, mapped_column, relationship
 from sqlalchemy.types import JSON
 
 from app.db.database import Base
@@ -1050,6 +1051,9 @@ class Class(Base):
     course_id: Mapped[int] = mapped_column(ForeignKey("course.id"), nullable=False)
     course: Mapped["Course"] = relationship(back_populates="classes")
 
+    # Sala da turma: nula é Automática. A chave composta mantém a sala na mesma escola.
+    home_room_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
     # Histórico de progresso
 
     # Chave Estrangeira: Liga a Turma à sua Organization
@@ -1057,6 +1061,23 @@ class Class(Base):
 
     # Relacionamento: Permite-nos fazer my_class.organization
     organization: Mapped["Organization"] = relationship(back_populates="classes")
+
+    # Só de leitura; quem escreve é home_room_id.
+    home_room: Mapped["Room | None"] = relationship(
+        viewonly=True,
+        primaryjoin=lambda: and_(
+            foreign(Class.home_room_id) == Room.id,
+            foreign(Class.organization_id) == Room.organization_id,
+        ),
+    )
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id", "home_room_id"],
+            ["room.organization_id", "room.id"],
+            name="fk_class_home_room_org",
+        ),
+    )
 
     def __repr__(self) -> str:
         return f"<Class(id={self.id}, name='{self.name}')>"
@@ -1115,6 +1136,17 @@ class Room(Base):
 
     # Só de leitura; quem escreve é room_type_id e os leitores carregam-no em bloco.
     room_type: Mapped[SchoolRoomType] = relationship(viewonly=True)
+
+    # Só de leitura: turmas ativas que têm esta sala como sala da turma.
+    home_classes: Mapped[list[Class]] = relationship(
+        viewonly=True,
+        primaryjoin=lambda: and_(
+            Room.id == foreign(Class.home_room_id),
+            Room.organization_id == foreign(Class.organization_id),
+            Class.is_archived.is_(False),
+        ),
+        order_by=lambda: Class.name,
+    )
 
     # Chave Estrangeira: Liga a Sala à sua Organization
     organization_id: Mapped[int] = mapped_column(ForeignKey(FK_ORG_ID))

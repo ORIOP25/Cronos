@@ -873,3 +873,71 @@ async def test_fingerprint_adds_joint_groups_only_when_present(db_session):
         models.ScheduleGenerationStrategy.COMPLETE_GENERATION,
     )
     assert changed.value != with_group.value
+
+
+async def test_class_home_room_enters_the_fingerprint_only_when_set(db_session):
+    """❌ R10/I07: a sala da turma muda o fingerprint; Automática volta ao digest anterior."""
+    organization = models.Organization(name="Home Room Fingerprint", plan_status="active")
+    db_session.add(organization)
+    await db_session.flush()
+    await room_type_service.ensure_initial_room_types(db_session, organization.id)
+    school_year = models.SchedulerSchoolYear(
+        organization_id=organization.id,
+        label="2025/2026",
+        start_date=date(2025, 9, 1),
+        hard_end_date=date(2026, 7, 15),
+        timezone="Europe/Lisbon",
+    )
+    db_session.add(school_year)
+    await db_session.flush()
+    db_session.add(
+        models.SchedulerSchoolYearState(
+            organization_id=organization.id,
+            school_year_id=school_year.id,
+        )
+    )
+    course = models.Course(
+        organization_id=organization.id, name="Home Room Course", abbreviation="HRC"
+    )
+    db_session.add(course)
+    await db_session.flush()
+    class_ = models.Class(
+        organization_id=organization.id,
+        name="Home Room Class",
+        size=20,
+        start_year=2025,
+        end_year=2026,
+        grade_level=10,
+        course_id=course.id,
+    )
+    room = models.Room(
+        organization_id=organization.id,
+        name="Sala da turma",
+        capacity=30,
+        room_type_id=await get_school_room_type_id(db_session, organization.id, "Normal"),
+    )
+    db_session.add_all([class_, room])
+    await db_session.flush()
+
+    service = SchedulerFingerprintService(db_session)
+
+    async def fingerprint():
+        return await service.generation_input_fingerprint(
+            organization.id,
+            school_year.id,
+            models.ScheduleGenerationStrategy.COMPLETE_GENERATION,
+        )
+
+    automatic = await fingerprint()
+    assert "home_room_id" not in automatic.snapshot["classes"][0]
+
+    class_.home_room_id = room.id
+    await db_session.flush()
+    with_room = await fingerprint()
+    assert with_room.value != automatic.value
+    assert with_room.snapshot["classes"][0]["home_room_id"] == room.id
+
+    class_.home_room_id = None
+    await db_session.flush()
+    back_to_automatic = await fingerprint()
+    assert back_to_automatic.value == automatic.value

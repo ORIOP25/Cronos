@@ -471,3 +471,66 @@ class TestSchedulerV1References:
         assert (
             await db_session.scalar(select(models.Room.id).where(models.Room.id == seed.room.id))
         ) is None
+
+
+class TestRoomHomeClassRemoval:
+    """R11: remover uma sala deixa as turmas que a têm como sala da turma em Automática."""
+
+    async def _two_classes_in_home_room(self, db_session: AsyncSession, ctx: dict) -> list[int]:
+        second = models.Class(
+            organization_id=ctx["org_id"],
+            name="Turma Segunda",
+            size=20,
+            start_year=2025,
+            end_year=2026,
+            grade_level=10,
+            course_id=ctx["course"].id,
+        )
+        db_session.add(second)
+        await db_session.flush()
+        for school_class in (ctx["class"], second):
+            school_class.home_room_id = ctx["room"].id
+        await db_session.commit()
+        return [ctx["class"].id, second.id]
+
+    async def _home_room_ids(self, db_session: AsyncSession, class_ids: list[int]) -> list:
+        return (
+            await db_session.scalars(
+                select(models.Class.home_room_id)
+                .where(models.Class.id.in_(class_ids))
+                .order_by(models.Class.id)
+            )
+        ).all()
+
+    async def test_hard_deleting_a_home_room_sends_both_classes_to_automatic(
+        self, async_client: AsyncClient, db_session: AsyncSession, clerk_admin_headers: dict
+    ):
+        ctx = await _seed_scheduler(db_session)
+        class_ids = await self._two_classes_in_home_room(db_session, ctx)
+
+        listed = await async_client.get(f"{API}/rooms/", headers=clerk_admin_headers)
+        room_row = next(row for row in listed.json() if row["id"] == ctx["room"].id)
+        assert sorted(item["id"] for item in room_row["home_classes"]) == sorted(class_ids)
+
+        response = await async_client.delete(
+            f"{API}/rooms/{ctx['room'].id}", headers=clerk_admin_headers
+        )
+
+        assert response.status_code == 200
+        assert response.json()["remove_effect"] == "hard_delete"
+        assert await self._home_room_ids(db_session, class_ids) == [None, None]
+
+    async def test_archiving_a_home_room_sends_both_classes_to_automatic(
+        self, async_client: AsyncClient, db_session: AsyncSession, clerk_admin_headers: dict
+    ):
+        ctx = await _seed_scheduler(db_session)
+        class_ids = await self._two_classes_in_home_room(db_session, ctx)
+        await _publish_block(db_session, ctx, key="room-home-removed", status="SUPERSEDED")
+
+        response = await async_client.delete(
+            f"{API}/rooms/{ctx['room'].id}", headers=clerk_admin_headers
+        )
+
+        assert response.status_code == 200
+        assert response.json()["remove_effect"] == "archive"
+        assert await self._home_room_ids(db_session, class_ids) == [None, None]

@@ -53,6 +53,24 @@ def _teacher_snapshot(row) -> dict:
     return entry
 
 
+def _class_snapshot(row) -> dict:
+    """Serialize one class, adding its home room only when it has one.
+
+    Automática keeps the legacy shape, so a school without home rooms keeps its digest.
+    """
+    entry: dict = {
+        "id": row.id,
+        "size": row.size,
+        "grade_level": row.grade_level,
+        "start_year": row.start_year,
+        "end_year": row.end_year,
+        "course_id": row.course_id,
+    }
+    if row.home_room_id is not None:
+        entry["home_room_id"] = row.home_room_id
+    return entry
+
+
 @dataclass(frozen=True)
 class SchedulerFingerprint:
     value: str
@@ -181,6 +199,7 @@ class SchedulerFingerprintService:
                     models.Class.start_year,
                     models.Class.end_year,
                     models.Class.course_id,
+                    models.Class.home_room_id,
                 ).where(
                     models.Class.organization_id == organization_id,
                     models.Class.is_archived.is_(False),
@@ -642,17 +661,7 @@ class SchedulerFingerprintService:
                 "window_end": grid_settings.lunch_window_end,
                 "minimum_minutes": grid_settings.lunch_min_duration_minutes,
             },
-            "classes": [
-                {
-                    "id": row.id,
-                    "size": row.size,
-                    "grade_level": row.grade_level,
-                    "start_year": row.start_year,
-                    "end_year": row.end_year,
-                    "course_id": row.course_id,
-                }
-                for row in sorted(class_rows, key=lambda row: row.id)
-            ],
+            "classes": [_class_snapshot(row) for row in sorted(class_rows, key=lambda row: row.id)],
             "subjects": [
                 {"id": row.id, "room_type_id": row.room_type_id}
                 for row in sorted(subject_rows, key=lambda row: row.id)
