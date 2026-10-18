@@ -708,6 +708,15 @@ def _construct_pass(
                 if run is None:
                     continue
             else:
+                # Extending a compliant presence must not strand fewer minutes than
+                # the minimum: they could never form a presence of their own.
+                credit = min(remaining[assignment.assignment_id], period.duration_minutes)
+                left = teacher_remaining[teacher_id] - credit
+                if (
+                    teacher_id in presence_rules
+                    and 0 < left < presence_rules[teacher_id].minimum_minutes
+                ):
+                    continue
                 run = [(assignment, period, room)]
             for run_assignment, run_period, run_room in run:
                 if not place(run_assignment, run_period, run_room):
