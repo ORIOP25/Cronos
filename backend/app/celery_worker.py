@@ -2,8 +2,8 @@ from celery import Celery
 
 from .config import settings
 
-# Beat needs only the lightweight reconciliation task.  The worker command
-# explicitly includes the scheduler module so OR-Tools is not imported by Beat.
+# Beat only publishes task names, so this module imports no task modules.
+# Each worker imports the modules whose tasks it executes.
 celery_app = Celery(
     "cronos_worker",
     broker=settings.CELERY_BROKER_URL,
@@ -34,11 +34,6 @@ celery_app.conf.update(
             "options": {"queue": "scheduler-supervisor"},
         },
     },
-    imports=(
-        "app.member_reconciliation_worker",
-        "app.privacy_maintenance_worker",
-        "app.scheduler_recovery_worker",
-    ),
 )
 
 if __name__ == "__main__":

@@ -16,6 +16,9 @@ from time import monotonic
 
 import structlog
 
+# The default-queue worker executes these periodic tasks, so it registers them.
+# Beat must not import them.
+from app import member_reconciliation_worker, privacy_maintenance_worker  # noqa: F401
 from app.celery_worker import celery_app
 from app.config import settings
 from app.db.database import SessionLocal, engine_async
