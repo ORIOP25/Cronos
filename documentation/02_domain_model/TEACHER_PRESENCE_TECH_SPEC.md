@@ -222,7 +222,7 @@ Aplicação por rota:
 
 - `placement_model.py`: `_add_lunch` ignora professores com `lunch_required=False`. `_add_teacher_presence` reutiliza a ocupação por posição de `_gap_resource_rows` e as opções de `_add_resource_lunch`. Impõe, condicionado à opção designada, minutos de 0 ou pelo menos o mínimo, e furo até ao máximo. A chave de cache das janelas inclui as regras.
 - `annual_model.py`: aplica a T05.
-- `constructive.py` e `recovery_construction.py`: ignoram o almoço de quem está dispensado. Preferem continuar uma presença aberta de um professor com mínimo e nunca devolvem um candidato inválido. Se não conseguirem, devolvem `None` e a pesquisa segue pelo caminho exato.
+- `constructive.py` e `recovery_construction.py`: ignoram o almoço de quem está dispensado e nunca devolvem um candidato inválido. `recovery_construction.py` prefere continuar uma presença aberta de um professor com mínimo. `constructive.py` só coloca uma aula que deixa o dia de um professor com mínimo fora da regra quando consegue marcar, no mesmo dia, as aulas seguintes que a cumprem (`teacher_day_complies`) e deixam o restante do professor a 0 ou em pelo menos o mínimo; senão salta essa aula. Se a construção falhar, devolve `None` e a pesquisa segue pelo caminho exato.
 - `candidate_validation.py`: `_check_teacher_presence` devolve `TEACHER_PRESENCE_VIOLATION` com `resource_type="teacher"`. `_check_lunch` ignora professores dispensados.
 
 ## Contracts and Invariants
@@ -285,7 +285,7 @@ Cada cenário é um teste que falha primeiro.
 | R10 | Escrita múltipla | Um CSV com dois professores altera os dois; um terceiro, ausente, fica igual. | `backend/tests/unit/test_bulk_import_policy.py`; `test_bulk_import.py` |
 | R11 | Reversão | Definir o mínimo, apagá-lo e voltar a definir deixa o furo em 1; apagar o mínimo apaga o furo. | `test_teacher_presence.py`; `frontend/src/test/TeacherAvailabilityModal.test.jsx` |
 | R12 | Limites | Mínimo 12 e furo 0 são aceites; mínimo 13, furo 13 e números soltos dão `422`. | `test_teacher_presence.py` |
-| R13 | Construção rápida | Com professores com regra, `construct_schedule` devolve um candidato válido ou `None`; com `None`, `search_complete_schedule` termina pelo caminho exato. | `test_scheduler_constructive_progress_v1.py`; `test_scheduler_search_fallback_v1.py` |
+| R13 | Construção rápida | Com um professor com mínimo de 3 horas, almoço obrigatório e furo de 1 hora, `construct_schedule` devolve um candidato válido, também para 48 turmas numa atualização, sem construir o modelo exato. Com `None`, `search_complete_schedule` termina pelo caminho exato. | `test_scheduler_constructive_presence_v1.py`; `test_scheduler_typology_v1.py`; `test_scheduler_search_fallback_v1.py` |
 | R14 | Plano anual | Um professor com 2 horas semanais e mínimo 3 recebe semanas de 0 ou de pelo menos 3 horas, e a geração termina. | `test_scheduler_annual_planning_v1.py` |
 | R15 | Pré-verificação | Mínimo 4 com só 3 horas possíveis por presença em todos os dias dá `TEACHER_PRESENCE_IMPOSSIBLE` com o nome; um dia com 4 horas tira o bloqueio. | `backend/tests/contracts/test_preflight_service.py` |
 | R16 | Mensagem de falha | Uma geração ou reparação sem candidato com professores com mínimo traz `TEACHER_PRESENCE_RULES` com os nomes, também em `FAILED` e `INCONCLUSIVE`; sem regras, cancelada ou `STALE`, não traz. | `test_scheduler_diagnostics_v1.py`; `test_scheduler_generation_v1.py`; `test_scheduler_recovery_v1.py`; `frontend/src/test/GenerationStatusPanel.test.jsx` |
