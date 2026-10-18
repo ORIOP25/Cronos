@@ -10,8 +10,8 @@ Construction failure is inconclusive; every returned plan is independently valid
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Callable, Sequence
-from datetime import datetime
+from collections.abc import Callable, Mapping, Sequence
+from datetime import date, datetime
 from fractions import Fraction
 from time import monotonic
 
@@ -26,6 +26,7 @@ from app.scheduler.domain.candidate import (
     GridSlot,
     PlanningSnapshot,
     ScheduledLesson,
+    TeacherPresenceRule,
     allocate_lesson_identity,
     continuous_break_minutes,
 )
@@ -37,6 +38,7 @@ from app.scheduler.domain.capacity import (
     residual_minutes,
 )
 from app.scheduler.domain.projection import ModuleSlice
+from app.scheduler.domain.teacher_presence import PresenceLesson, teacher_day_complies
 
 
 def _local_interval(period: Period) -> tuple[int, int]:
@@ -46,13 +48,29 @@ def _local_interval(period: Period) -> tuple[int, int]:
     )
 
 
-def _minimum_presence_teachers(snapshot: PlanningSnapshot) -> dict[int, int]:
+def _grid_interval(slot: GridSlot) -> tuple[int, int]:
+    return (
+        slot.start_local.hour * 60 + slot.start_local.minute,
+        slot.end_local.hour * 60 + slot.end_local.minute,
+    )
+
+
+def _minimum_presence_teachers(snapshot: PlanningSnapshot) -> dict[int, TeacherPresenceRule]:
     """Teachers with a presence minimum, keyed by teacher id."""
     return {
-        row.teacher_id: row.minimum_minutes
-        for row in snapshot.teacher_presence
-        if row.minimum_minutes is not None
+        row.teacher_id: row for row in snapshot.teacher_presence if row.minimum_minutes is not None
     }
+
+
+def _resource_keys(
+    assignment: Assignment, room: int, teacher: int, school_date: date
+) -> tuple[tuple, ...]:
+    """Busy keys of one lesson: its teacher, room and classes on the date."""
+    return (
+        ("teacher", teacher, school_date),
+        ("room", room, school_date),
+        *(("class", class_id, school_date) for class_id in assignment.class_ids),
+    )
 
 
 def _slots_by_day(snapshot: PlanningSnapshot) -> dict[int, tuple[GridSlot, ...]]:
@@ -81,7 +99,7 @@ def _continues_open_presence(
     occupancy: dict,
     teacher_id: int,
     period: Period,
-    minimum_teachers: dict[int, int],
+    presence_rules: dict[int, TeacherPresenceRule],
 ) -> bool:
     """True when the period extends an open presence of a minimum teacher.
 
@@ -91,7 +109,7 @@ def _continues_open_presence(
     validator; this only prefers extending an open run so a presence reaches the
     minimum instead of fragmenting the day.
     """
-    if teacher_id not in minimum_teachers:
+    if teacher_id not in presence_rules:
         return False
     slots = slots_by_day.get(period.school_date.weekday(), ())
     position = _slot_position_for_interval(slots, _local_interval(period))
@@ -374,20 +392,18 @@ def _construct_pass(
                 ),
                 (assignment.assignment_id, room),
             )
-        identities = [
-            ("teacher", teacher),
-            ("room", room),
-            *(("class", class_id) for class_id in assignment.class_ids),
-        ]
-        for kind, identity in identities:
-            busy[(kind, identity, period.school_date)].append(period)
-            if kind != "room":
-                occupancy[(kind, identity, period.school_date)].append(_local_interval(period))
+        for key in _resource_keys(assignment, room, teacher, period.school_date):
+            busy[key].append(period)
+            if key[0] != "room":
+                occupancy[key].append(_local_interval(period))
 
+    protected_intervals: dict[tuple, set[tuple[int, int]]] = defaultdict(set)
     for lesson in snapshot.protected_lessons:
         assignment = assignments[lesson.assignment_id]
-        occupy(
-            assignment, lesson.period, lesson.room_id, lesson.teacher_id or assignment.teacher_id
+        teacher = lesson.teacher_id or assignment.teacher_id
+        occupy(assignment, lesson.period, lesson.room_id, teacher)
+        protected_intervals[("teacher", teacher, lesson.period.school_date)].add(
+            _local_interval(lesson.period)
         )
         for module_slice in lesson.slices:
             cursor[lesson.assignment_id][module_slice.module_id] += module_slice.credit_minutes
@@ -432,8 +448,171 @@ def _construct_pass(
     ranks: dict[int, int] = defaultdict(int)
     lessons: list[ScheduledLesson] = []
     dispensed_teachers = snapshot.lunch_dispensed_teacher_ids
-    minimum_teachers = _minimum_presence_teachers(snapshot)
+    presence_rules = _minimum_presence_teachers(snapshot)
     slots_by_day = _slots_by_day(snapshot)
+    grid_intervals = {
+        day: tuple(_grid_interval(slot) for slot in day_slots)
+        for day, day_slots in slots_by_day.items()
+    }
+    periods_by_date: dict[date, list[Period]] = defaultdict(list)
+    for day_period in canonical:
+        periods_by_date[day_period.school_date].append(day_period)
+    assignments_by_teacher: dict[int, list[Assignment]] = defaultdict(list)
+    for row in snapshot.assignments:
+        assignments_by_teacher[row.teacher_id].append(row)
+
+    def place(assignment: Assignment, period: Period, room: int) -> bool:
+        """Book one lesson and its module slices; False when no module credit is left."""
+        identity = assignment.assignment_id
+        credit = min(remaining[identity], period.duration_minutes)
+        ranks[identity] += 1
+        lesson_id = allocate_lesson_identity(identity, ranks[identity], used_ids)
+        slices = []
+        unallocated = credit
+        while unallocated > 0:
+            module_index = _next_module(assignment.modules, cursor[identity])
+            if module_index is None:
+                return False
+            module = assignment.modules[module_index]
+            offset = cursor[identity][module.module_id]
+            take = min(unallocated, module.required_minutes - offset)
+            slices.append(ModuleSlice(lesson_id, module.module_id, offset, take))
+            cursor[identity][module.module_id] += take
+            unallocated -= take
+        lessons.append(ScheduledLesson(lesson_id, identity, period, room, credit, tuple(slices)))
+        remaining[identity] -= credit
+        ledger.place(assignment, credit)
+        for class_id in assignment.class_ids:
+            class_remaining[class_id] -= credit
+            started_classes.add(class_id)
+        teacher_remaining[assignment.teacher_id] -= credit
+        current_end = last_end.get(identity)
+        if current_end is None or period.end_utc > current_end:
+            last_end[identity] = period.end_utc
+        occupy(assignment, period, room, assignment.teacher_id)
+        return True
+
+    def presence_complies(teacher_id: int, school_date: date, booked: Sequence[Period]) -> bool:
+        """True when the teacher's day, with the booked periods, meets the presence rule."""
+        key = ("teacher", teacher_id, school_date)
+        intervals = (*occupancy[key], *(_local_interval(period) for period in booked))
+        lessons = [
+            PresenceLesson(start, end, (start, end) in protected_intervals[key])
+            for start, end in intervals
+        ]
+        return teacher_day_complies(
+            lessons,
+            presence_rules[teacher_id],
+            lunch_rule=snapshot.lunch_rule,
+            grid_slots=grid_intervals.get(school_date.weekday(), ()),
+        )
+
+    def open_rooms(
+        assignment: Assignment, period: Period, pending: Mapping[tuple, list[Period]]
+    ) -> tuple[int, ...]:
+        """Rooms where the assignment may teach the period, empty when a rule blocks it.
+
+        ``pending`` holds lessons tentatively booked by a presence run; the main
+        loop passes none. Every hard check runs here, so both paths share it.
+        """
+        school_date = period.school_date
+
+        def booked(key: tuple) -> list[Period]:
+            return [*busy[key], *pending.get(key, ())]
+
+        keys = (
+            ("teacher", assignment.teacher_id, school_date),
+            *(("class", class_id, school_date) for class_id in assignment.class_ids),
+        )
+        if any(period.overlaps(occupied) for key in keys for occupied in booked(key)):
+            return ()
+        if snapshot.lunch_rule is not None and any(
+            continuous_break_minutes(
+                [*(_local_interval(occupied) for occupied in booked(key)), _local_interval(period)],
+                snapshot.lunch_rule,
+            )
+            < snapshot.lunch_rule.minimum_minutes
+            for key in keys
+            if not (key[0] == "teacher" and key[1] in dispensed_teachers)
+        ):
+            return ()
+        rooms = tuple(
+            room
+            for room in available_rooms(snapshot, assignment, period)
+            if not any(
+                period.overlaps(occupied) for occupied in booked(("room", room, school_date))
+            )
+        )
+        if not rooms or (strict and not ledger.allows(assignment, period)):
+            return ()
+        return rooms
+
+    def plan_presence_run(
+        assignment: Assignment, period: Period, room: int
+    ) -> list[tuple[Assignment, Period, int]] | None:
+        """Plan the later lessons that make the teacher's day meet the presence rule.
+
+        Returns the lessons to book, starting with the given one, or None when the
+        rest of the date cannot reach the rule. Booked lessons are not applied here.
+        """
+        teacher_id = assignment.teacher_id
+        school_date = period.school_date
+        minimum = presence_rules[teacher_id].minimum_minutes
+        booked: list[tuple[Assignment, Period, int]] = []
+        pending: dict[tuple, list[Period]] = defaultdict(list)
+        credited: dict[int, int] = defaultdict(int)
+
+        def add(row: tuple[Assignment, Period, int]) -> None:
+            booked.append(row)
+            row_assignment, row_period, row_room = row
+            identity = row_assignment.assignment_id
+            credited[identity] += min(
+                remaining[identity] - credited[identity], row_period.duration_minutes
+            )
+            for key in _resource_keys(row_assignment, row_room, teacher_id, row_period.school_date):
+                pending[key].append(row_period)
+
+        def run_complete() -> bool:
+            left = teacher_remaining[teacher_id] - sum(credited.values())
+            return presence_complies(
+                teacher_id, school_date, [row_period for _a, row_period, _r in booked]
+            ) and (left == 0 or left >= minimum)
+
+        def next_lesson(later: Period) -> tuple[Assignment, int] | None:
+            previous = booked[-1][0].assignment_id
+            candidates = sorted(
+                (
+                    row
+                    for row in assignments_by_teacher[teacher_id]
+                    if remaining[row.assignment_id] - credited[row.assignment_id] > 0
+                    and later in eligible_by_assignment.get(row.assignment_id, ())
+                ),
+                key=lambda row: (
+                    row.assignment_id != previous,
+                    -(remaining[row.assignment_id] - credited[row.assignment_id]),
+                    row.assignment_id,
+                ),
+            )
+            for row in candidates:
+                if not ready(row.assignment_id, later):
+                    continue
+                rooms = open_rooms(row, later, pending)
+                if rooms:
+                    return row, min(rooms, key=lambda value: (room_pressure[value], value))
+            return None
+
+        add((assignment, period, room))
+        for later in periods_by_date[school_date]:
+            if later.start_utc <= period.start_utc:
+                continue
+            choice = next_lesson(later)
+            if choice is None:
+                continue
+            add((choice[0], later, choice[1]))
+            if run_complete():
+                return booked
+        return None
+
     for period in canonical:
         if _interrupted(deadline, should_cancel):
             return None, ledger.refused
@@ -466,7 +645,7 @@ def _construct_pass(
             preferred = weekly_preferred(assignment, current_signature)
             repeats = preferred is not None and preferred[0] == identity
             continues = _continues_open_presence(
-                slots_by_day, occupancy, assignment.teacher_id, current_period, minimum_teachers
+                slots_by_day, occupancy, assignment.teacher_id, current_period, presence_rules
             )
             adjacent = sum(
                 any(
@@ -506,67 +685,29 @@ def _construct_pass(
             preferred_room = (
                 preferred[1] if preferred is not None and preferred[0] == identity else None
             )
-            keys = (
-                *(("class", class_id, period.school_date) for class_id in assignment.class_ids),
-                ("teacher", assignment.teacher_id, period.school_date),
-            )
-            if any(period.overlaps(occupied) for key in keys for occupied in busy[key]):
-                continue
-            if snapshot.lunch_rule is not None and any(
-                continuous_break_minutes(
-                    [*occupancy[key], _local_interval(period)], snapshot.lunch_rule
-                )
-                < snapshot.lunch_rule.minimum_minutes
-                for key in keys
-                if not (key[0] == "teacher" and key[1] in dispensed_teachers)
-            ):
-                continue
             rooms = tuple(
                 sorted(
-                    (
-                        room
-                        for room in available_rooms(snapshot, assignment, period)
-                        if not any(
-                            period.overlaps(occupied)
-                            for occupied in busy[("room", room, period.school_date)]
-                        )
-                    ),
+                    open_rooms(assignment, period, {}),
                     key=lambda room: (room != preferred_room, room_pressure[room], room),
                 )
             )
-            if not rooms or (strict and not ledger.allows(assignment, period)):
-                continue
-            options.append((assignment, rooms))
+            if rooms:
+                options.append((assignment, rooms))
         for assignment, room in _select_period(options, deadline=deadline):
-            identity = assignment.assignment_id
-            credit = min(remaining[identity], period.duration_minutes)
-            ranks[identity] += 1
-            lesson_id = allocate_lesson_identity(identity, ranks[identity], used_ids)
-            slices = []
-            unallocated = credit
-            while unallocated > 0:
-                module_index = _next_module(assignment.modules, cursor[identity])
-                if module_index is None:
+            teacher_id = assignment.teacher_id
+            if teacher_id in presence_rules and not presence_complies(
+                teacher_id, period.school_date, [period]
+            ):
+                # A lesson that leaves the day short of the presence minimum is
+                # placed only with the later run that completes it.
+                run = plan_presence_run(assignment, period, room)
+                if run is None:
+                    continue
+            else:
+                run = [(assignment, period, room)]
+            for run_assignment, run_period, run_room in run:
+                if not place(run_assignment, run_period, run_room):
                     return None, ledger.refused
-                module = assignment.modules[module_index]
-                offset = cursor[identity][module.module_id]
-                take = min(unallocated, module.required_minutes - offset)
-                slices.append(ModuleSlice(lesson_id, module.module_id, offset, take))
-                cursor[identity][module.module_id] += take
-                unallocated -= take
-            lessons.append(
-                ScheduledLesson(lesson_id, identity, period, room, credit, tuple(slices))
-            )
-            remaining[identity] -= credit
-            ledger.place(assignment, credit)
-            for class_id in assignment.class_ids:
-                class_remaining[class_id] -= credit
-                started_classes.add(class_id)
-            teacher_remaining[assignment.teacher_id] -= credit
-            current_end = last_end.get(identity)
-            if current_end is None or period.end_utc > current_end:
-                last_end[identity] = period.end_utc
-            occupy(assignment, period, room, assignment.teacher_id)
         if not any(remaining.values()):
             break
     if any(remaining.values()):
