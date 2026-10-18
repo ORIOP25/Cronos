@@ -28,7 +28,6 @@ from app.scheduler.application.publishing import (
     initial_proposal_payload,
     recovery_proposal_payload,
 )
-from app.scheduler.composition import generate_schedule, repair_published_schedule
 from app.scheduler.domain.candidate import SchedulingStrategy
 from app.scheduler.domain.diagnostics import Diagnosis, DiagnosisCode, EvidenceKind
 from app.scheduler.domain.quality import QUALITY_POLICY_VERSION
@@ -218,6 +217,10 @@ async def _execute_claim(claim: JobClaim, lock_connection=None) -> dict[str, obj
 
 
 def _run_search(claim: JobClaim, bundle, cancel_event: threading.Event):
+    # Imported here so the prefork parent never loads OR-Tools, NumPy or pandas.
+    # Only the forked child runs a solve, and it imports the solver on first use.
+    from app.scheduler.composition import generate_schedule, repair_published_schedule
+
     settings_values = {
         "time_limit_seconds": float(settings.SCHEDULER_V1_JOB_TIMEOUT_SECONDS),
         "num_workers": int(settings.SCHEDULER_V1_NUM_WORKERS),

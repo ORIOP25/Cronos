@@ -93,7 +93,7 @@ Set `DATABASE_POOLING_ENABLED=false`.
 Use private PostgreSQL and Redis URLs.
 Run one worker and one Beat replica.
 The worker command includes `--include=app.scheduler_v1_worker`; this process owns the scheduler task and OR-Tools imports.
-The supervisor command includes `--include=app.scheduler_recovery_worker` and consumes only the `scheduler-supervisor` queue.
+The supervisor command includes `--include=app.scheduler_recovery_worker`, consumes only the `scheduler-supervisor` queue, and runs the `--pool=solo` pool so it stays a single process.
 
 ### Database bootstrap
 

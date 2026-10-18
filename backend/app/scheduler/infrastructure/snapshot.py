@@ -16,7 +16,7 @@ from datetime import date, datetime, time
 from types import MappingProxyType
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from sqlalchemy import or_, select
+from sqlalchemy import Row, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models
@@ -1675,9 +1675,7 @@ class VersionLessons:
     unresolved_identities: frozenset[int]
 
 
-def _sibling_rows_are_consistent(
-    first: SchedulerLessonV1, group: Sequence[SchedulerLessonV1]
-) -> bool:
+def _sibling_rows_are_consistent(first: Row, group: Sequence[Row]) -> bool:
     physical = (
         first.teaching_unit_key,
         first.school_date,
@@ -1722,8 +1720,20 @@ async def load_version_lessons(
     future lesson without a unit only pairs identities.
     """
     rows = (
-        await db.scalars(
-            select(SchedulerLessonV1)
+        await db.execute(
+            select(
+                SchedulerLessonV1.id,
+                SchedulerLessonV1.assignment_id,
+                SchedulerLessonV1.stable_key,
+                SchedulerLessonV1.school_date,
+                SchedulerLessonV1.starts_at,
+                SchedulerLessonV1.ends_at,
+                SchedulerLessonV1.room_id,
+                SchedulerLessonV1.physical_minutes,
+                SchedulerLessonV1.credit_minutes,
+                SchedulerLessonV1.source_lesson_id,
+                SchedulerLessonV1.teaching_unit_key,
+            )
             .where(
                 SchedulerLessonV1.organization_id == organization_id,
                 SchedulerLessonV1.school_year_id == school_year_id,
@@ -1743,8 +1753,13 @@ async def load_version_lessons(
         return VersionLessons((), empty, empty, empty, frozenset())
     row_identity = {row.id: _identity(row.stable_key) for row in rows}
     slice_rows = (
-        await db.scalars(
-            select(SchedulerLessonSliceV1)
+        await db.execute(
+            select(
+                SchedulerLessonSliceV1.lesson_id,
+                SchedulerLessonSliceV1.module_id,
+                SchedulerLessonSliceV1.offset_minutes,
+                SchedulerLessonSliceV1.minutes,
+            )
             .where(
                 SchedulerLessonSliceV1.organization_id == organization_id,
                 SchedulerLessonSliceV1.school_year_id == school_year_id,
@@ -1762,7 +1777,7 @@ async def load_version_lessons(
     known_unit_keys = dict(unit_keys or {})
     unit_class_ids = dict(class_ids_by_unit or {})
     accounting_class = dict(accounting_classes or {})
-    groups: dict[str, list[SchedulerLessonV1]] = defaultdict(list)
+    groups: dict[str, list[Row]] = defaultdict(list)
     for row in rows:
         groups[row.stable_key].append(row)
 
