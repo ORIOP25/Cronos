@@ -617,3 +617,42 @@ def test_rb3_a_protected_lesson_in_a_room_that_is_no_longer_eligible_stays_put()
     assert result.outcome == "COMPLETE"
     assert protected in result.candidate.lessons
     assert positions(result.candidate) == {(1, periods[0], 1), (1, periods[1], 2)}
+
+
+def test_a_published_lesson_now_in_evitar_moves_to_a_neutral_hour_in_the_strict_pass():
+    # D10: Monday 9h was published, then the teacher marked it Evitar. Monday 10h is neutral.
+    published = lesson(10, 1, slot(0, 9), 101)
+    snapshot = replace(
+        week_snapshot(
+            (unit(1, 7, (1,), 60),),
+            soft=[block(UnavailableResource.TEACHER, 7, 0, 9, 10)],
+        ),
+        baseline_lessons=(published,),
+    )
+
+    candidate = construct_recovery(snapshot, week_grid(), deadline=monotonic() + 30)
+
+    assert candidate is not None
+    assert validate_candidate(snapshot, candidate).valid
+    assert [(row.period, row.room_id) for row in candidate.lessons] == [(slot(0, 10), 101)]
+
+
+def test_a_published_lesson_in_evitar_stays_when_the_evitar_hour_is_the_only_option():
+    # D10 relaxed pass: Monday 9h is the only hour the teacher can take, so it is kept.
+    published = lesson(10, 1, slot(0, 9), 101)
+    hard = [block(UnavailableResource.TEACHER, 7, 0, 10, 18)]
+    hard += [block(UnavailableResource.TEACHER, 7, day, 9, 18) for day in range(1, 5)]
+    snapshot = replace(
+        week_snapshot(
+            (unit(1, 7, (1,), 60),),
+            unavailable=hard,
+            soft=[block(UnavailableResource.TEACHER, 7, 0, 9, 10)],
+        ),
+        baseline_lessons=(published,),
+    )
+
+    candidate = construct_recovery(snapshot, week_grid(), deadline=monotonic() + 30)
+
+    assert candidate is not None
+    assert validate_candidate(snapshot, candidate).valid
+    assert [(row.period, row.room_id) for row in candidate.lessons] == [(slot(0, 9), 101)]

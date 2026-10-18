@@ -81,7 +81,7 @@ D11 aceita uma consequência conhecida. As disciplinas de professores de dia int
 | T11 | `CapacityCheck` ganha `teacher_deficits` com valor por omissão vazio, calculado na mesma passagem de elegibilidade. `proven_infeasible` passa a incluí-lo. A falta de um professor é a sua procura menos a união dos períodos elegíveis das suas atribuições. Só entra o professor cuja falta é maior do que a soma das faltas das suas próprias atribuições, para não repetir um `INSUFFICIENT_INTERSECTION`. |
 | T12 | `diagnose_capacity` emite um `INSUFFICIENT_TEACHER_TIME` por entrada de `teacher_deficits`, depois das linhas de turma: âmbito `TEACHER:{id}`, `affected_teacher_ids=(id,)`, `affected_class_ids=()`, sem disciplina, e sugestões `REVIEW_AVAILABILITY` e `REVIEW_END_DATE`. A mensagem de `generate_complete` junta "teacher {id}: N minute(s)" aos detalhes. Sem `affected_class_ids`, `_job_diagnostics` nunca mostra o professor como turma. |
 | T13 | A fixture nova `build_availability_typology_fixture` vive em `lab/typology.py`. As fixtures atuais e os seus testes ficam iguais. |
-| T14 | Na reparação, o módulo nasce depois de conservar as posições publicadas. `D(0)` é o que falta depois delas. Os períodos que essas aulas ocupam saem da capacidade do professor e das turmas que ocupam. |
+| T14 | Na reparação, o módulo nasce depois de conservar as posições publicadas. `D(0)` é o que falta depois delas. Os períodos que essas aulas ocupam saem da capacidade do professor e das turmas que ocupam. Na passagem estrita, uma posição publicada que agora é Evitar não se conserva. A passagem relaxada conserva-a (D10, achado de QA de 2026-10-18). |
 
 ### Âmbito e fora de âmbito
 

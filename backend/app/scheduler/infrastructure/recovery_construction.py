@@ -8,7 +8,7 @@ from datetime import datetime
 from fractions import Fraction
 from time import monotonic
 
-from app.scheduler.domain.availability_priority import AvailabilityLedger
+from app.scheduler.domain.availability_priority import AvailabilityLedger, is_avoided
 from app.scheduler.domain.calendar import Period
 from app.scheduler.domain.candidate import (
     Assignment,
@@ -186,6 +186,10 @@ def _construct_recovery(
             row.room_id,
         )
         if row.period not in eligible[row.assignment_id]:
+            continue
+        if strict and is_avoided(snapshot, assignment, row.period):
+            # D10: a published lesson now in Evitar moves while the strict pass can
+            # place it elsewhere; the relaxed pass keeps the published position.
             continue
         rooms = free_rooms(assignment, row.period)
         if rooms:

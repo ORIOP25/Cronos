@@ -2,7 +2,7 @@
 
 from datetime import date, time, timedelta
 
-from app.scheduler.domain.availability_priority import AvailabilityLedger, on_pace
+from app.scheduler.domain.availability_priority import AvailabilityLedger, is_avoided, on_pace
 from app.scheduler.domain.calendar import normalize_period
 from app.scheduler.domain.candidate import (
     Assignment,
@@ -368,3 +368,18 @@ def test_r07_a_dead_end_caused_by_evitar_is_repaired_by_the_relaxed_pass():
     assert all(lesson.period.school_date == MONDAY for lesson in first)
     assert len(second) == 3
     assert all(lesson.period.school_date.weekday() in (2, 3, 4) for lesson in second)
+
+
+def test_is_avoided_flags_the_evitar_of_the_teacher_or_a_class_and_nothing_else():
+    first_day = week_periods()[0]
+    by_teacher = assignment(1, teacher_id=1, class_ids=(1,))
+    by_class = assignment(2, teacher_id=2, class_ids=(2,))
+    neither = assignment(3, teacher_id=3, class_ids=(3,))
+    scenario = snapshot(
+        (by_teacher, by_class, neither),
+        soft=(Unavailability(TEACHER, 1, first_day), Unavailability(CLASS, 2, first_day)),
+    )
+
+    assert is_avoided(scenario, by_teacher, first_day) is True
+    assert is_avoided(scenario, by_class, first_day) is True
+    assert is_avoided(scenario, neither, first_day) is False
