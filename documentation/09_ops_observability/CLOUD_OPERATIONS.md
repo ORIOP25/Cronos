@@ -26,6 +26,7 @@ This document targets AI agents and operators who diagnose production or verify 
 | Resend | Contact form delivery | Sender domain `forms.cronos.pt` |
 
 Railway services: `api` (`api.cronos.pt`), `worker`, `scheduler-supervisor`, `beat`, `Postgres`, `Redis`.
+`Postgres` runs with `max_connections` 100 from `postgresql.auto.conf`. Changing it needs `ALTER SYSTEM` and a PostgreSQL restart.
 A second Railway project, `cronos-w11-isolated`, exists. Its purpose is undocumented; do not change it.
 
 ## Why the Behavior Exists
