@@ -20,6 +20,8 @@ const WARNING_LABELS = {
 }
 
 const avoidableRoomChangesLabel = (count) => (count === 1 ? 'mudança de sala evitável' : 'mudanças de sala evitáveis')
+const homeRoomMissesLabel = (count) => (count === 1 ? 'aula fora da sala da turma' : 'aulas fora da sala da turma')
+const preferenceHoursFormatter = new Intl.NumberFormat('pt-PT', { maximumFractionDigits: 1 })
 
 const STALE_TEXT =
   'Existem alterações mais recentes. Esta proposta já não pode ser aprovada. Gere uma nova proposta.'
@@ -79,6 +81,14 @@ const DraftPanel = ({ draft, onApprove, onReject, isApproving, isRejecting, allo
               <span><strong>{metrics.margin_days ?? 0}</strong> dias de margem</span>
               {typeof metrics.avoidable_room_changes === 'number' && (
                 <span><strong>{metrics.avoidable_room_changes}</strong> {avoidableRoomChangesLabel(metrics.avoidable_room_changes)}</span>
+              )}
+              {typeof metrics.home_room_misses === 'number' && (
+                <span><strong>{metrics.home_room_misses}</strong> {homeRoomMissesLabel(metrics.home_room_misses)}</span>
+              )}
+              {typeof metrics.preference_cost_minutes === 'number' && (
+                <span>
+                  <strong>{preferenceHoursFormatter.format(metrics.preference_cost_minutes / 60)} h</strong> em blocos a evitar
+                </span>
               )}
             </div>
           )}

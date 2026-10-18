@@ -1,4 +1,4 @@
-from datetime import date, time
+from datetime import UTC, date, datetime, time
 
 import pytest
 
@@ -15,6 +15,7 @@ from app.scheduler.domain.candidate import (
 )
 from app.scheduler.domain.candidate_validation import (
     ValidationViolationCode,
+    lesson_violations,
     validate_candidate,
 )
 from app.scheduler.domain.debt import RecoveryAllocation
@@ -220,6 +221,22 @@ def test_protected_lesson_inside_the_window_is_allowed():
     report = validate_candidate(snapshot, _candidate(_lesson(), _second_lesson()))
 
     assert report.valid
+
+
+def test_availability_declared_after_a_started_protected_lesson_does_not_conflict():
+    started = _lesson()
+    unavailable = Unavailability(UnavailableResource.TEACHER, 100, _period(MONDAY))
+    snapshot = _snapshot(
+        strategy=SchedulingStrategy.ADAPTIVE_RECOVERY,
+        now_utc=datetime(2026, 9, 21, 12, 0, tzinfo=UTC),
+        unavailable=(unavailable,),
+        protected_lessons=(started,),
+    )
+    protected = lesson_violations(snapshot, started, protected_ids=frozenset({started.lesson_id}))
+    unprotected = lesson_violations(snapshot, started)
+
+    assert ValidationViolationCode.RESOURCE_UNAVAILABLE not in {v.code for v in protected}
+    assert ValidationViolationCode.RESOURCE_UNAVAILABLE in {v.code for v in unprotected}
 
 
 def test_duplicate_identity_is_rejected():

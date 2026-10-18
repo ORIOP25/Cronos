@@ -25,6 +25,7 @@ import LessonLogModal from '../components/LessonLogModal'
 import KPISidebar from '../components/schedules/KPISidebar'
 import DraftPanel from '../components/schedules/DraftPanel'
 import GenerationStatusPanel from '../components/schedules/GenerationStatusPanel'
+import ProposalPreviewToggle from '../components/schedules/ProposalPreviewToggle'
 import ConfirmationModal from '../components/ConfirmationModal'
 import FailureState from '../components/FailureState'
 import FeedbackBanner from '../components/FeedbackBanner'
@@ -60,6 +61,10 @@ function eligibilityMessage(eligibility, schoolYear) {
     return ELIGIBILITY_MESSAGES[eligibility.blocker] || 'A geração não está disponível de momento.'
   }
   return ''
+}
+
+function isPreviewableProposal(proposal) {
+  return Boolean(proposal) && !proposal.is_stale && proposal.status !== 'STALE'
 }
 
 function getDraftMutationErrorMessage(error, fallback) {
@@ -180,6 +185,7 @@ const Schedules = ({ initialClassId = '', initialWeekStart, persistView = true, 
   const [adminLessonLogSlot, setAdminLessonLogSlot] = useState(null)
   const [generationActionError, setGenerationActionError] = useState(null)
   const [generationConfirmation, setGenerationConfirmation] = useState(null)
+  const [previewedProposalId, setPreviewedProposalId] = useState(null)
 
   // Sprint 3 hooks
   const { data: schedulerStatus, refetch: refetchSchedulerStatus } = useSchedulerStatus()
@@ -199,6 +205,12 @@ const Schedules = ({ initialClassId = '', initialWeekStart, persistView = true, 
   const schoolYear = schedulerStatus?.school_year
   const canGenerateNow = Boolean(eligibility?.can_generate && schoolYear?.preferred_end_date)
   const isFirstGeneration = schedulerStatus?.publication_state !== 'PUBLISHED'
+  const pendingProposal = schedulerStatus?.pending_proposal
+  // The tutorial adapter has no proposal lessons to preview.
+  const previewableProposalId = canGenerate && !isTutorial && isPreviewableProposal(pendingProposal)
+    ? pendingProposal.proposal_id
+    : null
+  const showingProposal = previewableProposalId != null && previewedProposalId === previewableProposalId
 
   // Validate the same operation that the generator will run.
   const {
@@ -267,7 +279,7 @@ const Schedules = ({ initialClassId = '', initialWeekStart, persistView = true, 
     isFetching: loadingWeek,
     error: weekLoadError,
     refetch: refetchWeekSchedule,
-  } = useWeekSchedule(classId, teacherId, weekStart)
+  } = useWeekSchedule(classId, teacherId, weekStart, showingProposal ? previewableProposalId : null)
   const {
     data: classDetails,
     isLoading: loadingClassDetails,
@@ -396,8 +408,8 @@ const Schedules = ({ initialClassId = '', initialWeekStart, persistView = true, 
         weekStart={weekStart}
         dayGrids={weekGridVersions?.days ?? null}
         gridTransitionDate={weekGridVersions?.transition_date ?? ''}
-        isOperationalEnabled
-        onOpenOperationalAction={openCreateOccurrenceModal}
+        isOperationalEnabled={!showingProposal}
+        onOpenOperationalAction={showingProposal ? undefined : openCreateOccurrenceModal}
         internshipDays={internshipDays}
         fitViewport
       />
@@ -653,7 +665,15 @@ const Schedules = ({ initialClassId = '', initialWeekStart, persistView = true, 
           </span>
           {loadingWeek && <CSpinner size="sm" className="text-secondary" />}
         </CCardHeader>
-        <CCardBody className="p-0">{weekGridContent}</CCardBody>
+        <CCardBody className="p-0">
+          {previewableProposalId != null && (
+            <ProposalPreviewToggle
+              showingProposal={showingProposal}
+              onChange={(show) => setPreviewedProposalId(show ? previewableProposalId : null)}
+            />
+          )}
+          {weekGridContent}
+        </CCardBody>
       </CCard>
 
       {viewMode === 'class' && Boolean(classId) && (

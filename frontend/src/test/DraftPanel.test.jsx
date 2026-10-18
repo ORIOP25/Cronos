@@ -190,6 +190,80 @@ describe('DraftPanel', () => {
     expect(screen.queryByText(/mudanças de sala evitáveis/)).toBeNull()
   })
 
+  it('shows the home-room misses and the preference cost in hours', () => {
+    render(
+      <DraftPanel
+        draft={{ ...proposal, metrics: { ...proposal.metrics, home_room_misses: 2, preference_cost_minutes: 90 } }}
+        onApprove={vi.fn()}
+        onReject={vi.fn()}
+      />
+    )
+
+    expect(screen.getByText(/aulas fora da sala da turma/)).toHaveTextContent('2 aulas fora da sala da turma')
+    expect(screen.getByText(/em blocos a evitar/)).toHaveTextContent('1,5 h em blocos a evitar')
+  })
+
+  it('uses the singular for one home-room miss', () => {
+    render(
+      <DraftPanel
+        draft={{ ...proposal, metrics: { ...proposal.metrics, home_room_misses: 1 } }}
+        onApprove={vi.fn()}
+        onReject={vi.fn()}
+      />
+    )
+
+    expect(screen.getByText(/aula fora da sala da turma/)).toHaveTextContent('1 aula fora da sala da turma')
+    expect(screen.queryByText(/aulas fora da sala da turma/)).toBeNull()
+  })
+
+  it.each([
+    [60, '1 h'],
+    [0, '0 h'],
+  ])('formats %i preference minutes as %s', (minutes, expected) => {
+    render(
+      <DraftPanel
+        draft={{ ...proposal, metrics: { ...proposal.metrics, preference_cost_minutes: minutes } }}
+        onApprove={vi.fn()}
+        onReject={vi.fn()}
+      />
+    )
+
+    expect(screen.getByText(/em blocos a evitar/)).toHaveTextContent(`${expected} em blocos a evitar`)
+  })
+
+  it('hides the home-room misses and the preference cost on an outdated proposal', () => {
+    render(
+      <DraftPanel
+        draft={{
+          ...proposal,
+          is_stale: true,
+          stale_reason: 'REVISIONS_CHANGED',
+          can_approve: false,
+          metrics: { ...proposal.metrics, home_room_misses: 2, preference_cost_minutes: 90 },
+        }}
+        onApprove={vi.fn()}
+        onReject={vi.fn()}
+      />
+    )
+
+    expect(screen.getByTestId('stale-proposal-warning')).toBeInTheDocument()
+    expect(screen.queryByText(/aulas fora da sala da turma/)).toBeNull()
+    expect(screen.queryByText(/em blocos a evitar/)).toBeNull()
+  })
+
+  it('omits the home-room and preference metrics when the proposal does not report them', () => {
+    render(
+      <DraftPanel
+        draft={proposal}
+        onApprove={vi.fn()}
+        onReject={vi.fn()}
+      />
+    )
+
+    expect(screen.queryByText(/aulas? fora da sala da turma/)).toBeNull()
+    expect(screen.queryByText(/em blocos a evitar/)).toBeNull()
+  })
+
   it('hides the avoidable room changes on an outdated proposal', () => {
     render(
       <DraftPanel

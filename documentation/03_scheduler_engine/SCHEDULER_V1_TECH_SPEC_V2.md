@@ -315,7 +315,7 @@ A presence with only protected lessons is exempt; a presence with at least one
 editable lesson counts protected and editable lessons together.
 A joint lesson counts once for its teacher.
 Independent validation reports `TEACHER_PRESENCE_VIOLATION` with
-`resource_type="teacher"`; `VALIDATOR_VERSION` is `v6`.
+`resource_type="teacher"`; `VALIDATOR_VERSION` is `v7`.
 The placement model imports `lunch_options` from the pure module, and the
 snapshot loader uses the same active, teaching, assigned teacher filter as the
 readiness fingerprint, so an unassigned teacher's rule changes no digest.
@@ -509,6 +509,7 @@ With the setting false, master/detail recovery remains available.
 Recovery respects calendars, lunch, availability, room eligibility, preferences, and corrected execution.
 Preserve physical protected positions while recalculating future module slices.
 Hard availability that overlaps a protected position produces a proven conflict before search.
+A lesson that already started is history, so availability declared later never applies to it.
 The administrator reviews availability or the protection window; recovery never relaxes either rule automatically.
 `COMPLETED` and `OCCURRENCE` logs remain operational history between versions.
 An unperformed lesson leaves uncovered demand and never contributes protected planned credit.

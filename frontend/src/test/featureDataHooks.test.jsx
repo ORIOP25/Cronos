@@ -683,6 +683,31 @@ describe('vertical feature data hooks', () => {
     expect(jobQuery.options.refetchInterval({ state: { data: { status: 'STALE' } } })).toBe(false)
   })
 
+  it('sends proposal_id and keys the week query by proposal when a proposal is previewed', async () => {
+    const { queryClient, wrapper } = createHarness()
+    const read = renderHook(() => useWeekSchedule(null, 8, '2026-09-07', 7), { wrapper })
+
+    await waitFor(() => expect(read.result.current.isSuccess).toBe(true))
+    expect(apiClient.get).toHaveBeenCalledWith('/schedule/week', {
+      params: { week_start: '2026-09-07', teacher_id: 8, proposal_id: 7 },
+    })
+    expect(queryClient.getQueryCache().find({
+      queryKey: ['weekSchedule', 'org-a', null, 8, '2026-09-07', 7],
+    })).toBeDefined()
+  })
+
+  it('omits proposal_id from the request and the query key when no proposal is previewed', async () => {
+    const { queryClient, wrapper } = createHarness()
+    const read = renderHook(() => useWeekSchedule(null, 8, '2026-09-07'), { wrapper })
+
+    await waitFor(() => expect(read.result.current.isSuccess).toBe(true))
+    const [, { params }] = apiClient.get.mock.calls.at(-1)
+    expect(params).not.toHaveProperty('proposal_id')
+    expect(queryClient.getQueryCache().find({
+      queryKey: ['weekSchedule', 'org-a', null, 8, '2026-09-07'],
+    })).toBeDefined()
+  })
+
   it('keeps polling a job that starts without data after a transient failure and recovers to SUCCEEDED', async () => {
     vi.useFakeTimers()
     focusManager.setFocused(true)

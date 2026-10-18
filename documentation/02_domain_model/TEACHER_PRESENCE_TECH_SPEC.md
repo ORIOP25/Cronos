@@ -317,7 +317,7 @@ Cada slice tem a sua prova no [WBS](TEACHER_PRESENCE_WBS.md). Use os perfis de [
 - PR 4: perfis de endpoint e de componente frontend.
 
 O PR 2 regista no pull request a medição da fixture de 48 turmas com regras: rota usada (construção rápida ou caminho exato) e tempo.
-Verificação manual depois do PR 3: dar a um professor mínimo 3, furo 1 e sem almoço; gerar; confirmar no horário que cada dia dele tem 0 ou pelo menos 3 horas seguidas, com furos de até 1 hora.
+Verificação manual depois do PR 3: dar a um professor mínimo 3, furo 1 e sem almoço; gerar; confirmar em Horários, com "Proposta pendente" selecionada, que cada dia dele tem 0 ou pelo menos 3 horas seguidas, com furos de até 1 hora.
 
 ### Documentação a atualizar
 
