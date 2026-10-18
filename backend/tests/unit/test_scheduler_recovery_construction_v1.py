@@ -1,7 +1,7 @@
 """Production recovery preserves valid positions and repairs changed school data."""
 
 from dataclasses import replace
-from datetime import date, time, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from time import monotonic
 
 import pytest
@@ -21,6 +21,7 @@ from app.scheduler.domain.candidate import (
     UnavailableResource,
 )
 from app.scheduler.domain.candidate_validation import ValidationViolationCode, validate_candidate
+from app.scheduler.domain.diagnostics import diagnose_protected_availability
 from app.scheduler.domain.home_rooms import avoidable_room_changes
 from app.scheduler.domain.projection import ModuleRequirement
 from app.scheduler.domain.recovery import measure_disruption
@@ -379,6 +380,47 @@ def test_protected_joint_availability_conflict_is_proven_before_search(resource,
     assert result.search_seconds == 0
     assert result.diagnoses[0].code == "PROTECTED_AVAILABILITY_CONFLICT"
     assert result.diagnoses[0].affected_class_ids == (1, 2)
+
+
+def test_a_started_protected_lesson_ignores_availability_declared_after_it_was_given():
+    periods = (period(0), period(1))
+    frozen = lesson(10, 1, periods[0], 1)
+    target, result = recover(
+        periods,
+        [assignment(1, 1, 1, {1}, 120)],
+        [frozen],
+        protected_lessons=(frozen,),
+        now_utc=datetime(2026, 9, 21, 12, 0, tzinfo=UTC),
+        unavailable=(Unavailability(UnavailableResource.TEACHER, 1, periods[0]),),
+    )
+
+    assert result.outcome == "COMPLETE"
+    assert frozen in result.candidate.lessons
+    assert diagnose_protected_availability(target) == ()
+
+
+def test_a_protected_lesson_that_has_not_started_keeps_the_availability_conflict():
+    periods = (period(0), period(1))
+    frozen = lesson(10, 1, periods[0], 1)
+    target = replace(
+        plan(periods, [assignment(1, 1, 1, {1}, 60)], protected_lessons=(frozen,)),
+        strategy=SchedulingStrategy.ADAPTIVE_RECOVERY,
+        protected_dates=frozenset({periods[0].school_date}),
+        now_utc=datetime(2026, 9, 21, 7, 0, tzinfo=UTC),
+        unavailable=(Unavailability(UnavailableResource.TEACHER, 1, periods[0]),),
+    )
+
+    result = repair_published_schedule(
+        target,
+        periods,
+        CandidateSchedule((frozen,)),
+        replace(POLICY, daily_slopes=tuple(range(1, 21))),
+        stop_at_first_complete=True,
+        time_limit_seconds=5,
+    )
+
+    assert result.outcome == "INFEASIBLE"
+    assert result.diagnoses[0].code == "PROTECTED_AVAILABILITY_CONFLICT"
 
 
 MONDAY = date(2026, 9, 14)

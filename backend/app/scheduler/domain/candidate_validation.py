@@ -25,7 +25,7 @@ from app.scheduler.domain.candidate import (
 )
 from app.scheduler.domain.teacher_presence import PresenceLesson, teacher_day_complies
 
-VALIDATOR_VERSION = "v6"
+VALIDATOR_VERSION = "v7"
 
 
 class ValidationViolationCode(StrEnum):
@@ -92,6 +92,15 @@ def _physically_protected(snapshot: PlanningSnapshot, lesson: ScheduledLesson) -
     if lesson.period.school_date in snapshot.protected_dates:
         return True
     return snapshot.now_utc is not None and lesson.period.start_utc <= snapshot.now_utc
+
+
+def _hard_availability_applies(
+    snapshot: PlanningSnapshot, lesson: ScheduledLesson, protected_ids: frozenset[int]
+) -> bool:
+    """Availability declared after a protected lesson started never applies to it."""
+    if lesson.lesson_id not in protected_ids or snapshot.now_utc is None:
+        return True
+    return lesson.period.start_utc > snapshot.now_utc
 
 
 def _executed_or_fail(
@@ -572,7 +581,8 @@ def lesson_violations(
     resources.extend((UnavailableResource.CLASS, class_id) for class_id in assignment.class_ids)
     resources.append((UnavailableResource.ROOM, lesson.room_id))
     reported: set[tuple[str, int]] = set()
-    for resource_type, resource_id in resources:
+    applicable = resources if _hard_availability_applies(snapshot, lesson, protected_ids) else []
+    for resource_type, resource_id in applicable:
         if (resource_type.value, resource_id) in reported:
             continue
         if any(
