@@ -206,7 +206,8 @@ const Schedules = ({ initialClassId = '', initialWeekStart, persistView = true, 
   const canGenerateNow = Boolean(eligibility?.can_generate && schoolYear?.preferred_end_date)
   const isFirstGeneration = schedulerStatus?.publication_state !== 'PUBLISHED'
   const pendingProposal = schedulerStatus?.pending_proposal
-  const previewableProposalId = canGenerate && isPreviewableProposal(pendingProposal)
+  // The tutorial adapter has no proposal lessons to preview.
+  const previewableProposalId = canGenerate && !isTutorial && isPreviewableProposal(pendingProposal)
     ? pendingProposal.proposal_id
     : null
   const showingProposal = previewableProposalId != null && previewedProposalId === previewableProposalId

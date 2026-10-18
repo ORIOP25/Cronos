@@ -324,7 +324,7 @@ Cada slice tem a sua prova no [WBS](CLASS_HOME_ROOM_WBS.md). Use os perfis de [V
 - PR 3: perfis de migração, de endpoint, de solver (com `slow_solver`) e de jobs do motor.
 - PR 4: perfis de endpoint e de componente frontend; reconstrução do contentor do frontend.
 
-Verificação manual depois do PR 4: dar a uma turma uma sala Normal e a outra uma sala Laboratório, gerar, e confirmar no horário que as aulas Normais ficam nessas salas e que a proposta mostra as mudanças evitáveis.
+Verificação manual depois do PR 4: dar a uma turma uma sala Normal e a outra uma sala Laboratório, gerar, e confirmar em Horários, com "Proposta pendente" selecionada, que as aulas Normais ficam nessas salas e que a proposta mostra as mudanças evitáveis.
 
 ### Documentação a atualizar
 

@@ -177,6 +177,14 @@ describe('Schedules scheduler flow', () => {
     expect(screen.queryByRole('button', { name: 'Proposta pendente' })).not.toBeInTheDocument()
   })
 
+  it('does not offer the proposal toggle in the tutorial, which has no proposal lessons', () => {
+    mocks.status = proposalStatus({ publication_state: 'PUBLISHED', active_version_id: 5, default_strategy: 'ADAPTIVE_RECOVERY' })
+
+    renderWithRouter(<Schedules initialClassId="5" allowedActions={['GENERATE_SCHEDULE']} />)
+
+    expect(screen.queryByRole('button', { name: 'Proposta pendente' })).not.toBeInTheDocument()
+  })
+
   it.each([
     ['is_stale', { is_stale: true }],
     ['status STALE', { status: 'STALE' }],
