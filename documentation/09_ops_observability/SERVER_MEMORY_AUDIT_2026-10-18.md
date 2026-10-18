@@ -252,13 +252,18 @@ Do not add the experimental savings together as a guaranteed production result.
 
 ### Implementation status
 
-Steps 1 and 2 and the previous-model release of Finding 4 are implemented. Steps 3 to 5 and the other Finding 4 items still need their own measurements.
+Steps 1 to 3 and every Finding 4 item are measured. The repository implements each change whose measured saving justified it. Two provider changes wait for owner approval: the supervisor command in the Railway dashboard and `max_connections`.
 
 - Finding 2: `_add_assignment_credit` in [`placement_model.py`](../../backend/app/scheduler/infrastructure/placement_model.py) uses one final-position integer. [`test_scheduler_placement_final_encoding_v1.py`](../../backend/tests/unit/test_scheduler_placement_final_encoding_v1.py) checks linear growth and exhaustive solution equivalence, including partial credit, a final-duration subset, and the quota branch.
 - Finding 3: Beat imports no task module, and [`test_celery_task_imports.py`](../../backend/tests/unit/test_celery_task_imports.py) checks which process registers each periodic task.
 - Finding 4, previous model lifetime: `solve_placement` releases each window's model before building the next one.
 - Finding 4, solver imports in the parent: `_run_search` imports the solver composition on first use, so the prefork parent loads no OR-Tools, NumPy, or pandas. [`test_worker_lazy_solver_imports.py`](../../backend/tests/unit/test_worker_lazy_solver_imports.py) checks this. Parent PSS, median of three fresh processes in `cronos-backend-test:local`, fell from 143,366 kB to 87,793 kB.
 - Finding 4, supervisor pool: the supervisor runs `--pool=solo`. Measured with a real Redis 8.2 broker and one worker container per run, the summed PSS of all processes was 109,129 kB with prefork (parent plus child) and 89,966 kB with solo, medians of three.
+- Finding 4, snapshot row materialization: `load_version_lessons` in [`snapshot.py`](../../backend/app/scheduler/infrastructure/snapshot.py) selects only the lesson and slice columns it reads. [`test_scheduler_version_lessons_projection.py`](../../backend/tests/integration/committed/test_scheduler_version_lessons_projection.py) pins the exact result. With 5,000 lesson rows and 10,000 slices, the `tracemalloc` peak fell from 33.87 MiB to 13.08 MiB, medians of three runs; the untraced load time stayed at 0.44 seconds.
+- Finding 4, canonical serialization: not changed. Hashing the JSON chunks incrementally kept the digest identical but saved only 2.2 MB on a 48-class candidate (11.45 MB to 9.21 MB peak) and made the digest about 2.3 times slower, because `iterencode` leaves the C encoder. The normalized tree from `canonical_json_value` holds about 80% of the peak.
+- Finding 4, API database connections: not changed. A read-only `pg_stat_activity` check on 18 October 2026 showed one idle client connection; the pool opens connections on demand.
+- Finding 4, PostgreSQL memory: not changed. Read-only `pg_settings` showed `shared_buffers` 128 MB for a 74 MB database, `work_mem` 4 MB with zero temporary files, and `max_connections` 500. Lowering `shared_buffers` would move reads to disk. Lowering `max_connections` to 100 frees only shared connection slots, and it is a provider setting.
+- Step 5, provider memory limits: not changed. Revisit them after production metrics cover comparable generation and recovery runs on this code.
 - The placement memory guard (`MAX_PLACEMENT_VARIABLES`) turns an oversized scope into `INCONCLUSIVE` instead of an OOM kill. It is a safety net, not a memory optimization.
 
 Model-build measurement after the change, on 18 October 2026. It used the 48-class typology fixture, an unrestricted scope, one CPU, an 8 GiB container, one search worker, and 120 seconds of search:
