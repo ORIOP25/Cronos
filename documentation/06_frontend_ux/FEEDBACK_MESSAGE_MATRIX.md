@@ -99,6 +99,9 @@ Other client responses stay in context.
 | Decide or revert an occurrence | Transient failure | Network, 429, 5xx | Toast, 6 s | `Occurrences` | Retry |
 | Decide an occurrence | Server conflict | 409 | Banner in the modal | `Occurrences` | Refresh the data |
 | Request generation | Accepted | — | Toast, 4 s | `Schedules` | Follow the panel |
+| Preview the pending proposal in the week grid | Preview on | — | Info banner above the week grid: "Está a ver a proposta pendente. Nada muda no horário publicado até a aprovar." | `Schedules` | Choose "Horário publicado" or decide the proposal |
+| Show a proposal's home-room misses | Metric reported | — | Metrics row: "{N} aula fora da sala da turma" for 1, otherwise "{N} aulas fora da sala da turma" | `DraftPanel` | — |
+| Show a proposal's preference cost | Metric reported | — | Metrics row: "{H} h em blocos a evitar", with at most one decimal in hours | `DraftPanel` | — |
 | Approve or reject a proposal | Success | — | Toast, 4 s | `Schedules` | — |
 | Approve a proposal | Stale proposal | `proposal_stale` | Persistent banner | `Schedules` | Generate a new proposal |
 | Generation failure | Known failure | `NO_ELIGIBLE_ROOM` and others | `FailureState` in context | `Schedules` | Retry or open rooms |
