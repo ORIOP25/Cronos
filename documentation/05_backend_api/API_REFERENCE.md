@@ -193,7 +193,7 @@ Scheduler status exposes `active_proposal_id` for the approved proposal linked t
 `GET /scheduler/jobs/{job_id}` returns a `diagnostics` list with one proven entry per affected class. A proven joint isolation (`JOINT_NO_COMMON_TIME`) returns one entry per member class, each with the current class name and subject name, so the client can name every class and the subject. A class or subject deleted before the read keeps a null name and the client shows the generic message.
 Weekly schedule reads return published lesson intervals, resource identifiers, module projections, and operational log state.
 `GET /schedule/week?proposal_id=N` returns a read-only preview of pending proposal `N` in the same format.
-Only an admin may pass `proposal_id`; any other actor receives `403` with `proposal_preview_forbidden`.
+Only an admin may pass `proposal_id`. A teacher who passes it receives `403` with `proposal_preview_forbidden`; an actor who is neither admin nor teacher receives `403` with `teacher_schedule_forbidden`, as without the parameter.
 The proposal must be `PENDING` and belong to the active school year, or the route returns `404` with `proposal_not_found`.
 Preview slots set `can_complete` and `can_create_occurrence` to `false` and `blocked_reason` to `proposal_preview`.
 A preview omits operational substitution blocks and works before any version is active.

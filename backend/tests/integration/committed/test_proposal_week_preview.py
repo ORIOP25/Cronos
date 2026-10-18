@@ -6,14 +6,18 @@ lessons of the proposal's CANDIDATE version in the same weekly format.
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, time
 
 import pytest
 from sqlalchemy import select
 
 from app import models
 from app.config import settings
-from app.scheduler.infrastructure.models import SchedulerJobV1, SchedulerProposalV1
+from app.scheduler.infrastructure.models import (
+    SchedulerJobV1,
+    SchedulerLessonLogV1,
+    SchedulerProposalV1,
+)
 from app.scheduler.infrastructure.operations import ProposalPreviewNotFound, week_schedule
 from tests._support.db_fixtures import (
     accept_current_legal_documents,
@@ -281,3 +285,79 @@ async def test_unknown_proposal_is_not_found_over_http(async_client, db_session)
     detail = response.json()["detail"]
     assert detail["code"] == "proposal_not_found"
     assert detail["message"] == "Proposta não encontrada."
+
+
+async def test_proposal_preview_leaves_out_published_substitution_blocks(db_session):
+    seed = await seed_v1_assignment(db_session)
+    active = await add_version(db_session, seed, status="ACTIVE")
+    candidate = await add_version(db_session, seed, status="CANDIDATE", digest="b" * 64)
+    start, end = lesson_interval(SCHOOL_DATE, 9)
+    substituted = await add_lesson(
+        db_session, seed, active, stable_key="active", school_date=SCHOOL_DATE, start=start, end=end
+    )
+    candidate_lesson = await add_lesson(
+        db_session,
+        seed,
+        candidate,
+        stable_key="candidate",
+        school_date=SCHOOL_DATE,
+        start=start,
+        end=end,
+    )
+    slot = models.Timeslot(
+        organization_id=seed.organization.id,
+        day_of_week=SCHOOL_DATE.weekday(),
+        start_time=time(9, 0),
+        end_time=time(10, 0),
+    )
+    log = SchedulerLessonLogV1(
+        organization_id=seed.organization.id,
+        school_year_id=seed.year.id,
+        lesson_id=substituted.id,
+        status="OCCURRENCE",
+        decision="SUBSTITUTED",
+        decided_at=CREATED_AT,
+        decided_by_membership_id=seed.membership.id,
+        logged_by_membership_id=seed.membership.id,
+        logged_at=CREATED_AT,
+        created_at=CREATED_AT,
+        updated_at=CREATED_AT,
+    )
+    db_session.add_all((slot, log))
+    await db_session.flush()
+    db_session.add(
+        models.OperationalScheduleBlock(
+            organization_id=seed.organization.id,
+            origin_kind=models.OperationalBlockOrigin.V1,
+            source_v1_lesson_log_id=log.id,
+            substitute_curricular_assignment_id=seed.assignment.id,
+            date=SCHOOL_DATE,
+            timeslot_id=slot.id,
+            room_id=seed.room.id,
+            class_id=seed.class_.id,
+            teacher_id=seed.assignment.teacher_id,
+            subject_id=seed.subject.id,
+            status=models.OperationalBlockStatus.ACTIVE,
+            execution_status=models.OperationalBlockExecutionStatus.PENDING_LOG,
+        )
+    )
+    proposal = await _add_proposal(db_session, seed, candidate.id)
+    await db_session.commit()
+
+    def week(**kwargs):
+        return week_schedule(
+            db_session,
+            seed.organization.id,
+            week_start=WEEK_START,
+            class_id=seed.class_.id,
+            teacher_id=None,
+            **kwargs,
+        )
+
+    published = await week()
+    preview = await week(proposal_id=proposal.id)
+
+    assert [row["is_substituted_block"] for row in published] == [True]
+    assert [(row["scheduler_lesson_id"], row["is_substituted_block"]) for row in preview] == [
+        (candidate_lesson.id, False)
+    ]

@@ -88,19 +88,19 @@ def _teacher_for(lesson: ScheduledLesson, assignment: Assignment) -> int:
     return lesson.teacher_id if lesson.teacher_id is not None else assignment.teacher_id
 
 
-def _physically_protected(snapshot: PlanningSnapshot, lesson: ScheduledLesson) -> bool:
-    if lesson.period.school_date in snapshot.protected_dates:
-        return True
+def _has_started(snapshot: PlanningSnapshot, lesson: ScheduledLesson) -> bool:
     return snapshot.now_utc is not None and lesson.period.start_utc <= snapshot.now_utc
+
+
+def _physically_protected(snapshot: PlanningSnapshot, lesson: ScheduledLesson) -> bool:
+    return lesson.period.school_date in snapshot.protected_dates or _has_started(snapshot, lesson)
 
 
 def _hard_availability_applies(
     snapshot: PlanningSnapshot, lesson: ScheduledLesson, protected_ids: frozenset[int]
 ) -> bool:
     """Availability declared after a protected lesson started never applies to it."""
-    if lesson.lesson_id not in protected_ids or snapshot.now_utc is None:
-        return True
-    return lesson.period.start_utc > snapshot.now_utc
+    return lesson.lesson_id not in protected_ids or not _has_started(snapshot, lesson)
 
 
 def _executed_or_fail(
