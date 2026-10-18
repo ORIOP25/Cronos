@@ -216,10 +216,11 @@ O passe `assign_rooms_by_period` (T10):
 - Para cada grupo de aulas com o mesmo dia, início e fim, faz um emparelhamento de custo mínimo entre aulas e salas livres. A sala atual de cada aula está sempre no domínio, por isso há sempre solução.
 - O custo segue uma chave lexicográfica exata, com base maior do que a soma máxima do componente seguinte no grupo:
   1. falhas de sala da turma (D04);
-  2. só na recuperação: custo de sair da sala publicada (`_room_cost_for_profile`), exceto mudança justificada;
-  3. mudança evitável em relação à aula anterior da turma nesse dia (D03);
-  4. ocupar a sala de outra turma com sala;
-  5. sala habitual: numa aula flexível de turma sem sala, a sala flexível mais usada pela turma até ali; numa aula com sala própria, a sala mais usada pela turma nessa disciplina (D07).
+  2. mudança evitável em relação à aula anterior da turma nesse dia (D03);
+  3. ocupar a sala de outra turma com sala (D04);
+  4. sala habitual: numa aula flexível de turma sem sala, a sala flexível mais usada pela turma até ali; numa aula com sala própria, a sala mais usada pela turma nessa disciplina (D07);
+  5. só na recuperação: custo de sair da sala publicada (`_room_cost_for_profile`), exceto mudança justificada.
+- Desde 2026-10-18 (decisão do dono, B1), na atualização a sala publicada só desempata. Uma aula com horário publicado pode mudar de sala para a turma ficar numa sala só. As aulas protegidas e as dadas nunca mudam (I06).
 - Desempate pelo `room_id`, para ser determinístico.
 
 No caminho exato, o passe só fica se o vetor de qualidade não piorar (T11, T12).
