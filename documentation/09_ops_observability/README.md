@@ -10,3 +10,4 @@ This section documents local runtime deployment, health signals, structured logs
 - [CLOUD_OPERATIONS.md](CLOUD_OPERATIONS.md): Providers, read-only inspection, approval rules, and known open items.
 - [DEPLOYMENT_RUNBOOK.md](DEPLOYMENT_RUNBOOK.md): Railway service definitions, secrets, frontend hosting, and rollback procedures.
 - [OCCURRENCE_RECONCILIATION.md](OCCURRENCE_RECONCILIATION.md): Inventory, classification, and explicit correction of historical occurrences, debts, and substitutions.
+- [SERVER_MEMORY_AUDIT_2026-10-18.md](SERVER_MEMORY_AUDIT_2026-10-18.md): Measured server RAM findings, isolated experiments, and implementation priorities.
