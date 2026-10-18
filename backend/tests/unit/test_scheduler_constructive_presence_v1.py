@@ -5,8 +5,9 @@ of gap. Greedy construction must book a whole presence run, so the constructive
 route (and the adaptive recovery that relies on it) completes the schedule.
 """
 
+from collections import Counter
 from dataclasses import replace
-from datetime import time
+from datetime import time, timedelta
 
 from app.scheduler.domain.calendar import normalize_period
 from app.scheduler.domain.candidate import (
@@ -27,6 +28,7 @@ from tests.unit.test_scheduler_availability_priority_v1 import (
     TZ,
     assignment,
     block,
+    period,
     snapshot,
 )
 
@@ -125,3 +127,31 @@ def test_a_presence_run_respects_evitar_net_of_its_planned_lessons():
         (lesson.period.start_local.hour, lesson.assignment_id) for lesson in candidate.lessons
     )
     assert booked == [(9, 1), (10, 2)]
+
+
+def test_a_presence_extension_never_strands_fewer_minutes_than_the_minimum():
+    """Teacher 1 needs a three-hour presence and the grid offers four hours a day.
+
+    Six one-hour lessons over two days fit as 3 + 3. Extending the first presence to
+    four hours would strand two lessons that can never form a presence of their own.
+    """
+    hours = (9, 10, 11, 12)
+    scenario = replace(
+        snapshot((assignment(1, teacher_id=1, class_ids=(1,), minutes=360),)),
+        grid_slots=tuple(
+            GridSlot(day, time(hour), time(hour + 1)) for day in (0, 1) for hour in hours
+        ),
+        teacher_presence=(
+            TeacherPresenceRule(
+                teacher_id=1, lunch_required=False, minimum_minutes=180, max_gap_minutes=0
+            ),
+        ),
+    )
+    periods = tuple(period(day, hour) for day in (0, 1) for hour in hours)
+
+    candidate = construct_schedule(scenario, periods)
+
+    assert candidate is not None
+    assert validate_candidate(scenario, candidate).valid is True
+    lessons_per_day = Counter(lesson.period.school_date for lesson in candidate.lessons)
+    assert [lessons_per_day[MONDAY], lessons_per_day[MONDAY + timedelta(days=1)]] == [3, 3]

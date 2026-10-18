@@ -34,6 +34,11 @@ def resource_keys(assignment: Assignment) -> tuple[ResourceKey, ...]:
     )
 
 
+def is_avoided(snapshot: PlanningSnapshot, assignment: Assignment, period: Period) -> bool:
+    """True when the period is Evitar for the assignment's teacher or one of its classes."""
+    return any(_soft_overlaps(snapshot, key, period) for key in resource_keys(assignment))
+
+
 def _period_key(period: Period) -> PeriodKey:
     return (period.start_utc, period.end_utc)
 
@@ -163,7 +168,7 @@ class AvailabilityLedger:
         return min(paced, default=self._ceiling)
 
     def unfavorable(self, assignment: Assignment, period: Period) -> bool:
-        return any(_soft_overlaps(self._snapshot, key, period) for key in resource_keys(assignment))
+        return is_avoided(self._snapshot, assignment, period)
 
     def allows(
         self,
