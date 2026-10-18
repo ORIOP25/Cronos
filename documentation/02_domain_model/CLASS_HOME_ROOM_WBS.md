@@ -20,18 +20,18 @@ O PR 3 começa depois de o PR 2 da presença dos professores entrar (ver [Coexis
 
 | PR | Slices | Estado | Ligação |
 | :--- | :--- | :--- | :--- |
-| PR 0 | spec e WBS | proposto | [#143](https://github.com/ORIOP25/Cronos/pull/143) |
-| PR 1 | S1–S6 | por iniciar | — |
-| PR 2 | S7 | por iniciar | — |
-| PR 3 | S8–S12 | por iniciar | — |
-| PR 4 | S13–S14 | por iniciar | — |
+| PR 0 | spec e WBS | entregue | [#143](https://github.com/ORIOP25/Cronos/pull/143) |
+| PR 1 | S1–S6 | entregue | [#155](https://github.com/ORIOP25/Cronos/pull/155) |
+| PR 2 | S7 | entregue | [#157](https://github.com/ORIOP25/Cronos/pull/157) |
+| PR 3 | S8–S12 | entregue | [#161](https://github.com/ORIOP25/Cronos/pull/161) |
+| PR 4 | S13–S14 | entregue | [#162](https://github.com/ORIOP25/Cronos/pull/162) |
 
 ### Slices
 
 Tamanhos: **S** até 30 minutos, **M** até 90 minutos.
 Os caminhos de teste sem pasta estão em `backend/tests/unit/`; `committed/` é `backend/tests/integration/committed/`; `contracts/` é `backend/tests/contracts/`.
 São 14 slices, acima dos 10 habituais: o spec junta duas capacidades (tipos de sala, D14, e sala da turma) e a troca do enum obriga a expandir antes de contrair (T02).
-O `integration` corre sempre todos os testes de `contracts/`, com ou sem `-k`. Cada slice deixa-os verdes.
+Um `integration` com `-k` não corre `contracts/`: inclua os contratos tocados no filtro, ou deixe-os para a prova ampla do pull request. Cada slice deixa-os verdes.
 
 | ID | PR | Comportamento | Write set | Teste primeiro | Prova | Depende | Tamanho |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |

@@ -5,7 +5,7 @@
 Cada turma passa a maior parte do dia na sua sala. Só muda quando a aula precisa de uma sala própria.
 A escola cria os seus próprios tipos de sala, em vez de ficar presa a Normal, Laboratório, Ginásio e Artes.
 
-**Estado:** proposto, à espera de aprovação do responsável de produto.
+**Estado:** aprovado pelo responsável de produto e entregue em 18 de outubro de 2026 ([#155](https://github.com/ORIOP25/Cronos/pull/155), [#157](https://github.com/ORIOP25/Cronos/pull/157), [#161](https://github.com/ORIOP25/Cronos/pull/161), [#162](https://github.com/ORIOP25/Cronos/pull/162)).
 **Base:** `main` em `e787aa5`, Alembic `0004_joint_lesson_groups`.
 **Origem:** item 6 dos pedidos da escola piloto (reunião de 13 de outubro de 2026). Decisões fechadas com o responsável de produto em 15 de outubro de 2026.
 A execução vive no [WBS](CLASS_HOME_ROOM_WBS.md).
@@ -69,7 +69,7 @@ A escola também precisa de distinguir salas próprias diferentes, por exemplo u
 | :--- | :--- |
 | T01 | Tabela nova `room_type` (modelo `SchoolRoomType`): `id`, `organization_id`, `name` até 60 caracteres, `is_normal`, `is_archived`. RLS forçado, `UNIQUE (organization_id, id)`, índice único em `(organization_id, lower(name))` e índice único parcial em `organization_id` com `is_normal`. `room.room_type_id` e `subject.room_type_id` com chave composta para `room_type (organization_id, id)`. No fim do PR 1 são `NOT NULL` e o enum `RoomType`, `room.type` e `subject.required_room_type` saem. |
 | T02 | A migração `0006_room_types` é feita em dois tempos dentro do PR 1, antes do merge. O S1 cria a tabela, cria os 4 tipos em cada escola e preenche `room_type_id` a partir do enum, ainda nulo. O S4 edita a mesma migração: `NOT NULL` e remoção do enum. Cada slice fica verde sozinho. |
-| T03 | Uma só função, `ensure_initial_room_types`, cria os 4 tipos de forma idempotente (por `is_normal` e pelo nome dobrado). Usam-na `complete_foundation` e a fixture `create_test_user_and_org` de `backend/tests/_support/db_fixtures.py`, que cria escolas já com a fundação concluída. As rotas de recursos exigem a fundação concluída (`deps.py`). A tabela entra em `PRIVACY_TABLES` de `backend/scripts/privacy.py`. |
+| T03 | Uma só função, `ensure_initial_room_types`, cria os 4 tipos de forma idempotente (por `is_normal` e pelo nome dobrado). Usam-na `complete_foundation` e a fixture `create_org_and_user` de `backend/tests/_support/db_fixtures.py`, que cria escolas já com a fundação concluída. As rotas de recursos exigem a fundação concluída (`deps.py`). A tabela entra em `PRIVACY_TABLES` de `backend/scripts/privacy.py`. |
 | T04 | A comparação de nomes ignora maiúsculas e acentos com o `_fold` de `bulk_import_policy.py`, tornado público como `fold_text`. Criar um nome igual ao de um tipo arquivado restaura esse tipo. |
 | T05 | A migração `0007_class_home_room` acrescenta `class.home_room_id` (nulo), com chave composta para `room (organization_id, id)` (`uq_room_org_id` já existe na migração base). Sem ação em cascata: `resource_removal.remove_room_configuration` limpa a coluna na mesma transação. |
 | T06 | `assess_room_eligibility` recebe `home_room_ids`: as salas da turma das turmas da unidade com lugares para a soma dos alunos. Se o tipo da disciplina é Normal, juntam-se às salas do tipo (D12). Uma restrição `specific_room` continua a cortar o conjunto. O snapshot, a pré-verificação e a verificação de substituições usam esta função; a prontidão (`COMPATIBLE_ROOM`) reproduz a regra em SQL. |
@@ -118,7 +118,7 @@ Os tipos próprios evitam que uma aula de Química vá parar a uma sala de Infor
 | `backend/app/api/v1/endpoints/room_types.py` (novo), `backend/app/api/api.py` | rotas `/room-types` | S1 |
 | `backend/app/services/foundation_service.py` | `complete_foundation` chama `ensure_initial_room_types` | S1 |
 | `backend/scripts/privacy.py` | `PRIVACY_TABLES` com `room_type` | S1 |
-| `backend/tests/_support/db_fixtures.py` | `create_test_user_and_org` cria os tipos iniciais | S1 |
+| `backend/tests/_support/db_fixtures.py` | `create_org_and_user` cria os tipos iniciais | S1 |
 | `backend/app/services/resource_removal.py` | referências de tipos (S1); `remove_room_configuration` limpa `home_room_id` (S8) | S1, S8 |
 | `backend/app/services/bulk_import_policy.py` | `fold_text` (S1); tipo por nome (S2); tipos novos e coluna "Sala da turma" (S14) | S1, S2, S14 |
 | `backend/app/services/bulk_import_service.py` | `load_snapshot` com tipos, escrita de `room_type_id` (S2); criação de tipos e `home_room_id` (S14) | S2, S14 |
