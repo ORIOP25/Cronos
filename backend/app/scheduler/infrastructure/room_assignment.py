@@ -50,7 +50,7 @@ class _PassContext:
     def published_change(
         self, lesson: ScheduledLesson, assignment: Assignment, room_id: int
     ) -> int:
-        """Cost of leaving the published room; a justified change costs nothing (T09)."""
+        """Cost of leaving the published room, the last priority; a justified change costs nothing (T09)."""
         key = (lesson.assignment_id, lesson.period.start_utc, lesson.period.end_utc)
         source = self.published.get(key)
         if self.policy is None or source is None or room_id == source.room_id:
@@ -79,8 +79,9 @@ def assign_rooms_by_period(
     published room, and a justified change costs nothing. Without a baseline the pass
     returns the input when its result is lexicographically worse on (home-room misses,
     avoidable changes), unless the input shares a room in one period: such an input is
-    repaired, not compared. With a baseline the guard does not apply: the published rooms
-    cost more than avoidable changes in the recovery cost order (T09).
+    repaired, not compared. With a baseline the guard does not apply: in recovery the
+    published room is the last cost, so it only breaks ties after avoidable changes (T09,
+    owner decision 2026-10-18).
     """
     if (baseline is None) != (policy is None):
         raise ValueError("Published rooms need a baseline and a recovery policy together.")

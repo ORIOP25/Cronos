@@ -501,3 +501,16 @@ def test_a_claim_class_outside_the_lesson_is_a_mismatch():
     report = validate_candidate(snapshot, _candidate(_lesson(class_ids=(1,))))
 
     assert ValidationViolationCode.RESERVATION_ASSIGNMENT_MISMATCH in _codes(report)
+
+
+def test_protected_lesson_in_a_room_that_is_no_longer_eligible_is_not_flagged():
+    """RB4: a later room change cannot make a protected lesson invalid; the editable one is still checked."""
+    protected = _lesson(room_id=501)
+    snapshot = _snapshot(
+        assignments=(_assignment(eligible_room_ids=frozenset({500})),),
+        protected_lessons=(protected,),
+    )
+    report = validate_candidate(snapshot, _candidate(protected, _second_lesson(room_id=500)))
+
+    assert report.valid
+    assert ValidationViolationCode.INELIGIBLE_ROOM not in _codes(report)

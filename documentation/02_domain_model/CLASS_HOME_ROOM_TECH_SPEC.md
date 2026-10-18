@@ -216,10 +216,11 @@ O passe `assign_rooms_by_period` (T10):
 - Para cada grupo de aulas com o mesmo dia, início e fim, faz um emparelhamento de custo mínimo entre aulas e salas livres. A sala atual de cada aula está sempre no domínio, por isso há sempre solução.
 - O custo segue uma chave lexicográfica exata, com base maior do que a soma máxima do componente seguinte no grupo:
   1. falhas de sala da turma (D04);
-  2. só na recuperação: custo de sair da sala publicada (`_room_cost_for_profile`), exceto mudança justificada;
-  3. mudança evitável em relação à aula anterior da turma nesse dia (D03);
-  4. ocupar a sala de outra turma com sala;
-  5. sala habitual: numa aula flexível de turma sem sala, a sala flexível mais usada pela turma até ali; numa aula com sala própria, a sala mais usada pela turma nessa disciplina (D07).
+  2. mudança evitável em relação à aula anterior da turma nesse dia (D03);
+  3. ocupar a sala de outra turma com sala (D04);
+  4. sala habitual: numa aula flexível de turma sem sala, a sala flexível mais usada pela turma até ali; numa aula com sala própria, a sala mais usada pela turma nessa disciplina (D07);
+  5. só na recuperação: custo de sair da sala publicada (`_room_cost_for_profile`), exceto mudança justificada.
+- Desde 2026-10-18 (decisão do dono, B1), na atualização a sala publicada só desempata. Uma aula com horário publicado pode mudar de sala para a turma ficar numa sala só. As aulas protegidas e as dadas nunca mudam (I06).
 - Desempate pelo `room_id`, para ser determinístico.
 
 No caminho exato, o passe só fica se o vetor de qualidade não piorar (T11, T12).
@@ -242,7 +243,7 @@ No caminho exato, o passe só fica se o vetor de qualidade não piorar (T11, T12
 - I03: nenhuma sala ou disciplina ativa aponta para um tipo arquivado.
 - I04: `home_room_id` aponta sempre para uma sala ativa da mesma escola.
 - I05: o passe de salas e os estágios de sala só mudam `room_id`. Datas, horas, identidades e créditos ficam iguais (D03).
-- I06: as aulas protegidas e as aulas dadas nunca mudam de sala.
+- I06: as aulas protegidas e as aulas dadas nunca mudam de sala. Uma aula protegida também mantém a sala quando uma mudança posterior (tipo de sala ou capacidade) a torna inelegível; a validação não a acusa (B2, 2026-10-18).
 - I07: um snapshot sem salas da turma e sem disciplinas de sala própria tem o digest de hoje (T07).
 - I08: snapshot, pré-verificação, prontidão e substituições usam a mesma regra de elegibilidade (T06).
 - I09: um horário de turmas sem sala e só com disciplinas Normais nunca piora em mudanças evitáveis por causa do passe.

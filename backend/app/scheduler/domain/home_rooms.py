@@ -166,10 +166,11 @@ def room_choice_costs(
 ) -> tuple[int, ...]:
     """Priority costs of putting one lesson in one room.
 
-    1. home-room misses (D04); 2. leaving the published room, zero when justified
-    (recovery only, T09); 3. avoidable change from the class's previous lesson that
-    day (D03); 4. taking another class's home room (D04); 5. the habitual room of a
-    flexible lesson without a home room, or of a special-room subject (D07).
+    1. home-room misses (D04); 2. avoidable change from the class's previous lesson
+    that day (D03); 3. taking another class's home room (D04); 4. the habitual room of
+    a flexible lesson without a home room, or of a special-room subject (D07); 5. leaving
+    the published room, zero when justified (recovery only, T09). The published room
+    only breaks ties, so a class keeps one room even when a lesson changes room (B1).
     """
     misses = sum(
         1
@@ -187,7 +188,7 @@ def room_choice_costs(
         for class_id in assignment.class_ids
         if _habitual_room(habits, assignment, class_id, homes) not in (None, room_id)
     )
-    return (misses, published_change, avoidable, foreign_claims, habitual)
+    return (misses, avoidable, foreign_claims, habitual, published_change)
 
 
 def lexicographic_weights(maxima: Sequence[int], lesson_count: int) -> tuple[int, ...]:

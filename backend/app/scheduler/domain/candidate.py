@@ -288,8 +288,6 @@ def _validate_protected_lessons(
         assignment = assignments.get(lesson.assignment_id)
         if assignment is None:
             raise ValueError("A protected lesson references an unknown assignment.")
-        if lesson.room_id not in assignment.eligible_room_ids:
-            raise ValueError("A protected lesson uses a room outside its assignment.")
         modules = {module.module_id: module for module in assignment.modules}
         for slice_ in lesson.slices:
             module = modules.get(slice_.module_id)
