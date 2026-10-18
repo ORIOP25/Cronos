@@ -508,12 +508,15 @@ def _construct_pass(
         )
 
     def open_rooms(
-        assignment: Assignment, period: Period, pending: Mapping[tuple, list[Period]]
+        assignment: Assignment,
+        period: Period,
+        pending: Mapping[tuple, list[Period]],
+        planned: Sequence[tuple[Assignment, int]] = (),
     ) -> tuple[int, ...]:
         """Rooms where the assignment may teach the period, empty when a rule blocks it.
 
-        ``pending`` holds lessons tentatively booked by a presence run; the main
-        loop passes none. Every hard check runs here, so both paths share it.
+        ``pending`` and ``planned`` describe lessons tentatively booked by a presence
+        run; the main loop passes none. Every hard check runs here, so both paths share it.
         """
         school_date = period.school_date
 
@@ -543,7 +546,7 @@ def _construct_pass(
                 period.overlaps(occupied) for occupied in booked(("room", room, school_date))
             )
         )
-        if not rooms or (strict and not ledger.allows(assignment, period)):
+        if not rooms or (strict and not ledger.allows(assignment, period, planned)):
             return ()
         return rooms
 
@@ -560,15 +563,16 @@ def _construct_pass(
         minimum = presence_rules[teacher_id].minimum_minutes
         booked: list[tuple[Assignment, Period, int]] = []
         pending: dict[tuple, list[Period]] = defaultdict(list)
+        planned: list[tuple[Assignment, int]] = []
         credited: dict[int, int] = defaultdict(int)
 
         def add(row: tuple[Assignment, Period, int]) -> None:
             booked.append(row)
             row_assignment, row_period, row_room = row
             identity = row_assignment.assignment_id
-            credited[identity] += min(
-                remaining[identity] - credited[identity], row_period.duration_minutes
-            )
+            credit = min(remaining[identity] - credited[identity], row_period.duration_minutes)
+            credited[identity] += credit
+            planned.append((row_assignment, credit))
             for key in _resource_keys(row_assignment, row_room, teacher_id, row_period.school_date):
                 pending[key].append(row_period)
 
@@ -596,7 +600,7 @@ def _construct_pass(
             for row in candidates:
                 if not ready(row.assignment_id, later):
                     continue
-                rooms = open_rooms(row, later, pending)
+                rooms = open_rooms(row, later, pending, planned)
                 if rooms:
                     return row, min(rooms, key=lambda value: (room_pressure[value], value))
             return None

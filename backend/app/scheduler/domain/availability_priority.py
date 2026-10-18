@@ -165,11 +165,24 @@ class AvailabilityLedger:
     def unfavorable(self, assignment: Assignment, period: Period) -> bool:
         return any(_soft_overlaps(self._snapshot, key, period) for key in resource_keys(assignment))
 
-    def allows(self, assignment: Assignment, period: Period) -> bool:
-        """T08: inside a resource's own Evitar, demand must exceed its neutral capacity."""
+    def allows(
+        self,
+        assignment: Assignment,
+        period: Period,
+        planned: Iterable[tuple[Assignment, int]] = (),
+    ) -> bool:
+        """T08: inside a resource's own Evitar, demand must exceed its neutral capacity.
+
+        ``planned`` holds lessons of the same pass not yet placed, as (assignment,
+        credited minutes); their minutes leave the demand before the comparison.
+        """
+        planned_minutes: defaultdict[ResourceKey, int] = defaultdict(int)
+        for other, minutes in planned:
+            for key in resource_keys(other):
+                planned_minutes[key] += minutes
         blocked = any(
             _soft_overlaps(self._snapshot, key, period)
-            and self.demand(key) <= self.neutral_capacity(key, period)
+            and self.demand(key) - planned_minutes[key] <= self.neutral_capacity(key, period)
             for key in resource_keys(assignment)
         )
         if blocked:
