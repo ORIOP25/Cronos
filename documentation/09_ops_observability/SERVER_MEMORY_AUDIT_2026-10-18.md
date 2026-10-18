@@ -250,6 +250,26 @@ Recommended implementation order:
 Each step requires its own before-and-after evidence.
 Do not add the experimental savings together as a guaranteed production result.
 
+### Implementation status
+
+Steps 1 and 2 and the previous-model release of Finding 4 are implemented. Steps 3 to 5 and the other Finding 4 items still need their own measurements.
+
+- Finding 2: `_add_assignment_credit` in [`placement_model.py`](../../backend/app/scheduler/infrastructure/placement_model.py) uses one final-position integer. [`test_scheduler_placement_final_encoding_v1.py`](../../backend/tests/unit/test_scheduler_placement_final_encoding_v1.py) checks linear growth and exhaustive solution equivalence, including partial credit, a final-duration subset, and the quota branch.
+- Finding 3: Beat imports no task module, and [`test_celery_task_imports.py`](../../backend/tests/unit/test_celery_task_imports.py) checks which process registers each periodic task.
+- Finding 4, previous model lifetime: `solve_placement` releases each window's model before building the next one.
+- The placement memory guard (`MAX_PLACEMENT_VARIABLES`) turns an oversized scope into `INCONCLUSIVE` instead of an OOM kill. It is a safety net, not a memory optimization.
+
+Model-build measurement after the change, on 18 October 2026. It used the 48-class typology fixture, an unrestricted scope, one CPU, an 8 GiB container, one search worker, and 120 seconds of search:
+
+| Horizon | Encoder | Variables | Linear references | RSS after build | Peak RSS during search |
+| :--- | :--- | ---: | ---: | ---: | ---: |
+| Half year | Previous | 735,062 | 33,629,270 | 1,237 MB | 5,984 MB |
+| Half year | Linear | 735,398 | 1,912,550 | 709 MB | 3,235 MB |
+| Full year | Previous | 1,444,778 | 126,427,850 | 3,320 MB | Not run |
+| Full year | Linear | 1,445,114 | 3,759,290 | 1,283 MB | 5,796 MB |
+
+No search reached a solution within 120 seconds, so this table compares memory, not schedule quality.
+
 ## Failure Modes
 
 An equivalent mathematical model can still change search behavior within a finite deadline.

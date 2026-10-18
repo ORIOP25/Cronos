@@ -77,10 +77,11 @@ STOP_FEASIBLE = "FEASIBLE"
 STOP_SAFETY = "SAFETY_LIMIT"
 
 MIN_STAGE_SECONDS = 0.05
-# ponytail: calibrated on production 2026-10-17, whose logs count all model
-# variables: 0.63 M peaked near 3.2 GB and 3.96 M were OOM-killed at 8 GB. The cap
-# compares only the option variables of _estimated_variables, the bulk of a model,
-# so it stays below the killed size. Upgrade path: measure peak memory per
+# ponytail: production 2026-10-17 OOM-killed a 3.96 M-variable model at 8 GB. With
+# the linear final-lesson rule, the 48-class typology (one search worker, 120 s)
+# peaked at 3.2 GB for 0.74 M variables and 5.8 GB for 1.44 M, and
+# _estimated_variables stayed within 1% of the built total. Production runs two
+# search workers, so ~1 M keeps headroom. Upgrade path: measure peak memory per
 # variable on the worker and derive this cap from the container memory limit.
 MAX_PLACEMENT_VARIABLES = 1_000_000
 
