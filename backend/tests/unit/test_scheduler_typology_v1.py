@@ -8,15 +8,23 @@ validated schedule for the 12-class and 48-class topologies.
 """
 
 import hashlib
-from datetime import date
+from dataclasses import replace
+from datetime import date, time
 from time import monotonic
 
 import pytest
 
 from app.scheduler.composition import generate_schedule
-from app.scheduler.domain.candidate import TeacherPresenceRule
+from app.scheduler.domain.candidate import (
+    LunchRule,
+    SchedulingStrategy,
+    TeacherPresenceRule,
+)
 from app.scheduler.domain.candidate_validation import validate_candidate
+from app.scheduler.infrastructure import search
 from app.scheduler.infrastructure.constructive import construct_schedule
+from app.scheduler.infrastructure.search import search_adaptive_schedule
+from app.scheduler.lab.recovery import laboratory_policy
 from app.scheduler.lab.typology import (
     CHRISTMAS_BREAK,
     EASTER_BREAK,
@@ -210,3 +218,45 @@ def test_the_availability_fixture_completes_forty_eight_classes_before_the_prefe
     assert candidate is not None
     assert validate_candidate(fixture.snapshot, candidate).valid is True
     assert max(lesson.period.school_date for lesson in candidate.lessons) <= PREFERRED_END
+
+
+@pytest.mark.slow_solver
+def test_forty_eight_classes_repair_with_an_iris_presence_rule(monkeypatch):
+    """The Íris presence rule repairs a 48-class schedule without the exact model (S2)."""
+    fixture = build_typology_fixture(48)
+    snapshot = replace(
+        fixture.snapshot,
+        strategy=SchedulingStrategy.ADAPTIVE_RECOVERY,
+        baseline_lessons=fixture.witness.lessons,
+        teacher_presence=(
+            TeacherPresenceRule(
+                teacher_id=1001, lunch_required=True, minimum_minutes=180, max_gap_minutes=60
+            ),
+        ),
+        lunch_rule=LunchRule(time(12), time(14), 60),
+    )
+
+    def exact_model_must_not_run(*_args, **_kwargs):
+        raise AssertionError("The exact placement model must not run.")
+
+    monkeypatch.setattr(search, "solve_placement", exact_model_must_not_run)
+
+    started = monotonic()
+    outcome = search_adaptive_schedule(
+        snapshot,
+        fixture.periods,
+        fixture.witness,
+        laboratory_policy(snapshot),
+        time_limit_seconds=900,
+        stop_at_first_complete=True,
+        num_workers=1,
+        random_seed=3,
+    )
+    elapsed = monotonic() - started
+
+    # The slice proof records the measured repair time.
+    print(f"iris48 seconds={elapsed:.1f}")
+    assert outcome.status == "COMPLETE"
+    assert outcome.candidate is not None
+    assert validate_candidate(snapshot, outcome.candidate).valid is True
+    assert elapsed < 900
