@@ -19,6 +19,7 @@ CGROUP_ROOT = "/sys/fs/cgroup"
 
 PHASE_STARTED = "scheduler_v1_phase_started"
 PHASE_MODEL_BUILT = "scheduler_v1_model_built"
+PHASE_MODEL_TOO_LARGE = "scheduler_v1_model_too_large"
 PHASE_FINISHED = "scheduler_v1_phase_finished"
 
 
@@ -130,6 +131,18 @@ def model_built(
     phase: str, model: Any, *, window: int | None = None, stage: str | None = None
 ) -> None:
     emit(PHASE_MODEL_BUILT, phase=phase, window=window, stage=stage, model=model)
+
+
+def model_too_large(
+    phase: str, estimated_variables: int, limit: int, *, window: int | None = None
+) -> None:
+    emit(
+        PHASE_MODEL_TOO_LARGE,
+        phase=phase,
+        window=window,
+        estimated_variables=estimated_variables,
+        variable_limit=limit,
+    )
 
 
 def phase_finished(
