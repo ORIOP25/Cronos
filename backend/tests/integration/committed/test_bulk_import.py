@@ -589,7 +589,7 @@ async def test_bulk_import_sets_the_home_room_of_a_new_class_from_the_same_batch
         (
             "Sala Pequena",
             "home_room_capacity",
-            "A sala Sala Pequena não tem lugares para os 25 alunos da turma.",
+            "A Sala Pequena não tem lugares para os 25 alunos da turma.",
         ),
     ],
 )
