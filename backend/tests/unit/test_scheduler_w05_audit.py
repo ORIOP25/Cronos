@@ -303,8 +303,14 @@ def test_audit_protected_lesson_references_are_validated():
 
     with pytest.raises(ValueError):
         replace(target, protected_lessons=(lesson(1, 99, when, 1),))
-    with pytest.raises(ValueError):
-        replace(target, protected_lessons=(lesson(1, 1, when, 99),))
+
+
+def test_audit_protected_lesson_keeps_a_room_that_a_later_change_made_ineligible():
+    """Owner decision 2026-10-18: a room may change type after lessons happened in it."""
+    when = period(0)
+    target = replace(snapshot((when,)), protected_lessons=(lesson(1, 1, when, 99),))
+
+    assert target.protected_lessons[0].room_id == 99
 
 
 def test_audit_protected_slices_must_reference_known_modules():
