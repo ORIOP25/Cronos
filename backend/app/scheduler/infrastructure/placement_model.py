@@ -77,10 +77,11 @@ STOP_FEASIBLE = "FEASIBLE"
 STOP_SAFETY = "SAFETY_LIMIT"
 
 MIN_STAGE_SECONDS = 0.05
-# ponytail: calibrated on production 2026-10-17. 0.63 M variables peaked near 3.2 GB,
-# while 3.96 M were OOM-killed at 8 GB during build, so ~1 M keeps the solve under
-# ~5 GB. Upgrade path: measure peak memory per variable on the worker and derive
-# this cap from the container memory limit.
+# ponytail: calibrated on production 2026-10-17, whose logs count all model
+# variables: 0.63 M peaked near 3.2 GB and 3.96 M were OOM-killed at 8 GB. The cap
+# compares only the option variables of _estimated_variables, the bulk of a model,
+# so it stays below the killed size. Upgrade path: measure peak memory per
+# variable on the worker and derive this cap from the container memory limit.
 MAX_PLACEMENT_VARIABLES = 1_000_000
 
 _COMPONENT_ORDER = {

@@ -127,7 +127,7 @@ The `fast` profile skips it; the `e2e-runtime` CI job runs it.
 
 ## Current limitations
 
-- `solve_placement` refuses a scope whose estimated option variables exceed `MAX_PLACEMENT_VARIABLES` in [`placement_model.py`](../../backend/app/scheduler/infrastructure/placement_model.py) and returns `INCONCLUSIVE` with `scheduler_v1_model_too_large`. The cap is calibrated on two production runs, not derived from the container limit, and it does not bound native solver memory or interrupt construction internally.
+- `solve_placement` refuses a scope whose estimated option variables exceed `MAX_PLACEMENT_VARIABLES` in [`placement_model.py`](../../backend/app/scheduler/infrastructure/placement_model.py) and returns `INCONCLUSIVE` with `scheduler_v1_model_too_large`. The estimate counts only option variables, while the two production runs that calibrate the cap logged all model variables; the cap is not derived from the container limit, and it does not bound native solver memory or interrupt construction internally.
 - A generation that stops at the safety limit reports quality `NOT_MEASURED`; this is not proof of impossibility.
 - There is no rollback to a legacy engine; recovery uses only compatible v1 artifacts.
 - After a data reset, local identity is rebuilt on the first admin login through session bootstrap.
