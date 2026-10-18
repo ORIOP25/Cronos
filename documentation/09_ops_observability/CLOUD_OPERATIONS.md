@@ -67,6 +67,7 @@ railway variable list --service api --json | node -e "let d='';process.stdin.on(
 | Frontend | Root `.env` (`VITE_*` build arguments) | Cloudflare Pages build variables |
 
 Locally, Beat does not load `backend/.env`. It only publishes tasks; the workers execute them with their own secrets.
+Beat imports no task module. `backend/app/scheduler_v1_worker.py` imports the member and privacy tasks that the solver worker executes, and the supervisor imports only `backend/app/scheduler_recovery_worker.py`.
 In production, `Settings` validation runs in every process, so all four backend services need the production values.
 The [Deployment Runbook](DEPLOYMENT_RUNBOOK.md#secrets-and-environment) lists the required names.
 
