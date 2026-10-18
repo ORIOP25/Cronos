@@ -8,7 +8,9 @@ window's model must be released before the next window is built.
 
 from __future__ import annotations
 
+import gc
 import itertools
+import weakref
 from datetime import date, time, timedelta
 from math import comb
 
@@ -17,7 +19,7 @@ from ortools.sat.python import cp_model
 from app.scheduler.domain.calendar import normalize_period
 from app.scheduler.domain.candidate import SchedulingStrategy
 from app.scheduler.infrastructure import placement_model
-from app.scheduler.infrastructure.annual_model import QuotaDistribution
+from app.scheduler.infrastructure.annual_model import QuotaDistribution, plan_annual_quotas
 from app.scheduler.lab.fixtures import AssignmentSpec, FixtureSpec, build_snapshot
 
 TZ = "Europe/Lisbon"
@@ -195,3 +197,31 @@ def test_distribution_final_group_and_quota_solutions_match_the_window_rule():
 
     assert len(expected) == 3
     assert _enumerate(state, keys) == expected
+
+
+def test_each_window_model_is_released_before_the_next_window_is_built(monkeypatch):
+    """C2: the previous window's model is garbage before the next one is built."""
+    rows = ((ORIGIN, time(9), time(10)), (ORIGIN + timedelta(days=7), time(9), time(10)))
+    periods = _periods(rows)
+    snapshot = _snapshot(rows, (120,))
+    plan = plan_annual_quotas(snapshot, periods, time_limit_seconds=5)
+    assert plan.distribution is not None
+    real_build = placement_model._build_scope_state
+    built = []
+
+    def build_and_check_release(snapshot, scope):
+        gc.collect()
+        if built:
+            assert built[-1]() is None, "the previous window's model is still alive"
+        state = real_build(snapshot, scope)
+        built.append(weakref.ref(state))
+        return state
+
+    monkeypatch.setattr(placement_model, "_build_scope_state", build_and_check_release)
+
+    outcome = placement_model.solve_placement(
+        snapshot, periods, distribution=plan.distribution, time_limit_seconds=5
+    )
+
+    assert outcome.status == placement_model.STATUS_COMPLETE
+    assert len(built) == 2

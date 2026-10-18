@@ -1912,6 +1912,7 @@ def solve_placement(
                 global_stop = stop_reason
             for assignment_id, rows in selections.items():
                 combined[assignment_id].extend(rows)
+            del state, solver
     except NoEligiblePeriodsError as error:
         return PlacementOutcome(
             STATUS_INFEASIBLE,
