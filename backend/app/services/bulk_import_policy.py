@@ -86,9 +86,19 @@ TEMPLATE_DEFINITIONS = {
             "Ano de início",
             "Ano de fim",
             "Número de alunos",
+            "Sala da turma",
         ),
-        ("abbreviation", "name", "class_name", "grade_level", "start_year", "end_year", "size"),
-        ("EXEMPLO", "Curso de Exemplo", "Turma de Exemplo", "10", "2025", "2028", "25"),
+        (
+            "abbreviation",
+            "name",
+            "class_name",
+            "grade_level",
+            "start_year",
+            "end_year",
+            "size",
+            "home_room",
+        ),
+        ("EXEMPLO", "Curso de Exemplo", "Turma de Exemplo", "10", "2025", "2028", "25", ""),
         "Cronos_CursosETurmas_Template.csv",
     ),
     "teachers": TemplateDefinition(
@@ -117,7 +127,11 @@ RESOURCE_MISMATCH_MESSAGE = (
     "Este ficheiro não corresponde à secção escolhida. Selecione o modelo correspondente."
 )
 ROOM_TYPE_MISSING_MESSAGE = "Escreva o tipo de sala."
-ROOM_TYPE_UNKNOWN_MESSAGE = "Não existe um tipo de sala com esse nome."
+ROOM_TYPE_NAME_LENGTH_MESSAGE = "Escreva um nome de tipo com até 60 caracteres."
+HOME_ROOM_NOT_FOUND_MESSAGE = (
+    "Sala não encontrada. Escreva o nome de uma sala existente ou do ficheiro de salas."
+)
+HOME_ROOM_CAPACITY_MESSAGE = "{subject} não tem lugares para os {size} alunos da turma."
 AVAILABILITY_DAY_ERROR_MESSAGE = "Escreva um dia com blocos na grelha, por exemplo Segunda."
 AVAILABILITY_LEVEL_ERROR_MESSAGE = "Escreva Impossível, Evitar, Neutro ou Preferencial."
 TEACHER_PRESENCE_LUNCH_ERROR_MESSAGE = "Escreva Sim ou Não."
@@ -127,6 +141,7 @@ TEACHER_PRESENCE_GAP_WITHOUT_MINIMUM_MESSAGE = "O furo máximo só se aplica com
 TEACHER_PRESENCE_UNKNOWN_TEACHER_MESSAGE = "Professor não encontrado."
 TEACHER_PRESENCE_DUPLICATE_EMAIL_MESSAGE = "Este email aparece em mais de uma linha."
 
+MAX_ROOM_TYPE_NAME_LENGTH = 60
 NEUTRAL_SCORE = 1
 _HOUR_PATTERN = re.compile(r"^(\d{1,2}):([0-5]\d)(?::[0-5]\d)?$")
 _LEVEL_SCORES = {"impossivel": -1, "evitar": 0, "neutro": NEUTRAL_SCORE, "preferencial": 2}
@@ -179,7 +194,7 @@ class ParsedResourceFile:
 @dataclass(frozen=True)
 class RoomImport:
     name: str
-    room_type_id: int
+    room_type_name: str
     capacity: int
     line: int
 
@@ -194,9 +209,17 @@ class ModuleImport:
 
 
 @dataclass(frozen=True)
+class RoomTypeImport:
+    """A school room type that the batch uses; ``is_new`` when the school has no active one."""
+
+    name: str
+    is_new: bool
+
+
+@dataclass(frozen=True)
 class SubjectImport:
     name: str
-    room_type_id: int
+    room_type_name: str
     modules: tuple[ModuleImport, ...]
     line: int
 
@@ -209,6 +232,8 @@ class ClassImport:
     end_year: int
     size: int
     line: int
+    # Name typed in "Sala da turma"; None keeps the class automatic.
+    home_room: str | None = None
 
 
 @dataclass(frozen=True)
@@ -240,6 +265,7 @@ class AssignmentImport:
 class ExistingRoom:
     id: int
     name: str
+    capacity: int
 
 
 @dataclass(frozen=True)
@@ -350,6 +376,7 @@ class ValidationResult:
     preview: tuple[dict, ...] = ()
     inferred_competencies: dict[str, tuple[str, ...]] = field(default_factory=dict)
     teacher_presence: tuple[TeacherPresenceImport, ...] = ()
+    room_types: tuple[RoomTypeImport, ...] = ()
 
     @property
     def can_commit(self) -> bool:
@@ -877,24 +904,35 @@ def _int_value(
     return value
 
 
-def _room_type_issue(
-    resource: str,
-    value: str,
-    room_type: ExistingRoomType | None,
-    *,
-    line: int,
-    field: str,
-) -> BulkImportIssue | None:
-    """O tipo em branco é campo obrigatório; o desconhecido não existe na escola."""
-    if not _clean(value):
+def _room_type_issue(resource: str, value: str, *, line: int, field: str) -> BulkImportIssue | None:
+    """O tipo tem de ter nome; um nome desconhecido cria um tipo novo (D18)."""
+    name = _clean(value)
+    if not name:
         return _issue(
             resource, "room_type_invalid", ROOM_TYPE_MISSING_MESSAGE, line=line, field=field
         )
-    if room_type is None:
+    if len(name) > MAX_ROOM_TYPE_NAME_LENGTH:
         return _issue(
-            resource, "room_type_unknown", ROOM_TYPE_UNKNOWN_MESSAGE, line=line, field=field
+            resource, "room_type_invalid", ROOM_TYPE_NAME_LENGTH_MESSAGE, line=line, field=field
         )
     return None
+
+
+def _batch_room_types(
+    rooms: tuple[RoomImport, ...],
+    subjects: tuple[SubjectImport, ...],
+    snapshot: ImportSnapshot,
+) -> tuple[RoomTypeImport, ...]:
+    """Um tipo por nome dobrado; o primeiro escrito dá o nome (salas antes de disciplinas)."""
+    spellings: dict[str, str] = {}
+    for name in [item.room_type_name for item in rooms] + [
+        item.room_type_name for item in subjects
+    ]:
+        spellings.setdefault(fold_text(name), name)
+    return tuple(
+        RoomTypeImport(name, normalize_room_type(name, snapshot) is None)
+        for name in spellings.values()
+    )
 
 
 def _validate_rooms(
@@ -907,13 +945,12 @@ def _validate_rooms(
         line = int(row["line"])
         name = _value(row, "name")
         raw_type = _value(row, "type")
-        room_type = normalize_room_type(raw_type, snapshot)
         capacity = _int_value(row, "rooms", "capacity", issues, minimum=1)
         if not name:
             issues.append(
                 _issue("rooms", "field_required", "Campo obrigatório.", line=line, field="name")
             )
-        type_issue = _room_type_issue("rooms", raw_type, room_type, line=line, field="type")
+        type_issue = _room_type_issue("rooms", raw_type, line=line, field="type")
         if type_issue is not None:
             issues.append(type_issue)
         normalized = _key(name)
@@ -938,8 +975,8 @@ def _validate_rooms(
                 )
             )
         seen.add(normalized)
-        if name and room_type is not None and capacity is not None:
-            result.append(RoomImport(name, room_type.id, capacity, line))
+        if name and type_issue is None and capacity is not None:
+            result.append(RoomImport(name, raw_type, capacity, line))
     return tuple(result)
 
 
@@ -956,14 +993,11 @@ def _validate_subjects(
         line = int(first["line"])
         name = _value(first, "name")
         raw_type = _value(first, "required_room_type")
-        room_type = normalize_room_type(raw_type, snapshot)
         if not name:
             issues.append(
                 _issue("subjects", "field_required", "Campo obrigatório.", line=line, field="name")
             )
-        type_issue = _room_type_issue(
-            "subjects", raw_type, room_type, line=line, field="required_room_type"
-        )
+        type_issue = _room_type_issue("subjects", raw_type, line=line, field="required_room_type")
         if type_issue is not None:
             issues.append(type_issue)
         if normalized in existing:
@@ -980,8 +1014,7 @@ def _validate_subjects(
         seen_orders = set()
         for row in rows:
             row_line = int(row["line"])
-            current_type = normalize_room_type(_value(row, "required_room_type"), snapshot)
-            if current_type != room_type:
+            if fold_text(_value(row, "required_room_type")) != fold_text(raw_type):
                 issues.append(
                     _issue(
                         "subjects",
@@ -1052,11 +1085,11 @@ def _validate_subjects(
                     field="module_order",
                 )
             )
-        if name and room_type is not None:
+        if name and type_issue is None:
             result.append(
                 SubjectImport(
                     name,
-                    room_type.id,
+                    raw_type,
                     tuple(sorted(modules, key=lambda item: item.order)),
                     line,
                 )
@@ -1064,11 +1097,51 @@ def _validate_subjects(
     return tuple(result)
 
 
+_SALA_WORD = re.compile(r"sala(?![a-z])")
+
+
+def _home_room_subject(room_name: str) -> str:
+    """Como no ecrã: «Sala 101» já diz o que é; «L-03» precisa do prefixo «sala»."""
+    name = _clean(room_name)
+    return f"A {name}" if _SALA_WORD.match(fold_text(name)) else f"A sala {name}"
+
+
+def _home_room_issue(
+    home_room: str, size: int | None, rooms: dict[str, ExistingRoom | RoomImport], *, line: int
+) -> BulkImportIssue | None:
+    """A sala da turma tem de existir na escola ou no lote e ter lugares para os alunos."""
+    room = rooms.get(fold_text(home_room))
+    if room is None:
+        return _issue(
+            "courses",
+            "home_room_not_found",
+            HOME_ROOM_NOT_FOUND_MESSAGE,
+            line=line,
+            field="home_room",
+        )
+    if size is not None and room.capacity < size:
+        return _issue(
+            "courses",
+            "home_room_capacity",
+            HOME_ROOM_CAPACITY_MESSAGE.format(subject=_home_room_subject(room.name), size=size),
+            line=line,
+            field="home_room",
+        )
+    return None
+
+
 def _validate_courses(
-    parsed: ParsedResourceFile, snapshot: ImportSnapshot, issues: list[BulkImportIssue]
+    parsed: ParsedResourceFile,
+    snapshot: ImportSnapshot,
+    rooms: tuple[RoomImport, ...],
+    issues: list[BulkImportIssue],
 ) -> tuple[CourseImport, ...]:
     groups: dict[str, list[dict]] = defaultdict(list)
     existing = {item.abbreviation.upper() for item in snapshot.courses}
+    # Rooms of the school and of this batch; the batch room wins a name clash.
+    home_rooms: dict[str, ExistingRoom | RoomImport] = {
+        fold_text(room.name): room for room in (*snapshot.rooms, *rooms)
+    }
     for row in parsed.rows:
         groups[_value(row, "abbreviation").upper()].append(row)
     result = []
@@ -1104,11 +1177,22 @@ def _validate_courses(
         seen_class_names = set()
         for row in rows:
             row_line = int(row["line"])
+            home_room = _value(row, "home_room")
             class_values = [
                 _value(row, field)
                 for field in ("class_name", "grade_level", "start_year", "end_year", "size")
             ]
             if not any(class_values):
+                if home_room:
+                    issues.append(
+                        _issue(
+                            "courses",
+                            "class_partial",
+                            "Preencha todos os campos da turma ou deixe-os todos vazios.",
+                            line=row_line,
+                            field="home_room",
+                        )
+                    )
                 continue
             if not all(class_values):
                 issues.append(
@@ -1145,6 +1229,10 @@ def _validate_courses(
                         field="end_year",
                     )
                 )
+            if home_room:
+                home_room_issue = _home_room_issue(home_room, size, home_rooms, line=row_line)
+                if home_room_issue is not None:
+                    issues.append(home_room_issue)
             class_key = _key(_value(row, "class_name"))
             if class_key in seen_class_names:
                 issues.append(
@@ -1166,7 +1254,15 @@ def _validate_courses(
                 and size is not None
             ):
                 classes.append(
-                    ClassImport(_value(row, "class_name"), grade, start, end, size, row_line)
+                    ClassImport(
+                        _value(row, "class_name"),
+                        grade,
+                        start,
+                        end,
+                        size,
+                        row_line,
+                        home_room or None,
+                    )
                 )
         if not classes:
             issues.append(
@@ -1709,7 +1805,10 @@ def validate_import(
     subjects = (
         _validate_subjects(files["subjects"], snapshot, issues) if "subjects" in files else ()
     )
-    courses = _validate_courses(files["courses"], snapshot, issues) if "courses" in files else ()
+    courses = (
+        _validate_courses(files["courses"], snapshot, rooms, issues) if "courses" in files else ()
+    )
+    room_types = _batch_room_types(rooms, subjects, snapshot)
     teachers = (
         _validate_teachers(files["teachers"], snapshot, issues) if "teachers" in files else ()
     )
@@ -1824,7 +1923,9 @@ def validate_import(
         else ()
     )
 
+    new_room_types = [item for item in room_types if item.is_new]
     counts = {
+        "room_types": len(new_room_types),
         "rooms": len(rooms),
         "subjects": len(subjects),
         "modules": sum(len(item.modules) for item in subjects),
@@ -1840,7 +1941,8 @@ def validate_import(
     # Availability rows sit outside the generic 100-item cut (D15); the interface
     # tables show every class and teacher row they receive.
     generic_preview = (
-        [{"resource": "rooms", "name": item.name, "line": item.line} for item in rooms]
+        [{"resource": "room_types", "name": item.name} for item in new_room_types]
+        + [{"resource": "rooms", "name": item.name, "line": item.line} for item in rooms]
         + [
             {
                 "resource": "subjects",
@@ -1914,4 +2016,5 @@ def validate_import(
         preview,
         {email: tuple(sorted(values, key=_key)) for email, values in inferred.items()},
         teacher_presence,
+        room_types=room_types,
     )

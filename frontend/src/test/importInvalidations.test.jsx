@@ -48,6 +48,20 @@ describe('bulk import invalidations', () => {
     )
   })
 
+  it('refreshes room types after a commit that creates them from the rooms file', async () => {
+    const { queryClient, wrapper } = createHarness()
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
+    const mutation = renderHook(() => useCommitBulkImport(), { wrapper })
+    const file = new File(['x'], 'Cronos_Salas_Template.csv', { type: 'text/csv' })
+
+    await act(() => mutation.result.current.mutateAsync({ rooms: file }))
+
+    await waitFor(() => expect(invalidate).toHaveBeenCalled())
+    expect(invalidate.mock.calls.map(([options]) => options.queryKey)).toEqual(
+      expect.arrayContaining([['room-types', 'org-a']]),
+    )
+  })
+
   it('invalidates every teacher availability reader after a commit', async () => {
     const { queryClient, wrapper } = createHarness()
     const invalidate = vi.spyOn(queryClient, 'invalidateQueries')

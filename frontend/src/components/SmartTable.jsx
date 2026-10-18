@@ -39,7 +39,7 @@ const RowActions = ({
             </button>}
             {allowDelete && <button
               className="btn-zen-ghost zen-table-action-trigger text-danger"
-              onClick={(e) => { e.stopPropagation(); onRequestDelete(item.id) }}
+              onClick={(e) => { e.stopPropagation(); onRequestDelete(item) }}
               title={TXT.REMOVE}
               aria-label={`${TXT.REMOVE} ${label}`.trim()}
               type="button"
@@ -86,7 +86,7 @@ const SmartTable = ({
     setIsDeleting(true)
     setDeleteError('')
     try {
-      const result = await onDelete(deleteTarget)
+      const result = await onDelete(deleteTarget.id)
       if (!attemptScope.isCurrent(attempt)) {
         setDeleteTarget(null)
         return
@@ -167,7 +167,7 @@ const SmartTable = ({
                     allowDelete={allowDelete}
                     readOnly={readOnly}
                     onEdit={onEdit}
-                    onRequestDelete={(id) => { setDeleteError(''); setDeleteTarget(id) }}
+                    onRequestDelete={(row) => { setDeleteError(''); setDeleteTarget(row) }}
                     getRowLabel={getRowLabel}
                   />
                 )}
@@ -183,7 +183,7 @@ const SmartTable = ({
         visible={deleteTarget !== null}
         onClose={() => setDeleteTarget(null)}
         onConfirm={handleDeleteConfirm}
-        message={deleteMessage}
+        message={typeof deleteMessage === 'function' ? deleteTarget && deleteMessage(deleteTarget) : deleteMessage}
         isLoading={isDeleting}
       />
     </>

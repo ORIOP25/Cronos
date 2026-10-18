@@ -24,7 +24,7 @@ Use-o para testar a importação num ambiente descartável.
 | --- | --- | --- |
 | Salas | `Cronos_Salas_Template.csv` | `Nome da sala;Tipo de sala;Capacidade` |
 | Disciplinas e módulos | `Cronos_DisciplinasEModulos_Template.csv` | `Nome da disciplina;Tipo de sala;Nome do módulo;Código do módulo;Horas do módulo;Ordem do módulo` |
-| Cursos e turmas | `Cronos_CursosETurmas_Template.csv` | `Sigla do curso;Nome do curso;Nome da turma;Ano escolar;Ano de início;Ano de fim;Número de alunos` |
+| Cursos e turmas | `Cronos_CursosETurmas_Template.csv` | `Sigla do curso;Nome do curso;Nome da turma;Ano escolar;Ano de início;Ano de fim;Número de alunos;Sala da turma` |
 | Professores e competências | `Cronos_ProfessoresECompetencias_Template.csv` | `Nome do professor;Email do professor;Nome da disciplina` |
 | Atribuições | `Cronos_Atribuicoes_Template.csv` | `Sigla do curso;Nome da turma;Nome da disciplina;Email do professor` |
 | Disponibilidade das turmas | `Cronos_DisponibilidadeTurmas_Template.csv` | `Sigla do curso;Nome da turma;Dia` e uma coluna por hora de início |
@@ -41,12 +41,29 @@ Depois da importação, ajuste a seleção em `/courses/:courseId/classes/:class
 
 ## Tipos de sala
 
-A coluna `Tipo de sala` escreve o **nome** de um tipo de sala ativo da escola, igual ao nome que aparece em `/api/v1/room-types`: `Normal`, `Laboratório`, `Ginásio`, `Artes` ou um tipo criado pela escola. O nome é comparado sem distinguir maiúsculas ou acentos. Códigos internos como `lab`, `gym` ou `art` não são nomes de tipos e são recusados.
+A coluna `Tipo de sala` escreve o **nome** de um tipo de sala da escola, igual ao nome que aparece em `/api/v1/room-types`: `Normal`, `Laboratório`, `Ginásio`, `Artes` ou um tipo criado pela escola. O nome é comparado sem distinguir maiúsculas ou acentos.
 
+- Um nome que a escola já usa liga a sala ou a disciplina a esse tipo.
+- Um nome que a escola ainda não tem cria um tipo novo. O mesmo nome nas salas e nas disciplinas cria um só tipo, mesmo com grafias diferentes.
+- Um nome arquivado restaura esse tipo, com o mesmo identificador.
+- Um nome igual ao de um tipo de outra escola cria um tipo novo nesta escola. Nunca usa o tipo de outra escola.
 - Uma célula vazia devolve `room_type_invalid`, com a mensagem «Escreva o tipo de sala.».
-- Um nome que não existe nos tipos ativos da escola, incluindo o nome de um tipo de outra escola, devolve `room_type_unknown`, com a mensagem «Não existe um tipo de sala com esse nome.».
+- Um nome com mais de 60 caracteres devolve `room_type_invalid`, com a mensagem «Escreva um nome de tipo com até 60 caracteres.».
 
-Salas e disciplinas ficam ligadas ao tipo pelo identificador; o resto da secção não muda.
+Os tipos novos são criados antes das salas e das disciplinas. Salas e disciplinas ficam ligadas ao tipo pelo identificador; o resto da secção não muda.
+
+## Sala da turma
+
+A coluna `Sala da turma` do ficheiro Cursos e turmas é opcional e é a última. Uma célula vazia deixa a turma em Automática (o Cronos escolhe).
+
+- O valor é o nome de uma sala ativa da escola ou de uma sala do ficheiro de salas do mesmo lote. Não distingue maiúsculas nem acentos.
+- A sala tem de ter lugares para os alunos da turma, indicados em `Número de alunos`.
+- Um nome sem sala devolve `home_room_not_found`, com a mensagem «Sala não encontrada. Escreva o nome de uma sala existente ou do ficheiro de salas.».
+- Uma sala sem lugares devolve `home_room_capacity`, com a mensagem «A sala {nome} não tem lugares para os {n} alunos da turma.». Se o nome já começa por «Sala», a mensagem usa «A {nome}», como no ecrã da turma.
+- Os dois erros indicam a linha e a coluna `Sala da turma`.
+- Preencher a sala sem os outros campos da turma devolve `class_partial`.
+- A coluna só se aplica a turmas novas. As turmas existentes não mudam; altere-as na página da turma.
+- O `commit` define a sala da turma depois de criar as salas e as turmas.
 
 ## Disponibilidade das turmas
 
@@ -120,6 +137,7 @@ Cada professor alterado regista uma alteração do motor.
 
 ## Comparação e pré-visualização
 
+Os tipos de sala novos aparecem na lista `Tipos de sala novos` e no contador `room_types`. Um tipo arquivado que volta também conta como novo.
 As linhas de disponibilidade ficam fora do limite de 100 itens da pré-visualização.
 Cada item traz `changed_blocks`: o número de blocos da versão visível em que o nível novo difere do guardado.
 Um nível em falta conta como Neutro nos dois lados.

@@ -1,4 +1,5 @@
 import { humanizeOperationalDetail, TXT } from './terminology'
+import { homeRoomSentenceSubject } from './presentation'
 
 const PRESENTATIONS = {
   authentication_required: { title: 'Sessão terminada', message: 'A sua sessão terminou. Entre novamente para continuar.', retryable: true },
@@ -175,7 +176,7 @@ const ROOM_TYPE_MESSAGES = {
   room_type_fixed: 'O tipo Normal é fixo: não pode mudar de nome nem ser removido.',
 }
 
-const joinNames = (names) => (names.length > 1 ? `${names.slice(0, -1).join(', ')} e ${names.at(-1)}` : names[0])
+export const joinNames = (names) => (names.length > 1 ? `${names.slice(0, -1).join(', ')} e ${names.at(-1)}` : names[0])
 
 const namesOf = (value) => (Array.isArray(value) ? value.filter(isText) : [])
 
@@ -194,4 +195,20 @@ export function getRoomTypeErrorMessage(error) {
     return roomTypeInUseMessage(detailOf(error)?.context) ?? getApiErrorMessage(error)
   }
   return Object.hasOwn(ROOM_TYPE_MESSAGES, code) ? ROOM_TYPE_MESSAGES[code] : getApiErrorMessage(error)
+}
+
+// Field feedback for the class home room. Null means the error is not a room
+// block, so the caller keeps its generic message.
+export function getClassHomeRoomErrorMessage(error) {
+  const code = getApiErrorCode(error)
+  if (code === 'resource_not_found') {
+    return detailOf(error)?.context?.resource === 'room' ? 'Sala não encontrada.' : null
+  }
+  if (code === 'home_room_capacity') {
+    const { room_name: roomName, room_capacity: roomCapacity, class_size: classSize } = detailOf(error)?.context ?? {}
+    if (isText(roomName) && isPositiveInt(roomCapacity) && isPositiveInt(classSize)) {
+      return `${homeRoomSentenceSubject(roomName)} tem ${roomCapacity} lugares e a turma tem ${classSize} alunos.`
+    }
+  }
+  return null
 }

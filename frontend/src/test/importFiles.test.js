@@ -61,13 +61,26 @@ describe('bulk import file utilities', () => {
       'Cronos_PresencaProfessores_Template.csv',
     ])
     expect(IMPORT_RESOURCES.every((item) => item.instructions.length > 0)).toBe(true)
-    expect(IMPORT_RESOURCES[0].instructions.join(' ')).toContain('nome definido pela escola')
-    expect(IMPORT_RESOURCES[1].instructions.join(' ')).toContain('nome definido pela escola')
+    expect(IMPORT_RESOURCES[0].instructions.join(' ')).toContain('cria um tipo novo')
+    expect(IMPORT_RESOURCES[1].instructions.join(' ')).toContain('cria um tipo novo')
+    expect(getImportCountLabel('room_types')).toBe('Tipos de sala novos')
     expect(getImportCountLabel('rooms')).toBe('Salas')
     expect(getImportCountLabel('assignments')).toBe('Atribuições')
     expect(getImportCountLabel('class_availability')).toBe('Disponibilidade das turmas')
     expect(getImportCountLabel('teacher_availability')).toBe('Disponibilidade dos professores')
     expect(getImportCountLabel('teacher_presence')).toBe('Presença dos professores')
+  })
+
+  it('describes the optional home room column of the classes template', () => {
+    const courses = IMPORT_RESOURCES.find((item) => item.key === 'courses')
+
+    expect(Object.keys(courses.fields)).toEqual([
+      'abbreviation', 'name', 'class_name', 'grade_level', 'start_year', 'end_year', 'size', 'home_room',
+    ])
+    expect(courses.fields.home_room).toBe('Sala da turma')
+    expect(courses.instructions).toContain(
+      'Sala da turma: vazio quer dizer Automática. Use uma sala existente ou do ficheiro de salas; só se aplica a turmas novas.',
+    )
   })
 
   it('defines the teacher availability resource right after the class availability resource', () => {

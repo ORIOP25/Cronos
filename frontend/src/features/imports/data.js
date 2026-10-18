@@ -13,7 +13,7 @@ export const IMPORT_RESOURCES = Object.freeze([
     instructions: [
       'Cada linha cria uma sala.',
       'Nome da sala: nome único, por exemplo Sala 1.02.',
-      'Tipo de sala: escreva o nome definido pela escola.',
+      'Tipo de sala: escreva o nome do tipo. Um nome que a escola ainda não tem cria um tipo novo.',
       'Capacidade: número de pessoas, igual ou superior a 1.',
     ],
     fields: { name: 'Nome da sala', type: 'Tipo de sala', capacity: 'Capacidade' },
@@ -25,7 +25,7 @@ export const IMPORT_RESOURCES = Object.freeze([
     origin: '/subjects',
     instructions: [
       'Repita a disciplina numa nova linha por cada módulo.',
-      'Tipo de sala: escreva o nome definido pela escola.',
+      'Tipo de sala: escreva o nome do tipo. Um nome que a escola ainda não tem cria um tipo novo.',
       'Horas e ordem são números inteiros a partir de 1.',
       'A ordem dos módulos deve ser contínua: 1, 2, 3…',
       'Para criar uma disciplina sem módulos, deixe os campos do módulo vazios; será apresentado um aviso.',
@@ -50,6 +50,8 @@ export const IMPORT_RESOURCES = Object.freeze([
       'O ano escolar deve ser 10, 11 ou 12.',
       'Os anos de início e fim usam quatro algarismos; o ano final deve ser posterior ao inicial.',
       'O número de alunos deve ser igual ou superior a 1.',
+      'Sala da turma: vazio quer dizer Automática. Use uma sala existente ou do ficheiro de salas; só se aplica a turmas novas.',
+      'A sala da turma deve ter lugares para todos os alunos da turma.',
       'Para criar apenas o curso, deixe os campos da turma vazios; será apresentado um aviso.',
     ],
     fields: {
@@ -60,6 +62,7 @@ export const IMPORT_RESOURCES = Object.freeze([
       start_year: 'Ano de início',
       end_year: 'Ano de fim',
       size: 'Número de alunos',
+      home_room: 'Sala da turma',
     },
   },
   {
@@ -159,6 +162,7 @@ export const IMPORT_RESOURCES = Object.freeze([
 ])
 
 const IMPORT_COUNT_LABELS = Object.freeze({
+  room_types: 'Tipos de sala novos',
   rooms: 'Salas',
   subjects: 'Disciplinas',
   modules: 'Módulos',
@@ -196,7 +200,7 @@ export function formatImportIssue(issue) {
 }
 
 const IMPORT_INVALIDATIONS = [
-  'members', 'teachers', 'eligible-teachers', 'rooms', 'subjects', 'courses',
+  'members', 'teachers', 'eligible-teachers', 'rooms', 'room-types', 'subjects', 'courses',
   'classes', 'class-subjects', 'available-subjects', 'class-availability',
   'teacher-availability', 'teacher-presence', 'substitute-recommendations',
   'substitute-diagnostics', 'occurrences', 'teacher-progress', 'my-availability',

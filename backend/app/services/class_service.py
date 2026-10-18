@@ -137,6 +137,7 @@ async def _active_room_of_school(db: AsyncSession, room_id: int, organization_id
             kind="not_found",
             code="resource_not_found",
             detail=f"Room {room_id} was not found in organization {organization_id}.",
+            public_context={"resource": "room"},
         )
     return room
 

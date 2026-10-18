@@ -53,6 +53,12 @@ Other client responses stay in context.
 | Remove a room type | Business block | `resource_in_use` | Banner in the modal: "Este tipo é usado por: salas {salas}; disciplinas {disciplinas}. Mude-lhes o tipo primeiro." | `RoomTypesModal` | Change the rooms and subjects first |
 | Remove a room type | Not found or fixed | `resource_not_found`, `room_type_fixed` | Banner in the modal: "Tipo de sala não encontrado." or the fixed-type message | `RoomTypesModal` | Reopen the window |
 | Save or remove a room type | Transient failure | Network, 429, 5xx | Toast, 6 s | `RoomTypesModal` | Retry |
+| Save a class home room | Room not found | `resource_not_found` with context `resource: room` | Field feedback under "Sala da turma": "Sala não encontrada." | `ClassDetails` | Choose another room |
+| Save a class | Class not found | `resource_not_found` without a room context | Toast with the generic not-found message | `ClassDetails` | Reopen the course |
+| Save a class home room | Capacity | `home_room_capacity` | Field feedback under "Sala da turma": "A sala {nome} tem {c} lugares e a turma tem {n} alunos." | `ClassDetails` | Choose a room with enough seats or Automática |
+| Edit a class home room | Rooms cannot load | Network, 429, 5xx | Field feedback under "Sala da turma": "Não foi possível carregar as salas." with a "Tentar novamente" button; Automática and the current room stay selectable | `ClassDetails` | Retry |
+| Show a class above its home room capacity | Warning | — | Banner in the class header: "A sala {nome} tem {c} lugares e a turma tem {n} alunos. Até corrigir, o Cronos escolhe a sala." | `ClassDetails` | Choose a larger room or correct the class size |
+| Remove a room that is a class home room | Confirmation | — | Added to the removal confirmation: "É a sala da turma de {turmas}. Essas turmas passam a Automática." | `Rooms` | Confirm or cancel |
 | Assign a teacher | Missing competency | `teacher_competency_missing` | Field feedback | `ClassSubjects` | Choose an eligible teacher |
 | Assign a teacher | Transient failure | Network, 429, 5xx | Toast, 6 s | `ClassSubjects` | Retry |
 | Update a class subject's modules | Success | — | Toast, 4 s, one fixed `id` | `ClassSubjects` | — |
@@ -114,6 +120,8 @@ Other client responses stay in context.
 | Load the team | Failure | — | Banner with retry | `Members` | Retry |
 | Submit a form | Invalid field or group | Local validator | Field feedback and focus | Form component | Fix the value |
 | Prevalidate a generation | Blockers or warnings | — | List panel | `Schedules` | Consult each item |
+
+The home room sentences above depend on the room name. When the name already starts with "Sala" (for example "Sala 101"), they read "A {nome} tem …" and the header reads "{nome}", so "Sala" never appears twice. Otherwise the header reads "Sala {nome}" and the sentences keep "A sala {nome}".
 
 ## Justified Exceptions
 

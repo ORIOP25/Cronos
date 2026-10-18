@@ -456,6 +456,33 @@ class TestClassHomeRoom:
         )
         assert saved is None
 
+    async def test_home_room_not_found_names_the_room_in_context(
+        self, async_client: AsyncClient, clerk_admin_headers: dict
+    ):
+        """❌ A sala inexistente dá 404 com o contexto 'room' para a UI a identificar."""
+        course_id = await _create_course(async_client, clerk_admin_headers)
+        class_id = await _create_class_in_course(async_client, clerk_admin_headers, course_id)
+        types = await room_type_ids(async_client, clerk_admin_headers)
+
+        resp = await _set_home_room(
+            async_client, clerk_admin_headers, course_id, class_id, types["normal"]
+        )
+
+        assert resp.status_code == 404
+        assert resp.json()["detail"]["context"] == {"resource": "room"}
+
+    async def test_missing_class_is_not_reported_as_a_missing_room(
+        self, async_client: AsyncClient, clerk_admin_headers: dict
+    ):
+        """❌ A turma inexistente dá 404 sem contexto de sala."""
+        course_id = await _create_course(async_client, clerk_admin_headers)
+        room_id = await _create_room(async_client, clerk_admin_headers, "Sala Existente", 30)
+
+        resp = await _set_home_room(async_client, clerk_admin_headers, course_id, 99999, room_id)
+
+        assert resp.status_code == 404
+        assert resp.json()["detail"]["context"] == {}
+
     async def test_home_room_of_another_school_is_not_found(
         self, async_client: AsyncClient, clerk_admin_headers: dict, db_session: AsyncSession
     ):

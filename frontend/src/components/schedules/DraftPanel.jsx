@@ -19,6 +19,8 @@ const WARNING_LABELS = {
     'A pesquisa foi interrompida pelo limite de segurança. A proposta é válida, mas pode ser possível melhorá-la.',
 }
 
+const avoidableRoomChangesLabel = (count) => (count === 1 ? 'mudança de sala evitável' : 'mudanças de sala evitáveis')
+
 const STALE_TEXT =
   'Existem alterações mais recentes. Esta proposta já não pode ser aprovada. Gere uma nova proposta.'
 
@@ -75,6 +77,9 @@ const DraftPanel = ({ draft, onApprove, onReject, isApproving, isRejecting, allo
                 <strong>{metrics.excess_days ?? 0}</strong> dias depois da data preferencial
               </span>
               <span><strong>{metrics.margin_days ?? 0}</strong> dias de margem</span>
+              {typeof metrics.avoidable_room_changes === 'number' && (
+                <span><strong>{metrics.avoidable_room_changes}</strong> {avoidableRoomChangesLabel(metrics.avoidable_room_changes)}</span>
+              )}
             </div>
           )}
 

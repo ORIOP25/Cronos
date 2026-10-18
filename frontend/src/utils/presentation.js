@@ -2,6 +2,23 @@ export function formatGradeLevel(gradeLevel) {
   return gradeLevel == null || gradeLevel === '' ? '—' : `${gradeLevel}.º ano`
 }
 
+// A room named "Sala 101" already says what it is; "L-03" needs the prefix.
+// The word must end at the prefix, so "Salão 2" still gets it.
+const hasSalaPrefix = (name) => {
+  const folded = String(name ?? '').normalize('NFD').replace(/\p{M}/gu, '').trim().toLowerCase()
+  return /^sala(?![a-z])/.test(folded)
+}
+
+export function homeRoomHeading(roomName) {
+  const name = String(roomName ?? '').trim()
+  return hasSalaPrefix(name) ? name : `Sala ${name}`
+}
+
+export function homeRoomSentenceSubject(roomName) {
+  const name = String(roomName ?? '').trim()
+  return hasSalaPrefix(name) ? `A ${name}` : `A sala ${name}`
+}
+
 const TIMESHEET_STATUSES = Object.freeze({
   OPEN: { label: 'Aberta', color: 'secondary', background: '#f8f9fa' },
   SUBMITTED: { label: 'Submetida', color: 'info', background: '#fff3cd' },

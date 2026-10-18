@@ -18,6 +18,7 @@ import {
   useCreateJointGroup,
   useCreateRoom,
   useCreateSubject,
+  useDeleteCourseClass,
   useDeleteJointGroup,
   useEligibleTeachers,
   useJointCandidates,
@@ -321,6 +322,21 @@ describe('vertical feature data hooks', () => {
     ]))
   })
 
+  it('refreshes the rooms that list a deleted class as their home class', async () => {
+    const { queryClient, wrapper } = createHarness()
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
+    const mutation = renderHook(() => useDeleteCourseClass(), { wrapper })
+
+    await act(() => mutation.result.current.mutateAsync({ courseId: 7, classId: 11 }))
+
+    expect(apiClient.delete).toHaveBeenCalledWith('/courses/7/classes/11')
+    expect(invalidate.mock.calls.map(([options]) => options.queryKey)).toEqual(expect.arrayContaining([
+      ['courses', 'org-a'],
+      ['classes', 'org-a'],
+      ['rooms', 'org-a'],
+    ]))
+  })
+
   it('updates a class through its course and refreshes tenant catalog queries', async () => {
     const { queryClient, wrapper } = createHarness()
     const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
@@ -333,6 +349,7 @@ describe('vertical feature data hooks', () => {
     expect(invalidate.mock.calls.map(([options]) => options.queryKey)).toEqual(expect.arrayContaining([
       ['courses', 'org-a'],
       ['classes', 'org-a'],
+      ['rooms', 'org-a'],
       ['readiness-bases', 'org-a'],
     ]))
   })

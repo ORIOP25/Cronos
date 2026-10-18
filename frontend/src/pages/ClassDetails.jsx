@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { toast } from 'react-hot-toast'
 import {
   CCard, CCardBody, CCardHeader, CCol, CRow, CButton,
-  CBadge, CSpinner, CFormInput, CProgress, CProgressBar,
+  CBadge, CSpinner, CFormInput, CFormSelect, CFormFeedback, CProgress, CProgressBar,
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import {
@@ -18,14 +18,15 @@ import {
   useUpdateClassProgress,
   useClassSubjects,
   useClassAvailability,
+  useRooms,
 } from '../features/catalog/data'
 import Breadcrumbs from '../components/Breadcrumbs'
 import FeedbackBanner from '../components/FeedbackBanner'
 import RoomTypeBadge from '../components/RoomTypeBadge'
 import ClassAvailabilityModal from '../components/ClassAvailabilityModal'
-import { getApiErrorMessage } from '../utils/apiErrors'
+import { getApiErrorMessage, getClassHomeRoomErrorMessage, joinNames } from '../utils/apiErrors'
 import { useAttemptScope } from '../hooks/useAttemptScope'
-import { formatGradeLevel } from '../utils/presentation'
+import { formatGradeLevel, homeRoomHeading, homeRoomSentenceSubject } from '../utils/presentation'
 
 // ==========================================
 //  HELPERS
@@ -52,6 +53,36 @@ const summarizeClassAvailability = (rows) => {
   if (counts.avoid) parts.push(`${counts.avoid} a evitar`)
   if (counts.preferred) parts.push(`${counts.preferred} preferenciais`)
   return parts.length ? parts.join(' · ') : 'Sem restrições. Todos os blocos estão em Neutro.'
+}
+
+const AUTOMATIC_HOME_ROOM = ''
+
+/**
+ * Salas que a turma pode escolher: ativas e com lugares para os alunos.
+ * A sala da turma atual entra sempre, para o campo mostrar o valor guardado
+ * e uma gravação sem mudança não a apague.
+ */
+const homeRoomChoices = (rooms, { classSize, currentHomeRoom }) => {
+  const currentId = currentHomeRoom?.id
+  const choices = rooms.filter(room => room.id === currentId || (!room.is_archived && room.capacity >= classSize))
+  const listed = choices.some(room => room.id === currentId)
+  return currentHomeRoom && !listed ? [currentHomeRoom, ...choices] : choices
+}
+
+/**
+ * Corpo do PATCH da turma. A sala só entra quando muda: a sala guardada que
+ * ficou pequena não pode bloquear o aumento da turma (D13).
+ */
+const classHeaderPayload = ({ name, size, homeRoomId, currentHomeRoomId }) => (
+  homeRoomId === currentHomeRoomId
+    ? { name, size }
+    : { name, size, home_room_id: homeRoomId }
+)
+
+const homeRoomOptionLabel = (room, classId) => {
+  const otherClasses = (room.home_classes ?? []).filter(turma => turma.id !== classId).map(turma => turma.name)
+  const base = `${room.name} · ${room.room_type?.name ?? '—'} · ${room.capacity} lugares`
+  return otherClasses.length ? `${base} · também é sala da turma ${joinNames(otherClasses)}` : base
 }
 
 // ==========================================
@@ -198,13 +229,15 @@ const ClassDetails = () => {
   const { data: classData, isLoading, error } = useClassDetails(numClassId)
   const { data: classSubjects } = useClassSubjects(numClassId)
   const classAvailabilityQuery = useClassAvailability({ classId: numClassId })
+  const { data: rooms = [], isLoading: roomsLoading, isError: roomsError, refetch: refetchRooms } = useRooms()
   const updateClass = useUpdateCourseClass()
   const updateProgress = useUpdateClassProgress()
   const attemptScope = useAttemptScope()
 
   // --- STATE: Edição do header ---
   const [editingHeader, setEditingHeader] = useState(false)
-  const [headerForm, setHeaderForm] = useState({ name: '', size: 25 })
+  const [headerForm, setHeaderForm] = useState({ name: '', size: 25, homeRoomId: AUTOMATIC_HOME_ROOM })
+  const [homeRoomError, setHomeRoomError] = useState('')
 
   // --- STATE: Disponibilidade da turma ---
   const [availabilityOpen, setAvailabilityOpen] = useState(false)
@@ -244,25 +277,48 @@ const ClassDetails = () => {
   //  HANDLERS: Header
   // ==========================================
   const startEditHeader = useCallback(() => {
-    setHeaderForm({ name: classData.name, size: classData.size })
+    setHeaderForm({
+      name: classData.name,
+      size: classData.size,
+      homeRoomId: String(classData.home_room?.id ?? AUTOMATIC_HOME_ROOM),
+    })
+    setHomeRoomError('')
     setEditingHeader(true)
   }, [classData])
 
-  const cancelEditHeader = () => setEditingHeader(false)
+  const cancelEditHeader = () => {
+    setHomeRoomError('')
+    setEditingHeader(false)
+  }
 
   const saveHeader = () => {
     const trimName = headerForm.name.trim()
     const size = Number.parseInt(headerForm.size, 10)
     if (!trimName || Number.isNaN(size) || size <= 0) return
+    const homeRoomId = headerForm.homeRoomId === AUTOMATIC_HOME_ROOM ? null : Number(headerForm.homeRoomId)
+    const data = classHeaderPayload({
+      name: trimName,
+      size,
+      homeRoomId,
+      currentHomeRoomId: classData.home_room?.id ?? null,
+    })
 
     updateClass.mutate(
-      { courseId: numCourseId, classId: numClassId, data: { name: trimName, size } },
+      { courseId: numCourseId, classId: numClassId, data },
       attemptScope.guard({
         onSuccess: () => {
+          setHomeRoomError('')
           setEditingHeader(false)
           toast.success('Turma atualizada.')
         },
-        onError: (error) => toast.error(getApiErrorMessage(error, 'Não foi possível guardar a turma. Tente novamente.')),
+        onError: (error) => {
+          const roomMessage = Object.hasOwn(data, 'home_room_id') ? getClassHomeRoomErrorMessage(error) : null
+          if (roomMessage) {
+            setHomeRoomError(roomMessage)
+            return
+          }
+          toast.error(getApiErrorMessage(error, 'Não foi possível guardar a turma. Tente novamente.'))
+        },
       })
     )
   }
@@ -347,6 +403,13 @@ const ClassDetails = () => {
   }
 
   const yearLabel = `${classData.start_year}/${classData.end_year}`
+  const homeRoom = classData.home_room
+  const homeRoomTooSmall = Boolean(homeRoom) && homeRoom.capacity < classData.size
+  const typedSize = Number.parseInt(headerForm.size, 10)
+  const roomChoices = homeRoomChoices(rooms, {
+    classSize: Number.isNaN(typedSize) || typedSize <= 0 ? classData.size : typedSize,
+    currentHomeRoom: homeRoom,
+  })
 
   // ==========================================
   //  RENDER: Page
@@ -365,7 +428,7 @@ const ClassDetails = () => {
           {editingHeader ? (
             /* --- MODO EDIÇÃO --- */
             <CRow className="g-3 align-items-end">
-              <CCol md={5}>
+              <CCol md={4}>
                 <label htmlFor="header-name" className="form-label fw-semibold">Nome da Turma</label>
                 <CFormInput
                   id="header-name"
@@ -375,7 +438,7 @@ const ClassDetails = () => {
                   autoFocus
                 />
               </CCol>
-              <CCol md={3}>
+              <CCol md={2}>
                 <label htmlFor="header-size" className="form-label fw-semibold">Capacidade (alunos)</label>
                 <CFormInput
                   id="header-size"
@@ -386,7 +449,39 @@ const ClassDetails = () => {
                   onChange={(e) => setHeaderForm(prev => ({ ...prev, size: e.target.value }))}
                 />
               </CCol>
-              <CCol md={4} className="d-flex gap-2">
+              <CCol md={3}>
+                <CFormSelect
+                  id="header-home-room"
+                  label="Sala da turma"
+                  value={headerForm.homeRoomId}
+                  onChange={(e) => {
+                    setHomeRoomError('')
+                    setHeaderForm(prev => ({ ...prev, homeRoomId: e.target.value }))
+                  }}
+                  invalid={Boolean(homeRoomError)}
+                  aria-describedby={homeRoomError ? 'header-home-room-error' : undefined}
+                >
+                  <option value={AUTOMATIC_HOME_ROOM}>Automática (o Cronos escolhe)</option>
+                  {roomChoices.map(room => (
+                    <option key={room.id} value={String(room.id)}>{homeRoomOptionLabel(room, numClassId)}</option>
+                  ))}
+                </CFormSelect>
+                {roomsLoading && <div role="status" className="form-text">A carregar salas…</div>}
+                {roomsError && (
+                  <div>
+                    <CFormFeedback id="header-home-room-rooms-error" invalid className="d-block" role="alert">
+                      Não foi possível carregar as salas.
+                    </CFormFeedback>
+                    <CButton type="button" color="secondary" variant="ghost" size="sm" onClick={() => refetchRooms()}>
+                      Tentar novamente
+                    </CButton>
+                  </div>
+                )}
+                {homeRoomError && (
+                  <CFormFeedback id="header-home-room-error" invalid className="d-block" role="alert">{homeRoomError}</CFormFeedback>
+                )}
+              </CCol>
+              <CCol md={3} className="d-flex gap-2">
                 <CButton color="primary" onClick={saveHeader} disabled={updateClass.isPending}>
                   {updateClass.isPending ? <CSpinner size="sm" /> : <CIcon icon={cilSave} className="me-1" />}
                   Guardar
@@ -420,7 +515,17 @@ const ClassDetails = () => {
                     <CIcon icon={cilPeople} size="sm" />
                     <span>{classData.size} alunos</span>
                   </div>
+                  <div className="d-flex align-items-center gap-1 text-muted">
+                    <span>{homeRoom ? homeRoomHeading(homeRoom.name) : 'Sala automática'}</span>
+                  </div>
                 </div>
+                {homeRoomTooSmall && (
+                  <div className="mt-2">
+                    <FeedbackBanner tone="warning">
+                      {`${homeRoomSentenceSubject(homeRoom.name)} tem ${homeRoom.capacity} lugares e a turma tem ${classData.size} alunos. Até corrigir, o Cronos escolhe a sala.`}
+                    </FeedbackBanner>
+                  </div>
+                )}
               </div>
               <div className="d-flex gap-2">
                 <CButton color="light" size="sm" onClick={startEditHeader} title="Editar nome e capacidade">
