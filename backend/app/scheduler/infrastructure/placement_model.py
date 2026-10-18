@@ -606,8 +606,10 @@ def _add_assignment_credit(state, assignment_id, row):
         if row.final_periods:
             final_keys = [key for key in keys if key[1] in row.final_periods]
             model.Add(sum(state.last[key] for key in final_keys) == 1)
+        last_position = model.NewIntVar(0, len(keys) - 1, f"lp_{assignment_id}")
+        model.Add(last_position == sum(index * state.last[key] for index, key in enumerate(keys)))
         for index, key in enumerate(keys):
-            model.Add(state.x[key] <= sum(state.last[other] for other in keys[index:]))
+            model.Add(last_position >= index).OnlyEnforceIf(state.x[key])
         if row.waste_target is not None:
             model.Add(sum(state.waste[key] for key in keys) == row.waste_target)
         model.Add(
