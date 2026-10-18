@@ -187,18 +187,20 @@ export const useTeacherScheduleHorizon = ({ enabled = true, refetchInterval = fa
   })
 }
 
-export const useWeekSchedule = (classId, teacherId, weekStart) => {
+export const useWeekSchedule = (classId, teacherId, weekStart, proposalId = null) => {
   const apiClient = useApiClient()
   const orgId = useOrganization().organization?.id
   const enabled = Boolean(orgId)
     && Boolean(weekStart)
     && (Boolean(classId) !== Boolean(teacherId))
+  const proposalScope = proposalId == null ? [] : [proposalId]
   return useQuery({
-    queryKey: orgQueryKey('weekSchedule', orgId, classId, teacherId, weekStart),
+    queryKey: orgQueryKey('weekSchedule', orgId, classId, teacherId, weekStart, ...proposalScope),
     queryFn: async () => {
       const params = { week_start: weekStart }
       if (classId) params.class_id = classId
       if (teacherId) params.teacher_id = teacherId
+      if (proposalId != null) params.proposal_id = proposalId
       return apiClient.get('/schedule/week', { params })
     },
     enabled,
