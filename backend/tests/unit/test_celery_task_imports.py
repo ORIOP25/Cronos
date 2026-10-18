@@ -101,3 +101,22 @@ def test_each_beat_task_is_registered_by_the_worker_that_consumes_its_queue() ->
         for module in workers.values():
             if module != owner:
                 assert entry["task"] not in registered[module], (entry["task"], module)
+
+
+def test_supervisor_command_uses_the_solo_pool_in_every_deployment_file() -> None:
+    """The supervisor is one lightweight task: solo pool, with no prefork child to hold memory."""
+    root = BACKEND.parent
+    deployment_files = [
+        BACKEND / "railway" / "supervisor.json",
+        root / "docker-compose.yml",
+        root / "docker-compose.ci.yml",
+    ]
+    for path in deployment_files:
+        command_lines = [
+            line
+            for line in path.read_text(encoding="utf-8").splitlines()
+            if f"--include={SUPERVISOR_MODULE}" in line
+        ]
+        assert command_lines, path
+        for line in command_lines:
+            assert "--pool=solo" in line, (path.name, line)

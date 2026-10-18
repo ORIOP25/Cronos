@@ -104,7 +104,7 @@ services:
 
   scheduler-supervisor:
     image: cronos-backend-ci:local
-    command: ["celery", "-A", "app.celery_worker.celery_app", "worker", "--loglevel=info", "--include=app.scheduler_recovery_worker", "--concurrency=1", "--prefetch-multiplier=1", "--queues=scheduler-supervisor", "--hostname=scheduler-supervisor@%h"]
+    command: ["celery", "-A", "app.celery_worker.celery_app", "worker", "--loglevel=info", "--include=app.scheduler_recovery_worker", "--pool=solo", "--concurrency=1", "--prefetch-multiplier=1", "--queues=scheduler-supervisor", "--hostname=scheduler-supervisor@%h"]
     environment:
       <<: *runtime-environment
       DATABASE_POOLING_ENABLED: "false"
