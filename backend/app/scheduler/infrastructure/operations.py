@@ -33,6 +33,7 @@ from app.scheduler.infrastructure.models import (
     SchedulerLessonLogV1,
     SchedulerLessonSliceV1,
     SchedulerLessonV1,
+    SchedulerProposalV1,
     SchedulerVersionV1,
 )
 from app.scheduler.infrastructure.progress import (
@@ -50,6 +51,8 @@ SUBSTITUTION_ORIGIN = "substitution:{occurrence_id}:{teacher_id}"
 SUBSTITUTION_LIKE = "substitution:{occurrence_id}:%"
 # Note stored on the occurrence of a class that missed a joint lesson (J12).
 JOINT_ABSENT_NOTE = "Turma ausente"
+# Block reason of every slot in a pending proposal preview (read-only).
+PROPOSAL_PREVIEW_BLOCK = "proposal_preview"
 
 
 class OperationsError(ValueError):
@@ -59,6 +62,10 @@ class OperationsError(ValueError):
         super().__init__(message)
         self.code = code
         self.status_code = status_code
+
+
+class ProposalPreviewNotFound(LookupError):
+    """The proposal cannot be previewed: unknown, not pending, or outside the active year."""
 
 
 async def _active_year_and_version(db: AsyncSession, organization_id: int):
@@ -78,6 +85,38 @@ async def _active_year_and_version(db: AsyncSession, organization_id: int):
         )
     )
     return year, version
+
+
+async def _proposal_preview_version_id(
+    db: AsyncSession,
+    organization_id: int,
+    year: models.SchedulerSchoolYear | None,
+    proposal_id: int,
+) -> int:
+    """Candidate version of a pending proposal in the active school year."""
+    version_id = None
+    if year is not None:
+        version_id = await db.scalar(
+            select(SchedulerProposalV1.version_id).where(
+                SchedulerProposalV1.organization_id == organization_id,
+                SchedulerProposalV1.school_year_id == year.id,
+                SchedulerProposalV1.id == proposal_id,
+                SchedulerProposalV1.status == "PENDING",
+            )
+        )
+    if version_id is None:
+        raise ProposalPreviewNotFound(proposal_id)
+    return version_id
+
+
+def _as_proposal_preview(slot: dict) -> dict:
+    """A proposal slot is read-only: it cannot be completed or receive an occurrence."""
+    return {
+        **slot,
+        "can_complete": False,
+        "blocked_reason": PROPOSAL_PREVIEW_BLOCK,
+        "can_create_occurrence": False,
+    }
 
 
 def local_times(lesson: SchedulerLessonV1, zone: ZoneInfo) -> tuple[time, time]:
@@ -173,15 +212,24 @@ async def week_schedule(
     teacher_id: int | None,
     today: date | None = None,
     now_utc: datetime | None = None,
+    proposal_id: int | None = None,
 ) -> list[dict] | None:
     """Published v1 lessons of one week with their modular slices.
+
+    With ``proposal_id`` the lessons come from that pending proposal's candidate
+    version, read-only, and operational substitution blocks are left out.
 
     Returns ``None`` when no v1 version is active so the caller can keep the
     legacy operational view during the transition.
     """
-    year, version = await _active_year_and_version(db, organization_id)
-    if year is None or version is None:
+    year, active_version = await _active_year_and_version(db, organization_id)
+    is_preview = proposal_id is not None
+    if is_preview:
+        version_id = await _proposal_preview_version_id(db, organization_id, year, proposal_id)
+    elif year is None or active_version is None:
         return None
+    else:
+        version_id = active_version.id
     zone = ZoneInfo(year.timezone)
     reference_today = today if today is not None else date.today()
     moment = now_utc or datetime.now(UTC)
@@ -224,7 +272,7 @@ async def week_schedule(
         .where(
             SchedulerLessonV1.organization_id == organization_id,
             SchedulerLessonV1.school_year_id == year.id,
-            SchedulerLessonV1.version_id == version.id,
+            SchedulerLessonV1.version_id == version_id,
             SchedulerLessonV1.school_date.between(week_start, week_end),
         )
         .order_by(
@@ -255,7 +303,7 @@ async def week_schedule(
     )
     if class_id is not None:
         block_query = block_query.where(models.OperationalScheduleBlock.class_id == class_id)
-    block_models = (await db.scalars(block_query)).all()
+    block_models = [] if is_preview else (await db.scalars(block_query)).all()
     if not rows and not block_models:
         return []
     all_block_rows: list = []
@@ -372,7 +420,7 @@ async def week_schedule(
                 .where(
                     models.OperationalScheduleBlock.organization_id == organization_id,
                     models.OperationalScheduleBlock.origin_kind == models.OperationalBlockOrigin.V1,
-                    SchedulerLessonV1.version_id == version.id,
+                    SchedulerLessonV1.version_id == version_id,
                     SchedulerLessonV1.stable_key.in_({row[1].stable_key for row in block_rows}),
                 )
             )
@@ -432,7 +480,7 @@ async def week_schedule(
         db,
         organization_id,
         year.id,
-        version.id,
+        version_id,
         {row[0].stable_key for row in rows} | {row[1].stable_key for row in block_rows},
     )
     joint_keys = {key for key, members in joint_members.items() if len(members) > 1}
@@ -690,6 +738,8 @@ async def week_schedule(
         slots = deduped
     for slot in slots:
         slot.pop("_stable_key", None)
+    if is_preview:
+        return [_as_proposal_preview(slot) for slot in slots]
     return slots
 
 
