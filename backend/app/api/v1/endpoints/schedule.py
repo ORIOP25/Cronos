@@ -18,6 +18,8 @@ logger = structlog.get_logger(__name__)
 ERR_TEACHER_PROFILE_REQUIRED = "Professor sem perfil associado"
 ERR_TEACHER_OWN_SCHEDULE_ONLY = "Professor só pode consultar o próprio horário"
 ERR_TEACHER_HORIZON_NOT_FOUND = "Não existe horizonte semanal configurado para a organização"
+ERR_PROPOSAL_PREVIEW_FORBIDDEN = "Só a direção pode ver a proposta pendente."
+ERR_PROPOSAL_NOT_FOUND = "Proposta não encontrada."
 
 
 def _raise_schedule_error(status_code: int, code: str, detail: str) -> None:
@@ -193,6 +195,10 @@ async def get_week_schedule(
     current_user: deps.ActiveActor,
     class_id: Annotated[int | None, Query(description="ID da turma")] = None,
     teacher_id: Annotated[int | None, Query(description="ID do professor")] = None,
+    proposal_id: Annotated[
+        int | None,
+        Query(description="ID de proposta pendente a pré-visualizar (apenas direção, só leitura)"),
+    ] = None,
 ):
     """Retorna os slots da semana indicada, enriquecidos com o estado de ocorrência para dias passados."""
     effective_class_id = class_id
@@ -202,6 +208,9 @@ async def get_week_schedule(
 
     if not is_admin and not is_teacher:
         _raise_schedule_error(403, "teacher_schedule_forbidden", ERR_TEACHER_OWN_SCHEDULE_ONLY)
+
+    if proposal_id is not None and not is_admin:
+        _raise_schedule_error(403, "proposal_preview_forbidden", ERR_PROPOSAL_PREVIEW_FORBIDDEN)
 
     if is_teacher and not is_admin:
         if current_user.teacher_id is None:
@@ -215,13 +224,17 @@ async def get_week_schedule(
     if effective_class_id is None and effective_teacher_id is None:
         _raise_schedule_error(400, "week_filter_required", WEEK_FILTER_REQUIRED_MSG)
 
-    v1_slots = await operations.week_schedule(
-        db,
-        current_user.organization_id,
-        week_start=week_start,
-        class_id=effective_class_id,
-        teacher_id=effective_teacher_id,
-    )
+    try:
+        v1_slots = await operations.week_schedule(
+            db,
+            current_user.organization_id,
+            week_start=week_start,
+            class_id=effective_class_id,
+            teacher_id=effective_teacher_id,
+            proposal_id=proposal_id,
+        )
+    except operations.ProposalPreviewNotFound:
+        _raise_schedule_error(404, "proposal_not_found", ERR_PROPOSAL_NOT_FOUND)
     return v1_slots or []
 
 

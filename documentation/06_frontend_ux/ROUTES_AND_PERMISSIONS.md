@@ -31,7 +31,7 @@ Read [Members and Access](../02_domain_model/MEMBERS_AND_ACCESS.md).
 | `/foundation` | `Foundation.jsx` | Foundation founder | Organization setup wizard |
 | `/guide` | `Guide.jsx` | Admin | Optional tutorial guide |
 | `/dashboard` | `Dashboard.jsx` | Admin | Administrative command center |
-| `/schedules` | `Schedules.jsx` | Admin | Timetable view and solver trigger |
+| `/schedules` | `Schedules.jsx` | Admin | Timetable view, read-only proposal preview, and solver trigger |
 | `/courses` | `Courses.jsx` | Admin | Course catalog management |
 | `/courses/:id` | `CourseDetails.jsx` | Admin | Course details and classes list |
 | `/courses/:courseId/classes/:classId` | `ClassDetails.jsx` | Admin | Class details view |

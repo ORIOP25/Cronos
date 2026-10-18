@@ -184,7 +184,7 @@ Each `affected_availabilities` entry of `POST /school/grid-changes/preview` incl
 | `POST` | `/api/v1/scheduler/drafts/{proposal_id}/approve` | Admin |
 | `POST` | `/api/v1/scheduler/drafts/{proposal_id}/reject` | Admin |
 | `POST` | `/api/v1/schedule/constraints/` | Admin |
-| `GET` | `/api/v1/schedule/week` | Active; teacher scope is restricted; rate limit `60/minute;600/hour` |
+| `GET` | `/api/v1/schedule/week` | Active; teacher scope is restricted; `proposal_id` admin only; rate limit `60/minute;600/hour` |
 | `GET` | `/api/v1/schedule/me/horizon` | Teacher; rate limit `300/hour` |
 | `PUT` | `/api/v1/schedule/operational-blocks/{id}/log` | Active; assigned teacher or admin |
 | `PUT` | `/api/v1/schedule/lessons/{lesson_id}/log` | Active; assigned teacher or admin |
@@ -192,6 +192,11 @@ Each `affected_availabilities` entry of `POST /school/grid-changes/preview` incl
 Scheduler status exposes `active_proposal_id` for the approved proposal linked to the active version, or `null` when absent.
 `GET /scheduler/jobs/{job_id}` returns a `diagnostics` list with one proven entry per affected class. A proven joint isolation (`JOINT_NO_COMMON_TIME`) returns one entry per member class, each with the current class name and subject name, so the client can name every class and the subject. A class or subject deleted before the read keeps a null name and the client shows the generic message.
 Weekly schedule reads return published lesson intervals, resource identifiers, module projections, and operational log state.
+`GET /schedule/week?proposal_id=N` returns a read-only preview of pending proposal `N` in the same format.
+Only an admin may pass `proposal_id`; any other actor receives `403` with `proposal_preview_forbidden`.
+The proposal must be `PENDING` and belong to the active school year, or the route returns `404` with `proposal_not_found`.
+Preview slots set `can_complete` and `can_create_occurrence` to `false` and `blocked_reason` to `proposal_preview`.
+A preview omits operational substitution blocks and works before any version is active.
 There is no separate proposal-lesson listing route.
 The API has no observability summary routes, no `POST /api/v1/occurrences/` create route, and no `GET /api/v1/scheduler/drafts/{id}/lessons` route.
 `POST /api/v1/schedule/constraints/` remains because the E2E adaptive repair test triggers it.

@@ -21,6 +21,8 @@ const mocks = vi.hoisted(() => ({
   schedulerStatusRefetch: vi.fn(),
   currentDraftRefetch: vi.fn(),
   weekRefetch: vi.fn(),
+  weekRequest: vi.fn(),
+  gridProps: vi.fn(),
   prevalidation: { data: null, isFetching: false, isError: false, refetch: vi.fn() },
 }))
 
@@ -41,12 +43,10 @@ vi.mock('../features/scheduling/data', () => ({
   useGenerateSchedule: () => ({ mutateAsync: mocks.generate, isPending: false }),
   useScheduleTaskStatus: (jobId) => { mocks.taskStatus(jobId); return { data: mocks.jobData } },
   useCancelScheduleTask: () => ({ mutate: mocks.cancel, isPending: false }),
-  useWeekSchedule: () => ({
-    data: [],
-    isFetching: false,
-    isError: false,
-    refetch: mocks.weekRefetch,
-  }),
+  useWeekSchedule: (...args) => {
+    mocks.weekRequest(...args)
+    return { data: [], isFetching: false, isError: false, refetch: mocks.weekRefetch }
+  },
 }))
 
 vi.mock('../features/members/data', () => ({
@@ -70,13 +70,21 @@ vi.mock('../components/schedules/DraftPanel', () => ({
     </div>
   ),
 }))
-vi.mock('../components/WeekGrid', () => ({ default: () => <div>Week grid</div> }))
+vi.mock('../components/WeekGrid', () => ({
+  default: (props) => { mocks.gridProps(props); return <div>Week grid</div> },
+}))
 vi.mock('../components/LessonLogModal', () => ({ default: () => null }))
 vi.mock('../components/schedules/KPISidebar', () => ({ default: () => null }))
 vi.mock('../components/schedules/GenerationStatusPanel', () => ({ default: () => null }))
 
 function renderPage() {
   return renderWithRouter(<Schedules />)
+}
+
+const PROPOSAL_BANNER = 'Está a ver a proposta pendente. Nada muda no horário publicado até a aprovar.'
+
+function renderClassGrid() {
+  return renderWithRouter(<Schedules initialClassId="5" />)
 }
 
 function proposalStatus(overrides = {}) {
@@ -110,6 +118,8 @@ describe('Schedules scheduler flow', () => {
     mocks.schedulerStatusRefetch.mockReset()
     mocks.currentDraftRefetch.mockReset()
     mocks.weekRefetch.mockReset()
+    mocks.weekRequest.mockReset()
+    mocks.gridProps.mockReset()
     mocks.currentDraft = null
     mocks.jobData = null
     mocks.classes = []
@@ -135,6 +145,88 @@ describe('Schedules scheduler flow', () => {
     mocks.jobData = { id: 9, status: 'RUNNING', cancellation_requested: true }
     renderPage()
     expect(screen.getByRole('button', { name: /A cancelar…/ })).toBeDisabled()
+  })
+
+  it('previews the pending proposal in the week grid when the proposal toggle is pressed', () => {
+    mocks.status = proposalStatus({ publication_state: 'PUBLISHED', active_version_id: 5, default_strategy: 'ADAPTIVE_RECOVERY' })
+
+    renderClassGrid()
+
+    expect(screen.getByRole('button', { name: 'Horário publicado' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.queryByText(PROPOSAL_BANNER)).not.toBeInTheDocument()
+    expect(mocks.weekRequest).toHaveBeenLastCalledWith(5, null, expect.any(String), null)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Proposta pendente' }))
+
+    expect(screen.getByRole('button', { name: 'Proposta pendente' })).toHaveAttribute('aria-pressed', 'true')
+    expect(mocks.weekRequest).toHaveBeenLastCalledWith(5, null, expect.any(String), 77)
+    expect(screen.getByText(PROPOSAL_BANNER)).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Horário publicado' }))
+
+    expect(mocks.weekRequest).toHaveBeenLastCalledWith(5, null, expect.any(String), null)
+    expect(screen.queryByText(PROPOSAL_BANNER)).not.toBeInTheDocument()
+  })
+
+  it('does not offer the proposal toggle without a pending proposal', () => {
+    mocks.status = proposalStatus({ pending_proposal: null })
+
+    renderClassGrid()
+
+    expect(screen.queryByRole('button', { name: 'Horário publicado' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Proposta pendente' })).not.toBeInTheDocument()
+  })
+
+  it.each([
+    ['is_stale', { is_stale: true }],
+    ['status STALE', { status: 'STALE' }],
+  ])('does not offer the proposal toggle when the pending proposal is stale (%s)', (_label, staleFlag) => {
+    mocks.status = proposalStatus({ pending_proposal: { proposal_id: 77, can_approve: false, metrics: {}, ...staleFlag } })
+
+    renderClassGrid()
+
+    expect(screen.queryByRole('button', { name: 'Horário publicado' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Proposta pendente' })).not.toBeInTheDocument()
+  })
+
+  it('keeps the grid read-only while the proposal is previewed', () => {
+    mocks.status = proposalStatus({ publication_state: 'PUBLISHED', active_version_id: 5, default_strategy: 'ADAPTIVE_RECOVERY' })
+
+    renderClassGrid()
+    expect(mocks.gridProps.mock.lastCall[0]).toMatchObject({ isOperationalEnabled: true })
+    expect(mocks.gridProps.mock.lastCall[0].onOpenOperationalAction).toEqual(expect.any(Function))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Proposta pendente' }))
+
+    expect(mocks.gridProps.mock.lastCall[0]).toMatchObject({ isOperationalEnabled: false })
+    expect(mocks.gridProps.mock.lastCall[0].onOpenOperationalAction).toBeUndefined()
+  })
+
+  it('returns to the published grid when the previewed proposal is no longer pending', () => {
+    mocks.status = proposalStatus({ publication_state: 'PUBLISHED', active_version_id: 5, default_strategy: 'ADAPTIVE_RECOVERY' })
+    const page = renderClassGrid()
+    fireEvent.click(screen.getByRole('button', { name: 'Proposta pendente' }))
+    expect(screen.getByText(PROPOSAL_BANNER)).toBeInTheDocument()
+
+    mocks.status = proposalStatus({ publication_state: 'PUBLISHED', active_version_id: 6, pending_proposal: null })
+    page.rerender(<MemoryRouter><Schedules initialClassId="5" /></MemoryRouter>)
+
+    expect(screen.queryByRole('button', { name: 'Proposta pendente' })).not.toBeInTheDocument()
+    expect(screen.queryByText(PROPOSAL_BANNER)).not.toBeInTheDocument()
+    expect(mocks.weekRequest).toHaveBeenLastCalledWith(5, null, expect.any(String), null)
+  })
+
+  it('keeps the published grid when a newer proposal replaces the previewed one', () => {
+    mocks.status = proposalStatus({ publication_state: 'PUBLISHED', active_version_id: 5, default_strategy: 'ADAPTIVE_RECOVERY' })
+    const page = renderClassGrid()
+    fireEvent.click(screen.getByRole('button', { name: 'Proposta pendente' }))
+
+    mocks.status = proposalStatus({ publication_state: 'PUBLISHED', active_version_id: 5, default_strategy: 'ADAPTIVE_RECOVERY', pending_proposal: { proposal_id: 78, can_approve: true, is_stale: false, metrics: {} } })
+    page.rerender(<MemoryRouter><Schedules initialClassId="5" /></MemoryRouter>)
+
+    expect(screen.getByRole('button', { name: 'Horário publicado' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.queryByText(PROPOSAL_BANNER)).not.toBeInTheDocument()
+    expect(mocks.weekRequest).toHaveBeenLastCalledWith(5, null, expect.any(String), null)
   })
 
   it('keeps tracking a newly started job after asking to cancel it', async () => {

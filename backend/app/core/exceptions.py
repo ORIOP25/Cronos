@@ -85,6 +85,8 @@ PUBLIC_ERROR_CATALOG: dict[str, dict[str, Any]] = {
     "duplicate_timeslot": {
         "message": "A disponibilidade contém um horário duplicado.",
     },
+    "proposal_preview_forbidden": {"message": "Só a direção pode ver a proposta pendente."},
+    "proposal_not_found": {"message": "Proposta não encontrada."},
     "INTERNSHIP_FLOW_INVALID": {
         "message": "Verifique o ano letivo, as datas e se selecionou apenas turmas ativas da escola."
     },
