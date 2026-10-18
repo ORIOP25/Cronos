@@ -1,5 +1,6 @@
 """Production recovery preserves valid positions and repairs changed school data."""
 
+from collections import Counter
 from dataclasses import replace
 from datetime import UTC, date, datetime, time, timedelta
 from time import monotonic
@@ -656,3 +657,120 @@ def test_a_published_lesson_in_evitar_stays_when_the_evitar_hour_is_the_only_opt
     assert candidate is not None
     assert validate_candidate(snapshot, candidate).valid
     assert [(row.period, row.room_id) for row in candidate.lessons] == [(slot(0, 9), 101)]
+
+
+PRESENCE_3H = TeacherPresenceRule(
+    teacher_id=7, lunch_required=False, minimum_minutes=180, max_gap_minutes=60
+)
+
+
+def _retaining_target(periods, assignments, baseline, **changes):
+    """A recovery target that keeps the published lessons, for construct_recovery."""
+    return replace(
+        plan(periods, assignments, **changes),
+        strategy=SchedulingStrategy.ADAPTIVE_RECOVERY,
+        baseline_lessons=tuple(baseline),
+    )
+
+
+def test_rr1_a_retained_short_presence_is_rebuilt_into_full_presences():
+    """Teacher 7 keeps two published hours on day 0, but day 0 has no third period.
+
+    The short retained pair can never reach the minimum, so it is released and the
+    360 minutes become two full presences on days 1 and 2.
+    """
+    periods = (
+        period(0, start=9, end=10),
+        period(0, start=10, end=11),
+        *(period(day, start=hour, end=hour + 1) for day in (1, 2) for hour in (9, 10, 11)),
+    )
+    baseline = [lesson(10, 1, periods[0], 1), lesson(11, 1, periods[1], 1, offset=60)]
+    target = _retaining_target(
+        periods,
+        [assignment(1, 1, 7, {1}, 360)],
+        baseline,
+        teacher_presence=(PRESENCE_3H,),
+    )
+
+    candidate = construct_recovery(target, periods, deadline=monotonic() + 20)
+
+    assert candidate is not None
+    assert validate_candidate(target, candidate).valid is True
+    assert dict(Counter(row.period.school_date for row in candidate.lessons)) == {
+        periods[2].school_date: 3,
+        periods[5].school_date: 3,
+    }
+
+
+def test_rr2_a_teacher_without_a_rule_keeps_every_published_position():
+    """The presence rule of teacher 7 must not move teacher 8's published lessons."""
+    periods = (
+        period(0, start=9, end=10),
+        period(0, start=10, end=11),
+        *(period(day, start=hour, end=hour + 1) for day in (1, 2) for hour in (9, 10, 11)),
+    )
+    baseline = [
+        lesson(10, 1, periods[0], 1),
+        lesson(11, 1, periods[1], 1, offset=60),
+        lesson(12, 2, periods[2], 2),
+        lesson(13, 2, periods[3], 2, offset=60),
+    ]
+    target = _retaining_target(
+        periods,
+        [assignment(1, 1, 7, {1}, 360), assignment(2, 2, 8, {2}, 120)],
+        baseline,
+        teacher_presence=(PRESENCE_3H,),
+    )
+
+    candidate = construct_recovery(target, periods, deadline=monotonic() + 20)
+
+    assert candidate is not None
+    assert {row for row in positions(candidate) if row[0] == 2} == {
+        (2, periods[2], 2),
+        (2, periods[3], 2),
+    }
+
+
+def test_rr3_a_published_compliant_presence_is_kept():
+    """A published three-hour presence of teacher 7 keeps its positions."""
+    periods = tuple(period(day, start=hour, end=hour + 1) for day in (0, 1) for hour in (9, 10, 11))
+    baseline = [
+        lesson(10, 1, periods[0], 1),
+        lesson(11, 1, periods[1], 1, offset=60),
+        lesson(12, 1, periods[2], 1, offset=120),
+    ]
+    target = _retaining_target(
+        periods,
+        [assignment(1, 1, 7, {1}, 360)],
+        baseline,
+        teacher_presence=(PRESENCE_3H,),
+    )
+
+    candidate = construct_recovery(target, periods, deadline=monotonic() + 20)
+
+    assert candidate is not None
+    assert validate_candidate(target, candidate).valid is True
+    assert positions(candidate) == {(1, row, 1) for row in periods}
+
+
+def test_rr4_a_retained_presence_is_never_stranded_below_the_minimum():
+    """Teacher 7 has 240 minutes, which can only form one four-lesson presence.
+
+    Three lessons would strand 60 minutes below the 180-minute minimum, so the
+    presence is built as four consecutive lessons on day 0.
+    """
+    periods = tuple(
+        period(day, start=hour, end=hour + 1) for day in (0, 1) for hour in (9, 10, 11, 12)
+    )
+    target = _retaining_target(
+        periods,
+        [assignment(1, 1, 7, {1}, 240)],
+        [lesson(10, 1, periods[0], 1)],
+        teacher_presence=(PRESENCE_3H,),
+    )
+
+    candidate = construct_recovery(target, periods, deadline=monotonic() + 20)
+
+    assert candidate is not None
+    assert validate_candidate(target, candidate).valid is True
+    assert positions(candidate) == {(1, row, 1) for row in periods[:4]}

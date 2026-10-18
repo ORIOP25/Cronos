@@ -10,7 +10,8 @@ Construction failure is inconclusive; every returned plan is independently valid
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Set as AbstractSet
 from datetime import date, datetime
 from fractions import Fraction
 from time import monotonic
@@ -24,6 +25,7 @@ from app.scheduler.domain.candidate import (
     Assignment,
     CandidateSchedule,
     GridSlot,
+    LunchRule,
     PlanningSnapshot,
     ScheduledLesson,
     TeacherPresenceRule,
@@ -60,6 +62,27 @@ def _minimum_presence_teachers(snapshot: PlanningSnapshot) -> dict[int, TeacherP
     return {
         row.teacher_id: row for row in snapshot.teacher_presence if row.minimum_minutes is not None
     }
+
+
+def _grid_intervals_by_day(
+    slots_by_day: Mapping[int, Sequence[GridSlot]],
+) -> dict[int, tuple[tuple[int, int], ...]]:
+    return {
+        day: tuple(_grid_interval(slot) for slot in day_slots)
+        for day, day_slots in slots_by_day.items()
+    }
+
+
+def _presence_day_complies(
+    intervals: Iterable[tuple[int, int]],
+    protected: AbstractSet[tuple[int, int]],
+    rule: TeacherPresenceRule,
+    lunch_rule: LunchRule | None,
+    grid_slots: Sequence[tuple[int, int]],
+) -> bool:
+    """True when a teacher's booked intervals on one day meet the presence rule."""
+    lessons = [PresenceLesson(start, end, (start, end) in protected) for start, end in intervals]
+    return teacher_day_complies(lessons, rule, lunch_rule=lunch_rule, grid_slots=grid_slots)
 
 
 def _resource_keys(
@@ -450,10 +473,7 @@ def _construct_pass(
     dispensed_teachers = snapshot.lunch_dispensed_teacher_ids
     presence_rules = _minimum_presence_teachers(snapshot)
     slots_by_day = _slots_by_day(snapshot)
-    grid_intervals = {
-        day: tuple(_grid_interval(slot) for slot in day_slots)
-        for day, day_slots in slots_by_day.items()
-    }
+    grid_intervals = _grid_intervals_by_day(slots_by_day)
     periods_by_date: dict[date, list[Period]] = defaultdict(list)
     for day_period in canonical:
         periods_by_date[day_period.school_date].append(day_period)
@@ -495,16 +515,12 @@ def _construct_pass(
     def presence_complies(teacher_id: int, school_date: date, booked: Sequence[Period]) -> bool:
         """True when the teacher's day, with the booked periods, meets the presence rule."""
         key = ("teacher", teacher_id, school_date)
-        intervals = (*occupancy[key], *(_local_interval(period) for period in booked))
-        lessons = [
-            PresenceLesson(start, end, (start, end) in protected_intervals[key])
-            for start, end in intervals
-        ]
-        return teacher_day_complies(
-            lessons,
+        return _presence_day_complies(
+            (*occupancy[key], *(_local_interval(period) for period in booked)),
+            protected_intervals[key],
             presence_rules[teacher_id],
-            lunch_rule=snapshot.lunch_rule,
-            grid_slots=grid_intervals.get(school_date.weekday(), ()),
+            snapshot.lunch_rule,
+            grid_intervals.get(school_date.weekday(), ()),
         )
 
     def open_rooms(

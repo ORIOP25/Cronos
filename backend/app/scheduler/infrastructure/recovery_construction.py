@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Callable
-from datetime import datetime
+from collections.abc import Callable, Sequence
+from datetime import date, datetime
 from fractions import Fraction
 from time import monotonic
+from typing import NamedTuple
 
 from app.scheduler.domain.availability_priority import AvailabilityLedger, is_avoided
 from app.scheduler.domain.calendar import Period
@@ -25,12 +26,24 @@ from app.scheduler.domain.capacity import (
 )
 from app.scheduler.infrastructure.constructive import (
     _continues_open_presence,
+    _grid_intervals_by_day,
     _local_interval,
     _minimum_presence_teachers,
+    _presence_day_complies,
+    _resource_keys,
     _select_period,
     _slots_by_day,
 )
 from app.scheduler.infrastructure.placement_model import _build_candidate
+
+
+class _Booking(NamedTuple):
+    """One lesson booked by a recovery pass, with the credit that undo returns."""
+
+    assignment: Assignment
+    period: Period
+    room: int
+    credit: int
 
 
 def construct_recovery(
@@ -76,12 +89,20 @@ def _construct_recovery(
     eligible = {}
     busy: dict[tuple, list[Period]] = defaultdict(list)
     occupancy: dict[tuple, list[tuple[int, int]]] = defaultdict(list)
+    protected_intervals: dict[tuple, set[tuple[int, int]]] = defaultdict(set)
     selections: dict[int, list[tuple[Period, int, int]]] = defaultdict(list)
     protected_ids = {row.lesson_id for row in snapshot.protected_lessons}
     patterns: dict[tuple, int] = {}
     dispensed_teachers = snapshot.lunch_dispensed_teacher_ids
     minimum_teachers = _minimum_presence_teachers(snapshot)
     slots_by_day = _slots_by_day(snapshot)
+    grid_intervals = _grid_intervals_by_day(slots_by_day)
+    assignments_by_teacher: dict[int, list[Assignment]] = defaultdict(list)
+    for row in snapshot.assignments:
+        assignments_by_teacher[row.teacher_id].append(row)
+    periods_by_date: dict[date, list[Period]] = defaultdict(list)
+    for day_period in canonical:
+        periods_by_date[day_period.school_date].append(day_period)
 
     def interrupted() -> bool:
         return _interrupted(deadline, should_cancel)
@@ -89,7 +110,6 @@ def _construct_recovery(
     predecessors: dict[int, list[int]] = defaultdict(list)
     for source, target in snapshot.precedences:
         predecessors[target].append(source)
-    last_end: dict[int, datetime] = {}
 
     def ready(identity: int, period: Period) -> bool:
         """All predecessor units are finished before the period (WBS 3.4)."""
@@ -99,15 +119,16 @@ def _construct_recovery(
         )
 
     def occupy(assignment: Assignment, period: Period, room: int, teacher: int) -> None:
-        for kind, identity in (
-            *(("class", class_id) for class_id in assignment.class_ids),
-            ("teacher", teacher),
-            ("room", room),
-        ):
-            key = (kind, identity, period.school_date)
+        for key in _resource_keys(assignment, room, teacher, period.school_date):
             busy[key].append(period)
-            if kind != "room":
+            if key[0] != "room":
                 occupancy[key].append(_local_interval(period))
+
+    def release(assignment: Assignment, period: Period, room: int, teacher: int) -> None:
+        for key in _resource_keys(assignment, room, teacher, period.school_date):
+            busy[key].remove(period)
+            if key[0] != "room":
+                occupancy[key].remove(_local_interval(period))
 
     def free_rooms(assignment: Assignment, period: Period) -> tuple[int, ...]:
         for kind, identity in (
@@ -148,26 +169,79 @@ def _construct_recovery(
             )
         )
 
-    def retain(assignment: Assignment, period: Period, room: int) -> int:
-        credit = min(remaining[assignment.assignment_id], period.duration_minutes)
-        selections[assignment.assignment_id].append((period, room, credit))
-        remaining[assignment.assignment_id] -= credit
-        current_end = last_end.get(assignment.assignment_id)
+    def retain(assignment: Assignment, period: Period, room: int) -> _Booking:
+        identity = assignment.assignment_id
+        credit = min(remaining[identity], period.duration_minutes)
+        selections[identity].append((period, room, credit))
+        remaining[identity] -= credit
+        current_end = last_end.get(identity)
         if current_end is None or period.end_utc > current_end:
-            last_end[assignment.assignment_id] = period.end_utc
+            last_end[identity] = period.end_utc
         occupy(assignment, period, room, assignment.teacher_id)
-        return credit
+        return _Booking(assignment, period, room, credit)
 
+    def refresh_last_end(identity: int) -> None:
+        ends = [period.end_utc for period, _room, _credit in selections[identity]]
+        if identity in protected_end:
+            ends.append(protected_end[identity])
+        if ends:
+            last_end[identity] = max(ends)
+        else:
+            last_end.pop(identity, None)
+
+    def undo(booking: _Booking) -> None:
+        """Reverse one retain exactly, so the booking leaves no trace in the pass."""
+        assignment, period, room, credit = booking
+        identity = assignment.assignment_id
+        selections[identity].remove((period, room, credit))
+        remaining[identity] += credit
+        release(assignment, period, room, assignment.teacher_id)
+        refresh_last_end(identity)
+
+    protected_end: dict[int, datetime] = {}
     for row in snapshot.protected_lessons:
         assignment = assignments[row.assignment_id]
-        occupy(assignment, row.period, row.room_id, row.teacher_id or assignment.teacher_id)
-        current_end = last_end.get(row.assignment_id)
+        teacher = row.teacher_id or assignment.teacher_id
+        occupy(assignment, row.period, row.room_id, teacher)
+        protected_intervals[("teacher", teacher, row.period.school_date)].add(
+            _local_interval(row.period)
+        )
+        current_end = protected_end.get(row.assignment_id)
         if current_end is None or row.period.end_utc > current_end:
-            last_end[row.assignment_id] = row.period.end_utc
+            protected_end[row.assignment_id] = row.period.end_utc
+    last_end: dict[int, datetime] = dict(protected_end)
     for identity, assignment in assignments.items():
         if interrupted():
             return None, 0
         eligible[identity] = set(eligible_periods(snapshot, assignment, canonical))
+
+    def complies(teacher_id: int, school_date: date, extra: Sequence[Period] = ()) -> bool:
+        """True when the teacher's day, with the extra periods booked, meets the presence rule."""
+        key = ("teacher", teacher_id, school_date)
+        return _presence_day_complies(
+            (*occupancy[key], *(_local_interval(period) for period in extra)),
+            protected_intervals[key],
+            minimum_teachers[teacher_id],
+            snapshot.lunch_rule,
+            grid_intervals.get(school_date.weekday(), ()),
+        )
+
+    def release_broken_presence_days(retained: Sequence[_Booking]) -> None:
+        """Undo the retained lessons of a minimum teacher's day that breaks the rule.
+
+        The main loop books them again, so a short retained presence cannot block a full one.
+        """
+        days = {
+            (booking.assignment.teacher_id, booking.period.school_date)
+            for booking in retained
+            if booking.assignment.teacher_id in minimum_teachers
+        }
+        broken = {day for day in days if not complies(*day)}
+        for booking in reversed(retained):
+            if (booking.assignment.teacher_id, booking.period.school_date) in broken:
+                undo(booking)
+
+    retained: list[_Booking] = []
     for row in sorted(
         snapshot.baseline_lessons, key=lambda row: (row.period.start_utc, row.lesson_id)
     ):
@@ -193,7 +267,10 @@ def _construct_recovery(
             continue
         rooms = free_rooms(assignment, row.period)
         if rooms:
-            retain(assignment, row.period, row.room_id if row.room_id in rooms else rooms[0])
+            retained.append(
+                retain(assignment, row.period, row.room_id if row.room_id in rooms else rooms[0])
+            )
+    release_broken_presence_days(retained)
 
     ledger = AvailabilityLedger.build(
         snapshot,
@@ -210,6 +287,77 @@ def _construct_recovery(
         if remaining[identity] > 0:
             for period in eligible[identity]:
                 options_by_period[period].append(assignment)
+
+    def minutes_left(teacher_id: int) -> int:
+        return sum(remaining[row.assignment_id] for row in assignments_by_teacher[teacher_id])
+
+    def next_presence_lesson(
+        teacher_id: int, later: Period, booked: Sequence[_Booking]
+    ) -> tuple[Assignment, int] | None:
+        """The teacher's next assignment that can teach the later period, with its room."""
+        previous = booked[-1].assignment.assignment_id
+        candidates = sorted(
+            (
+                row
+                for row in assignments_by_teacher[teacher_id]
+                if remaining[row.assignment_id] > 0 and later in eligible[row.assignment_id]
+            ),
+            key=lambda row: (
+                row.assignment_id != previous,
+                -remaining[row.assignment_id],
+                row.assignment_id,
+            ),
+        )
+        planned = [(booking.assignment, booking.credit) for booking in booked]
+        for row in candidates:
+            if not ready(row.assignment_id, later):
+                continue
+            rooms = free_rooms(row, later)
+            if rooms and (not strict or ledger.allows(row, later, planned)):
+                return row, rooms[0]
+        return None
+
+    def plan_presence_run(assignment: Assignment, period: Period, room: int) -> list[_Booking]:
+        """Retain the later lessons that complete the teacher's day, or undo them all.
+
+        Returns the retained run starting with the given lesson, or an empty list when the
+        rest of the date cannot reach the presence minimum.
+        """
+        teacher_id = assignment.teacher_id
+        minimum = minimum_teachers[teacher_id].minimum_minutes
+        booked = [retain(assignment, period, room)]
+        for later in periods_by_date[period.school_date]:
+            if later.start_utc <= period.start_utc:
+                continue
+            choice = next_presence_lesson(teacher_id, later, booked)
+            if choice is None:
+                continue
+            booked.append(retain(choice[0], later, choice[1]))
+            left = minutes_left(teacher_id)
+            if complies(teacher_id, period.school_date) and (left == 0 or left >= minimum):
+                return booked
+        for booking in reversed(booked):
+            undo(booking)
+        return []
+
+    def book(assignment: Assignment, period: Period, room: int) -> list[_Booking]:
+        """Retain a selected lesson, or the presence run that completes its teacher's day.
+
+        Returns the lessons to commit, or an empty list when the lesson must wait.
+        """
+        teacher_id = assignment.teacher_id
+        if teacher_id not in minimum_teachers:
+            return [retain(assignment, period, room)]
+        if not complies(teacher_id, period.school_date, (period,)):
+            return plan_presence_run(assignment, period, room)
+        # Extending a compliant presence must not strand fewer minutes than the minimum:
+        # they could never form a presence of their own.
+        credit = min(remaining[assignment.assignment_id], period.duration_minutes)
+        left = minutes_left(teacher_id) - credit
+        if 0 < left < minimum_teachers[teacher_id].minimum_minutes:
+            return []
+        return [retain(assignment, period, room)]
+
     for period in canonical:
         if interrupted():
             return None, ledger.refused
@@ -236,7 +384,8 @@ def _construct_recovery(
             )
         )
         for assignment, room in _select_period(options, deadline=deadline):
-            ledger.place(assignment, retain(assignment, period, room))
+            for booking in book(assignment, period, room):
+                ledger.place(booking.assignment, booking.credit)
         if not any(remaining.values()):
             break
     if interrupted() or any(remaining.values()):
