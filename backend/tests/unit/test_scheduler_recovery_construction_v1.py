@@ -601,3 +601,19 @@ def test_rb1_room_continuity_beats_the_published_room_of_an_editable_lesson():
         (2, 10): 2,
     }
     assert avoidable_room_changes(target, result.candidate) == 0
+
+
+def test_rb3_a_protected_lesson_in_a_room_that_is_no_longer_eligible_stays_put():
+    """RB3: the room of a given lesson was withdrawn; the editable demand still gets completed."""
+    periods = (period(0, 8, 9), period(0, 9, 10))
+    protected = lesson(10, 1, periods[0], 1)
+    target, result = recover(
+        periods,
+        [assignment(1, 1, 1, {2}, 120)],
+        [protected],
+        protected_lessons=(protected,),
+    )
+
+    assert result.outcome == "COMPLETE"
+    assert protected in result.candidate.lessons
+    assert positions(result.candidate) == {(1, periods[0], 1), (1, periods[1], 2)}

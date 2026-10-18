@@ -25,7 +25,7 @@ from app.scheduler.domain.candidate import (
 )
 from app.scheduler.domain.teacher_presence import PresenceLesson, teacher_day_complies
 
-VALIDATOR_VERSION = "v7"
+VALIDATOR_VERSION = "v8"
 
 
 class ValidationViolationCode(StrEnum):
@@ -526,7 +526,7 @@ def lesson_violations(
                 lesson_id=lesson.lesson_id,
             )
         )
-    if lesson.room_id not in assignment.eligible_room_ids:
+    if lesson.lesson_id not in protected_ids and lesson.room_id not in assignment.eligible_room_ids:
         violations.append(
             ValidationViolation(
                 ValidationViolationCode.INELIGIBLE_ROOM,

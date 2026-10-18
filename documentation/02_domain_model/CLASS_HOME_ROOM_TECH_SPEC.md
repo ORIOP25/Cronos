@@ -243,7 +243,7 @@ No caminho exato, o passe só fica se o vetor de qualidade não piorar (T11, T12
 - I03: nenhuma sala ou disciplina ativa aponta para um tipo arquivado.
 - I04: `home_room_id` aponta sempre para uma sala ativa da mesma escola.
 - I05: o passe de salas e os estágios de sala só mudam `room_id`. Datas, horas, identidades e créditos ficam iguais (D03).
-- I06: as aulas protegidas e as aulas dadas nunca mudam de sala.
+- I06: as aulas protegidas e as aulas dadas nunca mudam de sala. Uma aula protegida também mantém a sala quando uma mudança posterior (tipo de sala ou capacidade) a torna inelegível; a validação não a acusa (B2, 2026-10-18).
 - I07: um snapshot sem salas da turma e sem disciplinas de sala própria tem o digest de hoje (T07).
 - I08: snapshot, pré-verificação, prontidão e substituições usam a mesma regra de elegibilidade (T06).
 - I09: um horário de turmas sem sala e só com disciplinas Normais nunca piora em mudanças evitáveis por causa do passe.
