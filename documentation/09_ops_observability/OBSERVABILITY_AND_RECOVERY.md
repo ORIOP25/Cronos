@@ -56,7 +56,8 @@ Persisted job evidence supports tenant-scoped operational review without logging
 - Readiness returns `503` when PostgreSQL or Redis is unavailable.
 - Health access lines are filtered from the access log.
 - Scheduler diagnostics emit `scheduler_v1_phase_started`, `scheduler_v1_model_built`,
-  `scheduler_v1_phase_finished`, and `scheduler_v1_search_finished`. These events
+  `scheduler_v1_model_too_large`, `scheduler_v1_phase_finished`, and
+  `scheduler_v1_search_finished`. These events
   include container memory and OOM metrics from `/sys/fs/cgroup`.
 - When Redis cannot enforce a limit, the API returns `503` with code
   `RATE_LIMIT_UNAVAILABLE`.

@@ -77,6 +77,12 @@ STOP_FEASIBLE = "FEASIBLE"
 STOP_SAFETY = "SAFETY_LIMIT"
 
 MIN_STAGE_SECONDS = 0.05
+# ponytail: calibrated on production 2026-10-17, whose logs count all model
+# variables: 0.63 M peaked near 3.2 GB and 3.96 M were OOM-killed at 8 GB. The cap
+# compares only the option variables of _estimated_variables, the bulk of a model,
+# so it stays below the killed size. Upgrade path: measure peak memory per
+# variable on the worker and derive this cap from the container memory limit.
+MAX_PLACEMENT_VARIABLES = 1_000_000
 
 _COMPONENT_ORDER = {
     STAGE_THRESHOLD: 0,
@@ -610,6 +616,19 @@ def _add_assignment_credit(state, assignment_id, row):
         )
     else:
         model.Add(sum(key[1].duration_minutes * state.x[key] for key in keys) == row.credit_target)
+
+
+def _estimated_variables(scope: _WindowScope) -> int:
+    """Upper bound on the option variables, computed from the scope without a build.
+
+    Mirrors _add_assignment_options: one assignment bit per period, one room bit
+    per eligible room, and the last and waste variables in the last window.
+    """
+    return sum(
+        len(row.periods)
+        * (1 + len(row.assignment.eligible_room_ids) + (2 if row.last_window else 0))
+        for row in scope.assignments.values()
+    )
 
 
 def _build_scope_state(snapshot: PlanningSnapshot, scope: _WindowScope) -> _ScopeState:
@@ -1813,6 +1832,21 @@ def solve_placement(
                 for assignment_id, rows in cached.selections.items():
                     combined[assignment_id].extend(rows)
                 continue
+            estimated = _estimated_variables(scope)
+            if estimated > MAX_PLACEMENT_VARIABLES:
+                diagnostics.model_too_large(
+                    "PLACEMENT", estimated, MAX_PLACEMENT_VARIABLES, window=scope.week
+                )
+                statistics["oversized_scopes"] = statistics.get("oversized_scopes", 0) + 1
+                return PlacementOutcome(
+                    STATUS_INCONCLUSIVE,
+                    None,
+                    None,
+                    monotonic() - start,
+                    objective_scope,
+                    statistics,
+                    message="The exact placement model exceeds the worker memory budget.",
+                )
             build_start = monotonic()
             diagnostics.phase_started("PLACEMENT", window=scope.week)
             state = _build_scope_state(snapshot, scope)
