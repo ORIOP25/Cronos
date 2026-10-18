@@ -261,3 +261,38 @@ def test_integrity_audit_accepts_the_migrated_test_database(clean_database):
     with sync_test_engine.connect() as connection:
         errors = audit_database_integrity._audit_connection(connection)
     assert errors == []
+
+
+def _class_home_room_state() -> dict:
+    with sync_test_engine.connect() as connection:
+        inspector = inspect(connection)
+        columns = {column["name"]: column for column in inspector.get_columns("class")}
+        foreign_keys = {
+            (tuple(fk["constrained_columns"]), fk["referred_table"], tuple(fk["referred_columns"]))
+            for fk in inspector.get_foreign_keys("class")
+        }
+    return {"columns": columns, "foreign_keys": foreign_keys}
+
+
+def test_class_home_room_migration_upgrades_downgrades_and_upgrades(clean_database):
+    config = _alembic_config()
+    try:
+        command.downgrade(config, "0006_room_types")
+        assert "home_room_id" not in _class_home_room_state()["columns"]
+
+        command.upgrade(config, "head")
+        state = _class_home_room_state()
+        assert state["columns"]["home_room_id"]["nullable"] is True
+        assert (
+            ("organization_id", "home_room_id"),
+            "room",
+            ("organization_id", "id"),
+        ) in state["foreign_keys"]
+
+        command.downgrade(config, "0006_room_types")
+        assert "home_room_id" not in _class_home_room_state()["columns"]
+
+        command.upgrade(config, "head")
+        assert "home_room_id" in _class_home_room_state()["columns"]
+    finally:
+        command.upgrade(config, "head")

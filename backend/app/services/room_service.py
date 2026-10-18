@@ -1,10 +1,10 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import joinedload, selectinload
 
 from app import models, schemas
 from app.core.exceptions import AppError
-from app.services import resource_removal
+from app.services import class_service, resource_removal
 from app.services.room_type_service import resolve_active_room_type
 from app.services.scheduler_state_service import record_scheduler_change
 
@@ -16,10 +16,13 @@ def _room_snapshot(room: models.Room) -> dict:
 async def _room_with_type(
     db: AsyncSession, room_id: int, organization_id: int
 ) -> models.Room | None:
-    """A sala da escola com o tipo já carregado, para a resposta."""
+    """A sala da escola com o tipo e as turmas da sala já carregados, para a resposta."""
     return await db.scalar(
         select(models.Room)
-        .options(joinedload(models.Room.room_type))
+        .options(
+            joinedload(models.Room.room_type),
+            selectinload(models.Room.home_classes),
+        )
         .where(
             models.Room.id == room_id,
             models.Room.organization_id == organization_id,
@@ -29,15 +32,19 @@ async def _room_with_type(
 
 # --- ASYNC (API) ---
 async def get_rooms_by_org(db: AsyncSession, organization_id: int):
+    # Tipo e turmas da sala na mesma consulta: a lista não ganha uma consulta por sala.
     result = await db.execute(
         select(models.Room)
-        .options(joinedload(models.Room.room_type))
+        .options(
+            joinedload(models.Room.room_type),
+            joinedload(models.Room.home_classes),
+        )
         .where(
             models.Room.organization_id == organization_id,
             models.Room.is_archived.is_(False),
         )
     )
-    return result.scalars().all()
+    return result.unique().scalars().all()
 
 
 async def create_room(
@@ -155,6 +162,9 @@ async def delete_room(
         "archive"
         if await resource_removal.room_has_history(db, organization_id, room_id)
         else "hard_delete"
+    )
+    await class_service.clear_home_room(
+        db, organization_id, room_id, changed_by_membership_id=changed_by_membership_id
     )
     await resource_removal.remove_room_configuration(db, organization_id, room_id)
 

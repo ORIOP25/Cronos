@@ -1,7 +1,9 @@
+from dataclasses import replace
 from datetime import date, time, timedelta
 
 from app.scheduler.composition import generate_schedule
-from app.scheduler.domain.candidate import SchedulingStrategy
+from app.scheduler.domain.candidate import HomeRoom, SchedulingStrategy
+from app.scheduler.domain.home_rooms import avoidable_room_changes, home_room_misses
 from app.scheduler.domain.oracle import oracle_objective
 from app.scheduler.lab.fixtures import AssignmentSpec, FixtureSpec, build_fixture
 
@@ -132,3 +134,32 @@ def test_completion_report_exposes_margin_and_recoverability():
     assert late_result.completion.margin_days == 0
     assert late_result.completion.recovery.status == "NOT_ASSESSED"
     assert late_result.completion.classes_after_preferred == ()
+
+
+def home_room_fixture():
+    """Class 1 has home room 1; class 2 has none. Two Normal lessons each, rooms 1 and 2."""
+    return build_fixture(
+        "r23-home-room-generation",
+        _spec(
+            assignments=(
+                AssignmentSpec(1, 1, (60, 60), (1, 2)),
+                AssignmentSpec(2, 2, (60, 60), (1, 2)),
+            ),
+            grid=tuple((0, time(9 + hour), time(10 + hour)) for hour in range(2)),
+            periods=tuple((ORIGIN, time(9 + hour), time(10 + hour)) for hour in range(2)),
+        ),
+    )
+
+
+def test_r23_the_production_generation_route_reaches_zero_avoidable_room_changes():
+    """❌ R23: geração com paragem no primeiro completo chega a 0 mudanças evitáveis."""
+    fixture = home_room_fixture()
+    snapshot = replace(fixture.snapshot, home_rooms=(HomeRoom(class_id=1, room_id=2),))
+
+    result = generate_schedule(
+        snapshot, fixture.periods, time_limit_seconds=10, stop_at_first_complete=True
+    )
+
+    assert result.outcome == "COMPLETE"
+    assert home_room_misses(snapshot, result.candidate) == 0
+    assert avoidable_room_changes(snapshot, result.candidate) == 0

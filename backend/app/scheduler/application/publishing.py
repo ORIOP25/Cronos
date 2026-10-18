@@ -22,6 +22,7 @@ from app.scheduler.domain.candidate_validation import ValidationReport
 from app.scheduler.domain.capacity import is_physically_protected
 from app.scheduler.domain.debt import RecoveryAllocation
 from app.scheduler.domain.diagnostics import Diagnosis
+from app.scheduler.domain.home_rooms import avoidable_room_changes, home_room_misses
 from app.scheduler.domain.quality import InitialQualityMetrics, SearchEvidence
 from app.scheduler.domain.recovery import RecoveryQualityMetrics
 
@@ -362,6 +363,13 @@ def _apply_quality(metrics: dict[str, Any], quality: InitialQualityMetrics) -> N
     metrics["room_change_cost"] = quality.room_change_cost
 
 
+def _apply_home_rooms(
+    metrics: dict[str, Any], snapshot: PlanningSnapshot, candidate: CandidateSchedule
+) -> None:
+    metrics["home_room_misses"] = home_room_misses(snapshot, candidate)
+    metrics["avoidable_room_changes"] = avoidable_room_changes(snapshot, candidate)
+
+
 def _warnings(metrics: Mapping[str, Any]) -> list[str]:
     warnings = []
     if metrics.get("excess_days", 0) > 0:
@@ -384,6 +392,7 @@ def initial_proposal_payload(
 ) -> ProposalPayload:
     metrics = _base_metrics(snapshot, report, evidence, disruption_cost=0, changed_lessons=0)
     _apply_quality(metrics, quality)
+    _apply_home_rooms(metrics, snapshot, candidate)
     metrics["excess_days"] = 0
     metrics["recovery_assessment"] = {
         "status": recovery_status,
@@ -411,6 +420,7 @@ def recovery_proposal_payload(
         changed_lessons=len(quality.disruption.changes),
     )
     _apply_quality(metrics, quality.initial)
+    _apply_home_rooms(metrics, snapshot, candidate)
     metrics["diagnostics"] = diagnostics_summary(diagnoses)
     metrics["warnings"] = _warnings(metrics)
     return ProposalPayload(metrics=metrics, diff=build_diff(snapshot, candidate))

@@ -13,8 +13,9 @@ from dataclasses import replace
 import pytest
 
 import app.scheduler.infrastructure.search as search_module
-from app.scheduler.domain.candidate import CandidateSchedule, SchedulingStrategy
+from app.scheduler.domain.candidate import CandidateSchedule, HomeRoom, SchedulingStrategy
 from app.scheduler.domain.candidate_validation import validate_candidate
+from app.scheduler.domain.home_rooms import avoidable_room_changes, home_room_misses
 from app.scheduler.infrastructure.annual_model import (
     STATUS_INCONCLUSIVE as ANNUAL_INCONCLUSIVE,
 )
@@ -24,6 +25,7 @@ from app.scheduler.infrastructure.placement_model import (
 )
 from app.scheduler.infrastructure.placement_model import PlacementOutcome
 from app.scheduler.lab.scale import build_scale_fixture
+from tests.unit.test_scheduler_generation_quality_v1 import home_room_fixture
 from tests.unit.test_scheduler_recovery_solver_v1 import POLICY
 
 INCONCLUSIVE_PLAN = AnnualPlan(
@@ -338,3 +340,24 @@ def test_scheduler_annual_cancellation_propagates_and_never_starts_fallback(
     )
     assert outcome.status == "CANCELLED"
     assert outcome.candidate is None
+
+
+def test_r23_the_stop_at_first_placement_route_reaches_zero_avoidable_room_changes(monkeypatch):
+    """❌ R23: sem construção, a colocação com paragem no primeiro completo chega a 0 evitáveis."""
+    fixture = home_room_fixture()
+    snapshot = replace(fixture.snapshot, home_rooms=(HomeRoom(class_id=1, room_id=1),))
+    monkeypatch.setattr(search_module, "construct_schedule", _no_construction)
+
+    outcome = search_module.search_complete_schedule(
+        snapshot,
+        fixture.periods,
+        time_limit_seconds=10.0,
+        num_workers=1,
+        random_seed=3,
+        stop_at_first_complete=True,
+    )
+
+    assert outcome.status == "COMPLETE"
+    assert validate_candidate(snapshot, outcome.candidate).valid
+    assert home_room_misses(snapshot, outcome.candidate) == 0
+    assert avoidable_room_changes(snapshot, outcome.candidate) == 0

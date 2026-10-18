@@ -218,25 +218,31 @@ def assess_room_eligibility(
     required_room_type: Any,
     required_capacity: int,
     allowed_room_ids: Iterable[int] | None = None,
+    home_room_ids: Iterable[int] = (),
+    subject_is_normal: bool = False,
 ) -> RoomEligibility:
-    """Classify room compatibility for one class/subject pair.
+    """Classify room compatibility for one class/subject pair (or joint unit).
 
     ``rooms`` holds ``(id, type, capacity)`` values loaded by infrastructure.
-    ``allowed_room_ids=None`` means no ``specific_room`` restriction; an empty
-    set still blocks every assignment.
+    ``home_room_ids`` are the home rooms of the unit's classes; a Normal subject
+    may use them whatever their type (D12). Every candidate must seat
+    ``required_capacity``, so a joint unit uses a home room only when it fits
+    everyone (D06). ``allowed_room_ids=None`` means no ``specific_room``
+    restriction; an empty set still blocks every assignment.
     """
     required = _value(required_room_type)
-    of_type = [
+    homes = frozenset(home_room_ids)
+    candidates = [
         (room_id, capacity)
         for room_id, room_type, capacity in rooms
-        if _value(room_type) == required
+        if _value(room_type) == required or (subject_is_normal and room_id in homes)
     ]
-    if not of_type:
+    if not candidates:
         return RoomEligibility(frozenset(), None, RoomEligibilityReason.NO_ROOM_OF_TYPE)
 
-    max_capacity = max(capacity for _room_id, capacity in of_type)
+    max_capacity = max(capacity for _room_id, capacity in candidates)
     by_capacity = frozenset(
-        room_id for room_id, capacity in of_type if capacity >= required_capacity
+        room_id for room_id, capacity in candidates if capacity >= required_capacity
     )
     if not by_capacity:
         return RoomEligibility(

@@ -102,6 +102,14 @@ def continuous_break_minutes(occupied: Sequence[tuple[int, int]], rule: LunchRul
 
 
 @dataclass(frozen=True)
+class HomeRoom:
+    """A class's home room, listed only while the room is valid for the class (D13)."""
+
+    class_id: int
+    room_id: int
+
+
+@dataclass(frozen=True)
 class TeacherPresenceRule:
     """Optional school-defined presence rule for one teacher (D01, D03, D05, D06).
 
@@ -469,8 +477,11 @@ class Assignment:
     teacher_id: int
     eligible_room_ids: frozenset[int]
     modules: tuple[ModuleRequirement, ...]
+    needs_special_room: bool = False
 
     def __post_init__(self) -> None:
+        if type(self.needs_special_room) is not bool:
+            raise ValueError("The special-room flag must be a boolean.")
         for name in ("assignment_id", "subject_id", "teacher_id"):
             value = getattr(self, name)
             if type(value) is not int or value <= 0:
@@ -575,6 +586,7 @@ class PlanningSnapshot:
     active_version_id: int | None = None
     lunch_rule: LunchRule | None = None
     teacher_presence: tuple[TeacherPresenceRule, ...] = ()
+    home_rooms: tuple[HomeRoom, ...] = ()
     reserved_lesson_ids: frozenset[int] = frozenset()
 
     def __post_init__(self) -> None:

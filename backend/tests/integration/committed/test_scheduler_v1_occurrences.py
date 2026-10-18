@@ -30,7 +30,7 @@ from app.scheduler.infrastructure.progress import load_executed_minutes, load_op
 from app.scheduler.infrastructure.snapshot import load_snapshot
 from app.services.dashboard_service import get_dashboard_summary
 from app.services.teacher_service import get_teacher_progress
-from tests._support.db_fixtures import create_teacher_profile
+from tests._support.db_fixtures import create_teacher_profile, get_school_room_type_id
 from tests._support.scheduler_v1 import (
     MOMENT,
     V1Seed,
@@ -1341,3 +1341,41 @@ async def test_debts_use_school_date_at_midnight(
     assert debts["total_hours_owed_overdue"] == overdue * 50 / 60
     assert debts["items"][0]["gap_occurrences_overdue"] == overdue
     assert debts["items"][0]["hours_owed_overdue"] == overdue * 50 / 60
+
+
+async def test_a_normal_substitute_is_accepted_in_the_class_laboratory_home_room(db_session):
+    """❌ R08: uma disciplina Normal substituta cabe na sala da turma de laboratório, não noutro laboratório."""
+    seed = await _school(db_session, suffix="_home_room_substitute")
+    await db_session.commit()
+    await seed_published_baseline(db_session, seed)
+    lesson = (await _lessons(db_session, seed))[0]
+    _subject, _module, teacher, _assignment = await _second_assignment(db_session, seed)
+    laboratory_type_id = await get_school_room_type_id(
+        db_session, seed.organization.id, "Laboratório"
+    )
+    seed.room.room_type_id = laboratory_type_id
+    seed.class_.home_room_id = seed.room.id
+    other_laboratory = models.Room(
+        organization_id=seed.organization.id,
+        name="Laboratório L-05",
+        capacity=30,
+        room_type_id=laboratory_type_id,
+    )
+    db_session.add(other_laboratory)
+    await db_session.commit()
+
+    await _occurrence(db_session, seed, lesson)
+    item = (await occurrences_v1.list_occurrences(db_session, seed.organization.id))["items"][0]
+    diagnostics = await occurrences_v1.get_substitute_diagnostics(
+        db_session, seed.organization.id, item["id"]
+    )
+    candidate = next(row for row in diagnostics["candidates"] if row["teacher_id"] == teacher.id)
+    assert "room_mismatch" not in {exclusion["code"] for exclusion in candidate["exclusions"]}
+
+    lesson.room_id = other_laboratory.id
+    await db_session.commit()
+    diagnostics = await occurrences_v1.get_substitute_diagnostics(
+        db_session, seed.organization.id, item["id"]
+    )
+    candidate = next(row for row in diagnostics["candidates"] if row["teacher_id"] == teacher.id)
+    assert "room_mismatch" in {exclusion["code"] for exclusion in candidate["exclusions"]}

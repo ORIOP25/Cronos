@@ -73,6 +73,7 @@ from app.scheduler.infrastructure.placement_model import (
     solve_placement,
 )
 from app.scheduler.infrastructure.recovery_construction import construct_recovery
+from app.scheduler.infrastructure.room_assignment import assign_rooms_by_period
 
 MAX_FEEDBACK_ROUNDS = 6
 MIN_SEARCH_SECONDS = 0.05
@@ -172,16 +173,17 @@ def _baseline_incumbent(
     assert profile.baseline is not None
     if not validate_candidate(snapshot, profile.baseline).valid:
         return None
-    vector = profile.vector(snapshot, profile.baseline)
+    candidate = _room_pass(snapshot, profile, profile.baseline, guarded=True)
+    vector = profile.vector(snapshot, candidate)
     outcome = SearchOutcome(
         OUTCOME_COMPLETE,
-        profile.baseline,
-        _latest_days(snapshot, profile.baseline),
+        candidate,
+        _latest_days(snapshot, candidate),
         None,
         "The published baseline remains valid for the current state.",
         0.0,
         {},
-        measure_initial_quality(snapshot, profile.baseline),
+        measure_initial_quality(snapshot, candidate),
     )
     return outcome, vector
 
@@ -372,6 +374,29 @@ def _stabilize_recovery(
     return current
 
 
+def _room_pass(
+    snapshot: PlanningSnapshot,
+    profile: _SearchProfile,
+    candidate: CandidateSchedule,
+    *,
+    guarded: bool,
+) -> CandidateSchedule:
+    """Room pass (T11). Guarded on the exact path: kept only when the vector does not get worse (T12)."""
+    passed = assign_rooms_by_period(
+        snapshot,
+        candidate,
+        baseline=profile.baseline,
+        policy=profile.policy,
+        prior_changes=profile.prior_changes,
+    )
+    if not guarded or profile.vector(snapshot, passed) <= profile.vector(snapshot, candidate):
+        return passed
+    # ponytail: on the exact path this guard may refuse a home-room move on a day with a
+    # protected lesson, because the vector prices that move; upgrade = let justified changes
+    # leave room_change_cost (T12).
+    return candidate
+
+
 def _cancelled(start: float, message: str) -> SearchOutcome:
     return SearchOutcome(
         OUTCOME_CANCELLED,
@@ -453,6 +478,7 @@ def _joint_search(
         )
 
     if constructed is not None and stop_at_first_complete:
+        constructed = _room_pass(snapshot, profile, constructed, guarded=False)
         return constructive_outcome()
     while rounds < max_feedback_rounds:
         if should_cancel is not None and should_cancel():
@@ -518,6 +544,7 @@ def _joint_search(
                 candidate = _stabilize_recovery(
                     snapshot, periods, profile, candidate, deadline=deadline
                 )
+            candidate = _room_pass(snapshot, profile, candidate, guarded=not stop_at_first_complete)
             vector = profile.vector(snapshot, candidate)
             if stop_at_first_complete:
                 return SearchOutcome(
@@ -815,6 +842,7 @@ def _unrestricted_fallback(
                 candidate = _stabilize_recovery(
                     snapshot, periods, profile, candidate, deadline=deadline
                 )
+            candidate = _room_pass(snapshot, profile, candidate, guarded=not stop_at_first_complete)
             evidence = placement.evidence
             if evidence is not None:
                 evidence = replace(
@@ -959,7 +987,11 @@ def search_adaptive_schedule(
         )
         if should_cancel is not None and should_cancel():
             return _cancelled(start, "The request was cancelled during repair.")
-        candidates = [row for row in (local, rebuilt) if row is not None]
+        candidates = [
+            _room_pass(planning, profile, row, guarded=False)
+            for row in (local, rebuilt)
+            if row is not None
+        ]
         if not candidates:
             return _unrestricted_fallback(
                 planning,

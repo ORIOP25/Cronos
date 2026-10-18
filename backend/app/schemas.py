@@ -512,6 +512,10 @@ class ClassUpdateInCourse(BaseModel):
     grade_level: int | None = Field(None, ge=10, le=12, description=DESC_GRADE_LEVEL)
     start_year: int | None = Field(None, description=DESC_START_YEAR)
     end_year: int | None = Field(None, description=DESC_END_YEAR)
+    home_room_id: int | None = Field(
+        None,
+        description="Sala da turma (id de uma sala). Nulo = Automática; ausente = sem mudança.",
+    )
 
     @model_validator(mode="after")
     def validate_year_window_if_present(self):
@@ -532,6 +536,7 @@ class ClassRead(ClassBase):
     start_year: int
     end_year: int
     is_archived: bool = False
+    home_room_id: int | None = None
     model_config = model_config
 
 
@@ -673,10 +678,27 @@ class RoomUpdate(BaseModel):
     capacity: int | None = Field(None, gt=0)
 
 
+class HomeClassRef(BaseModel):
+    id: int
+    name: str
+    model_config = model_config
+
+
+class HomeRoomRef(BaseModel):
+    """Sala da turma na página da turma."""
+
+    id: int
+    name: str
+    capacity: int
+    room_type: RoomTypeRef | None = None
+    model_config = model_config
+
+
 class RoomRead(RoomBase):
     id: int
     organization_id: int
     room_type: RoomTypeRef | None = None
+    home_classes: list[HomeClassRef] = []
     is_archived: bool = False
     model_config = model_config
 
@@ -1089,6 +1111,7 @@ class ClassFullDetailRead(ClassRead):
     """
 
     course: CourseBasic | None = None
+    home_room: HomeRoomRef | None = None
     subjects: list[SubjectProgressRead] = []
     model_config = ConfigDict(from_attributes=True)
 

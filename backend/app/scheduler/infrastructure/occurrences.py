@@ -995,6 +995,37 @@ def _substitution_exclusion(code: str, message: str, setup: str) -> dict:
     return {"code": code, "message": message, "setup": setup}
 
 
+async def _room_fits_substitute(
+    db: AsyncSession,
+    organization_id: int,
+    room: models.Room,
+    subject: models.Subject,
+    class_ids: Sequence[int],
+) -> bool:
+    """A substitute fits the lesson's room by type, or by a class's home room (D12).
+
+    Seats are not checked here: the lesson already sits in this room for these
+    classes, and the existing substitution rule never compared capacity.
+    """
+    if room.room_type_id == subject.room_type_id:
+        return True
+    subject_is_normal = await db.scalar(
+        select(models.SchoolRoomType.is_normal).where(
+            models.SchoolRoomType.id == subject.room_type_id,
+            models.SchoolRoomType.organization_id == organization_id,
+        )
+    )
+    if not subject_is_normal:
+        return False
+    home_room_ids = await db.scalars(
+        select(models.Class.home_room_id).where(
+            models.Class.organization_id == organization_id,
+            models.Class.id.in_(class_ids),
+        )
+    )
+    return room.id in set(home_room_ids.all())
+
+
 async def _class_ids_for_item(
     db: AsyncSession,
     organization_id: int,
@@ -1359,7 +1390,11 @@ async def _substitute_exclusions(
             models.Subject.organization_id == organization_id,
         )
     )
-    if room is not None and subject is not None and room.room_type_id != subject.room_type_id:
+    if (
+        room is not None
+        and subject is not None
+        and not await _room_fits_substitute(db, organization_id, room, subject, class_ids)
+    ):
         exclusions.append(
             _substitution_exclusion(
                 "room_mismatch",

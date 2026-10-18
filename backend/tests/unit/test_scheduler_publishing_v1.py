@@ -8,20 +8,26 @@ import pytest
 from app.scheduler.application.publishing import (
     build_diff,
     diagnostics_summary,
+    initial_proposal_payload,
     plan_recovery_allocations,
+    recovery_proposal_payload,
 )
 from app.scheduler.domain.calendar import normalize_period
 from app.scheduler.domain.candidate import (
     Assignment,
     CandidateSchedule,
     GridSlot,
+    HomeRoom,
     PlanningSnapshot,
     ScheduledLesson,
     SchedulingStrategy,
 )
+from app.scheduler.domain.candidate_validation import ValidationReport
 from app.scheduler.domain.debt import RecoveryAllocation
 from app.scheduler.domain.diagnostics import Diagnosis, DiagnosisCode, EvidenceKind
 from app.scheduler.domain.projection import ModuleRequirement, ModuleSlice
+from app.scheduler.domain.quality import InitialQualityMetrics
+from app.scheduler.domain.recovery import DisruptionMetrics, RecoveryQualityMetrics
 
 GRID = (GridSlot(0, time(9, 0), time(9, 50)), GridSlot(1, time(9, 0), time(9, 50)))
 ASSIGNMENT = Assignment(
@@ -103,6 +109,63 @@ def test_a_first_generation_has_no_baseline_to_compare():
     assert diff["is_first_generation"] is True
     assert diff["counts"]["added"] == 1
     assert diff["modular"] == []
+
+
+def test_the_proposal_publishes_the_home_room_metrics_for_both_payloads():
+    """❌ R21/T08: a proposta publica falhas de sala da turma e mudanças evitáveis."""
+    day = date(2026, 9, 21)
+    snapshot = replace(
+        _snapshot(()),
+        assignments=(replace(ASSIGNMENT, eligible_room_ids=frozenset({1, 2})),),
+        home_rooms=(HomeRoom(class_id=1, room_id=2),),
+    )
+    first = ScheduledLesson(
+        lesson_id=1,
+        assignment_id=1,
+        period=normalize_period(day, time(9, 0), time(9, 50), "Europe/Lisbon"),
+        room_id=1,
+        credit_minutes=50,
+        slices=(ModuleSlice(1, 1, 0, 50),),
+    )
+    second = replace(
+        first,
+        lesson_id=2,
+        period=normalize_period(day, time(10, 0), time(10, 50), "Europe/Lisbon"),
+        room_id=2,
+        slices=(ModuleSlice(2, 1, 50, 50),),
+    )
+    candidate = CandidateSchedule((first, second))
+    quality = InitialQualityMetrics(
+        completion_dates={1: day},
+        teacher_gap_minutes=0,
+        class_gap_minutes=0,
+        preference_cost_minutes=0,
+        room_change_cost=0,
+    )
+    report = ValidationReport(
+        validator_version="test",
+        violations=(),
+        credited_minutes={},
+        completion_dates={1: day},
+        total_credit_minutes=0,
+    )
+
+    initial = initial_proposal_payload(
+        snapshot, candidate, quality=quality, report=report, evidence=None
+    )
+    recovery = recovery_proposal_payload(
+        snapshot,
+        candidate,
+        quality=RecoveryQualityMetrics(
+            initial=quality, disruption=DisruptionMetrics(changes=(), total_cost=0)
+        ),
+        report=report,
+        evidence=None,
+    )
+
+    for payload in (initial, recovery):
+        assert payload.metrics["home_room_misses"] == 1
+        assert payload.metrics["avoidable_room_changes"] == 1
 
 
 def _credit_lesson(lesson_id, day, credit):

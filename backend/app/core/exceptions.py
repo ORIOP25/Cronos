@@ -29,6 +29,9 @@ PUBLIC_ERROR_CATALOG: dict[str, dict[str, Any]] = {
     "room_type_fixed": {
         "message": "O tipo Normal é fixo: não pode mudar de nome nem ser removido.",
     },
+    "home_room_capacity": {
+        "message": "A sala da turma não tem lugares para todos os alunos da turma.",
+    },
     "too_many_requests": {
         "message": "Foram efetuadas demasiadas tentativas. Aguarde e tente novamente.",
         "retryable": True,

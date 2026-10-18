@@ -268,6 +268,37 @@ Partial lunch configuration produces `LUNCH_CONFIGURATION_INCOMPLETE`.
 Independent validation reports `LUNCH_BREAK_VIOLATION`.
 A teacher whose presence rule dispenses the lunch break is exempt from the lunch check; classes always keep the school lunch rule.
 
+### Class home room eligibility
+
+The eligible rooms `K[a]` of an assignment are the rooms of the subject's type that seat the unit's students (the sum for a joint unit). A Normal subject also takes the home rooms of the unit's classes that seat the unit, whatever their type. A `specific_room` restriction then cuts the set. `assess_room_eligibility` in `constraint_policy.py` decides this for the snapshot, the preflight and the joint preflight.
+
+- `PlanningSnapshot.home_rooms` lists `(class_id, room_id)` pairs only for home rooms that are active and seat their class. A class grown above its home room has no pair in the list.
+- `Assignment.needs_special_room` is true when the subject's type is not Normal.
+- `snapshot_to_dict` writes `home_rooms` and `needs_special_room` only when they carry data, so a snapshot without home rooms and without special-room subjects keeps its digest.
+- Readiness (`COMPATIBLE_ROOM`) reproduces the same rule in SQL for each class/subject link.
+- A substitution checks the lesson's room by type, or by a home room of its classes for a Normal substitute. It does not compare seats, as before.
+
+### Class home room measures
+
+`backend/app/scheduler/domain/home_rooms.py` measures a candidate against the home rooms. The proposal publishes both counts in `metrics`.
+
+- `home_room_misses`: for each lesson and each class of its unit whose home room is eligible for the unit and is not the lesson's room. A joint lesson counts once per class.
+- `avoidable_room_changes`: per class and day, consecutive lessons ordered by start. A pair counts when both lessons are flexible (`needs_special_room` false) and sit in different rooms.
+- A room change is justified when the lesson enters a home room of its classes, or leaves the home room of a class that is not its own. The adaptive disruption (`measure_recovery_quality`) charges such a change nothing, and the diff still lists it as a room change.
+
+### Class home room assignment
+
+`backend/app/scheduler/infrastructure/room_assignment.py` `assign_rooms_by_period` changes only the `room_id` of editable lessons. Periods, identities and credits stay, so a valid candidate stays valid. It runs period by period in chronological order. Each period is a minimum-cost matching between its editable lessons and their free eligible rooms. A date whose editable lessons overlap only partly keeps the construction's rooms. The cost of a room for a lesson is a lexicographic key defined by `domain/home_rooms.py` `room_choice_costs`: home-room misses, leaving the published room in recovery (a justified change costs nothing), avoidable change from the class's previous lesson that day, taking another class's home room, and the habitual room. The room identifier breaks ties.
+
+Routes:
+
+- Stop-at-first-complete (production): the pass runs without a guard on the constructive candidate, on both recovery candidates before the vector minimum, and on the unrestricted fallback placement.
+- Exact path: the pass runs after `_stabilize_recovery` and on the published incumbent. It is kept only when the quality vector does not get worse (`search.py` `_room_pass`). The room stages of the placement model do not change.
+
+Known ceiling: `room_change_cost` in the quality vector still counts a home-room change inside a day whose protected or given lesson stays in the old room. The exact-path guard then refuses that move, and the certified result keeps the old room. Whether a justified change should leave that term is an open product question.
+
+The measures stay outside the quality vector: `quality.py`, `QUALITY_POLICY_VERSION` and the audit oracles are unchanged.
+
 ### Teacher presence rules
 
 `domain/teacher_presence.py` holds the pure rules; `domain/candidate.py` carries
