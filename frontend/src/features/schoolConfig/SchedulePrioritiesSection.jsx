@@ -55,7 +55,7 @@ export default function SchedulePrioritiesSection() {
           const criterionId = `schedule-priority-${criterion.key}`
 
           return (
-            <fieldset key={criterion.key} className="border rounded p-3">
+            <fieldset key={criterion.key} className="border rounded p-3" disabled={updateMutation.isPending}>
               <legend className="float-none w-auto px-2 fs-5 mb-2">{criterion.title}</legend>
               <p>{criterion.description}</p>
               <p className="mb-2"><strong>Ignorar:</strong> {criterion.lowest}</p>

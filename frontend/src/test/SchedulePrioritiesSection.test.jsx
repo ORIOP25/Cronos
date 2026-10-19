@@ -115,4 +115,38 @@ describe('Schedule priorities configuration', () => {
     )
     expect(apiClient.put).toHaveBeenCalledTimes(1)
   })
+
+  it('keeps the submitted draft locked until its save finishes', async () => {
+    const finishRequests = []
+    apiClient.put.mockImplementation((_url, payload) => new Promise((resolve) => {
+      finishRequests.push(() => resolve({ levels: payload.levels, defaults: DEFAULTS }))
+    }))
+
+    renderWithProviders(<SchoolConfig />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Prioridades do horário' }))
+
+    const fieldset = (await screen.findByText(CRITERIA[2])).closest('fieldset')
+    const veryImportant = within(fieldset).getByRole('radio', { name: 'Muito importante' })
+    fireEvent.click(within(fieldset).getByText('Muito importante', { exact: true }))
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar prioridades' }))
+    await waitFor(() => expect(apiClient.put).toHaveBeenCalledTimes(1))
+
+    try {
+      fireEvent.click(within(fieldset).getByText('Prioridade máxima', { exact: true }))
+      fireEvent.click(screen.getByRole('button', { name: 'Repor valores recomendados' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Guardar prioridades' }))
+
+      expect(apiClient.put).toHaveBeenCalledTimes(1)
+      expect(veryImportant).toBeChecked()
+      expect(screen.getByRole('button', { name: 'Repor valores recomendados' })).toBeDisabled()
+    } finally {
+      for (const finishRequest of finishRequests) finishRequest()
+    }
+
+    expect(await screen.findByText(
+      'Prioridades guardadas. A próxima geração ou atualização usa estes valores.',
+    )).toBeInTheDocument()
+    fireEvent.click(within(fieldset).getByText('Prioridade máxima', { exact: true }))
+    expect(within(fieldset).getByRole('radio', { name: 'Prioridade máxima' })).toBeChecked()
+  })
 })
