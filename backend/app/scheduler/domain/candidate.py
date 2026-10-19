@@ -17,6 +17,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from app.scheduler.domain.calendar import Period, normalize_period
 from app.scheduler.domain.debt import RecoveryAllocation
 from app.scheduler.domain.projection import ModuleRequirement, ModuleSlice
+from app.scheduler.domain.priorities import PriorityWeights
 
 
 class SchedulingStrategy(StrEnum):
@@ -586,6 +587,7 @@ class PlanningSnapshot:
     teacher_presence: tuple[TeacherPresenceRule, ...] = ()
     home_rooms: tuple[HomeRoom, ...] = ()
     reserved_lesson_ids: frozenset[int] = frozenset()
+    priority_weights: PriorityWeights | None = None
 
     def __post_init__(self) -> None:
         if type(self.strategy) is not SchedulingStrategy:
@@ -646,6 +648,8 @@ class PlanningSnapshot:
             raise ValueError("The active version ID must be positive when present.")
         if self.lunch_rule is not None and type(self.lunch_rule) is not LunchRule:
             raise ValueError("The lunch rule must be a LunchRule when present.")
+        if self.priority_weights is not None and type(self.priority_weights) is not PriorityWeights:
+            raise ValueError("Priority weights must be PriorityWeights when present.")
         if type(self.teacher_presence) is not tuple or any(
             type(row) is not TeacherPresenceRule for row in self.teacher_presence
         ):

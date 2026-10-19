@@ -10,6 +10,7 @@ from pydantic import (
     ConfigDict,
     EmailStr,
     Field,
+    StrictInt,
     field_validator,
     model_validator,
 )
@@ -25,6 +26,7 @@ from .models import (
     TimesheetStatus,
 )
 from .scheduler.domain.timetable import BreakOverride, build_daily_slots
+from .scheduler.domain.priorities import PriorityWeights
 
 END_BEFORE_START_MESSAGE = "A data de fim não pode ser anterior à data de início"
 DUPLICATE_CLASSES_MESSAGE = "As turmas não podem estar duplicadas."
@@ -1221,6 +1223,24 @@ class OrganizationSettingsRead(BaseModel):
     repair_stability_window_days: int | None = None
     automatic_holidays_enabled: bool = False
     model_config = ConfigDict(from_attributes=True)
+
+
+class SchedulePrioritiesRead(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    levels: dict[str, StrictInt]
+    defaults: dict[str, StrictInt]
+
+
+class SchedulePrioritiesUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    levels: dict[str, StrictInt]
+
+    @field_validator("levels")
+    @classmethod
+    def validate_levels(cls, levels: dict[str, int]) -> dict[str, int]:
+        return PriorityWeights(levels).to_dict()
 
 
 class OrganizationGridSettingsUpsert(BaseModel):

@@ -264,3 +264,23 @@ def test_home_rooms_and_special_room_subjects_serialize_only_when_present():
     assert special_payload["assignments"][0]["needs_special_room"] is True
     assert payload_digest(special_payload) != payload_digest(plain)
     assert snapshot_from_dict(special_payload).assignments[0].needs_special_room is True
+
+
+def test_priority_weights_are_optional_and_round_trip_in_typology_snapshot():
+    from dataclasses import replace
+
+    from app.scheduler.domain.priorities import DEFAULT_LEVELS, PriorityWeights
+    from app.scheduler.domain.serialization import snapshot_from_dict, snapshot_to_dict
+    from app.scheduler.lab.typology import build_typology_fixture
+
+    snapshot = build_typology_fixture(12).snapshot
+    legacy_payload = snapshot_to_dict(snapshot)
+
+    assert snapshot.priority_weights is None
+    assert "priority_weights" not in legacy_payload
+
+    weighted_snapshot = replace(snapshot, priority_weights=PriorityWeights(DEFAULT_LEVELS))
+    weighted_payload = snapshot_to_dict(weighted_snapshot)
+
+    assert weighted_payload["priority_weights"] == dict(DEFAULT_LEVELS)
+    assert snapshot_from_dict(weighted_payload) == weighted_snapshot
