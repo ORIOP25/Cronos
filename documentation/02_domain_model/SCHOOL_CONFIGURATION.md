@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document describes school-year settings, lunch rules, calendar events, rooms, and timeslot generation.
+This document describes school-year settings, schedule priorities, lunch rules, calendar events, rooms, and timeslot generation.
 
 ## Intended Reader
 
@@ -14,7 +14,7 @@ Read [Data Model](../01_system_architecture/DATA_MODEL.md) and the [Scheduler En
 
 ## What the System Does
 
-Administrators configure dates, repair stability, lunch rules, calendar events, rooms, and the weekly timeslot grid.
+Administrators configure dates, repair stability, schedule priorities, lunch rules, calendar events, rooms, and the weekly timeslot grid.
 
 The scheduler reads these values during preflight and generation.
 
@@ -48,6 +48,10 @@ State-version events detect changes that can invalidate a published schedule.
 5. Grid regeneration replaces timeslots atomically when preflight permits it.
 
 ## Contracts and Invariants
+
+Administrators set eleven organization-wide schedule priorities in the **Prioridades do horário** tab beside the timetable grid. Each criterion has five levels from **Ignorar** to **Prioridade máxima**. Recommended values are loaded from the schedule-priorities API and remain in effect until changed; resetting the form restores those defaults locally, and only **Guardar prioridades** persists them. Teachers cannot view or edit this tab. The values survive a school-year soft reset.
+
+Saving changed priorities invalidates a pending proposal. Saving identical values leaves it current. Mandatory rules such as impossible availability, minimum presence, lunch, room type, and school-year dates remain binding at every priority level. The proposal summary compares all eleven measured criteria with the published schedule when one exists; initial generation shows proposal values only. Availability measures include Evitar and periods outside Preferencial. Gap and preference minutes are displayed as hours, while the summary retains the backend's measured values.
 
 - `school_hard_end_date` cannot precede `school_start_date`.
 - The school-year start, preferred end, and hard end persist together before scheduler audit events flush the transaction.

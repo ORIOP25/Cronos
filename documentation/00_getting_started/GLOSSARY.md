@@ -40,6 +40,7 @@ In accordance with ASD-STE100, technical concepts have single approved terms. Po
 | **Tipo de sala** | Room type | A room type owned by one school, managed by administrators in `/room-types`. Foundation creates the initial types, including a fixed Normal type. No two types of a school share a name, compared with case and accents folded, and archived types count: creating a type with the name of an archived one restores it instead of adding a duplicate. |
 | **Presença** | Presence | A teacher's morning or afternoon, split by the lunch break the engine chooses that day; without lunch the whole day is one presence. Each presence has zero hours or at least the teacher's minimum. |
 | **Furo máximo** | Maximum gap | Maximum hours without a lesson allowed inside one presence, set per teacher together with the minimum hours per presence. |
+| **Prioridade do horário** | Schedule priority | One of eleven organization-level criteria that administrators can rank from Ignorar to Prioridade máxima; it guides constructive schedule generation and is measured in the proposal summary. Mandatory rules remain binding. |
 
 ## Technical Terms and Abbreviations
 

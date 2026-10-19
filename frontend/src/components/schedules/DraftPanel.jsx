@@ -3,6 +3,7 @@ import { CBadge, CButton, CSpinner } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import { cilBan, cilCheckCircle, cilList, cilWarning } from '@coreui/icons'
 import { useScheduleDiff } from '../../features/scheduling/data'
+import { SCHEDULE_PRIORITY_CRITERIA } from '../../features/schoolConfig/schedulePriorities'
 import FeedbackBanner from '../FeedbackBanner'
 
 const CHANGE_LABELS = {
@@ -22,6 +23,7 @@ const WARNING_LABELS = {
 const avoidableRoomChangesLabel = (count) => (count === 1 ? 'mudança de sala evitável' : 'mudanças de sala evitáveis')
 const homeRoomMissesLabel = (count) => (count === 1 ? 'aula fora da sala da turma' : 'aulas fora da sala da turma')
 const preferenceHoursFormatter = new Intl.NumberFormat('pt-PT', { maximumFractionDigits: 1 })
+const priorityHoursFormatter = new Intl.NumberFormat('pt-PT', { maximumFractionDigits: 1 })
 
 const STALE_TEXT =
   'Existem alterações mais recentes. Esta proposta já não pode ser aprovada. Gere uma nova proposta.'
@@ -39,11 +41,23 @@ function changeSummary(diff) {
     .map(([key, label]) => `${label}: ${counts[key]}`)
 }
 
+function formatPriorityMeasure(key, value) {
+  if (value == null) return '—'
+  if (key === 'finish_early') return value
+  if (key === 'teacher_gaps' || key === 'class_gaps'
+    || key === 'teacher_preferences' || key === 'class_preferences') {
+    return `${priorityHoursFormatter.format(value / 60)} h`
+  }
+  if (key === 'subject_pace') return `${value} ${value === 1 ? 'dia' : 'dias'}`
+  return value
+}
+
 const DraftPanel = ({ draft, onApprove, onReject, isApproving, isRejecting, allowApprove = true, allowReject = true }) => {
   const [showDiff, setShowDiff] = useState(false)
   const proposalId = draft.proposal_id
   const { data: diff, isLoading } = useScheduleDiff(proposalId, showDiff)
   const metrics = draft.metrics || {}
+  const prioritySummary = metrics.priority_summary
   const quality = draft.quality_summary || {}
   const certifiedStages = Number(quality.certified_stages ?? 0)
   const totalStages = Number(quality.total_stages ?? 0)
@@ -90,6 +104,39 @@ const DraftPanel = ({ draft, onApprove, onReject, isApproving, isRejecting, allo
                   <strong>{preferenceHoursFormatter.format(metrics.preference_cost_minutes / 60)} h</strong> em blocos a evitar
                 </span>
               )}
+            </div>
+          )}
+
+          {prioritySummary?.proposal && (
+            <div className="table-responsive mb-3" data-testid="priority-summary">
+              <table className="table table-sm align-middle" aria-label="Resumo das prioridades do horário">
+                <thead>
+                  <tr>
+                    <th scope="col">Critério</th>
+                    {prioritySummary.published && <th scope="col">Horário publicado</th>}
+                    <th scope="col">Proposta</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {SCHEDULE_PRIORITY_CRITERIA.map(({ key, title }) => (
+                    <tr key={key}>
+                      <th scope="row">{title}</th>
+                      {prioritySummary.published && (
+                        <td>{formatPriorityMeasure(key, prioritySummary.published[key])}</td>
+                      )}
+                      <td>{formatPriorityMeasure(key, prioritySummary.proposal[key])}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {draft.priorities_followed === false && (
+            <div className="mb-3" data-testid="priority-fallback-warning">
+              <FeedbackBanner tone="warning">
+                Não foi possível seguir as prioridades da escola nesta proposta. O horário segue os valores recomendados. Experimente baixar alguns critérios.
+              </FeedbackBanner>
             </div>
           )}
 
