@@ -1,8 +1,9 @@
 """Store optional organization schedule priorities."""
 
 import sqlalchemy as sa
-from alembic import op
 from sqlalchemy.dialects import postgresql
+
+from alembic import op
 
 revision = "0008_schedule_priorities"
 down_revision = "0007_class_home_room"

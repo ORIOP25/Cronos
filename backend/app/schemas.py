@@ -25,8 +25,8 @@ from .models import (
     PreferenceLevel,
     TimesheetStatus,
 )
-from .scheduler.domain.timetable import BreakOverride, build_daily_slots
 from .scheduler.domain.priorities import PriorityWeights
+from .scheduler.domain.timetable import BreakOverride, build_daily_slots
 
 END_BEFORE_START_MESSAGE = "A data de fim não pode ser anterior à data de início"
 DUPLICATE_CLASSES_MESSAGE = "As turmas não podem estar duplicadas."
