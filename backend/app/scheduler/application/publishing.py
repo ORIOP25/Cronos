@@ -24,6 +24,7 @@ from app.scheduler.domain.debt import RecoveryAllocation
 from app.scheduler.domain.diagnostics import Diagnosis
 from app.scheduler.domain.home_rooms import avoidable_room_changes, home_room_misses
 from app.scheduler.domain.quality import InitialQualityMetrics, SearchEvidence
+from app.scheduler.domain.priority_metrics import measure_priority_metrics
 from app.scheduler.domain.recovery import RecoveryQualityMetrics
 
 WARNING_AFTER_PREFERENCE = "COMPLETION_AFTER_PREFERENCE"
@@ -347,6 +348,9 @@ def _base_metrics(
         "stop_reason": evidence.stop_reason if evidence is not None else "NOT_MEASURED",
         "certified_stages": evidence.certified_stages if evidence is not None else 0,
         "evidence": evidence_to_dict(evidence),
+        "priorities_followed": evidence is not None
+        and evidence.objective_scope
+        in {"CONSTRUCTIVE_PRIORITIES", "CONSTRUCTIVE_RECOVERY_PRIORITIES"},
         "result_code": "COMPLETE",
         "validation": {
             "validator_version": report.validator_version,
@@ -368,6 +372,45 @@ def _apply_home_rooms(
 ) -> None:
     metrics["home_room_misses"] = home_room_misses(snapshot, candidate)
     metrics["avoidable_room_changes"] = avoidable_room_changes(snapshot, candidate)
+
+
+def _priority_summary(
+    snapshot: PlanningSnapshot,
+    candidate: CandidateSchedule,
+    *,
+    published: CandidateSchedule | None = None,
+    changed_lessons: int = 0,
+) -> dict[str, Any]:
+    assignments = {row.assignment_id: row for row in snapshot.assignments}
+    class_count = len(
+        {
+            class_id
+            for lesson in candidate.lessons
+            for class_id in assignments[lesson.assignment_id].class_ids
+        }
+    ) or 1
+
+    def display_values(schedule: CandidateSchedule, *, changed: int = 0) -> dict[str, Any]:
+        measured = measure_priority_metrics(
+            snapshot,
+            schedule,
+            changed_lessons=changed,
+        )
+        return {
+            key: (
+                value.isoformat()
+                if key == "finish_early"
+                else value / class_count
+                if key == "subject_pace"
+                else value
+            )
+            for key, value in measured.items()
+        }
+
+    return {
+        "proposal": display_values(candidate, changed=changed_lessons),
+        "published": display_values(published) if published is not None else None,
+    }
 
 
 def _warnings(metrics: Mapping[str, Any]) -> list[str]:
@@ -394,6 +437,7 @@ def initial_proposal_payload(
     _apply_quality(metrics, quality)
     _apply_home_rooms(metrics, snapshot, candidate)
     metrics["excess_days"] = 0
+    metrics["priority_summary"] = _priority_summary(snapshot, candidate)
     metrics["recovery_assessment"] = {
         "status": recovery_status,
         "message": recovery_message,
@@ -421,6 +465,13 @@ def recovery_proposal_payload(
     )
     _apply_quality(metrics, quality.initial)
     _apply_home_rooms(metrics, snapshot, candidate)
+    published = CandidateSchedule(snapshot.baseline_lessons) if snapshot.baseline_lessons else None
+    metrics["priority_summary"] = _priority_summary(
+        snapshot,
+        candidate,
+        published=published,
+        changed_lessons=len(quality.disruption.changes),
+    )
     metrics["diagnostics"] = diagnostics_summary(diagnoses)
     metrics["warnings"] = _warnings(metrics)
     return ProposalPayload(metrics=metrics, diff=build_diff(snapshot, candidate))

@@ -27,6 +27,8 @@ from app.scheduler.domain.debt import RecoveryAllocation
 from app.scheduler.domain.diagnostics import Diagnosis, DiagnosisCode, EvidenceKind
 from app.scheduler.domain.projection import ModuleRequirement, ModuleSlice
 from app.scheduler.domain.quality import InitialQualityMetrics
+from app.scheduler.domain.priorities import CRITERION_KEYS, PriorityWeights
+from app.scheduler.domain.priority_metrics import measure_priority_metrics, priority_cost
 from app.scheduler.domain.recovery import DisruptionMetrics, RecoveryQualityMetrics
 
 GRID = (GridSlot(0, time(9, 0), time(9, 50)), GridSlot(1, time(9, 0), time(9, 50)))
@@ -166,6 +168,96 @@ def test_the_proposal_publishes_the_home_room_metrics_for_both_payloads():
     for payload in (initial, recovery):
         assert payload.metrics["home_room_misses"] == 1
         assert payload.metrics["avoidable_room_changes"] == 1
+
+
+def test_priority_summary_contains_proposal_and_published_measurements():
+    day = date(2026, 9, 21)
+    candidate = CandidateSchedule((_lesson(1, day),))
+    quality = InitialQualityMetrics(
+        completion_dates={1: day},
+        teacher_gap_minutes=0,
+        class_gap_minutes=0,
+        preference_cost_minutes=0,
+        room_change_cost=0,
+    )
+    report = ValidationReport(
+        validator_version="test",
+        violations=(),
+        credited_minutes={},
+        completion_dates={1: day},
+        total_credit_minutes=0,
+    )
+
+    initial = initial_proposal_payload(
+        _snapshot(()), candidate, quality=quality, report=report, evidence=None
+    )
+    recovery = recovery_proposal_payload(
+        _snapshot(candidate.lessons),
+        candidate,
+        quality=RecoveryQualityMetrics(
+            initial=quality, disruption=DisruptionMetrics(changes=(), total_cost=0)
+        ),
+        report=report,
+        evidence=None,
+    )
+
+    assert set(initial.metrics["priority_summary"]["proposal"]) == set(CRITERION_KEYS)
+    assert initial.metrics["priority_summary"]["published"] is None
+    assert set(recovery.metrics["priority_summary"]["proposal"]) == set(CRITERION_KEYS)
+    assert set(recovery.metrics["priority_summary"]["published"]) == set(CRITERION_KEYS)
+
+
+def test_subject_pace_summary_is_per_class_while_cost_uses_the_total():
+    day_10 = date(2026, 9, 11)
+    day_30 = date(2026, 10, 1)
+    assignments = (
+        ASSIGNMENT,
+        replace(
+            ASSIGNMENT,
+            assignment_id=2,
+            subject_id=2,
+            modules=(ModuleRequirement(2, 1, 200),),
+        ),
+        replace(
+            ASSIGNMENT,
+            assignment_id=3,
+            class_ids=(2,),
+            subject_id=3,
+            modules=(ModuleRequirement(3, 1, 200),),
+        ),
+    )
+    candidate = CandidateSchedule(
+        (
+            _lesson(1, day_10),
+            replace(_lesson(2, day_30), assignment_id=2),
+            replace(_lesson(3, day_10), assignment_id=3),
+        )
+    )
+    school = replace(_snapshot(()), assignments=assignments)
+    quality = InitialQualityMetrics(
+        completion_dates={1: day_30, 2: day_10},
+        teacher_gap_minutes=0,
+        class_gap_minutes=0,
+        preference_cost_minutes=0,
+        room_change_cost=0,
+    )
+    report = ValidationReport(
+        validator_version="test",
+        violations=(),
+        credited_minutes={},
+        completion_dates={1: day_30, 2: day_10},
+        total_credit_minutes=0,
+    )
+    payload = initial_proposal_payload(
+        school, candidate, quality=quality, report=report, evidence=None
+    )
+    levels = {key: 0 for key in CRITERION_KEYS}
+    levels["subject_pace"] = 2
+    measured = measure_priority_metrics(school, candidate)
+
+    assert measured["subject_pace"] == 20
+    assert payload.metrics["priority_summary"]["proposal"]["subject_pace"] == 10
+    assert priority_cost(measured, PriorityWeights(levels), origin=school.origin) == 40
 
 
 def _credit_lesson(lesson_id, day, credit):
