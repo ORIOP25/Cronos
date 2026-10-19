@@ -270,7 +270,11 @@ def test_priority_weights_are_optional_and_round_trip_in_typology_snapshot():
     from dataclasses import replace
 
     from app.scheduler.domain.priorities import DEFAULT_LEVELS, PriorityWeights
-    from app.scheduler.domain.serialization import snapshot_from_dict, snapshot_to_dict
+    from app.scheduler.domain.serialization import (
+        payload_digest,
+        snapshot_from_dict,
+        snapshot_to_dict,
+    )
     from app.scheduler.lab.typology import build_typology_fixture
 
     snapshot = build_typology_fixture(12).snapshot
@@ -278,6 +282,9 @@ def test_priority_weights_are_optional_and_round_trip_in_typology_snapshot():
 
     assert snapshot.priority_weights is None
     assert "priority_weights" not in legacy_payload
+    assert payload_digest(legacy_payload) == (
+        "3074b4ae58dc616bc2df392a5c12c976892c79e6dbeace911fb995f303e99b49"
+    )
 
     weighted_snapshot = replace(snapshot, priority_weights=PriorityWeights(DEFAULT_LEVELS))
     weighted_payload = snapshot_to_dict(weighted_snapshot)
