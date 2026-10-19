@@ -47,6 +47,7 @@ async def test_schedule_priorities_are_admin_only_tenant_scoped_and_strict(
         invalid = await async_client.put(ENDPOINT, json=payload, headers=clerk_admin_headers)
         assert invalid.status_code == 422
         assert invalid.json()["detail"]["code"] == "schedule_priorities_invalid"
+        assert invalid.json()["detail"]["message"] == "Escolha um nível de 0 a 4 em cada critério."
 
     teacher = await async_client.get(ENDPOINT, headers=clerk_teacher_headers)
     assert teacher.status_code == 403
@@ -78,6 +79,7 @@ async def test_schedule_priorities_missing_settings_returns_not_found(
 
     assert response.status_code == 404
     assert response.json()["detail"]["code"] == "settings_not_found"
+    assert response.json()["detail"]["message"] == "Configurações da escola não encontradas"
 
 
 async def test_schedule_priorities_change_stales_pending_proposal_and_identical_save_is_noop(

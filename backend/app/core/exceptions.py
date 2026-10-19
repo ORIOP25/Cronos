@@ -23,6 +23,10 @@ PUBLIC_ERROR_CATALOG: dict[str, dict[str, Any]] = {
         "message": "Este recurso está a ser utilizado no horário atual. Remova ou republique o horário primeiro.",
     },
     "validation_error": {"message": "Reveja os dados indicados e tente novamente."},
+    "schedule_priorities_invalid": {
+        "message": "Escolha um nível de 0 a 4 em cada critério.",
+    },
+    "settings_not_found": {"message": "Configurações da escola não encontradas"},
     "bad_request": {"message": "Não foi possível processar o pedido."},
     "course_has_classes": {"message": "Apague primeiro as turmas deste curso."},
     "room_type_name_taken": {"message": "Já existe um tipo de sala com este nome."},
