@@ -6,6 +6,7 @@ from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from datetime import date, time
 
+from app.scheduler.domain.calendar import grid_dates
 from app.scheduler.domain.candidate import (
     Assignment,
     CandidateSchedule,
@@ -88,20 +89,17 @@ def _overlap_minutes(lesson: ScheduledLesson, blocks: Sequence[Unavailability]) 
         for block in blocks
         if block.overlaps(lesson.period)
     )
-    total = 0
-    end = None
+    merged = []
     for start, stop in intervals:
-        if end is not None and start <= end:
-            end = max(end, stop)
-            continue
-        if end is not None:
-            duration = end - first
-            total += duration.days * 1440 + duration.seconds // 60
-        first, end = start, stop
-    if end is not None:
-        duration = end - first
-        total += duration.days * 1440 + duration.seconds // 60
-    return total
+        if merged and start <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], stop))
+        else:
+            merged.append((start, stop))
+    return sum(
+        duration.days * 1440 + duration.seconds // 60
+        for start, stop in merged
+        if (duration := stop - start)
+    )
 
 
 def _single_lesson_turns(
@@ -120,21 +118,25 @@ def _single_lesson_turns(
         teacher_id = lesson.teacher_id or assignment.teacher_id
         rule = presence.get(teacher_id)
         if teacher_id not in teachers_with_minimum:
-            teacher_turns[(
-                teacher_id,
-                lesson.period.school_date,
-                shift_of(
-                    lesson.period.start_local,
-                    snapshot.lunch_rule,
-                    lunch_required=rule.lunch_required if rule is not None else True,
-                ),
-            )] += 1
+            teacher_turns[
+                (
+                    teacher_id,
+                    lesson.period.school_date,
+                    shift_of(
+                        lesson.period.start_local,
+                        snapshot.lunch_rule,
+                        lunch_required=rule.lunch_required if rule is not None else True,
+                    ),
+                )
+            ] += 1
         for class_id in assignment.class_ids:
-            class_turns[(
-                class_id,
-                lesson.period.school_date,
-                shift_of(lesson.period.start_local, snapshot.lunch_rule),
-            )] += 1
+            class_turns[
+                (
+                    class_id,
+                    lesson.period.school_date,
+                    shift_of(lesson.period.start_local, snapshot.lunch_rule),
+                )
+            ] += 1
     return (
         sum(count == 1 for count in teacher_turns.values()),
         sum(count == 1 for count in class_turns.values()),
@@ -146,37 +148,40 @@ def _weekly_stability(
     candidate: CandidateSchedule,
     assignments: Mapping[int, Assignment],
 ) -> int:
-    days: dict[tuple[int, int], set[date]] = defaultdict(set)
+    latest_by_class: dict[int, date] = {}
     subjects: dict[tuple[int, int, time, date], int] = {}
-    starts: dict[tuple[int, int], set[time]] = defaultdict(set)
     for lesson in candidate.lessons:
         assignment = assignments[lesson.assignment_id]
         weekday = lesson.period.school_date.weekday()
         for class_id in assignment.class_ids:
-            if snapshot.blocked_on(class_id, lesson.period.school_date):
-                continue
-            group = (class_id, weekday)
-            days[group].add(lesson.period.school_date)
-            starts[group].add(lesson.period.start_local)
+            latest_by_class[class_id] = max(
+                latest_by_class.get(class_id, lesson.period.school_date),
+                lesson.period.school_date,
+            )
             subjects[(class_id, weekday, lesson.period.start_local, lesson.period.school_date)] = (
                 assignment.subject_id
             )
     changes = 0
-    for (class_id, weekday), teaching_days in days.items():
-        starts_for_day = starts[(class_id, weekday)]
-        ordered_days = sorted(teaching_days)
-        for previous, current in zip(ordered_days, ordered_days[1:], strict=False):
-            for start in starts_for_day:
-                before = subjects.get((class_id, weekday, start, previous))
-                after = subjects.get((class_id, weekday, start, current))
-                if before != after and (before is not None or after is not None):
-                    changes += 1
+    for class_id, latest in latest_by_class.items():
+        for weekday in snapshot.grid_weekdays:
+            teaching_days = tuple(
+                day
+                for day in grid_dates(snapshot.origin, latest, {weekday})
+                if not snapshot.blocked_on(class_id, day)
+            )
+            starts = {
+                slot.start_local for slot in snapshot.grid_slots if slot.day_of_week == weekday
+            }
+            for previous, current in zip(teaching_days, teaching_days[1:], strict=False):
+                for start in starts:
+                    before = subjects.get((class_id, weekday, start, previous))
+                    after = subjects.get((class_id, weekday, start, current))
+                    if before != after and (before is not None or after is not None):
+                        changes += 1
     return changes
 
 
-def _subject_pace(
-    candidate: CandidateSchedule, assignments: Mapping[int, Assignment]
-) -> int:
+def _subject_pace(candidate: CandidateSchedule, assignments: Mapping[int, Assignment]) -> int:
     completion: dict[tuple[int, int], date] = {}
     for lesson in candidate.lessons:
         assignment = assignments[lesson.assignment_id]
@@ -191,38 +196,16 @@ def _subject_pace(
     return sum((max(days) - min(days)).days for days in by_class.values() if len(days) > 1)
 
 
-def _changed_lesson_count(candidate: CandidateSchedule, published: CandidateSchedule) -> int:
-    def signature(lesson: ScheduledLesson):
-        return (
-            lesson.assignment_id,
-            lesson.period.start_utc,
-            lesson.period.end_utc,
-            lesson.room_id,
-            lesson.credit_minutes,
-            lesson.slices,
-        )
-
-    before = {lesson.lesson_id: signature(lesson) for lesson in published.lessons}
-    after = {lesson.lesson_id: signature(lesson) for lesson in candidate.lessons}
-    return sum(
-        before.get(identity) != after.get(identity)
-        for identity in before.keys() | after.keys()
-    )
-
-
 def measure_priority_metrics(
     snapshot: PlanningSnapshot,
     candidate: CandidateSchedule,
     *,
-    published: CandidateSchedule | None = None,
-    changed_lessons: int | None = None,
+    changed_lessons: int = 0,
 ) -> dict[str, int | date]:
     """Measure all eleven priorities in integer domain units and a completion date."""
     if type(snapshot) is not PlanningSnapshot or type(candidate) is not CandidateSchedule:
         raise ValueError("Priority measurements need a snapshot and candidate schedule.")
-    if published is not None and type(published) is not CandidateSchedule:
-        raise ValueError("Published priority measurements need a candidate schedule.")
-    if changed_lessons is not None and (type(changed_lessons) is not int or changed_lessons < 0):
+    if type(changed_lessons) is not int or changed_lessons < 0:
         raise ValueError("Changed lesson count must be a nonnegative integer.")
     assignments = {row.assignment_id: row for row in snapshot.assignments}
     teacher_occupied, class_occupied = _slot_positions(snapshot, candidate)
@@ -246,13 +229,7 @@ def measure_priority_metrics(
         "class_same_room": avoidable_room_changes(snapshot, candidate),
         "weekly_stability": _weekly_stability(snapshot, candidate, assignments),
         "subject_pace": _subject_pace(candidate, assignments),
-        "update_stability": (
-            changed_lessons
-            if changed_lessons is not None
-            else _changed_lesson_count(candidate, published)
-            if published is not None
-            else 0
-        ),
+        "update_stability": changed_lessons,
     }
 
 

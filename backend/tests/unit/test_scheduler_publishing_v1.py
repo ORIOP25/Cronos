@@ -25,10 +25,10 @@ from app.scheduler.domain.candidate import (
 from app.scheduler.domain.candidate_validation import ValidationReport
 from app.scheduler.domain.debt import RecoveryAllocation
 from app.scheduler.domain.diagnostics import Diagnosis, DiagnosisCode, EvidenceKind
-from app.scheduler.domain.projection import ModuleRequirement, ModuleSlice
-from app.scheduler.domain.quality import InitialQualityMetrics
 from app.scheduler.domain.priorities import CRITERION_KEYS, PriorityWeights
 from app.scheduler.domain.priority_metrics import measure_priority_metrics, priority_cost
+from app.scheduler.domain.projection import ModuleRequirement, ModuleSlice
+from app.scheduler.domain.quality import InitialQualityMetrics
 from app.scheduler.domain.recovery import DisruptionMetrics, RecoveryQualityMetrics
 
 GRID = (GridSlot(0, time(9, 0), time(9, 50)), GridSlot(1, time(9, 0), time(9, 50)))

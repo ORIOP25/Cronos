@@ -23,8 +23,8 @@ from app.scheduler.domain.capacity import is_physically_protected
 from app.scheduler.domain.debt import RecoveryAllocation
 from app.scheduler.domain.diagnostics import Diagnosis
 from app.scheduler.domain.home_rooms import avoidable_room_changes, home_room_misses
-from app.scheduler.domain.quality import InitialQualityMetrics, SearchEvidence
 from app.scheduler.domain.priority_metrics import measure_priority_metrics
+from app.scheduler.domain.quality import InitialQualityMetrics, SearchEvidence
 from app.scheduler.domain.recovery import RecoveryQualityMetrics
 
 WARNING_AFTER_PREFERENCE = "COMPLETION_AFTER_PREFERENCE"
@@ -382,13 +382,16 @@ def _priority_summary(
     changed_lessons: int = 0,
 ) -> dict[str, Any]:
     assignments = {row.assignment_id: row for row in snapshot.assignments}
-    class_count = len(
-        {
-            class_id
-            for lesson in candidate.lessons
-            for class_id in assignments[lesson.assignment_id].class_ids
-        }
-    ) or 1
+    class_count = (
+        len(
+            {
+                class_id
+                for lesson in candidate.lessons
+                for class_id in assignments[lesson.assignment_id].class_ids
+            }
+        )
+        or 1
+    )
 
     def display_values(schedule: CandidateSchedule, *, changed: int = 0) -> dict[str, Any]:
         measured = measure_priority_metrics(
