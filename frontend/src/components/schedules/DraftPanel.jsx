@@ -23,7 +23,6 @@ const WARNING_LABELS = {
 const avoidableRoomChangesLabel = (count) => (count === 1 ? 'mudança de sala evitável' : 'mudanças de sala evitáveis')
 const homeRoomMissesLabel = (count) => (count === 1 ? 'aula fora da sala da turma' : 'aulas fora da sala da turma')
 const preferenceHoursFormatter = new Intl.NumberFormat('pt-PT', { maximumFractionDigits: 1 })
-const priorityHoursFormatter = new Intl.NumberFormat('pt-PT', { maximumFractionDigits: 1 })
 
 const STALE_TEXT =
   'Existem alterações mais recentes. Esta proposta já não pode ser aprovada. Gere uma nova proposta.'
@@ -46,9 +45,12 @@ function formatPriorityMeasure(key, value) {
   if (key === 'finish_early') return value
   if (key === 'teacher_gaps' || key === 'class_gaps'
     || key === 'teacher_preferences' || key === 'class_preferences') {
-    return `${priorityHoursFormatter.format(value / 60)} h`
+    return `${preferenceHoursFormatter.format(value / 60)} h`
   }
-  if (key === 'subject_pace') return `${value} ${value === 1 ? 'dia' : 'dias'}`
+  if (key === 'subject_pace') {
+    const days = preferenceHoursFormatter.format(value)
+    return `${days} ${value === 1 ? 'dia' : 'dias'}`
+  }
   return value
 }
 
@@ -132,7 +134,7 @@ const DraftPanel = ({ draft, onApprove, onReject, isApproving, isRejecting, allo
             </div>
           )}
 
-          {draft.priorities_followed === false && (
+          {metrics.priorities_followed === false && (
             <div className="mb-3" data-testid="priority-fallback-warning">
               <FeedbackBanner tone="warning">
                 Não foi possível seguir as prioridades da escola nesta proposta. O horário segue os valores recomendados. Experimente baixar alguns critérios.

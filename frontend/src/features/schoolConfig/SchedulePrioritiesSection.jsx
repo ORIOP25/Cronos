@@ -7,10 +7,6 @@ import {
 } from './data'
 import { SCHEDULE_PRIORITY_CRITERIA, SCHEDULE_PRIORITY_LEVELS } from './schedulePriorities'
 
-function messageFor(error, fallback) {
-  return getApiErrorMessage(error, fallback)
-}
-
 export default function SchedulePrioritiesSection() {
   const { organization } = useOrganization()
   const prioritiesQuery = useSchedulePriorities()
@@ -40,7 +36,7 @@ export default function SchedulePrioritiesSection() {
 
   if (prioritiesQuery.isError) {
     return <div className="alert alert-danger" role="alert">
-      {messageFor(prioritiesQuery.error, 'Erro ao carregar prioridades do horário.')}
+      {getApiErrorMessage(prioritiesQuery.error, 'Erro ao carregar prioridades do horário.')}
     </div>
   }
 
@@ -100,7 +96,7 @@ export default function SchedulePrioritiesSection() {
       )}
       {updateMutation.isError && (
         <div className="alert alert-danger mt-4" role="alert">
-          {messageFor(updateMutation.error, 'Erro ao guardar prioridades do horário.')}
+          {getApiErrorMessage(updateMutation.error, 'Erro ao guardar prioridades do horário.')}
         </div>
       )}
 

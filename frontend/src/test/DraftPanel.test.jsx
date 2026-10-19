@@ -275,16 +275,16 @@ describe('DraftPanel', () => {
       class_preferences: 30,
       class_same_room: 3,
       weekly_stability: 4,
-      subject_pace: 2,
+      subject_pace: 2.5,
       update_stability: 5,
     }
     render(
       <DraftPanel
         draft={{
           ...proposal,
-          priorities_followed: false,
           metrics: {
             ...proposal.metrics,
+            priorities_followed: false,
             priority_summary: {
               published: { ...metrics, finish_early: '2027-03-10' },
               proposal: metrics,
@@ -298,13 +298,13 @@ describe('DraftPanel', () => {
 
     const table = screen.getByRole('table', { name: 'Resumo das prioridades do horário' })
     expect(within(table).getByRole('columnheader', { name: 'Horário publicado' })).toBeInTheDocument()
-    expect(within(table).getAllByRole('row')).toHaveLength(12)
-    expect(within(table).getByText('2027-03-18')).toBeInTheDocument()
-    expect(within(table).getAllByText('1,5 h')).toHaveLength(2)
-    expect(within(table).getAllByText('2 dias')).toHaveLength(2)
     expect(screen.getByText(
       'Não foi possível seguir as prioridades da escola nesta proposta. O horário segue os valores recomendados. Experimente baixar alguns critérios.',
     )).toBeInTheDocument()
+    expect(within(table).getAllByRole('row')).toHaveLength(12)
+    expect(within(table).getByText('2027-03-18')).toBeInTheDocument()
+    expect(within(table).getAllByText('1,5 h')).toHaveLength(2)
+    expect(within(table).getAllByText('2,5 dias')).toHaveLength(2)
   })
 
   it('omits the published column for first generation and preserves legacy metric rendering', () => {
@@ -312,9 +312,9 @@ describe('DraftPanel', () => {
       <DraftPanel
         draft={{
           ...proposal,
-          priorities_followed: true,
           metrics: {
             ...proposal.metrics,
+            priorities_followed: true,
             preference_cost_minutes: 90,
             priority_summary: {
               published: null,
