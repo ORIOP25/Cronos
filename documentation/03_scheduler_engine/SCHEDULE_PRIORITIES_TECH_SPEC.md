@@ -4,7 +4,7 @@
 
 Cada escola passa a escolher, de 0 a 4, a importância de 11 critérios do horário. O gerador equilibra os critérios segundo esses pesos, e nenhum critério ganha sempre aos outros.
 
-**Estado:** decisões de produto fechadas; textos e valores recomendados à espera de confirmação do responsável de produto no pull request.
+**Estado:** pronto para implementação. Textos do ecrã, valores recomendados e D15 confirmados pelo responsável de produto a 19 de outubro de 2026.
 **Base:** `main` em `3c312d17`, Alembic `0007_class_home_room`. Migração nova: `0008_schedule_priorities`.
 **Origem:** item 8 dos pedidos da escola piloto (reunião de 13 de outubro de 2026). Decisões fechadas com o responsável de produto em 19 de outubro de 2026.
 A execução vive no [WBS](SCHEDULE_PRIORITIES_WBS.md).
