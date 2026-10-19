@@ -11,6 +11,7 @@ const RESOURCES = {
   gridSettings: 'org-grid-settings',
   heatmap: 'heatmap',
   settings: 'org-settings',
+  schedulePriorities: 'schedule-priorities',
 }
 
 const CALENDAR_DEPENDENCIES = [
@@ -95,6 +96,27 @@ export function useSchoolSettings() {
     queryKey: orgQueryKey(RESOURCES.settings, orgId),
     enabled: Boolean(orgId),
     queryFn: () => apiClient.get('/school/settings/'),
+  })
+}
+
+export function useSchedulePriorities() {
+  const orgId = useOrganizationId()
+  return useQuery({
+    queryKey: orgQueryKey(RESOURCES.schedulePriorities, orgId),
+    enabled: Boolean(orgId),
+    queryFn: () => apiClient.get('/school/settings/schedule-priorities'),
+  })
+}
+
+export function useUpdateSchedulePriorities() {
+  const orgId = useOrganizationId()
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (payload) => apiClient.put('/school/settings/schedule-priorities', payload),
+    onSuccess: (data) => {
+      queryClient.setQueryData(orgQueryKey(RESOURCES.schedulePriorities, orgId), data)
+      void invalidateOrgQueries(queryClient, orgId, ['scheduler-status', 'scheduler-current-draft'])
+    },
   })
 }
 

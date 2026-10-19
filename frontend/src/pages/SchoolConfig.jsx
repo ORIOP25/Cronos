@@ -9,6 +9,7 @@ import {
 } from '@coreui/react'
 import { useOrganization } from '@clerk/react'
 import PageHeader from '../components/PageHeader'
+import SchedulePrioritiesSection from '../features/schoolConfig/SchedulePrioritiesSection'
 import {
   CalendarSection,
   GridSection,
@@ -19,6 +20,7 @@ const TAB_DEFINITIONS = [
   { key: 'settings', label: 'Período letivo', heading: 'Definição do período letivo', component: SettingsSection },
   { key: 'calendar', label: 'Calendário e interrupções', heading: 'Calendário e interrupções', component: CalendarSection },
   { key: 'grid', label: 'Grelha horária', heading: 'Definição da grelha horária', component: GridSection },
+  { key: 'priorities', label: 'Prioridades do horário', heading: 'Prioridades do horário', component: SchedulePrioritiesSection },
 ]
 
 const SchoolConfig = () => {
