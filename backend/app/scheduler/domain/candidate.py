@@ -16,8 +16,8 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from app.scheduler.domain.calendar import Period, normalize_period
 from app.scheduler.domain.debt import RecoveryAllocation
-from app.scheduler.domain.projection import ModuleRequirement, ModuleSlice
 from app.scheduler.domain.priorities import PriorityWeights
+from app.scheduler.domain.projection import ModuleRequirement, ModuleSlice
 
 
 class SchedulingStrategy(StrEnum):

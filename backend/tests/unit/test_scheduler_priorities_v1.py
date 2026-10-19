@@ -3,6 +3,7 @@
 import pytest
 from pydantic import ValidationError
 
+from app.scheduler.domain.candidate import LunchRule
 from app.scheduler.domain.priorities import (
     CRITERION_KEYS,
     DEFAULT_LEVELS,
@@ -11,7 +12,6 @@ from app.scheduler.domain.priorities import (
     PriorityWeights,
     shift_of,
 )
-from app.scheduler.domain.candidate import LunchRule
 from app.schemas import SchedulePrioritiesUpdate
 
 

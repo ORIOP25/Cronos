@@ -31,8 +31,8 @@ from app.scheduler.domain.candidate import (
     UnavailableResource,
 )
 from app.scheduler.domain.debt import RecoveryAllocation
-from app.scheduler.domain.projection import ModuleRequirement, ModuleSlice
 from app.scheduler.domain.priorities import PriorityWeights
+from app.scheduler.domain.projection import ModuleRequirement, ModuleSlice
 
 
 def time_token(value: time) -> str:

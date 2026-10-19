@@ -53,6 +53,7 @@ from app.scheduler.domain.grid_versions import (
     GridVersionRef,
     select_effective_grid_version,
 )
+from app.scheduler.domain.priorities import DEFAULT_LEVELS, PriorityWeights
 from app.scheduler.domain.projection import (
     FutureLesson,
     ModuleRequirement,
@@ -316,6 +317,11 @@ async def load_snapshot(
         class_ids_by_unit=class_ids_by_unit,
         accounting_classes=accounting_classes,
     )
+    priority_levels = await db.scalar(
+        select(models.OrganizationSettings.schedule_priorities).where(
+            models.OrganizationSettings.organization_id == organization_id
+        )
+    )
     try:
         snapshot = PlanningSnapshot(
             strategy=strategy,
@@ -343,6 +349,9 @@ async def load_snapshot(
             lunch_rule=lunch_rule,
             teacher_presence=teacher_presence,
             home_rooms=home_rooms,
+            priority_weights=PriorityWeights(
+                DEFAULT_LEVELS if priority_levels is None else priority_levels
+            ),
             reserved_lesson_ids=frozenset(base_lesson_ids).difference(
                 lesson.lesson_id for lesson in baseline_lessons
             ),
