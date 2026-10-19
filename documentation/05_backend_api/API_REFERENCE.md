@@ -153,6 +153,7 @@ The `class_availability`, `teacher_availability` and `teacher_presence` resource
 | Method | Route | Access |
 | :--- | :--- | :--- |
 | `GET` / `POST` | `/api/v1/school/settings/` | Admin |
+| `GET` / `PUT` | `/api/v1/school/settings/schedule-priorities` | Admin |
 | `POST` | `/api/v1/school/settings/soft-reset` | Admin |
 | `GET` / `POST` | `/api/v1/school/grid-settings/` | Admin |
 | `POST` | `/api/v1/school/grid-settings/regenerate` | Admin |
@@ -169,6 +170,7 @@ The `class_availability`, `teacher_availability` and `teacher_presence` resource
 School settings validate the combined stored and submitted dates.
 When the calendar and `preferred_end_date` change together, the scheduler year persists all three dates before recording the calendar change.
 Valid calendar replacements do not produce a constraint conflict. Invalid date combinations return `422`.
+Schedule-priority settings return the saved levels and recommended defaults. The update requires all 11 criteria with integer levels from 0 to 4; invalid input returns `422 schedule_priorities_invalid`. A changed value invalidates a pending proposal. Saving the same resolved levels leaves the scheduler revision unchanged.
 Each `affected_availabilities` entry of `POST /school/grid-changes/preview` includes a `classes` list.
 
 ### Scheduler and schedule operations

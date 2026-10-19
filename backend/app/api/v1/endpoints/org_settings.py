@@ -12,11 +12,11 @@ Rotas:
 """
 
 from datetime import date
-from typing import Annotated
+from typing import Annotated, Any
 
 import structlog
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models, schemas
@@ -93,6 +93,55 @@ async def upsert_org_settings(
             detail=str(exc),
             public_retryable=True,
         ) from exc
+
+
+@router.get(
+    "/settings/schedule-priorities",
+    response_model=schemas.SchedulePrioritiesRead,
+    summary="Obter prioridades do horário",
+)
+async def get_schedule_priorities(
+    db: deps.DbSession,
+    current_user: deps.AdminActor,
+) -> schemas.SchedulePrioritiesRead:
+    priorities = await settings_service.get_schedule_priorities(db, current_user.organization_id)
+    if priorities is None:
+        raise AppError(
+            kind="not_found", code="settings_not_found", detail=settings_service.SETTINGS_NOT_FOUND
+        )
+    return priorities
+
+
+@router.put(
+    "/settings/schedule-priorities",
+    response_model=schemas.SchedulePrioritiesRead,
+    summary="Guardar prioridades do horário",
+)
+async def update_schedule_priorities(
+    payload: dict[str, Any],
+    db: deps.DbSession,
+    current_user: deps.AdminActor,
+) -> schemas.SchedulePrioritiesRead:
+    try:
+        data = schemas.SchedulePrioritiesUpdate.model_validate(payload)
+    except ValidationError as exc:
+        raise AppError(
+            kind="validation",
+            code="schedule_priorities_invalid",
+            detail="Escolha um nível de 0 a 4 em cada critério.",
+        ) from exc
+
+    priorities = await settings_service.update_schedule_priorities(
+        db,
+        current_user.organization_id,
+        data,
+        changed_by_membership_id=current_user.membership_id,
+    )
+    if priorities is None:
+        raise AppError(
+            kind="not_found", code="settings_not_found", detail=settings_service.SETTINGS_NOT_FOUND
+        )
+    return priorities
 
 
 class SoftResetRequest(BaseModel):

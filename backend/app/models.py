@@ -1365,6 +1365,7 @@ class OrganizationSettings(Base):
     school_start_date: Mapped[date_type | None] = mapped_column(Date, nullable=True)
     school_hard_end_date: Mapped[date_type | None] = mapped_column(Date, nullable=True)
     repair_stability_window_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    schedule_priorities: Mapped[dict[str, int] | None] = mapped_column(JSONB, nullable=True)
     automatic_holidays_enabled: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("false")
     )

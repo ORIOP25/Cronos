@@ -170,8 +170,8 @@ Os valores recomendados mantêm o comportamento que a escola piloto já validou.
 | `class_gaps` | minutos de tempos livres das turmas | horas |
 | `teacher_single_lessons` | turnos (T10) com uma só aula, de professores sem mínimo de presença | aulas |
 | `class_single_lessons` | turnos (T10) com uma só aula, de turmas | aulas |
-| `teacher_preferences` | minutos de aulas em blocos Evitar dos professores | horas |
-| `class_preferences` | minutos de aulas em blocos Evitar das turmas | horas |
+| `teacher_preferences` | minutos de aulas em Evitar dos professores, incluindo períodos fora de Preferencial | horas |
+| `class_preferences` | minutos de aulas em Evitar das turmas, incluindo períodos fora de Preferencial | horas |
 | `class_same_room` | `avoidable_room_changes` de `home_rooms.py` | mudanças |
 | `weekly_stability` | posições (turma, dia da semana, início) cuja disciplina difere da semana letiva anterior, quando os dois dias são letivos para a turma | aulas |
 | `subject_pace` | soma, por turma, dos dias entre a primeira e a última disciplina a acabar | dias (média por turma) |

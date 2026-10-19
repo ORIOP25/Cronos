@@ -31,6 +31,7 @@ from app.scheduler.domain.candidate import (
     UnavailableResource,
 )
 from app.scheduler.domain.debt import RecoveryAllocation
+from app.scheduler.domain.priorities import PriorityWeights
 from app.scheduler.domain.projection import ModuleRequirement, ModuleSlice
 
 
@@ -246,6 +247,8 @@ def snapshot_to_dict(snapshot: PlanningSnapshot) -> dict[str, Any]:
             snapshot.lunch_rule.minimum_minutes,
         ],
     }
+    if snapshot.priority_weights is not None:
+        payload["priority_weights"] = snapshot.priority_weights.to_dict()
     if snapshot.class_blocked_dates:
         payload["class_blocked_dates"] = {
             str(class_id): sorted(day.isoformat() for day in days)
@@ -321,6 +324,11 @@ def snapshot_from_dict(data: Mapping[str, Any]) -> PlanningSnapshot:
                 window_end=time.fromisoformat(data["lunch_rule"][1]),
                 minimum_minutes=data["lunch_rule"][2],
             )
+        ),
+        priority_weights=(
+            None
+            if data.get("priority_weights") is None
+            else PriorityWeights(data["priority_weights"])
         ),
         class_blocked_dates={
             int(class_id): frozenset(date.fromisoformat(day) for day in days)
