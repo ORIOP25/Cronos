@@ -186,7 +186,15 @@ def _option_measures(
     measures = {
         "finish_early": credit,
         "teacher_gaps": _gap_option_measure(
-            teacher_intervals, interval, day_slots, credit=credit, lunch_rule=snapshot.lunch_rule
+            teacher_intervals,
+            interval,
+            day_slots,
+            credit=credit,
+            lunch_rule=(
+                None
+                if assignment.teacher_id in snapshot.lunch_dispensed_teacher_ids
+                else snapshot.lunch_rule
+            ),
         ),
     }
     if counts_teacher_single_lessons:
@@ -234,8 +242,11 @@ def _room_value(
 ) -> int:
     """T06: the option value in one room; only the home-room measure depends on it."""
     room_measures = dict(measures)
-    if any(
-        class_id in home_rooms and home_rooms[class_id] != room for class_id in assignment.class_ids
+    if not assignment.needs_special_room and any(
+        class_id in home_rooms
+        and home_rooms[class_id] in assignment.eligible_room_ids
+        and home_rooms[class_id] != room
+        for class_id in assignment.class_ids
     ):
         room_measures["class_same_room"] = -credit
     return option_value(weights, room_measures)

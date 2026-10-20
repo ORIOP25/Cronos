@@ -168,9 +168,10 @@ def _gap_minutes(
     grid_slots: Sequence[GridSlot],
     occupied: Mapping[tuple[int, date], set[int]],
     lunch_rule: LunchRule | None = None,
+    lunch_dispensed_resource_ids: frozenset[int] = frozenset(),
 ) -> int:
     total = 0
-    for (_resource_id, school_date), positions in occupied.items():
+    for (resource_id, school_date), positions in occupied.items():
         if len(positions) < 2:
             continue
         slots = sorted(
@@ -186,7 +187,12 @@ def _gap_minutes(
             for position in range(first + 1, last)
             if position not in positions
         ]
-        total += sum(right - left for left, right in empty) - lunch_minutes_in(empty, lunch_rule)
+        resource_lunch_rule = (
+            None if resource_id in lunch_dispensed_resource_ids else lunch_rule
+        )
+        total += sum(right - left for left, right in empty) - lunch_minutes_in(
+            empty, resource_lunch_rule
+        )
     return total
 
 

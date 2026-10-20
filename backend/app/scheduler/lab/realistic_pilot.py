@@ -324,6 +324,7 @@ def build_realistic_pilot() -> RealisticPilot:
             teacher_id=unit.teacher_id,
             eligible_room_ids=rooms_of[by_class_subject[(unit.class_ids[0], unit.subject_id)]],
             modules=unit.modules,
+            needs_special_room=_room_type(unit.subject_id) != NORMAL,
         )
         for unit in unit_plan.units
     )

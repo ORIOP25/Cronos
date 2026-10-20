@@ -59,6 +59,7 @@ Uma ordem fixa produz absurdos: acabar os módulos um dia mais cedo ganha sempre
 | D15 | Com "Manter a turma na mesma sala" acima de Ignorar, a sala pode mudar a hora de uma aula. Revê a regra "a sala nunca muda a hora" do [spec da sala da turma](../02_domain_model/CLASS_HOME_ROOM_TECH_SPEC.md). Em Ignorar, a sala da turma não é considerada. |
 | D16 | O agente calibra quanto vale cada critério face aos outros com os dados da escola piloto e de uma escola piloto realista (`lab/realistic_pilot.py`, pedida pelo responsável de produto a 20 de outubro de 2026), e mostra horários de exemplo ao responsável de produto antes de fechar a calibração. A 20 de outubro de 2026 o responsável de produto aceitou, na escola realista, até mais 10% de minutos em Evitar dos professores em troca de muito menos tempos livres e dias com uma só aula. |
 | D17 | Não há limite de tempo de geração antes dos testes. Um ciclo de medição (vários cenários, várias corridas, otimizar, repetir) propõe o limite no fim. |
+| D18 | A escola realista tem 48 salas no total, incluindo salas especiais; algumas turmas partilham sala. A fixture associa salas próprias apenas às turmas cobertas pelas salas Normal disponíveis. A [fixture](../../backend/app/scheduler/lab/realistic_pilot.py) é a fonte dos detalhes. Decisão do responsável de produto, 20 de outubro de 2026. |
 
 ### Decisões técnicas
 

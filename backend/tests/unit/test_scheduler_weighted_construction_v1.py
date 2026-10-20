@@ -1,12 +1,14 @@
 """Weighted constructive behavior for schedule-priority risk cases."""
 
 from datetime import date, time, timedelta
+from dataclasses import replace
 
 from app.scheduler.domain.availability_priority import AvailabilityLedger
 from app.scheduler.domain.calendar import normalize_period
 from app.scheduler.domain.candidate import (
     Assignment,
     GridSlot,
+    HomeRoom,
     LunchRule,
     PlanningSnapshot,
     SchedulingStrategy,
@@ -115,6 +117,72 @@ def test_a_lesson_that_continues_its_neighbour_earns_its_credit_in_the_gap_measu
     assert _gap_option_measure((nine,), ten, slots, credit=60) == 60
     # A lesson that leaves a gap keeps the gap delta alone (T06, I05).
     assert _gap_option_measure((nine,), afternoon, slots, credit=60) == -120
+
+
+def test_teacher_gap_option_counts_the_last_lunch_slot_for_a_dispensed_teacher():
+    from dataclasses import replace
+
+    from app.scheduler.domain.candidate import TeacherPresenceRule
+
+    grid_intervals = (
+        (time(12, 30), time(12, 40)),
+        (time(12, 40), time(12, 50)),
+        (time(12, 50), time(13, 0)),
+        (time(13, 0), time(13, 10)),
+        (time(13, 10), time(13, 20)),
+    )
+    periods = tuple(
+        normalize_period(MONDAY, start, end, TZ) for start, end in grid_intervals
+    )
+    row = assignment(1, teacher_id=1, class_id=1)
+    school = replace(
+        make_snapshot((row,), periods),
+        lunch_rule=LunchRule(time(12, 30), time(13, 30), 30),
+        teacher_presence=(TeacherPresenceRule(1, lunch_required=False),),
+    )
+    measures = constructive._option_measures(
+        school,
+        row,
+        periods[2],
+        credit=10,
+        needed_evitar=frozenset(),
+        occupancy={
+            ("teacher", 1, MONDAY): [
+                (start.hour * 60 + start.minute, end.hour * 60 + end.minute)
+                for start, end in (grid_intervals[0], grid_intervals[-1])
+            ],
+            ("class", 1, MONDAY): [],
+        },
+        day_slots=school.grid_slots,
+        counts_teacher_single_lessons=False,
+        weekly_assignment_id=None,
+        pace_lag=None,
+    )
+
+    assert measures["teacher_gaps"] == 10
+
+
+def test_a_special_room_lesson_is_not_penalized_for_an_ineligible_home_room():
+    periods = (period(0, 9), period(0, 10))
+    row = replace(
+        assignment(1, teacher_id=1, class_id=1),
+        eligible_room_ids=frozenset({2}),
+        needs_special_room=True,
+    )
+    school = replace(
+        make_snapshot((row,), periods),
+        home_rooms=(HomeRoom(1, 1),),
+    )
+    ignored_levels = dict.fromkeys(DEFAULT_LEVELS, 0)
+    ignored_levels["finish_early"] = 1
+    selected_levels = dict(ignored_levels, class_same_room=4)
+
+    ignored = construct_schedule(school, periods, weights=PriorityWeights(ignored_levels))
+    selected = construct_schedule(school, periods, weights=PriorityWeights(selected_levels))
+
+    assert ignored is not None and selected is not None
+    assert ignored.lessons[0].period == periods[0]
+    assert selected.lessons[0].period == periods[0]
 
 
 BREAK_GRID = tuple(

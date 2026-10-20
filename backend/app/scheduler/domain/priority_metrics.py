@@ -220,7 +220,12 @@ def measure_priority_metrics(
         "finish_early": max(
             (lesson.period.school_date for lesson in candidate.lessons), default=snapshot.origin
         ),
-        "teacher_gaps": _gap_minutes(snapshot.grid_slots, teacher_occupied, snapshot.lunch_rule),
+        "teacher_gaps": _gap_minutes(
+            snapshot.grid_slots,
+            teacher_occupied,
+            snapshot.lunch_rule,
+            snapshot.lunch_dispensed_teacher_ids,
+        ),
         "class_gaps": _gap_minutes(snapshot.grid_slots, class_occupied, snapshot.lunch_rule),
         "teacher_single_lessons": teacher_single,
         "class_single_lessons": class_single,

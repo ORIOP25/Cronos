@@ -14,6 +14,8 @@ from app.scheduler.lab.realistic_pilot import (
     AREA_INTEGRACAO,
     EDUCACAO_FISICA,
     INGLES,
+    NORMAL,
+    _room_type,
     build_realistic_pilot,
 )
 
@@ -113,6 +115,13 @@ def test_the_school_has_forty_eight_rooms_and_is_built_the_same_every_time(schoo
 
     assert len(school.labels["rooms"]) == 48
     assert again.snapshot == school.snapshot
+
+
+def test_realistic_pilot_marks_assignments_that_require_special_rooms(school):
+    assert all(
+        assignment.needs_special_room is (_room_type(assignment.subject_id) != NORMAL)
+        for assignment in school.snapshot.assignments
+    )
 
 
 # The owner accepted (20 Oct 2026) up to 10% more teacher Evitar than the unweighted

@@ -6,7 +6,13 @@ import json
 from pathlib import Path
 
 from app.scheduler.domain.priorities import CRITERION_KEYS
-from app.scheduler.lab.priority_bench import _profiles, _scenario, export_input, run_benchmark
+from app.scheduler.lab.priority_bench import (
+    _pilot_rows,
+    _profiles,
+    _scenario,
+    export_input,
+    run_benchmark,
+)
 
 
 def test_priority_bench_three_class_one_profile_writes_three_complete_metric_rows(tmp_path):
@@ -62,6 +68,10 @@ def test_pilot_csv_is_balanced_without_changing_room_identity_or_capacity():
 
     case = _scenario("pilot-48")
     labels = case.labels
+    subject_room_types = {
+        row["Nome da disciplina"]: row["Tipo de sala"]
+        for row in _pilot_rows(pilot_dir, "Cronos_DisciplinasEModulos_Template.csv")
+    }
 
     assert len(labels["rooms"]) == 48
     assert len(case.snapshot.assignments) == 336
@@ -71,6 +81,11 @@ def test_pilot_csv_is_balanced_without_changing_room_identity_or_capacity():
     gym_id = next(room_id for room_id, name in labels["rooms"].items() if name == "G-02")
     assert labels["room_types"][gym_id] == "Ginásio"
     assert all(assignment.eligible_room_ids for assignment in case.snapshot.assignments)
+    assert all(
+        assignment.needs_special_room
+        is (subject_room_types[labels["subjects"][str(assignment.subject_id)]] != "Normal")
+        for assignment in case.snapshot.assignments
+    )
     assert sum(room_type == "Normal" for room_type in labels["room_types"].values()) == 37
     assert sum(room_type == "Laboratório" for room_type in labels["room_types"].values()) == 7
     assert sum(room_type == "Artes" for room_type in labels["room_types"].values()) == 3

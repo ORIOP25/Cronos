@@ -133,6 +133,7 @@ def _pilot_scenario(directory: Path) -> _Scenario:
                 teacher_id=teacher_ids[row["Email do professor"]],
                 eligible_room_ids=eligible,
                 modules=modules,
+                needs_special_room=required_type != "Normal",
             )
         )
     labels = {

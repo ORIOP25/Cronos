@@ -131,6 +131,40 @@ def test_gap_metrics_do_not_count_the_lunch_hour_inside_the_window():
     assert (metrics["teacher_gaps"], metrics["class_gaps"]) == (60, 60)
 
 
+def test_gap_metrics_count_the_lunch_window_for_a_teacher_dispensed_from_lunch():
+    monday = date(2026, 9, 7)
+    grid = tuple(
+        GridSlot(0, time(hour, minute), time(hour + 1, minute))
+        for hour, minute in ((11, 20), (12, 30), (13, 30), (14, 40))
+    )
+    school = replace(
+        snapshot(
+            (assignment(1),),
+            end=monday,
+            lunch=LunchRule(time(12, 30), time(14, 30), 60),
+            presence=(TeacherPresenceRule(1, lunch_required=False),),
+        ),
+        grid_slots=grid,
+    )
+
+    def at(identity: int, hour: int, minute: int):
+        period = normalize_period(monday, time(hour, minute), time(hour + 1, minute), TZ)
+        return ScheduledLesson(
+            identity, 1, period, 1, 60, (ModuleSlice(identity, 1, 0, 60),)
+        )
+
+    candidate = CandidateSchedule(
+        (
+            at(1, 11, 20),
+            at(2, 14, 40),
+        )
+    )
+
+    metrics = measure_priority_metrics(school, candidate)
+
+    assert metrics["teacher_gaps"] == 120
+
+
 def test_weekly_stability_skips_a_blocked_class_day():
     mondays = (date(2026, 9, 7), date(2026, 9, 14), date(2026, 9, 21))
     assignments = (assignment(1, subject_id=1), assignment(2, subject_id=2))
