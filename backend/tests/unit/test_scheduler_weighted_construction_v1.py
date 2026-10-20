@@ -7,17 +7,24 @@ from app.scheduler.domain.availability_priority import AvailabilityLedger
 from app.scheduler.domain.calendar import normalize_period
 from app.scheduler.domain.candidate import (
     Assignment,
+    CandidateSchedule,
     GridSlot,
     HomeRoom,
     LunchRule,
     PlanningSnapshot,
+    ScheduledLesson,
     SchedulingStrategy,
     Unavailability,
     UnavailableResource,
 )
-from app.scheduler.domain.priorities import DEFAULT_LEVELS, UNIT_COSTS, PriorityWeights
+from app.scheduler.domain.priorities import (
+    CRITERION_KEYS,
+    DEFAULT_LEVELS,
+    UNIT_COSTS,
+    PriorityWeights,
+)
 from app.scheduler.domain.priority_value import option_value
-from app.scheduler.domain.projection import ModuleRequirement
+from app.scheduler.domain.projection import ModuleRequirement, ModuleSlice
 from app.scheduler.infrastructure import constructive
 from app.scheduler.infrastructure.constructive import (
     _gap_minutes,
@@ -89,6 +96,78 @@ def test_option_value_combines_finish_and_teacher_gap_minutes_as_integer_costs()
     assert option_value(selected, {"finish_early": 60, "teacher_gaps": 0}) == 60
 
 
+def test_joint_assignment_weekly_score_counts_each_class_reference(monkeypatch):
+    assignments = (
+        assignment(1, teacher_id=1, class_id=1),
+        assignment(2, teacher_id=2, class_id=2),
+        replace(assignment(3, teacher_id=3, class_id=1), class_ids=(1, 2)),
+    )
+    periods = (period(7, 9), period(7, 10))
+    school = make_snapshot(assignments, periods)
+    previous_period = period(0, 9)
+    reference = CandidateSchedule(
+        tuple(
+            ScheduledLesson(
+                identity,
+                identity,
+                previous_period,
+                identity + 100,
+                60,
+                (ModuleSlice(identity * 10, 1, 0, 60),),
+            )
+            for identity in (1, 2)
+        )
+    )
+    levels = dict.fromkeys(CRITERION_KEYS, 0)
+    levels["weekly_stability"] = 4
+    selected_weights = PriorityWeights(levels)
+    captured = {}
+    original_select = constructive._select_period
+
+    def capture_scores(options, *, deadline, scores=None):
+        period_options = {row.assignment_id for row, _rooms in options}
+        if not captured and 3 in period_options:
+            captured.update(scores or {})
+        return original_select(options, deadline=deadline, scores=scores)
+
+    monkeypatch.setattr(constructive, "_select_period", capture_scores)
+
+    candidate = construct_schedule(
+        school,
+        periods,
+        weekly_reference=reference,
+        weights=selected_weights,
+    )
+
+    assert candidate is not None
+    assert captured[(3, 103)][1] == option_value(selected_weights, {"weekly_stability": -120})
+
+
+def test_joint_weekly_score_cancels_one_match_and_one_mismatch():
+    periods = (period(0, 9),)
+    row = replace(assignment(3, teacher_id=3, class_id=1), class_ids=(1, 2))
+    school = make_snapshot((row,), periods)
+
+    measures = constructive._option_measures(
+        school,
+        row,
+        periods[0],
+        credit=60,
+        needed_evitar=frozenset(),
+        occupancy={
+            ("teacher", 3, MONDAY): [],
+            ("class", 1, MONDAY): [],
+            ("class", 2, MONDAY): [],
+        },
+        day_slots=school.grid_slots,
+        counts_teacher_single_lessons=False,
+        weekly_assignment_ids=(3, 2),
+        pace_lag=None,
+    )
+
+    assert measures.get("weekly_stability", 0) == 0
+
+
 def test_gap_priority_counts_empty_grid_slots_and_ignores_lunch_break_minutes():
     slots = (
         GridSlot(0, time(9), time(10)),
@@ -153,7 +232,7 @@ def test_teacher_gap_option_counts_the_last_lunch_slot_for_a_dispensed_teacher()
         },
         day_slots=school.grid_slots,
         counts_teacher_single_lessons=False,
-        weekly_assignment_id=None,
+        weekly_assignment_ids=(),
         pace_lag=None,
     )
 

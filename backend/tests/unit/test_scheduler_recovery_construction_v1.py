@@ -8,6 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 
+import app.scheduler.infrastructure.recovery_construction as recovery_construction
 import app.scheduler.infrastructure.search as search_module
 from app.scheduler.composition import repair_published_schedule
 from app.scheduler.domain.calendar import normalize_period
@@ -18,6 +19,7 @@ from app.scheduler.domain.candidate import (
     HomeRoom,
     LunchRule,
     PlanningSnapshot,
+    ScheduledLesson,
     SchedulingStrategy,
     TeacherPresenceRule,
     Unavailability,
@@ -27,7 +29,8 @@ from app.scheduler.domain.candidate_validation import ValidationViolationCode, v
 from app.scheduler.domain.diagnostics import diagnose_protected_availability
 from app.scheduler.domain.home_rooms import avoidable_room_changes
 from app.scheduler.domain.priorities import CRITERION_KEYS, DEFAULT_LEVELS, PriorityWeights
-from app.scheduler.domain.projection import ModuleRequirement
+from app.scheduler.domain.priority_value import option_value
+from app.scheduler.domain.projection import ModuleRequirement, ModuleSlice
 from app.scheduler.domain.recovery import measure_disruption
 from app.scheduler.infrastructure.recovery_construction import construct_recovery
 from app.scheduler.lab.priority_bench import _scenario
@@ -66,6 +69,47 @@ def recover(periods, assignments, baseline, **changes):
 
 def positions(candidate):
     return {(row.assignment_id, row.period, row.room_id) for row in candidate.lessons}
+
+
+def test_joint_recovery_weekly_score_counts_each_class_reference(monkeypatch):
+    periods = (period(0, 9), period(0, 10, 11))
+    assignments = (
+        assignment(1, 1, 1, {101}, 60),
+        assignment(2, 2, 2, {102}, 60),
+        replace(assignment(3, 1, 3, {103}, 60), class_ids=(1, 2)),
+    )
+    previous_period = period(-7, 9)
+    baseline = (
+        ScheduledLesson(100, 1, previous_period, 101, 60, (ModuleSlice(100, 1, 0, 60),)),
+        ScheduledLesson(101, 2, previous_period, 102, 60, (ModuleSlice(101, 2, 0, 60),)),
+    )
+    target = replace(
+        plan(periods, assignments),
+        strategy=SchedulingStrategy.ADAPTIVE_RECOVERY,
+        baseline_lessons=baseline,
+    )
+    levels = dict.fromkeys(CRITERION_KEYS, 0)
+    levels["weekly_stability"] = 4
+    selected_weights = PriorityWeights(levels)
+    captured = {}
+    original_select = recovery_construction._select_period
+
+    def capture_scores(options, *, deadline, scores=None):
+        if not captured and 3 in {row.assignment_id for row, _rooms in options}:
+            captured.update(scores or {})
+        return original_select(options, deadline=deadline, scores=scores)
+
+    monkeypatch.setattr(recovery_construction, "_select_period", capture_scores)
+
+    candidate = construct_recovery(
+        target,
+        periods,
+        deadline=monotonic() + 20,
+        weights=selected_weights,
+    )
+
+    assert candidate is not None
+    assert captured[(3, 103)][1] == option_value(selected_weights, {"weekly_stability": -120})
 
 
 @pytest.mark.parametrize(

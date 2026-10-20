@@ -177,7 +177,7 @@ def _option_measures(
     occupancy: Mapping[tuple, Sequence[tuple[int, int]]],
     day_slots: Sequence[GridSlot],
     counts_teacher_single_lessons: bool,
-    weekly_assignment_id: int | None,
+    weekly_assignment_ids: Sequence[int | None],
     pace_lag: Fraction | None,
 ) -> dict[str, int]:
     """T06: the room-independent measures of one option, in lesson minutes.
@@ -225,10 +225,13 @@ def _option_measures(
             snapshot, UnavailableResource.CLASS, class_id, period
         ):
             measures["class_preferences"] = measures.get("class_preferences", 0) - credit
-    if weekly_assignment_id is not None:
-        measures["weekly_stability"] = (
-            credit if weekly_assignment_id == assignment.assignment_id else -credit
-        )
+    weekly_stability = sum(
+        credit if reference_id == assignment.assignment_id else -credit
+        for reference_id in weekly_assignment_ids
+        if reference_id is not None
+    )
+    if weekly_stability:
+        measures["weekly_stability"] = weekly_stability
     if pace_lag is not None:
         measures["subject_pace"] = round(pace_lag * credit)
     return measures
@@ -1116,7 +1119,12 @@ def _construct_pass(
                     occupancy=occupancy,
                     day_slots=slots_by_day.get(period.school_date.weekday(), ()),
                     counts_teacher_single_lessons=assignment.teacher_id not in presence_rules,
-                    weekly_assignment_id=None if preferred is None else preferred[0],
+                    weekly_assignment_ids=tuple(
+                        None
+                        if (reference := weekly_pattern.get((class_id, *signature))) is None
+                        else reference[0]
+                        for class_id in assignment.class_ids
+                    ),
                     pace_lag=_pace_lag(identity, pace_peers[identity], required, remaining),
                 )
                 for room in rooms:

@@ -465,13 +465,9 @@ def _construct_recovery(
                     occupancy=occupancy,
                     day_slots=slots_by_day.get(period.school_date.weekday(), ()),
                     counts_teacher_single_lessons=assignment.teacher_id not in minimum_teachers,
-                    weekly_assignment_id=next(
-                        (
-                            weekly_pattern[(class_id, *signature)]
-                            for class_id in assignment.class_ids
-                            if (class_id, *signature) in weekly_pattern
-                        ),
-                        None,
+                    weekly_assignment_ids=tuple(
+                        weekly_pattern.get((class_id, *signature))
+                        for class_id in assignment.class_ids
                     ),
                     pace_lag=_pace_lag(identity, pace_peers[identity], required, remaining),
                 )
