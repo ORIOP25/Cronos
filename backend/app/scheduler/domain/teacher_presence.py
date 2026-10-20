@@ -164,6 +164,44 @@ def teacher_day_complies(
     return False
 
 
+def longest_presence_minutes(
+    rule: TeacherPresenceRule,
+    day_slots: Sequence[tuple[int, int]],
+    *,
+    lunch_rule: LunchRule | None,
+) -> int:
+    """Most lesson minutes one presence can hold on a day with these grid slots.
+
+    Without a required lunch the whole day is one presence. With one, a presence
+    lies on one side of a free lunch choice, so the longer side is the limit.
+    """
+    if not rule.lunch_required or lunch_rule is None:
+        return sum(end - start for start, end in day_slots)
+    return max(
+        (
+            max(
+                sum(end - start for start, end in day_slots if end <= lunch_start),
+                sum(end - start for start, end in day_slots if start >= lunch_end),
+            )
+            for lunch_start, lunch_end in _lunch_choices_from_intervals(day_slots, lunch_rule)
+        ),
+        default=0,
+    )
+
+
+def presence_minutes_fit(left: int, *, minimum: int, longest: int) -> bool:
+    """True when ``left`` minutes split into presences of ``minimum`` to ``longest``.
+
+    k presences hold any total from k x minimum to k x longest, so a total in the
+    hole between two such ranges can never be taught in valid presences.
+    """
+    if left == 0:
+        return True
+    if longest < minimum:
+        return False
+    return any(k * minimum <= left <= k * longest for k in range(1, left // minimum + 1))
+
+
 def _span_reaches_minimum(slots: Sequence[PresenceSlot], minimum: int, max_gap: int) -> bool:
     """True when a contiguous span of slots can host a presence of the minimum.
 

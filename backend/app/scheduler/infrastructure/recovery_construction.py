@@ -28,8 +28,10 @@ from app.scheduler.infrastructure.constructive import (
     _continues_open_presence,
     _grid_intervals_by_day,
     _local_interval,
+    _longest_presences,
     _minimum_presence_teachers,
     _presence_day_complies,
+    _presence_left_fits,
     _resource_keys,
     _select_period,
     _slots_by_day,
@@ -96,6 +98,7 @@ def _construct_recovery(
     dispensed_teachers = snapshot.lunch_dispensed_teacher_ids
     minimum_teachers = _minimum_presence_teachers(snapshot)
     slots_by_day = _slots_by_day(snapshot)
+    longest_presence = _longest_presences(snapshot, minimum_teachers, slots_by_day)
     grid_intervals = _grid_intervals_by_day(slots_by_day)
     assignments_by_teacher: dict[int, list[Assignment]] = defaultdict(list)
     for row in snapshot.assignments:
@@ -324,7 +327,6 @@ def _construct_recovery(
         rest of the date cannot reach the presence minimum.
         """
         teacher_id = assignment.teacher_id
-        minimum = minimum_teachers[teacher_id].minimum_minutes
         booked = [retain(assignment, period, room)]
         for later in periods_by_date[period.school_date]:
             if later.start_utc <= period.start_utc:
@@ -334,7 +336,9 @@ def _construct_recovery(
                 continue
             booked.append(retain(choice[0], later, choice[1]))
             left = minutes_left(teacher_id)
-            if complies(teacher_id, period.school_date) and (left == 0 or left >= minimum):
+            if complies(teacher_id, period.school_date) and _presence_left_fits(
+                left, minimum_teachers[teacher_id], longest_presence[teacher_id]
+            ):
                 return booked
         for booking in reversed(booked):
             undo(booking)
@@ -350,11 +354,13 @@ def _construct_recovery(
             return [retain(assignment, period, room)]
         if not complies(teacher_id, period.school_date, (period,)):
             return plan_presence_run(assignment, period, room)
-        # Extending a compliant presence must not strand fewer minutes than the minimum:
-        # they could never form a presence of their own.
+        # Extending a compliant presence must not strand minutes that no split into
+        # valid presences could ever teach.
         credit = min(remaining[assignment.assignment_id], period.duration_minutes)
         left = minutes_left(teacher_id) - credit
-        if 0 < left < minimum_teachers[teacher_id].minimum_minutes:
+        if not _presence_left_fits(
+            left, minimum_teachers[teacher_id], longest_presence[teacher_id]
+        ):
             return []
         return [retain(assignment, period, room)]
 
