@@ -117,6 +117,29 @@ def test_priority_falls_back_to_the_ceiling_once_a_resource_is_ahead_of_pace():
     assert ledger.priority(teacher_row, grid[10]) == 2400
 
 
+def test_urgency_ranks_resources_without_spare_periods_by_their_remaining_capacity():
+    # Schedule priorities T09: a resource that cannot skip this period is urgent;
+    # the one with less remaining capacity is served first, the rest share the ceiling.
+    grid = week_periods()
+    tight = assignment(1, teacher_id=1, class_ids=(1,), minutes=120)
+    tighter = assignment(2, teacher_id=2, class_ids=(2,), minutes=60)
+    loose = assignment(3, teacher_id=3, class_ids=(3,), minutes=60)
+    ledger = AvailabilityLedger.build(
+        snapshot((tight, tighter, loose)),
+        {1: grid[:2], 2: grid[:1], 3: grid[:5]},
+        {1: 120, 2: 60, 3: 60},
+    )
+
+    assert ledger.urgency(tighter, grid[0]) == 60
+    assert ledger.urgency(tight, grid[0]) == 120
+    assert ledger.urgency(loose, grid[0]) == 300
+    # At most one period to spare is urgent: four periods left for one lesson is not,
+    # two periods left is (one spare), and the last period is.
+    assert ledger.urgency(loose, grid[1]) == 300
+    assert ledger.urgency(loose, grid[3]) == 120
+    assert ledger.urgency(loose, grid[4]) == 60
+
+
 def test_shared_periods_count_once_and_only_the_own_evitar_leaves_neutral_capacity():
     # R18: two assignments of teacher 1 over the same five periods.
     five = week_periods()[:5]
@@ -189,6 +212,29 @@ def test_an_option_in_an_evitar_is_refused_without_spare_demand_and_allowed_with
     )
     assert with_spare.allows(option, first_days[0]) is True
     assert with_spare.refused == 0
+
+
+def test_inside_its_own_evitar_a_resource_is_necessary_only_when_the_rest_cannot_hold_it():
+    # A teacher prefers mornings: every afternoon (14h-18h) is Evitar, 10 hours to teach.
+    week = week_periods()
+    row = assignment(1, teacher_id=1, class_ids=(1,), minutes=600)
+    afternoons = tuple(
+        Unavailability(TEACHER, 1, item) for item in week if item.start_local.hour >= 14
+    )
+    ledger = AvailabilityLedger.build(snapshot((row,), afternoons), {1: week}, {1: 600})
+    monday_afternoon, monday_morning = week[4], week[3]
+
+    # Behind pace against all 40 hours, but 16 morning hours still hold the 10 hours:
+    # the Evitar afternoon is not necessary and its Evitar is not waived.
+    assert ledger.is_necessary(row, monday_afternoon) is False
+    assert ledger.needed_evitar(row, monday_afternoon) == frozenset()
+    # Outside Evitar the pace rule still applies.
+    assert ledger.is_necessary(row, monday_morning) is True
+
+    # On Friday afternoon no morning is left, so the Evitar hour is needed.
+    friday_afternoon = week[36]
+    assert ledger.is_necessary(row, friday_afternoon) is True
+    assert ledger.needed_evitar(row, friday_afternoon) == frozenset({("teacher", 1)})
 
 
 def test_occupied_periods_leave_the_capacity_of_the_teacher_and_its_classes():

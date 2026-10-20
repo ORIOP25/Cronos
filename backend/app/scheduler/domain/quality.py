@@ -12,6 +12,7 @@ from app.scheduler.domain.candidate import (
     Assignment,
     CandidateSchedule,
     GridSlot,
+    LunchRule,
     PlanningSnapshot,
     ScheduledLesson,
     UnavailableResource,
@@ -150,9 +151,23 @@ def _slot_position(grid_slots: Sequence[GridSlot], period) -> int | None:
     return None
 
 
+def lunch_minutes_in(empty: Iterable[tuple[int, int]], lunch_rule: LunchRule | None) -> int:
+    """The empty local minutes that serve as the lunch break, so they are not a free period.
+
+    Only the rule's minimum counts: a second empty hour in the window is a free period.
+    """
+    if lunch_rule is None:
+        return 0
+    start = lunch_rule.window_start.hour * 60 + lunch_rule.window_start.minute
+    end = lunch_rule.window_end.hour * 60 + lunch_rule.window_end.minute
+    overlap = sum(max(0, min(right, end) - max(left, start)) for left, right in empty)
+    return min(overlap, lunch_rule.minimum_minutes)
+
+
 def _gap_minutes(
     grid_slots: Sequence[GridSlot],
     occupied: Mapping[tuple[int, date], set[int]],
+    lunch_rule: LunchRule | None = None,
 ) -> int:
     total = 0
     for (_resource_id, school_date), positions in occupied.items():
@@ -163,12 +178,15 @@ def _gap_minutes(
             key=lambda slot: (slot.start_local, slot.end_local),
         )
         first, last = min(positions), max(positions)
-        total += sum(
-            (slots[position].end_local.hour * 60 + slots[position].end_local.minute)
-            - (slots[position].start_local.hour * 60 + slots[position].start_local.minute)
+        empty = [
+            (
+                slots[position].start_local.hour * 60 + slots[position].start_local.minute,
+                slots[position].end_local.hour * 60 + slots[position].end_local.minute,
+            )
             for position in range(first + 1, last)
             if position not in positions
-        )
+        ]
+        total += sum(right - left for left, right in empty) - lunch_minutes_in(empty, lunch_rule)
     return total
 
 

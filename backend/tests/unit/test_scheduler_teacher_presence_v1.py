@@ -29,7 +29,9 @@ from app.scheduler.domain.projection import ModuleRequirement, ModuleSlice
 from app.scheduler.domain.teacher_presence import (
     PresenceLesson,
     impossible_presence_teacher_ids,
+    longest_presence_minutes,
     lunch_options,
+    presence_minutes_fit,
     teacher_day_complies,
 )
 
@@ -508,3 +510,40 @@ def test_presence_rules_change_the_lunch_cache_salt():
     )
 
     assert _lunch_cache_salt(with_rule, "s") != without
+
+
+BREAK_DAY = tuple(
+    (hour * 60 + minute, hour * 60 + minute + 60)
+    for hour, minute in (
+        (9, 0),
+        (10, 10),
+        (11, 20),
+        (12, 30),
+        (13, 30),
+        (14, 40),
+        (15, 50),
+        (17, 0),
+    )
+)
+
+
+def test_the_longest_presence_is_one_side_of_the_lunch_break():
+    lunch = LunchRule(time(12, 30), time(14, 30), 60)
+    rule = TeacherPresenceRule(9, minimum_minutes=180, max_gap_minutes=60)
+
+    # Lunch at 13:30 leaves 9:00-13:30 (four lessons) on one side.
+    assert longest_presence_minutes(rule, BREAK_DAY, lunch_rule=lunch) == 240
+    # Without a required lunch the whole day is one presence.
+    assert (
+        longest_presence_minutes(replace(rule, lunch_required=False), BREAK_DAY, lunch_rule=lunch)
+        == 480
+    )
+
+
+@pytest.mark.parametrize(
+    ("left", "fits"),
+    [(0, True), (120, False), (180, True), (240, True), (300, False), (360, True), (420, True)],
+)
+def test_remaining_minutes_fit_only_when_they_split_into_valid_presences(left, fits):
+    # A 3-hour minimum with at most 4 hours per presence: 5 hours can never be taught.
+    assert presence_minutes_fit(left, minimum=180, longest=240) is fits

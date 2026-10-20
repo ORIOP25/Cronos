@@ -4,9 +4,11 @@ from collections import Counter
 from dataclasses import replace
 from datetime import UTC, date, datetime, time, timedelta
 from time import monotonic
+from types import SimpleNamespace
 
 import pytest
 
+import app.scheduler.infrastructure.search as search_module
 from app.scheduler.composition import repair_published_schedule
 from app.scheduler.domain.calendar import normalize_period
 from app.scheduler.domain.candidate import (
@@ -24,9 +26,12 @@ from app.scheduler.domain.candidate import (
 from app.scheduler.domain.candidate_validation import ValidationViolationCode, validate_candidate
 from app.scheduler.domain.diagnostics import diagnose_protected_availability
 from app.scheduler.domain.home_rooms import avoidable_room_changes
+from app.scheduler.domain.priorities import CRITERION_KEYS, DEFAULT_LEVELS, PriorityWeights
 from app.scheduler.domain.projection import ModuleRequirement
 from app.scheduler.domain.recovery import measure_disruption
 from app.scheduler.infrastructure.recovery_construction import construct_recovery
+from app.scheduler.lab.priority_bench import _scenario
+from app.scheduler.lab.scale import build_scale_fixture
 from tests.unit.test_scheduler_recovery_solver_v1 import POLICY
 from tests.unit.test_scheduler_resource_exclusivity_v1 import assignment, lesson, plan
 from tests.unit.test_scheduler_w04_w05_regressions_v1 import period
@@ -61,6 +66,113 @@ def recover(periods, assignments, baseline, **changes):
 
 def positions(candidate):
     return {(row.assignment_id, row.period, row.room_id) for row in candidate.lessons}
+
+
+@pytest.mark.parametrize(
+    ("stability_level", "gap_level", "expected"),
+    [(4, 0, "local"), (0, 4, "rebuild")],
+)
+def test_r15_adaptive_construction_uses_weighted_cost_for_update_choice(
+    monkeypatch, stability_level, gap_level, expected
+):
+    fixture = build_scale_fixture(6, seed=1)
+    baseline = search_module.construct_schedule(fixture.snapshot, fixture.periods)
+    assert baseline is not None
+    local = CandidateSchedule(baseline.lessons)
+    rebuilt = CandidateSchedule(tuple(reversed(baseline.lessons)))
+    levels = dict.fromkeys(CRITERION_KEYS, 0)
+    levels.update(update_stability=stability_level, teacher_gaps=gap_level)
+    snapshot = replace(
+        fixture.snapshot,
+        strategy=SchedulingStrategy.ADAPTIVE_RECOVERY,
+        priority_weights=PriorityWeights(levels),
+        baseline_lessons=baseline.lessons,
+    )
+
+    monkeypatch.setattr(search_module, "construct_recovery", lambda *a, **k: local)
+    monkeypatch.setattr(search_module, "construct_schedule", lambda *a, **k: rebuilt)
+    monkeypatch.setattr(
+        search_module, "assign_rooms_by_period", lambda _s, candidate, **_k: candidate
+    )
+    monkeypatch.setattr(
+        search_module,
+        "measure_disruption",
+        lambda _s, _b, candidate, *_a, **_k: SimpleNamespace(
+            changes=(None,) * (2 if candidate is local else 40)
+        ),
+    )
+
+    def metrics(_snapshot, candidate, *, changed_lessons=0):
+        values = dict.fromkeys(CRITERION_KEYS, 0)
+        values["finish_early"] = fixture.snapshot.origin
+        values["teacher_gaps"] = 120 if candidate is local else 0
+        values["update_stability"] = changed_lessons
+        return values
+
+    monkeypatch.setattr(search_module, "measure_priority_metrics", metrics)
+    outcome = search_module.search_adaptive_schedule(
+        snapshot,
+        fixture.periods,
+        baseline,
+        replace(
+            POLICY,
+            daily_slopes=tuple(range(1, (snapshot.preferred_end_date - snapshot.origin).days + 1)),
+        ),
+        time_limit_seconds=10,
+        stop_at_first_complete=True,
+    )
+
+    assert outcome.status == "COMPLETE"
+    assert outcome.candidate is (local if expected == "local" else rebuilt)
+    assert outcome.evidence.objective_scope == "CONSTRUCTIVE_RECOVERY_PRIORITIES"
+
+
+def _recovery_case():
+    scenario = _scenario("recovery-3")
+    return replace(scenario.snapshot, baseline_lessons=scenario.baseline.lessons), scenario
+
+
+def test_weighted_recovery_completes_a_real_repair_with_the_recommended_levels():
+    """T05: the weighted update path runs end to end, without stubs."""
+    planning, scenario = _recovery_case()
+
+    candidate = construct_recovery(
+        planning,
+        scenario.periods,
+        deadline=monotonic() + 120,
+        weights=PriorityWeights(DEFAULT_LEVELS),
+    )
+
+    assert candidate is not None
+    assert validate_candidate(planning, candidate).valid
+
+
+def test_zero_teacher_evitar_weight_makes_teacher_evitar_invisible_to_recovery():
+    """D01, I05: with the teacher criterion in Ignorar, teacher Evitar blocks change nothing."""
+    planning, scenario = _recovery_case()
+    levels = {**DEFAULT_LEVELS, "teacher_preferences": 0}
+    weights = PriorityWeights(levels)
+    baseline = construct_recovery(
+        planning, scenario.periods, deadline=monotonic() + 120, weights=weights
+    )
+    assert baseline is not None
+    teacher_of = {row.assignment_id: row.teacher_id for row in planning.assignments}
+    teacher_id = teacher_of[baseline.lessons[0].assignment_id]
+    blocks = tuple(
+        Unavailability(UnavailableResource.TEACHER, teacher_id, lesson.period)
+        for lesson in (*planning.baseline_lessons, *baseline.lessons)
+        if teacher_of[lesson.assignment_id] == teacher_id
+    )
+
+    blocked = construct_recovery(
+        replace(planning, soft_unavailable=blocks),
+        scenario.periods,
+        deadline=monotonic() + 120,
+        weights=weights,
+    )
+
+    assert blocked is not None
+    assert repr(blocked.lessons) == repr(baseline.lessons)
 
 
 def test_missing_hours_fill_a_gap_after_the_window_without_moving_valid_lessons():
@@ -774,3 +886,24 @@ def test_rr4_a_retained_presence_is_never_stranded_below_the_minimum():
     assert candidate is not None
     assert validate_candidate(target, candidate).valid is True
     assert positions(candidate) == {(1, row, 1) for row in periods[:4]}
+
+
+def test_weighted_recovery_tries_a_fill_pass_before_giving_up_the_priorities(monkeypatch):
+    import app.scheduler.infrastructure.recovery_construction as recovery
+
+    calls = []
+    built = object()
+
+    def fake_pass(*_args, strict, fill=False, **_kwargs):
+        calls.append((strict, fill))
+        return (built if fill else None), 1
+
+    monkeypatch.setattr(recovery, "_construct_recovery", fake_pass)
+
+    assert (
+        recovery.construct_recovery(
+            None, (), deadline=monotonic() + 60, weights=PriorityWeights(DEFAULT_LEVELS)
+        )
+        is built
+    )
+    assert calls == [(True, False), (False, False), (False, True)]

@@ -61,7 +61,15 @@ def test_priority_schema_reuses_strict_domain_validation():
 def test_priority_multipliers_and_unit_costs_are_complete():
     assert PRIORITY_MULTIPLIERS == (0, 1, 2, 4, 8)
     assert tuple(UNIT_COSTS) == CRITERION_KEYS
-    assert set(UNIT_COSTS.values()) == {1}
+    # T15: S7 calibrated these on the pilot and realistic schools; the rest stay at 1.
+    assert {key: cost for key, cost in UNIT_COSTS.items() if cost != 1} == {
+        "teacher_gaps": 3,
+        "teacher_single_lessons": 5,
+        "class_single_lessons": 10,
+        "teacher_preferences": 10,
+        "class_preferences": 5,
+        "subject_pace": 20,
+    }
 
 
 def test_shift_of_splits_at_midpoint_and_handles_whole_day():

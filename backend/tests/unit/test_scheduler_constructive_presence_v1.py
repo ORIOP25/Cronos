@@ -155,3 +155,22 @@ def test_a_presence_extension_never_strands_fewer_minutes_than_the_minimum():
     assert validate_candidate(scenario, candidate).valid is True
     lessons_per_day = Counter(lesson.period.school_date for lesson in candidate.lessons)
     assert [lessons_per_day[MONDAY], lessons_per_day[MONDAY + timedelta(days=1)]] == [3, 3]
+
+
+def test_a_presence_never_leaves_hours_that_no_valid_presence_can_hold():
+    # Nine hours for a teacher with a 3-hour minimum and at most 4 hours per presence:
+    # booking 4 hours first would strand 5 hours, which no presence split can teach.
+    row = assignment(1, teacher_id=IRIS_TEACHER_ID, class_ids=(1,), minutes=540)
+    school = replace(
+        snapshot((row,)),
+        teacher_presence=(iris_rule(lunch_required=True),),
+        lunch_rule=LUNCH_RULE,
+    )
+    periods = tuple(
+        period(day, hour) for day in range(5) for hour in (9, 10, 11, 12, 14, 15, 16, 17)
+    )
+
+    candidate = construct_schedule(school, periods)
+
+    assert candidate is not None
+    assert validate_candidate(school, candidate).valid is True

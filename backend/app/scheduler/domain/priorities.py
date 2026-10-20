@@ -28,7 +28,17 @@ DEFAULT_LEVELS = MappingProxyType(
     dict(zip(CRITERION_KEYS, (4, 3, 2, 2, 2, 3, 2, 2, 2, 3, 3), strict=True))
 )
 PRIORITY_MULTIPLIERS = (0, 1, 2, 4, 8)
-UNIT_COSTS = MappingProxyType(dict.fromkeys(CRITERION_KEYS, 1))
+UNIT_COSTS = MappingProxyType(
+    {
+        **dict.fromkeys(CRITERION_KEYS, 1),
+        "teacher_gaps": 3,
+        "teacher_single_lessons": 5,
+        "class_single_lessons": 10,
+        "teacher_preferences": 10,
+        "class_preferences": 5,
+        "subject_pace": 20,
+    }
+)
 
 
 @dataclass(frozen=True, init=False)
