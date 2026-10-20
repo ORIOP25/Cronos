@@ -82,10 +82,13 @@ def _gap_minutes(
     occupied = {positions[interval] for interval in intervals if interval in positions}
     if len(occupied) < 2:
         return 0
+    occupied_intervals = [grid[index] for index in occupied]
     empty = [
         grid[index] for index in range(min(occupied) + 1, max(occupied)) if index not in occupied
     ]
-    return sum(end - start for start, end in empty) - lunch_minutes_in(empty, lunch_rule)
+    return sum(end - start for start, end in empty) - lunch_minutes_in(
+        empty, lunch_rule, occupied_intervals
+    )
 
 
 def _gap_option_measure(

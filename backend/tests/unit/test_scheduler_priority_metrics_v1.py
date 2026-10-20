@@ -21,6 +21,7 @@ from app.scheduler.domain.candidate_validation import ValidationReport
 from app.scheduler.domain.priorities import CRITERION_KEYS, PriorityWeights
 from app.scheduler.domain.priority_metrics import measure_priority_metrics, priority_cost
 from app.scheduler.domain.projection import ModuleRequirement, ModuleSlice
+from app.scheduler.domain.quality import lunch_minutes_in
 from app.scheduler.domain.recovery import (
     InitialQualityMetrics,
     RecoveryPolicy,
@@ -131,6 +132,60 @@ def test_gap_metrics_do_not_count_the_lunch_hour_inside_the_window():
     assert (metrics["teacher_gaps"], metrics["class_gaps"]) == (60, 60)
 
 
+def test_fragmented_free_periods_do_not_add_up_to_a_continuous_lunch():
+    lunch = LunchRule(time(12, 30), time(14, 30), 60)
+    free_periods = ((12 * 60 + 30, 12 * 60 + 50), (13 * 60, 13 * 60 + 40))
+    lesson = ((12 * 60 + 50, 13 * 60), (13 * 60 + 40, 14 * 60 + 30))
+
+    assert lunch_minutes_in(free_periods, lunch, lesson) == 0
+
+
+def test_free_grid_slots_across_a_non_teaching_interval_form_continuous_lunch():
+    lunch = LunchRule(time(12), time(14), 60)
+    free_periods = ((12 * 60, 12 * 60 + 40), (12 * 60 + 50, 13 * 60 + 30))
+
+    assert lunch_minutes_in(free_periods, lunch) == 50
+
+
+def test_gap_metrics_do_not_discount_lunch_fragments_separated_by_a_lesson():
+    monday = date(2026, 9, 7)
+    grid = tuple(
+        GridSlot(0, time(start_hour, start_minute), time(end_hour, end_minute))
+        for start_hour, start_minute, end_hour, end_minute in (
+            (11, 20, 12, 0),
+            (12, 0, 12, 40),
+            (12, 40, 12, 50),
+            (12, 50, 13, 30),
+            (13, 30, 14, 30),
+            (14, 40, 15, 40),
+        )
+    )
+    school = replace(
+        snapshot((assignment(1),), end=monday, lunch=LunchRule(time(12), time(14), 60)),
+        grid_slots=grid,
+    )
+    lessons = tuple(
+        ScheduledLesson(
+            identity,
+            1,
+            normalize_period(monday, start, end, TZ),
+            1,
+            duration,
+            (ModuleSlice(identity, 1, 0, duration),),
+        )
+        for identity, start, end, duration in (
+            (1, time(11, 20), time(12), 40),
+            (2, time(12, 40), time(12, 50), 10),
+            (3, time(13, 30), time(14, 30), 60),
+            (4, time(14, 40), time(15, 40), 60),
+        )
+    )
+
+    metrics = measure_priority_metrics(school, CandidateSchedule(lessons))
+
+    assert (metrics["teacher_gaps"], metrics["class_gaps"]) == (80, 80)
+
+
 def test_gap_metrics_count_the_lunch_window_for_a_teacher_dispensed_from_lunch():
     monday = date(2026, 9, 7)
     grid = tuple(
@@ -149,9 +204,7 @@ def test_gap_metrics_count_the_lunch_window_for_a_teacher_dispensed_from_lunch()
 
     def at(identity: int, hour: int, minute: int):
         period = normalize_period(monday, time(hour, minute), time(hour + 1, minute), TZ)
-        return ScheduledLesson(
-            identity, 1, period, 1, 60, (ModuleSlice(identity, 1, 0, 60),)
-        )
+        return ScheduledLesson(identity, 1, period, 1, 60, (ModuleSlice(identity, 1, 0, 60),))
 
     candidate = CandidateSchedule(
         (

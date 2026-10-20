@@ -1,7 +1,7 @@
 """Weighted constructive behavior for schedule-priority risk cases."""
 
-from datetime import date, time, timedelta
 from dataclasses import replace
+from datetime import date, time, timedelta
 
 from app.scheduler.domain.availability_priority import AvailabilityLedger
 from app.scheduler.domain.calendar import normalize_period
@@ -131,9 +131,7 @@ def test_teacher_gap_option_counts_the_last_lunch_slot_for_a_dispensed_teacher()
         (time(13, 0), time(13, 10)),
         (time(13, 10), time(13, 20)),
     )
-    periods = tuple(
-        normalize_period(MONDAY, start, end, TZ) for start, end in grid_intervals
-    )
+    periods = tuple(normalize_period(MONDAY, start, end, TZ) for start, end in grid_intervals)
     row = assignment(1, teacher_id=1, class_id=1)
     school = replace(
         make_snapshot((row,), periods),
@@ -210,6 +208,26 @@ def test_the_lunch_hour_inside_the_window_is_not_a_free_period():
     assert _gap_minutes((morning, minutes(13, 30), afternoon), BREAK_GRID, PILOT_LUNCH) == 0
     # Without a lunch rule both empty hours are free periods, as before.
     assert _gap_minutes((morning, afternoon), BREAK_GRID) == 120
+
+
+def test_constructive_gap_does_not_discount_lunch_fragments_separated_by_a_lesson():
+    grid = tuple(
+        GridSlot(0, time(start_hour, start_minute), time(end_hour, end_minute))
+        for start_hour, start_minute, end_hour, end_minute in (
+            (11, 20, 12, 0),
+            (12, 0, 12, 40),
+            (12, 40, 12, 50),
+            (12, 50, 13, 30),
+            (13, 30, 14, 30),
+        )
+    )
+    intervals = (
+        (11 * 60 + 20, 12 * 60),
+        (12 * 60 + 40, 12 * 60 + 50),
+        (13 * 60 + 30, 14 * 60 + 30),
+    )
+
+    assert _gap_minutes(intervals, grid, LunchRule(time(12), time(14), 60)) == 80
 
 
 def test_joining_a_single_lesson_shift_is_rewarded_and_opening_one_is_not_penalised():
