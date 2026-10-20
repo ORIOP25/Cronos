@@ -208,8 +208,8 @@ Os valores recomendados mantêm o comportamento que a escola piloto já validou.
 | Nível fora de 0–4, chave em falta ou a mais | 422 `schedule_priorities_invalid` | "Escolha um nível de 0 a 4 em cada critério." |
 | Configuração da escola por criar | 404 `settings_not_found` | a mensagem atual de configuração em falta |
 | Professor a ler ou escrever | 403, como as outras rotas de administrador | a página de acesso negado atual |
-| Construção com pesos sem saída | repetição sem pesos (T11); `priorities_followed = false` | "Não foi possível seguir as prioridades da escola nesta proposta. O horário segue os valores recomendados. Experimente baixar alguns critérios." |
-| As duas construções falham | caminho exato, como hoje (T16); `priorities_followed = false` | o mesmo aviso |
+| Construção com pesos sem saída | repetição sem pesos (T11); `priorities_followed = false` | "Não foi possível seguir as prioridades definidas pela escola nesta proposta. Experimente baixar alguns critérios e gerar outra proposta." |
+| As duas construções falham | caminho exato, como hoje (T16); `priorities_followed = false` | o mesmo aviso; não afirma que a proposta segue valores recomendados |
 | Proposta pendente quando os níveis mudam | proposta `STALE` | o texto atual de proposta desatualizada |
 | Guardar com sucesso | 200 | "Prioridades guardadas. A próxima geração ou atualização usa estes valores." |
 

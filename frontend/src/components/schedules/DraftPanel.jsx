@@ -137,7 +137,7 @@ const DraftPanel = ({ draft, onApprove, onReject, isApproving, isRejecting, allo
           {metrics.priorities_followed === false && (
             <div className="mb-3" data-testid="priority-fallback-warning">
               <FeedbackBanner tone="warning">
-                Não foi possível seguir as prioridades da escola nesta proposta. O horário segue os valores recomendados. Experimente baixar alguns critérios.
+                Não foi possível seguir as prioridades definidas pela escola nesta proposta. Experimente baixar alguns critérios e gerar outra proposta.
               </FeedbackBanner>
             </div>
           )}

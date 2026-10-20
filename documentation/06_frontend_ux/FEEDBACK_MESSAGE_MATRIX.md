@@ -29,7 +29,7 @@ Other client responses stay in context.
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | Save schedule priorities | Success | — | Status message in Configuração | `SchedulePrioritiesSection` | Values apply to the next generation or update |
 | Save schedule priorities | Invalid level set | `schedule_priorities_invalid` | Banner in Configuração: "Escolha um nível de 0 a 4 em cada critério." | `SchedulePrioritiesSection` | Select one valid level for each criterion |
-| Review schedule proposal | Constructive priorities were not followed | `priorities_followed: false` | Warning in the proposal: "Não foi possível seguir as prioridades da escola nesta proposta. O horário segue os valores recomendados. Experimente baixar alguns critérios." | `DraftPanel` | Lower some priorities and generate another proposal |
+| Review schedule proposal | Constructive priorities were not followed | `priorities_followed: false` | Warning in the proposal: "Não foi possível seguir as prioridades definidas pela escola nesta proposta. Experimente baixar alguns critérios e gerar outra proposta." | `DraftPanel` | Lower some priorities and generate another proposal |
 | Save availability | Success | — | Toast, 4 s | `MyAvailability` | — |
 | Save availability | Transient failure | Network, 429, 5xx | Toast, 6 s | `MyAvailability` | Draft stays, retry |
 | Save availability | Context changed before the response | — | No feedback | `useAttemptScope` guard | Retry in the new context |

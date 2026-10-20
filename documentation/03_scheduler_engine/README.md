@@ -4,7 +4,7 @@ This section documents the Cronos scheduler v1: complete annual generation, adap
 
 The scheduler v1 is active in production. The original execution plan and work breakdown (packages W00–W14) were removed once delivered; they remain in git history. Their binding product decisions now live in section 1.1 of the technical specification.
 
-Administrators can configure eleven schedule criteria with five priority levels per organization. The scheduler records each proposal's measured values and, for updates, the published schedule's values. The [Schedule Priorities Tech Spec](SCHEDULE_PRIORITIES_TECH_SPEC.md) defines the settings, fallback behavior, metrics, and UI contract.
+Administrators can configure eleven schedule criteria with five priority levels per organization. The scheduler records each proposal's measured values and, for updates, the published schedule's values. When construction cannot follow the configured priorities, the proposal warning reports that directly and does not say the fallback used recommended values. The [Schedule Priorities Tech Spec](SCHEDULE_PRIORITIES_TECH_SPEC.md) defines the settings, fallback behavior, metrics, and UI contract.
 
 ## Documents
 

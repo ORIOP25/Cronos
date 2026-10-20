@@ -65,7 +65,7 @@ Do not introduce new microservices, another broker, another solver, or machine l
 Do not invent pedagogical load limits or certify administrative execution decisions as legally correct.
 Retain FastAPI, SQLAlchemy, PostgreSQL, Celery, Redis, React, and OR-Tools. Lockfiles define dependency versions.
 
-Organization-level schedule priorities, their measured proposal summaries, and the fallback notice are defined in the [Schedule Priorities Tech Spec](SCHEDULE_PRIORITIES_TECH_SPEC.md). These preferences do not relax mandatory constraints or change the exact solver.
+Organization-level schedule priorities, their measured proposal summaries, and the fallback notice are defined in the [Schedule Priorities Tech Spec](SCHEDULE_PRIORITIES_TECH_SPEC.md). When the weighted construction cannot follow those priorities, the proposal reports that directly and does not claim that it used recommended values. These preferences do not relax mandatory constraints or change the exact solver.
 
 The proposal summary reports the completion date, gap minutes, single-lesson turn counts, availability preference minutes, avoidable home-room changes, weekly stability changes, subject-pace days, and update changes. Availability measurements count both Evitar and periods outside Preferencial. The frontend converts gap and preference minutes to hours for display; it does not alter the recorded values.
 

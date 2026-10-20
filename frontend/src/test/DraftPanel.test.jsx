@@ -299,8 +299,9 @@ describe('DraftPanel', () => {
     const table = screen.getByRole('table', { name: 'Resumo das prioridades do horário' })
     expect(within(table).getByRole('columnheader', { name: 'Horário publicado' })).toBeInTheDocument()
     expect(screen.getByText(
-      'Não foi possível seguir as prioridades da escola nesta proposta. O horário segue os valores recomendados. Experimente baixar alguns critérios.',
+      'Não foi possível seguir as prioridades definidas pela escola nesta proposta. Experimente baixar alguns critérios e gerar outra proposta.',
     )).toBeInTheDocument()
+    expect(screen.getByTestId('priority-fallback-warning')).not.toHaveTextContent(/valores recomendados/i)
     expect(within(table).getAllByRole('row')).toHaveLength(12)
     expect(within(table).getByText('2027-03-18')).toBeInTheDocument()
     expect(within(table).getAllByText('1,5 h')).toHaveLength(2)
