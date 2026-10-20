@@ -112,6 +112,7 @@ export function useUpdateSchedulePriorities() {
   const orgId = useOrganizationId()
   const queryClient = useQueryClient()
   return useMutation({
+    mutationKey: orgQueryKey(RESOURCES.schedulePriorities, orgId),
     mutationFn: (payload) => apiClient.put('/school/settings/schedule-priorities', payload),
     onSuccess: (data) => {
       queryClient.setQueryData(orgQueryKey(RESOURCES.schedulePriorities, orgId), data)

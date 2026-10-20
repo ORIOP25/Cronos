@@ -124,6 +124,45 @@ describe('vertical feature data hooks', () => {
       ['scheduler-current-draft', 'org-a'],
     ]))
   })
+
+  it('keeps a pending schedule-priority update scoped to the organization where it started', async () => {
+    let resolveUpdate
+    apiClient.put.mockImplementationOnce(() => new Promise((resolve) => {
+      resolveUpdate = resolve
+    }))
+    const { queryClient, wrapper } = createHarness()
+    queryClient.setQueryData(['schedule-priorities', 'org-a'], { owner: 'org-a' })
+    queryClient.setQueryData(['schedule-priorities', 'org-b'], { owner: 'org-b' })
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
+    const update = renderHook(() => useUpdateSchedulePriorities(), { wrapper })
+    let completion
+
+    act(() => {
+      completion = update.result.current.mutateAsync({ levels: { class_gaps: 3 } })
+    })
+    await waitFor(() => expect(apiClient.put).toHaveBeenCalled())
+
+    act(() => {
+      setClerkState({ orgId: 'org-b' })
+      update.rerender()
+    })
+
+    const response = { levels: { class_gaps: 3 }, defaults: { class_gaps: 2 } }
+    await act(async () => {
+      resolveUpdate(response)
+      await completion
+    })
+
+    expect(queryClient.getQueryData(['schedule-priorities', 'org-b'])).toEqual({ owner: 'org-b' })
+    expect(queryClient.getQueryData(['schedule-priorities', 'org-a'])).toEqual(response)
+    expect(invalidate.mock.calls.map(([options]) => options.queryKey)).toEqual(expect.arrayContaining([
+      ['scheduler-status', 'org-a'],
+      ['scheduler-current-draft', 'org-a'],
+    ]))
+    expect(invalidate).not.toHaveBeenCalledWith(expect.objectContaining({
+      queryKey: ['scheduler-status', 'org-b'],
+    }))
+  })
   beforeEach(() => {
     resetClerkState()
     setClerkState({ orgId: 'org-a', isSignedIn: true, isLoaded: true })
