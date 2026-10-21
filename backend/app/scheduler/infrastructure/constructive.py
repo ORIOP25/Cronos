@@ -261,6 +261,15 @@ def _fills_hour(
     return value - option_value(weights, preferences) > 0
 
 
+def _gives_up(ledger: AvailabilityLedger, period: Period, *, strict: bool) -> bool:
+    """Whether a pass stops early because it can no longer place every missing hour.
+
+    A strict pass waits for its first refusal: only a refusal sends the
+    construction on to the relaxed pass, and a later one could still come.
+    """
+    return (ledger.refused > 0 or not strict) and ledger.cannot_finish(period)
+
+
 def _soft_overlap(
     snapshot: PlanningSnapshot, resource: UnavailableResource, identity: int, period: Period
 ) -> bool:
@@ -1014,6 +1023,8 @@ def _construct_pass(
     for period in canonical:
         if _interrupted(deadline, should_cancel):
             return None, ledger.refused
+        if _gives_up(ledger, period, strict=strict):
+            return None, ledger.refused
         active = [
             row
             for row in options_by_period[period]
@@ -1097,6 +1108,7 @@ def _construct_pass(
                     options.append((assignment, rooms))
                     continue
                 necessary = ledger.is_necessary(assignment, period, evitar_kinds=evitar_kinds)
+                urgency = ledger.urgency(assignment, period)
                 allowed_rooms = []
                 credit = min(remaining[identity], period.duration_minutes)
                 measures = _option_measures(
@@ -1121,11 +1133,7 @@ def _construct_pass(
                     )
                     if necessary or _fills_hour(weights, measures, value, strict=strict, fill=fill):
                         allowed_rooms.append(room)
-                        scores[(identity, room)] = (
-                            necessary,
-                            value,
-                            ledger.urgency(assignment, period),
-                        )
+                        scores[(identity, room)] = (necessary, value, urgency)
                 if allowed_rooms:
                     options.append((assignment, tuple(allowed_rooms)))
         if scores is not None:

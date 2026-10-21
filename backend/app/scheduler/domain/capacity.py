@@ -176,7 +176,9 @@ def eligible_periods(
             or is_physically_protected(snapshot, period)
             or not any(slot.matches(period) for slot in snapshot.grid_slots)
             or _is_unavailable(snapshot, assignment, period)
-            or not available_rooms(snapshot, assignment, period)
+            or not any(
+                room_free(snapshot, room_id, period) for room_id in assignment.eligible_room_ids
+            )
             or any(
                 _overlaps(period, occupied)
                 for occupied in fixed_by_date.get(period.school_date, ())
