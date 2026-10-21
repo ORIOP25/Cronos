@@ -43,6 +43,7 @@ from app.scheduler.infrastructure.constructive import (
     _room_value,
     _select_period,
     _slots_by_day,
+    strict_window_periods,
 )
 from app.scheduler.infrastructure.placement_model import _build_candidate
 
@@ -71,15 +72,20 @@ def construct_recovery(
     An Evitar option is refused while its resource has spare hours (T08). If that
     leaves no schedule, one relaxed pass repeats the recovery without the refusal (T09).
     """
+    strict_periods = strict_window_periods(snapshot, periods, weights)
     candidate, refused = _construct_recovery(
         snapshot,
-        periods,
+        strict_periods,
         deadline=deadline,
         should_cancel=should_cancel,
         weights=weights,
         strict=weights is None or bool(weights.teacher_preferences or weights.class_preferences),
     )
-    if candidate is None and refused and not _interrupted(deadline, should_cancel):
+    if (
+        candidate is None
+        and (refused or strict_periods != periods)
+        and not _interrupted(deadline, should_cancel)
+    ):
         candidate, _ = _construct_recovery(
             snapshot,
             periods,

@@ -18,7 +18,12 @@ from app.scheduler.domain.candidate import (
     TeacherPresenceRule,
 )
 from app.scheduler.domain.candidate_validation import ValidationReport
-from app.scheduler.domain.priorities import CRITERION_KEYS, PriorityWeights
+from app.scheduler.domain.priorities import (
+    CRITERION_KEYS,
+    LATE_DAY_COST,
+    PRIORITY_MULTIPLIERS,
+    PriorityWeights,
+)
 from app.scheduler.domain.priority_metrics import measure_priority_metrics, priority_cost
 from app.scheduler.domain.projection import ModuleRequirement, ModuleSlice
 from app.scheduler.domain.quality import lunch_minutes_in
@@ -337,3 +342,52 @@ def test_priority_cost_is_integer_and_weights_only_the_selected_criterion():
     )
     assert stronger_class_gaps_cost - class_gaps_cost == 2 * metrics["class_gaps"]
     assert type(class_gaps_cost) is int
+
+
+FINISH = date(2026, 9, 14)
+
+
+def finish_only_metrics(finish: date = FINISH) -> dict:
+    return {key: 0 for key in CRITERION_KEYS} | {"finish_early": finish}
+
+
+def finish_early_weights(level: int) -> PriorityWeights:
+    return PriorityWeights({key: 0 for key in CRITERION_KEYS} | {"finish_early": level})
+
+
+def test_priority_cost_prices_each_day_past_the_preferred_end_at_the_late_day_cost():
+    weights = finish_early_weights(4)
+    on_time = priority_cost(finish_only_metrics(), weights, origin=ORIGIN)
+
+    late = priority_cost(
+        finish_only_metrics(), weights, origin=ORIGIN, preferred_end_date=FINISH - timedelta(7)
+    )
+
+    assert late - on_time == 7 * PRIORITY_MULTIPLIERS[4] * LATE_DAY_COST
+
+
+@pytest.mark.parametrize("preferred_end", [FINISH, FINISH + timedelta(days=3)])
+def test_priority_cost_adds_no_lateness_on_or_before_the_preferred_end(preferred_end):
+    weights = finish_early_weights(4)
+
+    assert priority_cost(
+        finish_only_metrics(), weights, origin=ORIGIN, preferred_end_date=preferred_end
+    ) == priority_cost(finish_only_metrics(), weights, origin=ORIGIN)
+
+
+def test_priority_cost_adds_no_lateness_when_finish_early_is_ignored():
+    weights = finish_early_weights(0)
+
+    assert priority_cost(
+        finish_only_metrics(), weights, origin=ORIGIN, preferred_end_date=FINISH - timedelta(7)
+    ) == priority_cost(finish_only_metrics(), weights, origin=ORIGIN)
+
+
+def test_priority_cost_rejects_a_preferred_end_that_is_not_a_date():
+    with pytest.raises(ValueError):
+        priority_cost(
+            finish_only_metrics(),
+            finish_early_weights(4),
+            origin=ORIGIN,
+            preferred_end_date="2026-09-14",
+        )
