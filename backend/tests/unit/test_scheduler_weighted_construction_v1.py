@@ -569,3 +569,28 @@ def test_the_fill_pass_teaches_an_option_whatever_its_value():
 
     assert constructive._fills_hour(weights, {}, -500, strict=True) is False
     assert constructive._fills_hour(weights, {}, -500, strict=False, fill=True) is True
+
+
+def test_weekly_stability_follows_the_previous_week_not_the_first_one():
+    # Three Mondays, 9h and 10h. Week 1 is forced to A-B and week 2 to B-A by the
+    # teachers' Impossível hours; week 3 is free. Repeating the previous week (B-A)
+    # changes nothing from week 2 to week 3, as the weekly-stability metric counts.
+    mondays = (0, 7, 14)
+    periods = tuple(period(day, hour) for day in mondays for hour in (9, 10))
+    first = assignment(1, teacher_id=1, class_id=1, minutes=180, room_id=100)
+    second = assignment(2, teacher_id=2, class_id=1, minutes=180, room_id=100)
+    blocked = (
+        Unavailability(UnavailableResource.TEACHER, 2, period(0, 9)),
+        Unavailability(UnavailableResource.TEACHER, 1, period(7, 9)),
+    )
+    school = make_snapshot((first, second), periods, unavailable=blocked)
+
+    result = construct_schedule(school, periods, weights=weights())
+
+    assert result is not None
+    week_three = {
+        lesson.period.start_local.hour: lesson.assignment_id
+        for lesson in result.lessons
+        if lesson.period.school_date == period(14, 9).school_date
+    }
+    assert week_three == {9: 2, 10: 1}

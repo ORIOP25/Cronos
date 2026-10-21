@@ -752,6 +752,11 @@ def _construct_pass(
                         ),
                         (row.assignment_id, row.room_id),
                     )
+    # Weighted weekly stability follows the previous teaching week of each slot, as the
+    # metric does; the unweighted ordering keeps its first-week pattern (I02).
+    latest_week: dict[tuple, int] = (
+        {key: value[0] for key, value in weekly_pattern.items()} if weights is not None else {}
+    )
     used_ids = {row.lesson_id for row in snapshot.protected_lessons} | set(
         snapshot.reserved_lesson_ids
     )
@@ -764,15 +769,15 @@ def _construct_pass(
 
     def occupy(assignment: Assignment, period: Period, room: int, teacher: int) -> None:
         for class_id in assignment.class_ids:
-            weekly_pattern.setdefault(
-                (
-                    class_id,
-                    period.school_date.weekday(),
-                    period.start_local,
-                    period.end_local,
-                ),
-                (assignment.assignment_id, room),
+            slot_key = (
+                class_id,
+                period.school_date.weekday(),
+                period.start_local,
+                period.end_local,
             )
+            weekly_pattern.setdefault(slot_key, (assignment.assignment_id, room))
+            if weights is not None:
+                latest_week[slot_key] = assignment.assignment_id
         for key in _resource_keys(assignment, room, teacher, period.school_date):
             busy[key].append(period)
             if key[0] != "room":
@@ -1120,10 +1125,7 @@ def _construct_pass(
                     day_slots=slots_by_day.get(period.school_date.weekday(), ()),
                     counts_teacher_single_lessons=assignment.teacher_id not in presence_rules,
                     weekly_assignment_ids=tuple(
-                        None
-                        if (reference := weekly_pattern.get((class_id, *signature))) is None
-                        else reference[0]
-                        for class_id in assignment.class_ids
+                        latest_week.get((class_id, *signature)) for class_id in assignment.class_ids
                     ),
                     pace_lag=_pace_lag(identity, pace_peers[identity], required, remaining),
                 )
