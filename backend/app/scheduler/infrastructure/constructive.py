@@ -492,8 +492,14 @@ def _select_period(
     *,
     deadline: float | None,
     scores: Mapping[tuple[int, int], tuple[bool, int, int]] | None = None,
+    fill_admitted: bool = False,
 ) -> list[tuple[Assignment, int]]:
-    """Fill a period; repair greedy resource choices with a small native model."""
+    """Fill a period; repair greedy resource choices with a small native model.
+
+    With ``fill_admitted`` (relaxed and fill passes) every option the pass admitted
+    counts for filling the hour before its value: an admitted option with a negative
+    value is still taught rather than left out (T07, T11).
+    """
     selected = []
     classes: set[int] = set()
     teachers: set[int] = set()
@@ -557,9 +563,12 @@ def _select_period(
     )
     urgency_rank = {priority: len(urgencies) - index for index, priority in enumerate(urgencies)}
     max_rank = len(urgencies)
-    priority_weight = 2 * total_value + 1
-    priority_bound = len(options) * max_rank * priority_weight + 2 * total_value
-    count_weight = priority_bound + 1 if scores is not None else len(options) ** 2 + 1
+    fill_weight = (2 * total_value + 1) if fill_admitted else 0
+    priority_weight = len(options) * fill_weight + 2 * total_value + 1
+    priority_bound = len(options) * max_rank * priority_weight + len(options) * fill_weight
+    count_weight = (
+        priority_bound + 2 * total_value + 1 if scores is not None else len(options) ** 2 + 1
+    )
     for rank, (assignment, available) in enumerate(options):
         for room in available:
             key = (assignment.class_ids, assignment.teacher_id, room)
@@ -585,6 +594,7 @@ def _select_period(
                     (
                         int(necessary) * count_weight
                         + urgency_rank.get(priority, 0) * priority_weight * int(necessary)
+                        + fill_weight
                         + value
                     )
                     * variable
@@ -1132,7 +1142,12 @@ def _construct_pass(
                 ),
                 reverse=True,
             )
-        for assignment, room in _select_period(options, deadline=deadline, scores=scores):
+        for assignment, room in _select_period(
+            options,
+            deadline=deadline,
+            scores=scores,
+            fill_admitted=scores is not None and not strict,
+        ):
             teacher_id = assignment.teacher_id
             if teacher_id in presence_rules and not presence_complies(
                 teacher_id, period.school_date, [period]

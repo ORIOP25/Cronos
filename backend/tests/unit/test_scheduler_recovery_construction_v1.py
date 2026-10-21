@@ -94,7 +94,7 @@ def test_joint_recovery_weekly_score_counts_each_class_reference(monkeypatch):
     captured = {}
     original_select = recovery_construction._select_period
 
-    def capture_scores(options, *, deadline, scores=None):
+    def capture_scores(options, *, deadline, scores=None, fill_admitted=False):
         if not captured and 3 in {row.assignment_id for row, _rooms in options}:
             captured.update(scores or {})
         return original_select(options, deadline=deadline, scores=scores)

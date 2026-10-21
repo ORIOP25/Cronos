@@ -493,7 +493,12 @@ def _construct_recovery(
                         )
                     )
             options = [item for _key, item in sorted(weighted_options, key=lambda row: row[0])]
-        for assignment, room in _select_period(options, deadline=deadline, scores=scores):
+        for assignment, room in _select_period(
+            options,
+            deadline=deadline,
+            scores=scores,
+            fill_admitted=scores is not None and not strict,
+        ):
             for booking in book(assignment, period, room):
                 ledger.place(booking.assignment, booking.credit)
         if not any(remaining.values()):

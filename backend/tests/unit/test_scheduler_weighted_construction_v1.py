@@ -124,7 +124,7 @@ def test_joint_assignment_weekly_score_counts_each_class_reference(monkeypatch):
     captured = {}
     original_select = constructive._select_period
 
-    def capture_scores(options, *, deadline, scores=None):
+    def capture_scores(options, *, deadline, scores=None, fill_admitted=False):
         period_options = {row.assignment_id for row, _rooms in options}
         if not captured and 3 in period_options:
             captured.update(scores or {})
@@ -595,3 +595,32 @@ def test_weekly_stability_follows_the_previous_week_not_the_first_one():
         if lesson.period.school_date == period(14, 9).school_date
     }
     assert week_three == {9: 2, 10: 1}
+
+
+def test_the_relaxed_and_fill_passes_teach_an_admitted_option_with_a_negative_value():
+    """T07, T11: an option the pass admits fills its hour even when its value is negative."""
+    row = assignment(1, teacher_id=1, class_id=1)
+
+    # The strict pass never admits it, so the repair keeps the hour empty.
+    assert _select_period([(row, (101,))], deadline=None, scores={(1, 101): (False, -10, 1)}) == []
+    assert _select_period(
+        [(row, (101,))], deadline=None, scores={(1, 101): (False, -10, 1)}, fill_admitted=True
+    ) == [(row, 101)]
+
+
+def test_admitted_options_fill_the_most_hours_before_comparing_values():
+    # Teacher 1 can teach class 1 (value -5) or class 2 (value 40); teacher 2 can only
+    # teach class 1 (value -30). Filling both hours beats the single best value.
+    first = assignment(1, teacher_id=1, class_id=1)
+    second = assignment(2, teacher_id=1, class_id=2)
+    third = assignment(3, teacher_id=2, class_id=1)
+    scores = {(1, 101): (False, -5, 1), (2, 102): (False, 40, 1), (3, 103): (False, -30, 1)}
+
+    selected = _select_period(
+        [(first, (101,)), (second, (102,)), (third, (103,))],
+        deadline=None,
+        scores=scores,
+        fill_admitted=True,
+    )
+
+    assert sorted(row.assignment_id for row, _room in selected) == [2, 3]
