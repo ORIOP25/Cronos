@@ -973,3 +973,26 @@ def test_weighted_recovery_weekly_reference_is_the_previous_teaching_week():
     by_week = {row.period: row.assignment_id for row in candidate.lessons}
     # Week 3 repeats week 2 (the second subject); the first-week pattern would pick the first.
     assert [by_week[when] for when in mondays] == [1, 2, 2, 1]
+
+
+def test_weighted_recovery_strict_pass_never_dodges_an_evitar_hour_by_teaching_after_the_window():
+    """T09: Monday 9h is the window's only hour, and it is the teacher's Evitar."""
+    snapshot = replace(
+        week_snapshot(
+            (unit(1, 7, (1,), 60),),
+            unavailable=[block(UnavailableResource.TEACHER, 7, 0, 10, 18)],
+            soft=[block(UnavailableResource.TEACHER, 7, 0, 9, 10)],
+        ),
+        preferred_end_date=MONDAY,
+    )
+
+    candidate = construct_recovery(
+        snapshot,
+        week_grid(),
+        deadline=monotonic() + 60,
+        weights=PriorityWeights(dict(DEFAULT_LEVELS, teacher_preferences=4, finish_early=1)),
+    )
+
+    assert candidate is not None
+    assert validate_candidate(snapshot, candidate).valid
+    assert [row.period for row in candidate.lessons] == [slot(0, 9)]

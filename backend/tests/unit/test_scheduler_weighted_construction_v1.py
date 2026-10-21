@@ -624,3 +624,27 @@ def test_admitted_options_fill_the_most_hours_before_comparing_values():
     )
 
     assert sorted(row.assignment_id for row, _room in selected) == [2, 3]
+
+
+def test_weighted_strict_pass_never_dodges_an_evitar_hour_by_teaching_after_the_preferred_end():
+    """T09: the strict pass stays in the window; the relaxed pass teaches the Evitar hour."""
+    in_window = period(0, 9)
+    after_window = period(1, 9)
+    periods = (in_window, after_window)
+    # Only an update (ADAPTIVE_RECOVERY) reaches past the preferred end; the window must bind there.
+    school = replace(
+        make_snapshot(
+            (assignment(1, teacher_id=1, class_id=1),),
+            periods,
+            soft=(Unavailability(UnavailableResource.TEACHER, 1, in_window),),
+        ),
+        strategy=SchedulingStrategy.ADAPTIVE_RECOVERY,
+        preferred_end_date=MONDAY,
+    )
+
+    result = construct_schedule(
+        school, periods, weights=weights(finish_early=1, teacher_preferences=4)
+    )
+
+    assert result is not None
+    assert [row.period for row in result.lessons] == [in_window]

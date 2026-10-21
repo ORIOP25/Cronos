@@ -634,6 +634,19 @@ def _interrupted(deadline: float | None, should_cancel: Callable[[], bool] | Non
     )
 
 
+def strict_window_periods(
+    snapshot: PlanningSnapshot, periods: tuple[Period, ...], weights: PriorityWeights | None
+) -> tuple[Period, ...]:
+    """T09: a weighted strict pass places no lesson after the preferred end date.
+
+    Without weights the strict pass keeps every period (I02). The relaxed and fill
+    passes always keep every period.
+    """
+    if weights is None:
+        return periods
+    return tuple(row for row in periods if row.school_date <= snapshot.preferred_end_date)
+
+
 def construct_schedule(
     snapshot: PlanningSnapshot,
     periods: tuple[Period, ...],
@@ -649,16 +662,21 @@ def construct_schedule(
     own hours (tech spec T08). If that filter refused an option and the pass
     failed, one relaxed pass repeats the construction without it (T09).
     """
+    strict_periods = strict_window_periods(snapshot, periods, weights)
     candidate, refused = _construct_pass(
         snapshot,
-        periods,
+        strict_periods,
         deadline=deadline,
         should_cancel=should_cancel,
         weekly_reference=weekly_reference,
         weights=weights,
         strict=weights is None or bool(weights.teacher_preferences or weights.class_preferences),
     )
-    if candidate is None and refused and not _interrupted(deadline, should_cancel):
+    if (
+        candidate is None
+        and (refused or strict_periods != periods)
+        and not _interrupted(deadline, should_cancel)
+    ):
         candidate, _refused = _construct_pass(
             snapshot,
             periods,
