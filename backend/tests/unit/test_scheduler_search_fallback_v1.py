@@ -453,24 +453,28 @@ def test_joint_search_with_a_published_incumbent_never_builds_the_unweighted_fal
     assert calls == []
 
 
-def test_weighted_update_prefers_the_earlier_finish_before_a_cheaper_later_one(monkeypatch):
-    """T12: the earlier finish wins the update choice even when the later one costs less."""
+def _weighted_update_choice(monkeypatch, *, preferred_days_after_baseline: int, late_days: int):
+    """Two stubbed repairs: the baseline's end (cost 1) and a dearer-free later one (cost 0).
+
+    The late repair adds one lesson ``late_days`` after the baseline's last lesson.
+    Returns the candidate the update choice picks.
+    """
     fixture = build_scale_fixture(6, seed=1)
     baseline = search_module.construct_schedule(fixture.snapshot, fixture.periods)
+    latest = max(lesson.period.school_date for lesson in baseline.lessons)
     snapshot = replace(
         fixture.snapshot,
         strategy=SchedulingStrategy.ADAPTIVE_RECOVERY,
         baseline_lessons=baseline.lessons,
         priority_weights=PriorityWeights(DEFAULT_LEVELS),
-    )
-    latest = max(lesson.period.school_date for lesson in baseline.lessons)
-    later_period = normalize_period(
-        latest + timedelta(days=7), time(9), time(10), snapshot.timezone_name
+        preferred_end_date=latest + timedelta(days=preferred_days_after_baseline),
     )
     extra = replace(
         baseline.lessons[0],
         lesson_id=max(lesson.lesson_id for lesson in baseline.lessons) + 1,
-        period=later_period,
+        period=normalize_period(
+            latest + timedelta(days=late_days), time(9), time(10), snapshot.timezone_name
+        ),
     )
     early = baseline
     late = CandidateSchedule((*baseline.lessons, extra))
@@ -501,5 +505,27 @@ def test_weighted_update_prefers_the_earlier_finish_before_a_cheaper_later_one(m
         laboratory_policy(snapshot),
         stop_at_first_complete=True,
     )
+    assert len(chosen) == 1
+    return chosen[0], early, late
 
-    assert chosen == [early]
+
+def test_weighted_update_prefers_the_repair_inside_the_window_over_a_cheaper_one_past_it(
+    monkeypatch,
+):
+    """T12: a repair that finishes after the preferred end loses to one that does not."""
+    chosen, early, _late = _weighted_update_choice(
+        monkeypatch, preferred_days_after_baseline=0, late_days=7
+    )
+
+    assert chosen is early
+
+
+def test_weighted_update_lets_the_cost_decide_when_both_repairs_finish_in_the_window(
+    monkeypatch,
+):
+    """T12: days past the preferred end are clipped at zero, so the cost decides inside it."""
+    chosen, _early, late = _weighted_update_choice(
+        monkeypatch, preferred_days_after_baseline=7, late_days=7
+    )
+
+    assert chosen is late
