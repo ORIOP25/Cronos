@@ -78,24 +78,19 @@ def snapshot(assignments, *, end: date, blocked=(), class_blocked=None, presence
     )
 
 
-def test_single_lesson_turns_follow_lunch_and_presence_rules():
-    monday = date(2026, 9, 7)
+def test_single_lesson_days_count_whole_days_and_skip_teachers_with_a_minimum():
+    # Owner, 21 Oct 2026: "vem para uma só aula" counts whole days, not shifts.
+    monday, tuesday = date(2026, 9, 7), date(2026, 9, 8)
     assignments = (assignment(1),)
-    candidate = CandidateSchedule((lesson(1, 1, monday, 9), lesson(2, 1, monday, 15)))
-    school = snapshot(
-        assignments,
-        end=monday,
-        lunch=LunchRule(time(12), time(14), 30),
+    candidate = CandidateSchedule(
+        (lesson(1, 1, monday, 9), lesson(2, 1, monday, 15), lesson(3, 1, tuesday, 9))
     )
+    school = snapshot(assignments, end=tuesday, lunch=LunchRule(time(12), time(14), 30))
 
-    assert measure_priority_metrics(school, candidate)["teacher_single_lessons"] == 2
-    assert (
-        measure_priority_metrics(
-            replace(school, teacher_presence=(TeacherPresenceRule(1, lunch_required=False),)),
-            candidate,
-        )["teacher_single_lessons"]
-        == 0
-    )
+    metrics = measure_priority_metrics(school, candidate)
+
+    # Monday has a morning and an afternoon lesson: one day, not two single shifts.
+    assert (metrics["teacher_single_lessons"], metrics["class_single_lessons"]) == (1, 1)
     assert (
         measure_priority_metrics(
             replace(
@@ -106,7 +101,6 @@ def test_single_lesson_turns_follow_lunch_and_presence_rules():
         )["teacher_single_lessons"]
         == 0
     )
-    assert measure_priority_metrics(school, candidate)["class_single_lessons"] == 2
 
 
 def test_gap_metrics_do_not_count_the_lunch_hour_inside_the_window():

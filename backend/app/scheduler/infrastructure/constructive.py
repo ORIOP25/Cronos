@@ -12,7 +12,7 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from collections.abc import Set as AbstractSet
-from datetime import date, datetime, time
+from datetime import date, datetime
 from fractions import Fraction
 from time import monotonic
 
@@ -45,7 +45,7 @@ from app.scheduler.domain.capacity import (
     eligible_periods,
     residual_minutes,
 )
-from app.scheduler.domain.priorities import PriorityWeights, shift_of
+from app.scheduler.domain.priorities import PriorityWeights
 from app.scheduler.domain.priority_value import option_value
 from app.scheduler.domain.projection import ModuleSlice
 from app.scheduler.domain.quality import lunch_minutes_in
@@ -116,30 +116,13 @@ def _gap_option_measure(
     return removed + (credit if continues else 0)
 
 
-def _single_shift_count(
-    intervals: Iterable[tuple[int, int]], lunch_rule: LunchRule | None, *, lunch_required: bool
-) -> int:
-    shifts: dict[str, int] = defaultdict(int)
-    for start, _end in intervals:
-        shift = shift_of(time(start // 60, start % 60), lunch_rule, lunch_required=lunch_required)
-        shifts[shift] += 1
-    return sum(count == 1 for count in shifts.values())
+def _joined_day_gain(intervals: Sequence[tuple[int, int]], interval: tuple[int, int]) -> int:
+    """One when the lesson joins a day that held exactly one lesson, else zero.
 
-
-def _joined_shift_gain(
-    intervals: Sequence[tuple[int, int]],
-    interval: tuple[int, int],
-    lunch_rule: LunchRule | None,
-    *,
-    lunch_required: bool,
-) -> int:
-    """One when the lesson joins a shift that held exactly one lesson, else zero.
-
-    The first lesson of a shift is not penalised (owner decision, 19 Oct 2026).
+    The first lesson of a day is not penalised (owner, 19 Oct 2026), and a single
+    lesson counts per whole day, not per morning or afternoon (owner, 21 Oct 2026).
     """
-    before = _single_shift_count(intervals, lunch_rule, lunch_required=lunch_required)
-    after = _single_shift_count((*intervals, interval), lunch_rule, lunch_required=lunch_required)
-    return max(0, before - after)
+    return int(len(intervals) == 1 and interval not in intervals)
 
 
 def _pace_peers(assignments: Mapping[int, Assignment]) -> dict[int, tuple[int, ...]]:
@@ -201,13 +184,7 @@ def _option_measures(
         ),
     }
     if counts_teacher_single_lessons:
-        lunch_required = assignment.teacher_id not in snapshot.lunch_dispensed_teacher_ids
-        measures["teacher_single_lessons"] = (
-            _joined_shift_gain(
-                teacher_intervals, interval, snapshot.lunch_rule, lunch_required=lunch_required
-            )
-            * credit
-        )
+        measures["teacher_single_lessons"] = _joined_day_gain(teacher_intervals, interval) * credit
     if (TEACHER, assignment.teacher_id) not in needed_evitar and _soft_overlap(
         snapshot, UnavailableResource.TEACHER, assignment.teacher_id, period
     ):
@@ -218,8 +195,7 @@ def _option_measures(
             class_intervals, interval, day_slots, credit=credit, lunch_rule=snapshot.lunch_rule
         )
         measures["class_single_lessons"] = measures.get("class_single_lessons", 0) + (
-            _joined_shift_gain(class_intervals, interval, snapshot.lunch_rule, lunch_required=True)
-            * credit
+            _joined_day_gain(class_intervals, interval) * credit
         )
         if (CLASS, class_id) not in needed_evitar and _soft_overlap(
             snapshot, UnavailableResource.CLASS, class_id, period

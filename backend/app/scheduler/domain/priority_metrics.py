@@ -21,7 +21,6 @@ from app.scheduler.domain.priorities import (
     PRIORITY_MULTIPLIERS,
     UNIT_COSTS,
     PriorityWeights,
-    shift_of,
 )
 from app.scheduler.domain.quality import _gap_minutes
 
@@ -102,44 +101,30 @@ def _overlap_minutes(lesson: ScheduledLesson, blocks: Sequence[Unavailability]) 
     )
 
 
-def _single_lesson_turns(
+def _single_lesson_days(
     snapshot: PlanningSnapshot,
     candidate: CandidateSchedule,
     assignments: Mapping[int, Assignment],
 ) -> tuple[int, int]:
-    teacher_turns: dict[tuple[int, date, str], int] = defaultdict(int)
-    class_turns: dict[tuple[int, date, str], int] = defaultdict(int)
-    presence = {row.teacher_id: row for row in snapshot.teacher_presence}
+    """Days a teacher (without a presence minimum) or a class has a single lesson.
+
+    The owner counts whole days, not morning or afternoon shifts (21 Oct 2026).
+    """
+    teacher_days: dict[tuple[int, date], int] = defaultdict(int)
+    class_days: dict[tuple[int, date], int] = defaultdict(int)
     teachers_with_minimum = {
-        teacher_id for teacher_id, rule in presence.items() if rule.minimum_minutes is not None
+        row.teacher_id for row in snapshot.teacher_presence if row.minimum_minutes is not None
     }
     for lesson in candidate.lessons:
         assignment = assignments[lesson.assignment_id]
         teacher_id = lesson.teacher_id or assignment.teacher_id
-        rule = presence.get(teacher_id)
         if teacher_id not in teachers_with_minimum:
-            teacher_turns[
-                (
-                    teacher_id,
-                    lesson.period.school_date,
-                    shift_of(
-                        lesson.period.start_local,
-                        snapshot.lunch_rule,
-                        lunch_required=rule.lunch_required if rule is not None else True,
-                    ),
-                )
-            ] += 1
+            teacher_days[(teacher_id, lesson.period.school_date)] += 1
         for class_id in assignment.class_ids:
-            class_turns[
-                (
-                    class_id,
-                    lesson.period.school_date,
-                    shift_of(lesson.period.start_local, snapshot.lunch_rule),
-                )
-            ] += 1
+            class_days[(class_id, lesson.period.school_date)] += 1
     return (
-        sum(count == 1 for count in teacher_turns.values()),
-        sum(count == 1 for count in class_turns.values()),
+        sum(count == 1 for count in teacher_days.values()),
+        sum(count == 1 for count in class_days.values()),
     )
 
 
@@ -215,7 +200,7 @@ def measure_priority_metrics(
         teacher_minutes, class_minutes = _preference_minutes(snapshot, assignment, lesson)
         teacher_preferences += teacher_minutes
         class_preferences += class_minutes
-    teacher_single, class_single = _single_lesson_turns(snapshot, candidate, assignments)
+    teacher_single, class_single = _single_lesson_days(snapshot, candidate, assignments)
     return {
         "finish_early": max(
             (lesson.period.school_date for lesson in candidate.lessons), default=snapshot.origin

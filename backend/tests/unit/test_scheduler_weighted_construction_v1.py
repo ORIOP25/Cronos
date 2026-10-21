@@ -29,7 +29,7 @@ from app.scheduler.infrastructure import constructive
 from app.scheduler.infrastructure.constructive import (
     _gap_minutes,
     _gap_option_measure,
-    _joined_shift_gain,
+    _joined_day_gain,
     _select_period,
     construct_schedule,
 )
@@ -309,15 +309,16 @@ def test_constructive_gap_does_not_discount_lunch_fragments_separated_by_a_lesso
     assert _gap_minutes(intervals, grid, LunchRule(time(12), time(14), 60)) == 80
 
 
-def test_joining_a_single_lesson_shift_is_rewarded_and_opening_one_is_not_penalised():
-    lunch = LunchRule(time(12), time(14), 60)
+def test_joining_a_single_lesson_day_is_rewarded_and_opening_one_is_not_penalised():
     nine = (9 * 60, 10 * 60)
     ten = (10 * 60, 11 * 60)
-    eleven = (11 * 60, 12 * 60)
+    afternoon = (15 * 60, 16 * 60)
 
-    assert _joined_shift_gain((), nine, lunch, lunch_required=True) == 0
-    assert _joined_shift_gain((nine,), ten, lunch, lunch_required=True) == 1
-    assert _joined_shift_gain((nine, ten), eleven, lunch, lunch_required=True) == 0
+    assert _joined_day_gain((), nine) == 0
+    assert _joined_day_gain((nine,), ten) == 1
+    # An afternoon lesson joins the morning one: the day no longer has a single lesson.
+    assert _joined_day_gain((nine,), afternoon) == 1
+    assert _joined_day_gain((nine, ten), afternoon) == 0
 
 
 def test_all_zero_priorities_spread_one_lesson_every_other_week():
