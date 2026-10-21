@@ -67,7 +67,7 @@ Retain FastAPI, SQLAlchemy, PostgreSQL, Celery, Redis, React, and OR-Tools. Lock
 
 Organization-level schedule priorities, their measured proposal summaries, and the fallback notice are defined in the [Schedule Priorities Tech Spec](SCHEDULE_PRIORITIES_TECH_SPEC.md). When the weighted construction cannot follow those priorities, the proposal reports that directly and does not claim that it used recommended values. These preferences do not relax mandatory constraints or change the exact solver.
 
-The proposal summary reports the completion date, gap minutes, single-lesson turn counts, availability preference minutes, avoidable home-room changes, weekly stability changes, subject-pace days, and update changes. Availability measurements count both Evitar and periods outside Preferencial. The frontend converts gap and preference minutes to hours for display; it does not alter the recorded values.
+The proposal summary reports the completion date, gap minutes, single-lesson day counts, availability preference minutes, avoidable home-room changes, weekly stability changes, subject-pace days, and update changes. Availability measurements count both Evitar and periods outside Preferencial. The frontend converts gap and preference minutes to hours for display; it does not alter the recorded values.
 
 ## Why the Behavior Exists
 

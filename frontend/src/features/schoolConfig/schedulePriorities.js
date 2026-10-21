@@ -31,16 +31,16 @@ export const SCHEDULE_PRIORITY_CRITERIA = [
   {
     key: 'teacher_single_lessons',
     title: 'Evitar que um professor venha à escola para uma só aula.',
-    description: 'Turnos (manhã ou tarde) em que o professor tem uma única aula. Não conta os professores com mínimo de presença, que já têm uma regra obrigatória.',
+    description: 'Dias em que o professor tem uma única aula. Não conta os professores com mínimo de presença, que já têm uma regra obrigatória.',
     lowest: 'O professor pode vir à escola só para uma aula. Cabem mais aulas cedo no ano.',
-    highest: 'As aulas juntam-se em menos turnos, e alguns dias ficam mais carregados. O ano pode acabar mais tarde.',
+    highest: 'As aulas juntam-se em menos dias, e alguns dias ficam mais carregados. O ano pode acabar mais tarde.',
   },
   {
     key: 'class_single_lessons',
     title: 'Evitar que uma turma venha à escola para uma só aula.',
-    description: 'Turnos (manhã ou tarde) em que a turma tem uma única aula.',
-    lowest: 'A turma pode vir à escola só para uma aula, de manhã ou à tarde. Cabem mais aulas cedo no ano.',
-    highest: 'As aulas da turma juntam-se em menos turnos, e os alunos não se deslocam para uma aula. Alguns dias ficam mais carregados e o ano pode acabar mais tarde.',
+    description: 'Dias em que a turma tem uma única aula.',
+    lowest: 'A turma pode vir à escola só para uma aula. Cabem mais aulas cedo no ano.',
+    highest: 'As aulas da turma juntam-se em menos dias, e os alunos não se deslocam para uma aula. Alguns dias ficam mais carregados e o ano pode acabar mais tarde.',
   },
   {
     key: 'teacher_preferences',

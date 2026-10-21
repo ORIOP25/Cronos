@@ -86,6 +86,10 @@ describe('Schedule priorities configuration', () => {
     expect(screen.getByText(/O professor pode ficar com horas vazias entre aulas/)).toBeInTheDocument()
     expect(screen.getByText(/O Cronos só usa um bloco Evitar quando o horário não caberia de outra forma/)).toBeInTheDocument()
     expect(screen.getByText('Nível recomendado: Prioridade máxima')).toBeInTheDocument()
+    // Criteria 4 and 5 count whole days with a single lesson (owner, 21 Oct 2026).
+    expect(screen.getByText(/^Dias em que o professor tem uma única aula/)).toBeInTheDocument()
+    expect(screen.getByText(/^Dias em que a turma tem uma única aula/)).toBeInTheDocument()
+    expect(screen.queryByText(/Turnos \(manhã ou tarde\)/)).not.toBeInTheDocument()
   })
 
   it('saves the selected level and resets the draft from server defaults without saving', async () => {
