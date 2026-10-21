@@ -32,6 +32,8 @@ UNIT_COSTS = MappingProxyType(
         "teacher_preferences": 20,
         "class_preferences": 5,
         "subject_pace": 20,
+        # One moved lesson at "Muito importante" (4 x 1200) equals one hour of Evitar (4 x 20 x 60).
+        "update_stability": 1200,
     }
 )
 
