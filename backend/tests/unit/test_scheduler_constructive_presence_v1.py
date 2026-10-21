@@ -15,6 +15,8 @@ from app.scheduler.domain.candidate import (
     LunchRule,
     SchedulingStrategy,
     TeacherPresenceRule,
+    Unavailability,
+    UnavailableResource,
 )
 from app.scheduler.domain.candidate_validation import validate_candidate
 from app.scheduler.infrastructure import search
@@ -174,3 +176,43 @@ def test_a_presence_never_leaves_hours_that_no_valid_presence_can_hold():
 
     assert candidate is not None
     assert validate_candidate(school, candidate).valid is True
+
+
+def test_a_presence_lesson_that_cannot_complete_does_not_block_its_class_mates():
+    """A presence lesson that cannot complete its run must not keep its class's period.
+
+    Assignment 1 needs a two-hour presence of teacher 1, who has no other lesson on
+    Monday, so its Monday 09 lesson is dropped. Assignment 2 (teacher 2, same class)
+    can teach Monday 09 instead. Teacher 1 then teaches Tuesday 09 and 10 for
+    assignments 1 and 3, a valid two-hour presence.
+    """
+    monday, tuesday, tuesday_late = period(0, 9), period(1, 9), period(1, 10)
+    target = replace(
+        snapshot(
+            (
+                assignment(1, teacher_id=1, class_ids=(1,)),
+                assignment(2, teacher_id=2, class_ids=(1,)),
+                assignment(3, teacher_id=1, class_ids=(2,)),
+            ),
+            unavailable=(
+                Unavailability(UnavailableResource.CLASS, 1, tuesday_late),
+                Unavailability(UnavailableResource.CLASS, 2, monday),
+            ),
+        ),
+        teacher_presence=(
+            TeacherPresenceRule(
+                teacher_id=1, lunch_required=False, minimum_minutes=120, max_gap_minutes=0
+            ),
+        ),
+    )
+
+    candidate = construct_schedule(target, (monday, tuesday, tuesday_late))
+
+    assert candidate is not None
+    assert validate_candidate(target, candidate).valid is True
+    monday_nine = [
+        row.assignment_id
+        for row in candidate.lessons
+        if row.period.school_date == monday.school_date and row.period.start_local.hour == 9
+    ]
+    assert monday_nine == [2]
