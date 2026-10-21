@@ -9,10 +9,13 @@ fallback or an inconclusive outcome that keeps its evidence and statistics.
 from __future__ import annotations
 
 from dataclasses import replace
+from datetime import time, timedelta
+from types import SimpleNamespace
 
 import pytest
 
 import app.scheduler.infrastructure.search as search_module
+from app.scheduler.domain.calendar import normalize_period
 from app.scheduler.domain.candidate import CandidateSchedule, HomeRoom, SchedulingStrategy
 from app.scheduler.domain.candidate_validation import validate_candidate
 from app.scheduler.domain.home_rooms import avoidable_room_changes, home_room_misses
@@ -448,3 +451,89 @@ def test_joint_search_with_a_published_incumbent_never_builds_the_unweighted_fal
     )
 
     assert calls == []
+
+
+def _weighted_update_choice(
+    monkeypatch, *, preferred_days_after_baseline: int, late_days: int, costs=(1, 0)
+):
+    """Two stubbed repairs: the baseline (cost ``costs[0]``) and a later one (``costs[1]``).
+
+    The late repair adds one lesson ``late_days`` after the baseline's last lesson.
+    Returns the candidate the update choice picks, both repairs, and the
+    ``preferred_end_date`` each ``priority_cost`` call received.
+    """
+    fixture = build_scale_fixture(6, seed=1)
+    baseline = search_module.construct_schedule(fixture.snapshot, fixture.periods)
+    latest = max(lesson.period.school_date for lesson in baseline.lessons)
+    snapshot = replace(
+        fixture.snapshot,
+        strategy=SchedulingStrategy.ADAPTIVE_RECOVERY,
+        baseline_lessons=baseline.lessons,
+        priority_weights=PriorityWeights(DEFAULT_LEVELS),
+        preferred_end_date=latest + timedelta(days=preferred_days_after_baseline),
+    )
+    extra = replace(
+        baseline.lessons[0],
+        lesson_id=max(lesson.lesson_id for lesson in baseline.lessons) + 1,
+        period=normalize_period(
+            latest + timedelta(days=late_days), time(9), time(10), snapshot.timezone_name
+        ),
+    )
+    early = baseline
+    late = CandidateSchedule((*baseline.lessons, extra))
+    cost_of = {id(early): costs[0], id(late): costs[1]}
+    chosen = []
+    preferred_end_dates = []
+
+    monkeypatch.setattr(search_module, "construct_recovery", lambda *_a, **_k: late)
+    monkeypatch.setattr(search_module, "construct_schedule", lambda *_a, **_k: early)
+    monkeypatch.setattr(search_module, "_room_pass", lambda _s, _p, row, **_k: row)
+    monkeypatch.setattr(
+        search_module, "measure_disruption", lambda *_a, **_k: SimpleNamespace(changes=())
+    )
+    monkeypatch.setattr(search_module, "recovery_vector", lambda *_a, **_k: ())
+    monkeypatch.setattr(search_module, "measure_priority_metrics", lambda _s, row, **_k: row)
+
+    def recording_cost(metrics, _weights, *, preferred_end_date=None, **_k):
+        preferred_end_dates.append(preferred_end_date)
+        return cost_of[id(metrics)]
+
+    monkeypatch.setattr(search_module, "priority_cost", recording_cost)
+    monkeypatch.setattr(
+        search_module,
+        "_constructive_outcome",
+        lambda _planning, _profile, candidate, **kwargs: chosen.append(candidate) or candidate,
+    )
+
+    search_module.search_adaptive_schedule(
+        snapshot,
+        fixture.periods,
+        baseline,
+        laboratory_policy(snapshot),
+        stop_at_first_complete=True,
+    )
+    assert len(chosen) == 1
+    return chosen[0], early, late, preferred_end_dates, snapshot.preferred_end_date
+
+
+def test_weighted_update_passes_the_preferred_end_to_the_cost_and_takes_the_cheapest(
+    monkeypatch,
+):
+    """T12: lateness is priced inside the cost, so a cheaper repair past the end can win."""
+    chosen, _early, late, preferred_end_dates, preferred_end = _weighted_update_choice(
+        monkeypatch, preferred_days_after_baseline=0, late_days=7, costs=(1_000_000, 0)
+    )
+
+    assert chosen is late
+    assert preferred_end_dates == [preferred_end, preferred_end]
+
+
+def test_weighted_update_lets_the_cost_decide_between_repairs_inside_the_window(
+    monkeypatch,
+):
+    """T12: when both repairs finish in the window, the cheaper one wins."""
+    chosen, _early, late, _dates, _end = _weighted_update_choice(
+        monkeypatch, preferred_days_after_baseline=7, late_days=7
+    )
+
+    assert chosen is late

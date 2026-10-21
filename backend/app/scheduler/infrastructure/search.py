@@ -1103,13 +1103,18 @@ def search_adaptive_schedule(
                     ).changes
                 )
                 metrics = measure_priority_metrics(planning, candidate, changed_lessons=changes)
-                return priority_cost(metrics, planning.priority_weights, origin=planning.origin)
+                return priority_cost(
+                    metrics,
+                    planning.priority_weights,
+                    origin=planning.origin,
+                    preferred_end_date=planning.preferred_end_date,
+                )
 
+            # T12: the priority cost decides (lateness past the preferred end included), then the vector.
             scored = [(row, weighted, weighted_cost(row)) for row, weighted in candidates]
-            best_cost = min(cost for _candidate, _weighted, cost in scored)
-            tied = [row for row in scored if row[2] == best_cost]
             candidate, priorities_followed, _cost = min(
-                tied, key=lambda item: profile.vector(planning, item[0])
+                scored,
+                key=lambda item: (item[2], profile.vector(planning, item[0])),
             )
         return _constructive_outcome(
             planning,

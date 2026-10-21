@@ -67,4 +67,5 @@ def test_priority_multipliers_and_unit_costs_are_complete():
         "teacher_preferences": 20,
         "class_preferences": 5,
         "subject_pace": 20,
+        "update_stability": 1200,
     }
