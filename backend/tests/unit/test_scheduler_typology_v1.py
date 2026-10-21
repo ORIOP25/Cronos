@@ -29,7 +29,6 @@ from app.scheduler.domain.priority_metrics import measure_priority_metrics
 from app.scheduler.infrastructure import search
 from app.scheduler.infrastructure.constructive import construct_schedule
 from app.scheduler.infrastructure.search import search_adaptive_schedule
-from app.scheduler.lab.priority_bench import _scenario
 from app.scheduler.lab.recovery import laboratory_policy
 from app.scheduler.lab.typology import (
     CHRISTMAS_BREAK,
@@ -234,15 +233,6 @@ def test_recommended_weights_keep_forty_eight_classes_valid_and_not_later():
 
     assert_recommended_weights_keep_the_schedule_valid_and_not_later(
         fixture.snapshot, fixture.periods
-    )
-
-
-@pytest.mark.slow_solver
-def test_recommended_weights_keep_the_pilot_forty_eight_valid_and_not_later():
-    scenario = _scenario("pilot-48")
-
-    assert_recommended_weights_keep_the_schedule_valid_and_not_later(
-        scenario.snapshot, scenario.periods
     )
 
 

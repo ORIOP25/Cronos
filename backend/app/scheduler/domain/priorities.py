@@ -27,9 +27,9 @@ UNIT_COSTS = MappingProxyType(
     {
         **dict.fromkeys(CRITERION_KEYS, 1),
         "teacher_gaps": 3,
-        "teacher_single_lessons": 5,
+        "teacher_single_lessons": 15,
         "class_single_lessons": 10,
-        "teacher_preferences": 10,
+        "teacher_preferences": 20,
         "class_preferences": 5,
         "subject_pace": 20,
     }
