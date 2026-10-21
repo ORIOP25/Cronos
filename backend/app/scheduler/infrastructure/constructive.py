@@ -261,13 +261,23 @@ def _fills_hour(
     return value - option_value(weights, preferences) > 0
 
 
-def _gives_up(ledger: AvailabilityLedger, period: Period, *, strict: bool) -> bool:
-    """Whether a pass stops early because it can no longer place every missing hour.
+def _stops_before(
+    ledger: AvailabilityLedger,
+    period: Period,
+    *,
+    strict: bool,
+    deadline: float | None,
+    should_cancel: Callable[[], bool] | None,
+) -> bool:
+    """Whether a pass stops before this period: cancelled, out of time, or unable to finish.
 
-    A strict pass waits for its first refusal: only a refusal sends the
-    construction on to the relaxed pass, and a later one could still come.
+    A pass that can no longer place every missing hour stops early. A strict pass
+    waits for its first refusal: only a refusal sends the construction on to the
+    relaxed pass, and a later one could still come.
     """
-    return (ledger.refused > 0 or not strict) and ledger.cannot_finish(period)
+    return _interrupted(deadline, should_cancel) or (
+        (ledger.refused > 0 or not strict) and ledger.cannot_finish(period)
+    )
 
 
 def _soft_overlap(
@@ -1021,9 +1031,9 @@ def _construct_pass(
         return None
 
     for period in canonical:
-        if _interrupted(deadline, should_cancel):
-            return None, ledger.refused
-        if _gives_up(ledger, period, strict=strict):
+        if _stops_before(
+            ledger, period, strict=strict, deadline=deadline, should_cancel=should_cancel
+        ):
             return None, ledger.refused
         active = [
             row
