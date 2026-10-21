@@ -3,14 +3,12 @@
 import pytest
 from pydantic import ValidationError
 
-from app.scheduler.domain.candidate import LunchRule
 from app.scheduler.domain.priorities import (
     CRITERION_KEYS,
     DEFAULT_LEVELS,
     PRIORITY_MULTIPLIERS,
     UNIT_COSTS,
     PriorityWeights,
-    shift_of,
 )
 from app.schemas import SchedulePrioritiesUpdate
 
@@ -61,15 +59,12 @@ def test_priority_schema_reuses_strict_domain_validation():
 def test_priority_multipliers_and_unit_costs_are_complete():
     assert PRIORITY_MULTIPLIERS == (0, 1, 2, 4, 8)
     assert tuple(UNIT_COSTS) == CRITERION_KEYS
-    assert set(UNIT_COSTS.values()) == {1}
-
-
-def test_shift_of_splits_at_midpoint_and_handles_whole_day():
-    from datetime import time
-
-    lunch = LunchRule(time(12), time(14), 30)
-
-    assert shift_of(time(11, 0), lunch) == "morning"
-    assert shift_of(time(14, 0), lunch) == "afternoon"
-    assert shift_of(time(9), None) == "day"
-    assert shift_of(time(15), lunch, lunch_required=False) == "day"
+    # T15: S7 calibrated these on the realistic pilot school; the rest stay at 1.
+    assert {key: cost for key, cost in UNIT_COSTS.items() if cost != 1} == {
+        "teacher_gaps": 3,
+        "teacher_single_lessons": 15,
+        "class_single_lessons": 10,
+        "teacher_preferences": 20,
+        "class_preferences": 5,
+        "subject_pace": 20,
+    }

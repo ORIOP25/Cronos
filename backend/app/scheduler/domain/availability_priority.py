@@ -19,6 +19,7 @@ from app.scheduler.domain.candidate import Assignment, PlanningSnapshot, Unavail
 ResourceKey = tuple[str, int]
 TEACHER = "teacher"
 CLASS = "class"
+RESOURCE_KINDS = frozenset((TEACHER, CLASS))
 PeriodKey = tuple[datetime, datetime]
 
 
@@ -34,9 +35,21 @@ def resource_keys(assignment: Assignment) -> tuple[ResourceKey, ...]:
     )
 
 
-def is_avoided(snapshot: PlanningSnapshot, assignment: Assignment, period: Period) -> bool:
-    """True when the period is Evitar for the assignment's teacher or one of its classes."""
-    return any(_soft_overlaps(snapshot, key, period) for key in resource_keys(assignment))
+def is_avoided(
+    snapshot: PlanningSnapshot,
+    assignment: Assignment,
+    period: Period,
+    *,
+    evitar_kinds: frozenset[str] = RESOURCE_KINDS,
+) -> bool:
+    """True when the period is Evitar for the assignment's teacher or one of its classes.
+
+    ``evitar_kinds`` names the resource kinds whose Evitar counts.
+    """
+    return any(
+        key[0] in evitar_kinds and _soft_overlaps(snapshot, key, period)
+        for key in resource_keys(assignment)
+    )
 
 
 def _period_key(period: Period) -> PeriodKey:
@@ -167,14 +180,100 @@ class AvailabilityLedger:
         ]
         return min(paced, default=self._ceiling)
 
-    def unfavorable(self, assignment: Assignment, period: Period) -> bool:
-        return is_avoided(self._snapshot, assignment, period)
+    def urgency(self, assignment: Assignment, period: Period) -> int:
+        """Schedule priorities T09: the smallest remaining capacity among resources
+        that cannot skip this period; lower wins, the others share the ceiling."""
+        urgent = [
+            capacity
+            for track in self._tracks_of(assignment)
+            if track.demand > 0
+            and (capacity := track.capacity_from(period.start_utc)) - track.demand
+            <= period.duration_minutes
+        ]
+        return min(urgent, default=self._ceiling)
+
+    def is_necessary(
+        self,
+        assignment: Assignment,
+        period: Period,
+        *,
+        evitar_kinds: frozenset[str] = RESOURCE_KINDS,
+    ) -> bool:
+        """Whether a resource needs this period to keep its remaining demand feasible.
+
+        ``evitar_kinds`` names the resource kinds whose Evitar blocks count. In an
+        Evitar that its resource can still keep free, only lost capacity makes the
+        period necessary: pace measured over hours to avoid would push lessons into
+        that Evitar (T08).
+        """
+        if self.needed_evitar(assignment, period, evitar_kinds=evitar_kinds):
+            return True
+        # An Evitar the resource can still keep free: pace alone (of any resource of
+        # the option) must not pull the lesson into it; only lost capacity can.
+        avoidable = any(
+            key[0] in evitar_kinds and _soft_overlaps(self._snapshot, key, period)
+            for key in resource_keys(assignment)
+        )
+        for key in resource_keys(assignment):
+            track = self._tracks.get(key)
+            if track is None or track.demand <= 0:
+                continue
+            capacity = track.capacity_from(period.start_utc)
+            if track.demand > capacity - period.duration_minutes:
+                return True
+            if not avoidable and track.demand * track.total > track.initial_demand * capacity:
+                return True
+        return False
+
+    def needed_evitar(
+        self,
+        assignment: Assignment,
+        period: Period,
+        *,
+        evitar_kinds: frozenset[str] = RESOURCE_KINDS,
+    ) -> frozenset[ResourceKey]:
+        """The resources whose own Evitar at this period their demand cannot avoid.
+
+        Their Evitar does not penalise the option (T08): the rest of their time,
+        neutral or all of it, can no longer hold what they still have to teach.
+        """
+        needed = set()
+        for key in resource_keys(assignment):
+            track = self._tracks.get(key)
+            if (
+                track is None
+                or track.demand <= 0
+                or key[0] not in evitar_kinds
+                or not _soft_overlaps(self._snapshot, key, period)
+            ):
+                continue
+            capacity = track.capacity_from(period.start_utc)
+            if (
+                track.demand > capacity - period.duration_minutes
+                or track.demand > track.neutral_capacity_from(period.start_utc)
+            ):
+                needed.add(key)
+        return frozenset(needed)
+
+    def unfavorable(
+        self,
+        assignment: Assignment,
+        period: Period,
+        *,
+        evitar_kinds: frozenset[str] = RESOURCE_KINDS,
+    ) -> bool:
+        return any(
+            key[0] in evitar_kinds and _soft_overlaps(self._snapshot, key, period)
+            for key in resource_keys(assignment)
+        )
 
     def allows(
         self,
         assignment: Assignment,
         period: Period,
         planned: Iterable[tuple[Assignment, int]] = (),
+        *,
+        evitar_kinds: frozenset[str] = RESOURCE_KINDS,
     ) -> bool:
         """T08: inside a resource's own Evitar, demand must exceed its neutral capacity.
 
@@ -186,7 +285,8 @@ class AvailabilityLedger:
             for key in resource_keys(other):
                 planned_minutes[key] += minutes
         blocked = any(
-            _soft_overlaps(self._snapshot, key, period)
+            key[0] in evitar_kinds
+            and _soft_overlaps(self._snapshot, key, period)
             and self.demand(key) - planned_minutes[key] <= self.neutral_capacity(key, period)
             for key in resource_keys(assignment)
         )

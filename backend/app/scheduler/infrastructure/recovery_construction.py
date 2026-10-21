@@ -24,15 +24,22 @@ from app.scheduler.domain.capacity import (
     eligible_periods,
     residual_minutes,
 )
+from app.scheduler.domain.priorities import PriorityWeights
 from app.scheduler.infrastructure.constructive import (
     _continues_open_presence,
+    _evitar_kinds,
+    _fills_hour,
     _grid_intervals_by_day,
     _local_interval,
     _longest_presences,
     _minimum_presence_teachers,
+    _option_measures,
+    _pace_lag,
+    _pace_peers,
     _presence_day_complies,
     _presence_left_fits,
     _resource_keys,
+    _room_value,
     _select_period,
     _slots_by_day,
 )
@@ -54,6 +61,7 @@ def construct_recovery(
     *,
     deadline: float,
     should_cancel: Callable[[], bool] | None = None,
+    weights: PriorityWeights | None = None,
 ) -> CandidateSchedule | None:
     """Retain valid positions, then fill missing credit at the earliest capacity.
 
@@ -63,11 +71,31 @@ def construct_recovery(
     leaves no schedule, one relaxed pass repeats the recovery without the refusal (T09).
     """
     candidate, refused = _construct_recovery(
-        snapshot, periods, deadline=deadline, should_cancel=should_cancel, strict=True
+        snapshot,
+        periods,
+        deadline=deadline,
+        should_cancel=should_cancel,
+        weights=weights,
+        strict=weights is None or bool(weights.teacher_preferences or weights.class_preferences),
     )
     if candidate is None and refused and not _interrupted(deadline, should_cancel):
         candidate, _ = _construct_recovery(
-            snapshot, periods, deadline=deadline, should_cancel=should_cancel, strict=False
+            snapshot,
+            periods,
+            deadline=deadline,
+            should_cancel=should_cancel,
+            weights=weights,
+            strict=False,
+        )
+    if candidate is None and weights is not None and not _interrupted(deadline, should_cancel):
+        candidate, _ = _construct_recovery(
+            snapshot,
+            periods,
+            deadline=deadline,
+            should_cancel=should_cancel,
+            weights=weights,
+            strict=False,
+            fill=True,
         )
     return candidate
 
@@ -82,7 +110,9 @@ def _construct_recovery(
     *,
     deadline: float,
     should_cancel: Callable[[], bool] | None,
+    weights: PriorityWeights | None,
     strict: bool,
+    fill: bool = False,
 ) -> tuple[CandidateSchedule | None, int]:
     """One recovery pass. Strict refuses Evitar options (T08) and counts the refusals."""
     assignments = {row.assignment_id: row for row in snapshot.assignments}
@@ -95,6 +125,35 @@ def _construct_recovery(
     selections: dict[int, list[tuple[Period, int, int]]] = defaultdict(list)
     protected_ids = {row.lesson_id for row in snapshot.protected_lessons}
     patterns: dict[tuple, int] = {}
+    evitar_kinds = _evitar_kinds(weights)
+    home_rooms = {row.class_id: row.room_id for row in snapshot.home_rooms}
+    required = {
+        identity: sum(module.required_minutes for module in row.modules)
+        for identity, row in assignments.items()
+    }
+    pace_peers = _pace_peers(assignments) if weights is not None else {}
+    # Weekly stability compares a slot with the latest earlier week that taught it, as
+    # the metric does: retained published lessons and lessons booked so far both count.
+    slot_history: dict[tuple, dict[date, int]] = defaultdict(dict)
+    for row in (*snapshot.protected_lessons, *snapshot.baseline_lessons):
+        if row.assignment_id in assignments:
+            for class_id in assignments[row.assignment_id].class_ids:
+                slot_history[
+                    (
+                        class_id,
+                        row.period.school_date.weekday(),
+                        row.period.start_local,
+                        row.period.end_local,
+                    )
+                ].setdefault(row.period.school_date, row.assignment_id)
+
+    def previous_week_subject(class_id: int, period: Period) -> int | None:
+        history = slot_history.get(
+            (class_id, period.school_date.weekday(), period.start_local, period.end_local), {}
+        )
+        earlier = [day for day in history if day < period.school_date]
+        return history[max(earlier)] if earlier else None
+
     dispensed_teachers = snapshot.lunch_dispensed_teacher_ids
     minimum_teachers = _minimum_presence_teachers(snapshot)
     slots_by_day = _slots_by_day(snapshot)
@@ -126,12 +185,20 @@ def _construct_recovery(
             busy[key].append(period)
             if key[0] != "room":
                 occupancy[key].append(_local_interval(period))
+        for class_id in assignment.class_ids:
+            slot_history[
+                (class_id, period.school_date.weekday(), period.start_local, period.end_local)
+            ][period.school_date] = assignment.assignment_id
 
     def release(assignment: Assignment, period: Period, room: int, teacher: int) -> None:
         for key in _resource_keys(assignment, room, teacher, period.school_date):
             busy[key].remove(period)
             if key[0] != "room":
                 occupancy[key].remove(_local_interval(period))
+        for class_id in assignment.class_ids:
+            slot_history[
+                (class_id, period.school_date.weekday(), period.start_local, period.end_local)
+            ].pop(period.school_date, None)
 
     def free_rooms(assignment: Assignment, period: Period) -> tuple[int, ...]:
         for kind, identity in (
@@ -264,7 +331,7 @@ def _construct_recovery(
         )
         if row.period not in eligible[row.assignment_id]:
             continue
-        if strict and is_avoided(snapshot, assignment, row.period):
+        if strict and is_avoided(snapshot, assignment, row.period, evitar_kinds=evitar_kinds):
             # D10: a published lesson now in Evitar moves while the strict pass can
             # place it elsewhere; the relaxed pass keeps the published position.
             continue
@@ -316,7 +383,9 @@ def _construct_recovery(
             if not ready(row.assignment_id, later):
                 continue
             rooms = free_rooms(row, later)
-            if rooms and (not strict or ledger.allows(row, later, planned)):
+            if rooms and (
+                not strict or ledger.allows(row, later, planned, evitar_kinds=evitar_kinds)
+            ):
                 return row, rooms[0]
         return None
 
@@ -373,23 +442,77 @@ def _construct_recovery(
             if remaining[row.assignment_id] > 0
             and ready(row.assignment_id, period)
             and (rooms := free_rooms(row, period))
-            and (not strict or ledger.allows(row, period))
+            and (not strict or ledger.allows(row, period, evitar_kinds=evitar_kinds))
         ]
-        options.sort(
-            key=lambda item: (
-                ledger.priority(item[0], period),
-                ledger.unfavorable(item[0], period),
-                -Fraction(
-                    remaining[item[0].assignment_id],
-                    sum(module.required_minutes for module in item[0].modules),
-                ),
-                not _continues_open_presence(
-                    slots_by_day, occupancy, item[0].teacher_id, period, minimum_teachers
-                ),
-                item[0].assignment_id,
-            )
+        scores: dict[tuple[int, int], tuple[bool, int, int]] | None = (
+            {} if weights is not None else None
         )
-        for assignment, room in _select_period(options, deadline=deadline):
+        if weights is None:
+            options.sort(
+                key=lambda item: (
+                    ledger.priority(item[0], period),
+                    ledger.unfavorable(item[0], period),
+                    -Fraction(
+                        remaining[item[0].assignment_id],
+                        sum(module.required_minutes for module in item[0].modules),
+                    ),
+                    not _continues_open_presence(
+                        slots_by_day, occupancy, item[0].teacher_id, period, minimum_teachers
+                    ),
+                    item[0].assignment_id,
+                )
+            )
+        else:
+            weighted_options = []
+            for assignment, rooms in options:
+                identity = assignment.assignment_id
+                necessary = ledger.is_necessary(assignment, period, evitar_kinds=evitar_kinds)
+                urgency = ledger.urgency(assignment, period)
+                credit = min(remaining[identity], period.duration_minutes)
+                measures = _option_measures(
+                    snapshot,
+                    assignment,
+                    period,
+                    credit=credit,
+                    needed_evitar=ledger.needed_evitar(
+                        assignment, period, evitar_kinds=evitar_kinds
+                    ),
+                    occupancy=occupancy,
+                    day_slots=slots_by_day.get(period.school_date.weekday(), ()),
+                    counts_teacher_single_lessons=assignment.teacher_id not in minimum_teachers,
+                    weekly_assignment_ids=tuple(
+                        previous_week_subject(class_id, period) for class_id in assignment.class_ids
+                    ),
+                    pace_lag=_pace_lag(identity, pace_peers[identity], required, remaining),
+                )
+                allowed_rooms = []
+                for room in rooms:
+                    value = _room_value(
+                        weights, measures, assignment, room, home_rooms, credit=credit
+                    )
+                    if necessary or _fills_hour(weights, measures, value, strict=strict, fill=fill):
+                        allowed_rooms.append((room, value))
+                        scores[(identity, room)] = (necessary, value, urgency)
+                if allowed_rooms:
+                    allowed_rooms.sort(key=lambda pair: (-pair[1], pair[0]))
+                    weighted_options.append(
+                        (
+                            (
+                                not necessary,
+                                urgency if necessary else 0,
+                                -allowed_rooms[0][1],
+                                identity,
+                            ),
+                            (assignment, tuple(room for room, _value in allowed_rooms)),
+                        )
+                    )
+            options = [item for _key, item in sorted(weighted_options, key=lambda row: row[0])]
+        for assignment, room in _select_period(
+            options,
+            deadline=deadline,
+            scores=scores,
+            fill_admitted=scores is not None and not strict,
+        ):
             for booking in book(assignment, period, room):
                 ledger.place(booking.assignment, booking.credit)
         if not any(remaining.values()):

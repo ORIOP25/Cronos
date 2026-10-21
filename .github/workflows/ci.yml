@@ -542,6 +542,7 @@ jobs:
           tests/integration/committed/test_worker_process_recovery.py
           tests/unit/test_scheduler_typology_v1.py::test_forty_eight_classes_generate_a_complete_valid_schedule
           tests/unit/test_scheduler_typology_v1.py::test_the_availability_fixture_completes_forty_eight_classes_before_the_preferred_end
+          tests/unit/test_scheduler_typology_v1.py::test_recommended_weights_keep_forty_eight_classes_valid_and_not_later
           --junitxml=runtime-results.xml
       # A green pytest exit with skipped or missing cases must never satisfy the
       # aggregate E2E gate. 0 skips, at least 10 collected, and the four
@@ -556,6 +557,7 @@ jobs:
               "test_an_owned_worker_process_loss_is_recovered_by_a_real_supervisor",
               "test_forty_eight_classes_generate_a_complete_valid_schedule",
               "test_the_availability_fixture_completes_forty_eight_classes_before_the_preferred_end",
+              "test_recommended_weights_keep_forty_eight_classes_valid_and_not_later",
           )
           MIN_COLLECTED = 10
           cases = list(ET.parse("runtime-results.xml").getroot().iter("testcase"))

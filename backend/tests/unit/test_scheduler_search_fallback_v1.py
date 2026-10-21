@@ -16,6 +16,7 @@ import app.scheduler.infrastructure.search as search_module
 from app.scheduler.domain.candidate import CandidateSchedule, HomeRoom, SchedulingStrategy
 from app.scheduler.domain.candidate_validation import validate_candidate
 from app.scheduler.domain.home_rooms import avoidable_room_changes, home_room_misses
+from app.scheduler.domain.priorities import CRITERION_KEYS, DEFAULT_LEVELS, PriorityWeights
 from app.scheduler.infrastructure.annual_model import (
     STATUS_INCONCLUSIVE as ANNUAL_INCONCLUSIVE,
 )
@@ -24,6 +25,7 @@ from app.scheduler.infrastructure.placement_model import (
     STATUS_INCONCLUSIVE as PLACEMENT_INCONCLUSIVE,
 )
 from app.scheduler.infrastructure.placement_model import PlacementOutcome
+from app.scheduler.lab.recovery import laboratory_policy
 from app.scheduler.lab.scale import build_scale_fixture
 from tests.unit.test_scheduler_generation_quality_v1 import home_room_fixture
 from tests.unit.test_scheduler_recovery_solver_v1 import POLICY
@@ -116,6 +118,63 @@ def test_stop_at_first_complete_returns_the_constructor_without_optimizing():
     assert validate_candidate(fixture.snapshot, outcome.candidate).valid
     assert outcome.evidence is not None
     assert outcome.evidence.stop_reason == "CONSTRUCTIVE"
+
+
+def test_r09_weighted_constructor_falls_back_to_legacy_and_reports_its_scope(monkeypatch):
+    fixture = build_scale_fixture(6, seed=1)
+    snapshot = replace(
+        fixture.snapshot,
+        priority_weights=PriorityWeights(dict.fromkeys(CRITERION_KEYS, 1)),
+    )
+    candidate = search_module.construct_schedule(fixture.snapshot, fixture.periods)
+    calls = []
+
+    def weighted_then_fallback(snapshot, periods, *, weights=None, **kwargs):
+        calls.append(weights)
+        return None if weights is not None else candidate
+
+    monkeypatch.setattr(search_module, "construct_schedule", weighted_then_fallback)
+    outcome = search_module.search_complete_schedule(
+        snapshot, fixture.periods, time_limit_seconds=10, stop_at_first_complete=True
+    )
+
+    assert outcome.status == "COMPLETE"
+    assert outcome.candidate == candidate
+    assert calls == [snapshot.priority_weights, None]
+    assert outcome.evidence.objective_scope == "CONSTRUCTIVE_INITIAL"
+
+
+def test_r09_a_weighted_success_reports_that_it_followed_the_priorities():
+    fixture = build_scale_fixture(6, seed=1)
+    snapshot = replace(fixture.snapshot, priority_weights=PriorityWeights(DEFAULT_LEVELS))
+
+    outcome = search_module.search_complete_schedule(
+        snapshot, fixture.periods, time_limit_seconds=30, stop_at_first_complete=True
+    )
+
+    assert outcome.status == "COMPLETE"
+    assert validate_candidate(snapshot, outcome.candidate).valid
+    assert outcome.evidence.objective_scope == "CONSTRUCTIVE_PRIORITIES"
+
+
+def test_r16_zero_same_room_priority_skips_the_room_pass(monkeypatch):
+    fixture = build_scale_fixture(6, seed=1)
+    levels = dict.fromkeys(CRITERION_KEYS, 1)
+    levels["class_same_room"] = 0
+    snapshot = replace(fixture.snapshot, priority_weights=PriorityWeights(levels))
+    room_pass_calls = []
+
+    def unexpected_room_assignment(*args, **kwargs):
+        room_pass_calls.append(True)
+        raise AssertionError("zero room priority must skip room assignment")
+
+    monkeypatch.setattr(search_module, "assign_rooms_by_period", unexpected_room_assignment)
+    outcome = search_module.search_complete_schedule(
+        snapshot, fixture.periods, time_limit_seconds=10, stop_at_first_complete=True
+    )
+
+    assert outcome.status == "COMPLETE"
+    assert room_pass_calls == []
 
 
 def test_search_passes_its_deadline_and_cancellation_to_construction(monkeypatch):
@@ -361,3 +420,31 @@ def test_r23_the_stop_at_first_placement_route_reaches_zero_avoidable_room_chang
     assert validate_candidate(snapshot, outcome.candidate).valid
     assert home_room_misses(snapshot, outcome.candidate) == 0
     assert avoidable_room_changes(snapshot, outcome.candidate) == 0
+
+
+def test_joint_search_with_a_published_incumbent_never_builds_the_unweighted_fallback(
+    monkeypatch,
+):
+    """T11: the unweighted fallback replaces only a missing weighted construction."""
+    fixture = build_scale_fixture(6, seed=1)
+    baseline = search_module.construct_schedule(fixture.snapshot, fixture.periods)
+    snapshot = replace(
+        fixture.snapshot,
+        strategy=SchedulingStrategy.ADAPTIVE_RECOVERY,
+        baseline_lessons=baseline.lessons,
+        priority_weights=PriorityWeights(DEFAULT_LEVELS),
+    )
+    calls = []
+    original = search_module.construct_schedule
+
+    def recording(*args, **kwargs):
+        calls.append(kwargs.get("weights"))
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(search_module, "construct_schedule", recording)
+
+    search_module.search_adaptive_schedule(
+        snapshot, fixture.periods, baseline, laboratory_policy(snapshot), time_limit_seconds=2
+    )
+
+    assert calls == []

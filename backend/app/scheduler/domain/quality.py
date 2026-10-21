@@ -12,6 +12,7 @@ from app.scheduler.domain.candidate import (
     Assignment,
     CandidateSchedule,
     GridSlot,
+    LunchRule,
     PlanningSnapshot,
     ScheduledLesson,
     UnavailableResource,
@@ -150,12 +151,54 @@ def _slot_position(grid_slots: Sequence[GridSlot], period) -> int | None:
     return None
 
 
+def lunch_minutes_in(
+    empty: Iterable[tuple[int, int]],
+    lunch_rule: LunchRule | None,
+    occupied: Iterable[tuple[int, int]] = (),
+) -> int:
+    """Count grid minutes covered by a valid continuous, unoccupied lunch window."""
+    if lunch_rule is None:
+        return 0
+    start = lunch_rule.window_start.hour * 60 + lunch_rule.window_start.minute
+    end = lunch_rule.window_end.hour * 60 + lunch_rule.window_end.minute
+    minimum = lunch_rule.minimum_minutes
+    empty_intervals = tuple(
+        (max(left, start), min(right, end))
+        for left, right in empty
+        if max(left, start) < min(right, end)
+    )
+    occupied_intervals = tuple(
+        (max(left, start), min(right, end))
+        for left, right in occupied
+        if max(left, start) < min(right, end)
+    )
+    candidate_starts = {start, end - minimum}
+    for left, right in (*empty_intervals, *occupied_intervals):
+        candidate_starts.update((left, right, left - minimum, right - minimum))
+
+    best_covered = 0
+    for window_start in candidate_starts:
+        window_end = window_start + minimum
+        if window_start < start or window_end > end:
+            continue
+        if any(left < window_end and window_start < right for left, right in occupied_intervals):
+            continue
+        covered = sum(
+            max(0, min(right, window_end) - max(left, window_start))
+            for left, right in empty_intervals
+        )
+        best_covered = max(best_covered, covered)
+    return best_covered
+
+
 def _gap_minutes(
     grid_slots: Sequence[GridSlot],
     occupied: Mapping[tuple[int, date], set[int]],
+    lunch_rule: LunchRule | None = None,
+    lunch_dispensed_resource_ids: frozenset[int] = frozenset(),
 ) -> int:
     total = 0
-    for (_resource_id, school_date), positions in occupied.items():
+    for (resource_id, school_date), positions in occupied.items():
         if len(positions) < 2:
             continue
         slots = sorted(
@@ -163,11 +206,25 @@ def _gap_minutes(
             key=lambda slot: (slot.start_local, slot.end_local),
         )
         first, last = min(positions), max(positions)
-        total += sum(
-            (slots[position].end_local.hour * 60 + slots[position].end_local.minute)
-            - (slots[position].start_local.hour * 60 + slots[position].start_local.minute)
+        empty = [
+            (
+                slots[position].start_local.hour * 60 + slots[position].start_local.minute,
+                slots[position].end_local.hour * 60 + slots[position].end_local.minute,
+            )
             for position in range(first + 1, last)
             if position not in positions
+        ]
+        occupied_intervals = [
+            (
+                slots[position].start_local.hour * 60 + slots[position].start_local.minute,
+                slots[position].end_local.hour * 60 + slots[position].end_local.minute,
+            )
+            for position in positions
+            if 0 <= position < len(slots)
+        ]
+        resource_lunch_rule = None if resource_id in lunch_dispensed_resource_ids else lunch_rule
+        total += sum(right - left for left, right in empty) - lunch_minutes_in(
+            empty, resource_lunch_rule, occupied_intervals
         )
     return total
 

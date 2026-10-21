@@ -4,12 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import time
 from types import MappingProxyType
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from app.scheduler.domain.candidate import LunchRule
 
 CRITERION_KEYS = (
     "finish_early",
@@ -28,7 +23,17 @@ DEFAULT_LEVELS = MappingProxyType(
     dict(zip(CRITERION_KEYS, (4, 3, 2, 2, 2, 3, 2, 2, 2, 3, 3), strict=True))
 )
 PRIORITY_MULTIPLIERS = (0, 1, 2, 4, 8)
-UNIT_COSTS = MappingProxyType(dict.fromkeys(CRITERION_KEYS, 1))
+UNIT_COSTS = MappingProxyType(
+    {
+        **dict.fromkeys(CRITERION_KEYS, 1),
+        "teacher_gaps": 3,
+        "teacher_single_lessons": 15,
+        "class_single_lessons": 10,
+        "teacher_preferences": 20,
+        "class_preferences": 5,
+        "subject_pace": 20,
+    }
+)
 
 
 @dataclass(frozen=True, init=False)
@@ -57,24 +62,3 @@ class PriorityWeights:
 
     def to_dict(self) -> dict[str, int]:
         return {key: getattr(self, key) for key in CRITERION_KEYS}
-
-
-def shift_of(
-    start_local: time,
-    lunch_rule: LunchRule | None,
-    *,
-    lunch_required: bool = True,
-) -> str:
-    """Return the lesson's school shift, using the lunch-window midpoint."""
-    if not isinstance(start_local, time) or start_local.tzinfo is not None:
-        raise ValueError("The lesson start must be a naive local time.")
-    if lunch_rule is None or not lunch_required:
-        return "day"
-    midpoint = (
-        lunch_rule.window_start.hour * 60
-        + lunch_rule.window_start.minute
-        + lunch_rule.window_end.hour * 60
-        + lunch_rule.window_end.minute
-    ) // 2
-    start_minutes = start_local.hour * 60 + start_local.minute
-    return "morning" if start_minutes < midpoint else "afternoon"
