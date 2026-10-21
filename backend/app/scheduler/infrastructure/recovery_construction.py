@@ -132,20 +132,28 @@ def _construct_recovery(
         for identity, row in assignments.items()
     }
     pace_peers = _pace_peers(assignments) if weights is not None else {}
-    # Weekly stability in an update follows the published week pattern of each class.
-    weekly_pattern: dict[tuple, int] = {}
-    for row in snapshot.baseline_lessons:
+    # Weekly stability compares a slot with the latest earlier week that taught it, as
+    # the metric does: retained published lessons and lessons booked so far both count.
+    slot_history: dict[tuple, dict[date, int]] = defaultdict(dict)
+    for row in (*snapshot.protected_lessons, *snapshot.baseline_lessons):
         if row.assignment_id in assignments:
             for class_id in assignments[row.assignment_id].class_ids:
-                weekly_pattern.setdefault(
+                slot_history[
                     (
                         class_id,
                         row.period.school_date.weekday(),
                         row.period.start_local,
                         row.period.end_local,
-                    ),
-                    row.assignment_id,
-                )
+                    )
+                ].setdefault(row.period.school_date, row.assignment_id)
+
+    def previous_week_subject(class_id: int, period: Period) -> int | None:
+        history = slot_history.get(
+            (class_id, period.school_date.weekday(), period.start_local, period.end_local), {}
+        )
+        earlier = [day for day in history if day < period.school_date]
+        return history[max(earlier)] if earlier else None
+
     dispensed_teachers = snapshot.lunch_dispensed_teacher_ids
     minimum_teachers = _minimum_presence_teachers(snapshot)
     slots_by_day = _slots_by_day(snapshot)
@@ -177,12 +185,20 @@ def _construct_recovery(
             busy[key].append(period)
             if key[0] != "room":
                 occupancy[key].append(_local_interval(period))
+        for class_id in assignment.class_ids:
+            slot_history[
+                (class_id, period.school_date.weekday(), period.start_local, period.end_local)
+            ][period.school_date] = assignment.assignment_id
 
     def release(assignment: Assignment, period: Period, room: int, teacher: int) -> None:
         for key in _resource_keys(assignment, room, teacher, period.school_date):
             busy[key].remove(period)
             if key[0] != "room":
                 occupancy[key].remove(_local_interval(period))
+        for class_id in assignment.class_ids:
+            slot_history[
+                (class_id, period.school_date.weekday(), period.start_local, period.end_local)
+            ].pop(period.school_date, None)
 
     def free_rooms(assignment: Assignment, period: Period) -> tuple[int, ...]:
         for kind, identity in (
@@ -453,7 +469,6 @@ def _construct_recovery(
                 necessary = ledger.is_necessary(assignment, period, evitar_kinds=evitar_kinds)
                 urgency = ledger.urgency(assignment, period)
                 credit = min(remaining[identity], period.duration_minutes)
-                signature = (period.school_date.weekday(), period.start_local, period.end_local)
                 measures = _option_measures(
                     snapshot,
                     assignment,
@@ -466,8 +481,7 @@ def _construct_recovery(
                     day_slots=slots_by_day.get(period.school_date.weekday(), ()),
                     counts_teacher_single_lessons=assignment.teacher_id not in minimum_teachers,
                     weekly_assignment_ids=tuple(
-                        weekly_pattern.get((class_id, *signature))
-                        for class_id in assignment.class_ids
+                        previous_week_subject(class_id, period) for class_id in assignment.class_ids
                     ),
                     pace_lag=_pace_lag(identity, pace_peers[identity], required, remaining),
                 )

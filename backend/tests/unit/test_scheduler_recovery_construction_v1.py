@@ -951,3 +951,25 @@ def test_weighted_recovery_tries_a_fill_pass_before_giving_up_the_priorities(mon
         is built
     )
     assert calls == [(True, False), (False, False), (False, True)]
+
+
+def test_weighted_recovery_weekly_reference_is_the_previous_teaching_week():
+    """Weekly stability compares with the previous week, as the metric does."""
+    mondays = tuple(period(day) for day in (0, 7, 14, 21))
+    first = assignment(1, 1, 1, {100}, 120)
+    second = assignment(2, 1, 2, {100}, 120)
+    published = (lesson(10, 1, mondays[0], 100), lesson(11, 2, mondays[1], 100))
+    target = replace(
+        plan(mondays, [first, second]),
+        strategy=SchedulingStrategy.ADAPTIVE_RECOVERY,
+        baseline_lessons=published,
+    )
+
+    candidate = construct_recovery(
+        target, mondays, deadline=monotonic() + 60, weights=PriorityWeights(DEFAULT_LEVELS)
+    )
+
+    assert candidate is not None
+    by_week = {row.period: row.assignment_id for row in candidate.lessons}
+    # Week 3 repeats week 2 (the second subject); the first-week pattern would pick the first.
+    assert [by_week[when] for when in mondays] == [1, 2, 2, 1]
