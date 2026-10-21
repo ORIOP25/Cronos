@@ -29,6 +29,7 @@ from app.scheduler.infrastructure.constructive import (
     _continues_open_presence,
     _evitar_kinds,
     _fills_hour,
+    _gives_up,
     _grid_intervals_by_day,
     _local_interval,
     _longest_presences,
@@ -440,7 +441,7 @@ def _construct_recovery(
         return [retain(assignment, period, room)]
 
     for period in canonical:
-        if interrupted():
+        if interrupted() or _gives_up(ledger, period, strict=strict):
             return None, ledger.refused
         options = [
             (row, rooms)
