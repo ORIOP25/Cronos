@@ -15,6 +15,7 @@ from app.scheduler.lab.realistic_pilot import (
     EDUCACAO_FISICA,
     INGLES,
     NORMAL,
+    TEACHING_WEEKS,
     _room_type,
     build_realistic_pilot,
 )
@@ -84,6 +85,21 @@ def test_external_teachers_are_at_least_thirty_percent_with_two_or_three_hour_mi
     assert {rule.max_gap_minutes for rule in rules.values()} == {60}
 
 
+def test_internal_teachers_teach_up_to_twenty_five_lessons_a_week_and_externals_about_eleven(
+    school,
+):
+    hours = defaultdict(int)
+    for unit in school.snapshot.assignments:
+        hours[unit.teacher_id] += sum(module.required_minutes for module in unit.modules) // 60
+    weekly = {teacher: total / TEACHING_WEEKS for teacher, total in hours.items()}
+    internal = [load for teacher, load in weekly.items() if teacher not in school.external_teachers]
+    external = [load for teacher, load in weekly.items() if teacher in school.external_teachers]
+
+    assert max(internal) <= 25
+    assert sum(internal) / len(internal) >= 20
+    assert all(10 <= load <= 12 for load in external)
+
+
 def test_availability_follows_the_requested_shares(school):
     teachers = sorted({unit.teacher_id for unit in school.snapshot.assignments})
     soft_days = defaultdict(set)
@@ -124,23 +140,15 @@ def test_realistic_pilot_marks_assignments_that_require_special_rooms(school):
     )
 
 
-# The owner accepted (20 Oct 2026) up to 10% more teacher Evitar than the unweighted
-# construction in this school, in exchange for far fewer free periods and single-lesson days.
-TEACHER_EVITAR_TOLERANCE = 1.10
-
-
 @pytest.mark.slow_solver
-def test_r24_recommended_weights_finish_no_later_with_bounded_teacher_evitar(school):
-    unweighted = construct_schedule(school.snapshot, school.periods)
+def test_r24_recommended_weights_build_the_realistic_school_by_the_preferred_end(school):
+    # With internal teachers at 20-25 lessons a week the unweighted construction leaves
+    # hours unplaced at the end of the year; the weighted one must still complete it.
     weighted = construct_schedule(
         school.snapshot, school.periods, weights=PriorityWeights(DEFAULT_LEVELS)
     )
 
-    assert unweighted is not None and weighted is not None
+    assert weighted is not None
     assert validate_candidate(school.snapshot, weighted).valid is True
-    before = measure_priority_metrics(school.snapshot, unweighted)
-    after = measure_priority_metrics(school.snapshot, weighted)
-    assert after["finish_early"] <= before["finish_early"]
-    assert after["teacher_preferences"] <= before["teacher_preferences"] * TEACHER_EVITAR_TOLERANCE
-    assert after["teacher_gaps"] < before["teacher_gaps"]
-    assert after["class_single_lessons"] < before["class_single_lessons"]
+    finish = measure_priority_metrics(school.snapshot, weighted)["finish_early"]
+    assert finish <= school.snapshot.preferred_end_date

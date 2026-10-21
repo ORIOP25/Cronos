@@ -63,7 +63,9 @@ LESSON_MINUTES = 60
 AFTERNOON = (time(13, 30), time(18, 0))
 LUNCH = LunchRule(window_start=time(12, 30), window_end=time(14, 30), minimum_minutes=60)
 ROOM_COUNT = 48
-INTERNAL_LOAD_HOURS = 650
+TEACHING_WEEKS = 34
+# Internal teachers teach 20 to 25 lessons a week (owner, 21 Oct 2026); externals about 11.
+INTERNAL_MAX_HOURS = 25 * TEACHING_WEEKS
 EXTERNAL_SHARE = 0.30
 
 # General subjects every class has; the first three can be joint, in this order.
@@ -242,17 +244,26 @@ def build_realistic_pilot() -> RealisticPilot:
                 teacher_of[index] = next_id
             externals.add(next_id)
             next_id += 1
-        family_teacher: dict[object, tuple[int, int]] = {}
-        for index, (subject, _members, block_hours) in enumerate(blocks):
-            if index in teacher_of:
-                continue
-            family = subject if subject < 100 else ("technical", subject // 10)
-            current = family_teacher.get(family)
-            if current is None or current[1] + block_hours > INTERNAL_LOAD_HOURS:
-                current = (next_id, 0)
-                next_id += 1
-            teacher_of[index] = current[0]
-            family_teacher[family] = (current[0], current[1] + block_hours)
+        # Internal teachers share a family evenly: a general subject, or the technical
+        # subjects of four neighbouring courses. The fewest teachers under the cap.
+        families: dict[object, list[int]] = defaultdict(list)
+        for index, (subject, _members, _hours) in enumerate(blocks):
+            if index not in teacher_of:
+                family = subject if subject < 100 else ("technical", (subject // 10 - 10) // 4)
+                families[family].append(index)
+        for indexes in families.values():
+            ordered = sorted(indexes, key=lambda index: (-blocks[index][2], index))
+            count = ceil(sum(blocks[index][2] for index in ordered) / INTERNAL_MAX_HOURS)
+            while True:
+                loads = dict.fromkeys(range(next_id, next_id + count), 0)
+                for index in ordered:
+                    teacher = min(loads, key=lambda row: (loads[row], row))
+                    teacher_of[index] = teacher
+                    loads[teacher] += blocks[index][2]
+                if max(loads.values()) <= INTERNAL_MAX_HOURS:
+                    break
+                count += 1
+            next_id += count
         return teacher_of, externals
 
     external_subjects: set[int] = set()
