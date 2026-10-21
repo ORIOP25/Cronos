@@ -1011,6 +1011,26 @@ def _construct_pass(
                 return booked
         return None
 
+    def presence_run(
+        assignment: Assignment, period: Period, room: int
+    ) -> list[tuple[Assignment, Period, int]] | None:
+        """The lessons that book this option, or None when a presence rule forbids it.
+
+        A lesson that leaves its day short of the presence minimum is booked only with
+        the later run that completes it. Extending a compliant presence must not strand
+        minutes that no split into valid presences could ever teach.
+        """
+        teacher_id = assignment.teacher_id
+        if teacher_id not in presence_rules:
+            return [(assignment, period, room)]
+        if not presence_complies(teacher_id, period.school_date, [period]):
+            return plan_presence_run(assignment, period, room)
+        credit = min(remaining[assignment.assignment_id], period.duration_minutes)
+        left = teacher_remaining[teacher_id] - credit
+        if not _presence_left_fits(left, presence_rules[teacher_id], longest_presence[teacher_id]):
+            return None
+        return [(assignment, period, room)]
+
     for period in canonical:
         if _interrupted(deadline, should_cancel):
             return None, ledger.refused
@@ -1092,6 +1112,10 @@ def _construct_pass(
                     key=lambda room: (room != preferred_room, room_pressure[room], room),
                 )
             )
+            # An option whose presence cannot complete is dropped later; keeping it out of
+            # the selection leaves its class and teacher free for another subject (T11).
+            if rooms and presence_run(assignment, period, rooms[0]) is None:
+                continue
             if rooms:
                 if weights is None:
                     options.append((assignment, rooms))
@@ -1148,25 +1172,9 @@ def _construct_pass(
             scores=scores,
             fill_admitted=scores is not None and not strict,
         ):
-            teacher_id = assignment.teacher_id
-            if teacher_id in presence_rules and not presence_complies(
-                teacher_id, period.school_date, [period]
-            ):
-                # A lesson that leaves the day short of the presence minimum is
-                # placed only with the later run that completes it.
-                run = plan_presence_run(assignment, period, room)
-                if run is None:
-                    continue
-            else:
-                # Extending a compliant presence must not strand minutes that no
-                # split into valid presences could ever teach.
-                credit = min(remaining[assignment.assignment_id], period.duration_minutes)
-                left = teacher_remaining[teacher_id] - credit
-                if teacher_id in presence_rules and not _presence_left_fits(
-                    left, presence_rules[teacher_id], longest_presence[teacher_id]
-                ):
-                    continue
-                run = [(assignment, period, room)]
+            run = presence_run(assignment, period, room)
+            if run is None:
+                continue
             for run_assignment, run_period, run_room in run:
                 if not place(run_assignment, run_period, run_room):
                     return None, ledger.refused
