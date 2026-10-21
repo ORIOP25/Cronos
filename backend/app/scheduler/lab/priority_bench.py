@@ -314,6 +314,15 @@ def run_benchmark(
     return rows
 
 
+def _inside_repository(path: Path) -> Path:
+    """Resolve a CLI path and refuse anything outside the repository (``/workspace``)."""
+    root = ROOT.resolve()
+    resolved = (path if path.is_absolute() else root / path).resolve()
+    if not resolved.is_relative_to(root):
+        raise ValueError(f"Lab paths must stay inside the repository ({root}): {path}")
+    return resolved
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--scenario", action="append", default=[])
@@ -329,9 +338,9 @@ def main() -> None:
         profiles=tuple(args.profile or ("recommended",)),
         repetitions=args.repetitions,
         time_limit_seconds=args.time_limit_seconds,
-        output_path=args.output,
-        input_path=args.input,
-        pilot_directory=args.pilot_dir,
+        output_path=_inside_repository(args.output) if args.output else None,
+        input_path=_inside_repository(args.input) if args.input else None,
+        pilot_directory=_inside_repository(args.pilot_dir) if args.pilot_dir else None,
     )
     print(json.dumps(result, indent=2))
 

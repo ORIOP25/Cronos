@@ -5,6 +5,8 @@ import hashlib
 import json
 from pathlib import Path
 
+import pytest
+
 from app.scheduler.domain.priorities import CRITERION_KEYS
 from app.scheduler.lab.priority_bench import (
     _pilot_rows,
@@ -91,3 +93,14 @@ def test_pilot_csv_is_balanced_without_changing_room_identity_or_capacity():
     assert sum(room_type == "Artes" for room_type in labels["room_types"].values()) == 3
     assert sum(room_type == "Ginásio" for room_type in labels["room_types"].values()) == 1
     assert len(labels["room_capacities"]) == 48
+
+
+def test_the_cli_keeps_input_and_output_paths_inside_the_repository():
+    from app.scheduler.lab.priority_bench import ROOT, _inside_repository
+
+    assert (
+        _inside_repository(Path(".test-artifacts/bench.json"))
+        == (ROOT / ".test-artifacts" / "bench.json").resolve()
+    )
+    with pytest.raises(ValueError, match="inside the repository"):
+        _inside_repository(Path("../../outside.json"))
