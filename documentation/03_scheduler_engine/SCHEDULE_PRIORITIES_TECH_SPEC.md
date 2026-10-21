@@ -167,8 +167,8 @@ Os valores recomendados mantêm o comportamento que a escola piloto já validou.
 | Chave | Métrica do horário | Unidade no resumo |
 | :--- | :--- | :--- |
 | `finish_early` | data da última aula (`latest_completion_date`) | data |
-| `teacher_gaps` | minutos de tempos livres dos professores (`_gap_minutes` de `quality.py`) | horas |
-| `class_gaps` | minutos de tempos livres das turmas | horas |
+| `teacher_gaps` | minutos de tempos livres dos professores (`_gap_minutes` de `quality.py`); a hora de almoço contínua dentro da janela não conta (`lunch_minutes_in`) | horas |
+| `class_gaps` | minutos de tempos livres das turmas, sem a hora de almoço, como os professores | horas |
 | `teacher_single_lessons` | dias (T10) com uma só aula, de professores sem mínimo de presença | dias |
 | `class_single_lessons` | dias (T10) com uma só aula, de turmas | dias |
 | `teacher_preferences` | minutos de aulas em Evitar dos professores, incluindo períodos fora de Preferencial | horas |
@@ -196,9 +196,9 @@ Os valores recomendados mantêm o comportamento que a escola piloto já validou.
 
 - I01: as regras obrigatórias da D04 não mudam. Todo o candidato devolvido passa em `validate_candidate`.
 - I02: com `weights=None`, as duas construções produzem as mesmas aulas que em `main` em `3c312d17`.
-- I03: os mesmos dados e os mesmos níveis dão o mesmo horário. Não há aleatoriedade nova.
+- I03: os mesmos dados e os mesmos níveis dão o mesmo horário. Não há aleatoriedade nova. A reparação de cada período com pesos para em tempo determinístico; só um prazo global quase esgotado (tempo de relógio) pode cortá-la mais cedo.
 - I04: os pesos nunca tornam impossível um horário que a construção de hoje encontra: a T11 repete sem pesos.
-- I05: um critério em Ignorar não muda nenhuma escolha.
+- I05: um critério em Ignorar não muda nenhuma escolha. Com "Manter a turma na mesma sala" em Ignorar, a passagem de salas não corre e as salas ficam as da construção (T14).
 - I06: a leitura e a escrita dos níveis filtram por `organization_id`. Só o administrador as faz.
 - I07: só inteiros no valor e no custo; nenhum `float` entra na comparação.
 
@@ -228,7 +228,7 @@ Cada cenário é um teste que falha primeiro. Salvo indicação: grelha de 60 mi
 | R06 | Hora vazia | 1 semana, 1 aula de 60 min, Evitar do professor às 9h de segunda; `finish_early=1`, `teacher_preferences=4`. | A aula fica às 10h de segunda. Com `teacher_preferences=0`: às 9h de segunda. | `test_scheduler_weighted_construction_v1.py` |
 | R07 | Necessária | R06 com Impossível às 10h todos os dias e Evitar às 9h todos os dias. | A aula fica às 9h de segunda: o Evitar não penaliza uma opção necessária. | `test_scheduler_weighted_construction_v1.py` |
 | R08 | Sem pesos | `build_typology_fixture(12)` e as fixtures de disponibilidade, de presença e de sala da turma dos testes atuais, com `weights=None`. | Os digests fixos (incluindo `TWELVE_CLASS_CONSTRUCTION_DIGEST`) e os testes atuais não mudam (I02). | `backend/tests/unit/test_scheduler_typology_v1.py` |
-| R09 | Repetição sem pesos | `construct_schedule` com pesos devolve `None` (a passagem com pesos substituída por uma que devolve `None`). | `search_complete_schedule` devolve `COMPLETE` com o horário de `weights=None`, e `evidence.objective_scope == "CONSTRUCTIVE_INITIAL"`. Com pesos e sucesso: `"CONSTRUCTIVE_PRIORITIES"`. | `backend/tests/unit/test_scheduler_search_fallback_v1.py` |
+| R09 | Repetição sem pesos | `construct_schedule` com pesos devolve `None` (a passagem com pesos substituída por uma que devolve `None`). | `search_complete_schedule` devolve `COMPLETE` com o horário de `weights=None`, e `evidence.objective_scope == "CONSTRUCTIVE_INITIAL"`. Com pesos e sucesso: `"CONSTRUCTIVE_PRIORITIES"` (numa atualização, `"CONSTRUCTIVE_RECOVERY_PRIORITIES"`). | `backend/tests/unit/test_scheduler_search_fallback_v1.py` |
 | R10 | Seleção | Período com 2 opções do mesmo professor: A necessária com valor −10 e B com valor 50. | Fica A. Sem A necessária, fica B. | `test_scheduler_weighted_construction_v1.py` |
 | R11 | Turno | Professor sem mínimo, janela de almoço 12h–14h: aulas às 9h e às 15h; professor dispensado de almoço com as mesmas aulas. | `teacher_single_lessons == 2` no primeiro e `0` no segundo. Professor com mínimo de presença: `0`. Turma com as mesmas aulas: `class_single_lessons == 2`. | `test_scheduler_priorities_v1.py` |
 | R12 | Estabilidade semanal | Turma com disciplina A às 9h de segunda na semana 1, B na semana 2, e segunda da semana 3 feriado. | `weekly_stability == 1`. A semana 3 não conta. | `test_scheduler_priorities_v1.py` |
@@ -243,7 +243,7 @@ Cada cenário é um teste que falha primeiro. Salvo indicação: grelha de 60 mi
 | R21 | Resumo | `recovery_proposal_payload` com horário publicado; `initial_proposal_payload` sem publicado. | `priority_summary.published` com as 11 chaves e `priority_summary.proposal` com as 11 chaves; na geração inicial, `published is None`. | `backend/tests/unit/test_scheduler_publishing_v1.py` |
 | R22 | Ecrã | Separador "Prioridades do horário" com os 11 critérios; clicar "Muito importante" em "Evitar tempos livres das turmas"; "Guardar prioridades"; depois "Repor valores recomendados". | O `PUT` leva `class_gaps: 3`; os botões têm `role="radio"` com `aria-checked`; repor volta a `class_gaps: 2` antes de guardar. | `frontend/src/test/SchedulePrioritiesSection.test.jsx` (novo) |
 | R23 | Painel | Proposta com `priority_summary` publicado e proposta, e outra com `priorities_followed: false`. | Uma linha por critério com os dois valores; o aviso da Failure Modes só na segunda. | `frontend/src/test/DraftPanel.test.jsx` |
-| R24 | Calibração | Ciclo S7 nas fixtures de tipologia de 12 e 48 turmas, na de disponibilidade de 12 turmas, no ficheiro da escola piloto e na escola piloto realista, com os valores recomendados. | Resultado `COMPLETE`; última aula não posterior à da construção sem pesos; minutos em Evitar dos professores não superiores (na escola realista, no máximo mais 10%, D16). | `backend/tests/unit/test_scheduler_typology_v1.py` e `test_scheduler_realistic_pilot_v1.py` (48 turmas, piloto e realista marcados `slow_solver`; a realista corre só localmente, cerca de 25 min) |
+| R24 | Calibração | Ciclo S7 nas fixtures de tipologia de 12 e 48 turmas, na de disponibilidade de 12 turmas e na escola piloto realista, com os valores recomendados. O ficheiro piloto original deixou de ser referência (responsável de produto, 21 de outubro de 2026). | Tipologia e disponibilidade: resultado `COMPLETE`; última aula não posterior à da construção sem pesos; minutos em Evitar dos professores não superiores. Escola realista: a construção sem pesos não a constrói (fica com horas por colocar), por isso exige-se horário completo e válido até à data preferida. | `backend/tests/unit/test_scheduler_typology_v1.py` e `test_scheduler_realistic_pilot_v1.py` (48 turmas e realista marcados `slow_solver`; a realista corre só localmente, cerca de 20 min) |
 | R25 | Efeito visível | Para cada critério de 1 a 10, níveis recomendados com esse critério em 0 e depois em 4, na fixture de 12 turmas. | A métrica desse critério com 4 é estritamente melhor do que com 0. | `test_scheduler_typology_v1.py` |
 
 ## Coexistência
@@ -259,7 +259,7 @@ Cada cenário é um teste que falha primeiro. Salvo indicação: grelha de 60 mi
 Cada slice tem a sua prova no [WBS](SCHEDULE_PRIORITIES_WBS.md). Use os perfis de [Verification by change type](../00_getting_started/COMMAND_REFERENCE.md#verification-by-change-type).
 
 - PR 1: perfil de migração, perfil de endpoint e perfil de jobs do motor (`test_scheduler_v1_lifecycle.py` só corre localmente).
-- PR 2: perfil do solver, com o teste `slow_solver` de 48 turmas adicionado ao `e2e-runtime` em `ci.yml`. O pull request junta o relatório do ciclo (T17) e a escolha do responsável de produto (D16).
+- PR 2: perfil do solver, com o teste `slow_solver` de 48 turmas adicionado ao `e2e-runtime` em `ci.yml`; o R24 da escola realista corre localmente. O pull request junta o relatório do ciclo (T17) e a escolha do responsável de produto (D16).
 - PR 3: perfil de componente e de jornada no browser, e a stack local reconstruída na worktree.
 
 Verificação manual depois do PR 3: pôr "Acabar os módulos o mais cedo possível" em Ignorar e "Evitar tempos livres das turmas" em Prioridade máxima; gerar; comparar o resumo da proposta com o horário publicado.
