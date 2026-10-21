@@ -40,7 +40,12 @@ from app.scheduler.domain.capacity import (
     residual_minutes,
 )
 from app.scheduler.domain.projection import ModuleSlice
-from app.scheduler.domain.teacher_presence import PresenceLesson, teacher_day_complies
+from app.scheduler.domain.teacher_presence import (
+    PresenceLesson,
+    longest_presence_minutes,
+    presence_minutes_fit,
+    teacher_day_complies,
+)
 
 
 def _local_interval(period: Period) -> tuple[int, int]:
@@ -62,6 +67,31 @@ def _minimum_presence_teachers(snapshot: PlanningSnapshot) -> dict[int, TeacherP
     return {
         row.teacher_id: row for row in snapshot.teacher_presence if row.minimum_minutes is not None
     }
+
+
+def _longest_presences(
+    snapshot: PlanningSnapshot,
+    rules: Mapping[int, TeacherPresenceRule],
+    slots_by_day: Mapping[int, Sequence[GridSlot]],
+) -> dict[int, int]:
+    """The longest presence each teacher with a minimum can hold on any grid day."""
+    return {
+        teacher_id: max(
+            (
+                longest_presence_minutes(
+                    rule, [_grid_interval(slot) for slot in slots], lunch_rule=snapshot.lunch_rule
+                )
+                for slots in slots_by_day.values()
+            ),
+            default=0,
+        )
+        for teacher_id, rule in rules.items()
+    }
+
+
+def _presence_left_fits(left: int, rule: TeacherPresenceRule, longest: int) -> bool:
+    """Minutes left to a teacher must still split into valid presences (no stranded hours)."""
+    return presence_minutes_fit(left, minimum=rule.minimum_minutes, longest=longest)
 
 
 def _grid_intervals_by_day(
@@ -473,6 +503,7 @@ def _construct_pass(
     dispensed_teachers = snapshot.lunch_dispensed_teacher_ids
     presence_rules = _minimum_presence_teachers(snapshot)
     slots_by_day = _slots_by_day(snapshot)
+    longest_presence = _longest_presences(snapshot, presence_rules, slots_by_day)
     grid_intervals = _grid_intervals_by_day(slots_by_day)
     periods_by_date: dict[date, list[Period]] = defaultdict(list)
     for day_period in canonical:
@@ -576,7 +607,6 @@ def _construct_pass(
         """
         teacher_id = assignment.teacher_id
         school_date = period.school_date
-        minimum = presence_rules[teacher_id].minimum_minutes
         booked: list[tuple[Assignment, Period, int]] = []
         pending: dict[tuple, list[Period]] = defaultdict(list)
         planned: list[tuple[Assignment, int]] = []
@@ -596,7 +626,9 @@ def _construct_pass(
             left = teacher_remaining[teacher_id] - sum(credited.values())
             return presence_complies(
                 teacher_id, school_date, [row_period for _a, row_period, _r in booked]
-            ) and (left == 0 or left >= minimum)
+            ) and _presence_left_fits(
+                left, presence_rules[teacher_id], longest_presence[teacher_id]
+            )
 
         def next_lesson(later: Period) -> tuple[Assignment, int] | None:
             previous = booked[-1][0].assignment_id
@@ -724,13 +756,12 @@ def _construct_pass(
                 if run is None:
                     continue
             else:
-                # Extending a compliant presence must not strand fewer minutes than
-                # the minimum: they could never form a presence of their own.
+                # Extending a compliant presence must not strand minutes that no
+                # split into valid presences could ever teach.
                 credit = min(remaining[assignment.assignment_id], period.duration_minutes)
                 left = teacher_remaining[teacher_id] - credit
-                if (
-                    teacher_id in presence_rules
-                    and 0 < left < presence_rules[teacher_id].minimum_minutes
+                if teacher_id in presence_rules and not _presence_left_fits(
+                    left, presence_rules[teacher_id], longest_presence[teacher_id]
                 ):
                     continue
                 run = [(assignment, period, room)]
