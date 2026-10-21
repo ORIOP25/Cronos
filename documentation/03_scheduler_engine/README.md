@@ -8,6 +8,8 @@ The scheduler v1 is active in production. The original execution plan and work b
 
 - [SCHEDULER_V1_TECH_SPEC_V2.md](SCHEDULER_V1_TECH_SPEC_V2.md): Technical specification — product decisions, contracts, models, quality policy, queue, API and operations.
 - [AVAILABILITY_PRIORITY_TECH_SPEC.md](AVAILABILITY_PRIORITY_TECH_SPEC.md) and [AVAILABILITY_PRIORITY_WBS.md](AVAILABILITY_PRIORITY_WBS.md): Plan in implementation — priority to teachers and classes with little availability, Evitar and Preferencial in construction, and the per-teacher time proof.
+- [SCHEDULE_PRIORITIES_TECH_SPEC.md](SCHEDULE_PRIORITIES_TECH_SPEC.md) and [SCHEDULE_PRIORITIES_WBS.md](SCHEDULE_PRIORITIES_WBS.md): School schedule priorities — eleven criteria with levels 0–4 in generation and updates.
+- [SCHEDULE_PRIORITIES_ENGINEERING_LOG.md](SCHEDULE_PRIORITIES_ENGINEERING_LOG.md): How the weighted generator was built, calibrated and fixed — good and bad decisions, measurements per version, and the test process.
 
 ## Engine
 

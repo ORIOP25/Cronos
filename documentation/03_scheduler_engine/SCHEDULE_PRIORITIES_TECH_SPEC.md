@@ -276,6 +276,7 @@ Verificação manual depois do PR 3: pôr "Acabar os módulos o mais cedo possí
 ## Related Documents
 
 - [WBS — Prioridades do horário](SCHEDULE_PRIORITIES_WBS.md)
+- [Registo de engenharia — Gerador com prioridades](SCHEDULE_PRIORITIES_ENGINEERING_LOG.md)
 - [Scheduler Engine](README.md)
 - [Scheduler V1 Tech Spec](SCHEDULER_V1_TECH_SPEC_V2.md)
 - [Tech Spec — Prioridade a quem tem pouca disponibilidade](AVAILABILITY_PRIORITY_TECH_SPEC.md)
