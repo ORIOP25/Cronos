@@ -148,6 +148,7 @@ Run the narrowest proof during the TDD cycle. Open a pull request for the full C
 | Frontend route or user journey | The above, then `e2e --project <name> -- -g <test title>` for the changed scenario when Clerk test inputs exist. Run the whole project once before the pull request. |
 | Scheduler solver | `fast --scope backend -- -k scheduler`. CI runs the `slow_solver` test in `e2e-runtime`. |
 | Scheduler jobs, proposals, or API | `integration -- -k scheduler`. CI does not run `test_scheduler_v1_api.py` or `test_scheduler_v1_lifecycle.py`. |
+| Priority benchmark | In the backend test image: `python -m app.scheduler.lab.priority_bench --scenario scale-3 --profile recommended --repetitions 3 --output /workspace/.test-artifacts/priority-bench.json`. Repeat `--scenario` and `--profile` for more cases; use `--scenario pilot-48` for the sample CSV pilot, `--scenario pilot-real` for the realistic pilot school (`lab/realistic_pilot.py`) or `--input /workspace/.test-artifacts/snapshot.json` for a JSON bundle. Keep exported schedules and input bundles under `.test-artifacts/` or another local path, outside source control. |
 | CI, runner, or scripts | `npm run test:scripts` in `frontend/`. |
 
 ### Inspect without changing state

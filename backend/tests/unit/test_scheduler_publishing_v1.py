@@ -25,7 +25,7 @@ from app.scheduler.domain.candidate import (
 from app.scheduler.domain.candidate_validation import ValidationReport
 from app.scheduler.domain.debt import RecoveryAllocation
 from app.scheduler.domain.diagnostics import Diagnosis, DiagnosisCode, EvidenceKind
-from app.scheduler.domain.priorities import CRITERION_KEYS, PriorityWeights
+from app.scheduler.domain.priorities import CRITERION_KEYS, UNIT_COSTS, PriorityWeights
 from app.scheduler.domain.priority_metrics import measure_priority_metrics, priority_cost
 from app.scheduler.domain.projection import ModuleRequirement, ModuleSlice
 from app.scheduler.domain.quality import InitialQualityMetrics
@@ -257,7 +257,11 @@ def test_subject_pace_summary_is_per_class_while_cost_uses_the_total():
 
     assert measured["subject_pace"] == 20
     assert payload.metrics["priority_summary"]["proposal"]["subject_pace"] == 10
-    assert priority_cost(measured, PriorityWeights(levels), origin=school.origin) == 40
+    # Level 2 doubles the calibrated unit cost of the 20-day total (T13).
+    assert (
+        priority_cost(measured, PriorityWeights(levels), origin=school.origin)
+        == 2 * UNIT_COSTS["subject_pace"] * 20
+    )
 
 
 def _credit_lesson(lesson_id, day, credit):

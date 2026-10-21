@@ -34,8 +34,9 @@ from app.scheduler.domain.candidate import (
 from app.scheduler.domain.candidate_validation import validate_candidate
 from app.scheduler.domain.capacity import available_rooms, eligible_periods
 from app.scheduler.domain.diagnostics import diagnose_joint_isolation
+from app.scheduler.domain.priority_metrics import measure_priority_metrics, priority_cost
 from app.scheduler.domain.quality import SearchEvidence, measure_initial_quality
-from app.scheduler.domain.recovery import RecoveryPolicy, recovery_vector
+from app.scheduler.domain.recovery import RecoveryPolicy, measure_disruption, recovery_vector
 from app.scheduler.domain.results import (
     OUTCOME_CANCELLED,
     OUTCOME_COMPLETE,
@@ -382,6 +383,8 @@ def _room_pass(
     guarded: bool,
 ) -> CandidateSchedule:
     """Room pass (T11). Guarded on the exact path: kept only when the vector does not get worse (T12)."""
+    if snapshot.priority_weights is not None and snapshot.priority_weights.class_same_room == 0:
+        return candidate
     passed = assign_rooms_by_period(
         snapshot,
         candidate,
@@ -450,10 +453,31 @@ def _joint_search(
     constructive_start = monotonic()
     phase_started("CONSTRUCTIVE")
     constructed = (
-        construct_schedule(snapshot, periods, deadline=hard_deadline, should_cancel=should_cancel)
+        construct_schedule(
+            snapshot,
+            periods,
+            deadline=hard_deadline,
+            should_cancel=should_cancel,
+            **(
+                {"weights": snapshot.priority_weights}
+                if snapshot.priority_weights is not None
+                else {}
+            ),
+        )
         if incumbent is None
         else None
     )
+    priorities_followed = constructed is not None and snapshot.priority_weights is not None
+    if (
+        constructed is None
+        and incumbent is None
+        and snapshot.priority_weights is not None
+        and monotonic() < hard_deadline
+        and not (should_cancel is not None and should_cancel())
+    ):
+        constructed = construct_schedule(
+            snapshot, periods, deadline=hard_deadline, should_cancel=should_cancel
+        )
     phase_finished(
         "CONSTRUCTIVE",
         started_at=constructive_start,
@@ -475,6 +499,7 @@ def _joint_search(
             rounds=rounds,
             best_bound=best_bound,
             best_bound_proven=best_bound_proven,
+            priorities_followed=priorities_followed,
         )
 
     if constructed is not None and stop_at_first_complete:
@@ -730,6 +755,7 @@ def _constructive_outcome(
     rounds: int,
     best_bound: int | None,
     best_bound_proven: bool,
+    priorities_followed: bool = False,
 ) -> SearchOutcome:
     """Wrap an already validated constructive candidate as a search outcome.
 
@@ -739,7 +765,15 @@ def _constructive_outcome(
     certificate.
     """
     evidence = SearchEvidence(
-        objective_scope="CONSTRUCTIVE_RECOVERY" if profile.adaptive else "CONSTRUCTIVE_INITIAL",
+        objective_scope=(
+            "CONSTRUCTIVE_RECOVERY_PRIORITIES"
+            if profile.adaptive and priorities_followed
+            else "CONSTRUCTIVE_PRIORITIES"
+            if priorities_followed
+            else "CONSTRUCTIVE_RECOVERY"
+            if profile.adaptive
+            else "CONSTRUCTIVE_INITIAL"
+        ),
         stages=(),
         certified_stages=0,
         stop_reason="CONSTRUCTIVE_RECOVERY" if profile.adaptive else "CONSTRUCTIVE",
@@ -962,8 +996,22 @@ def search_adaptive_schedule(
         phase_start = monotonic()
         phase_started("RECOVERY_RETAIN")
         local = construct_recovery(
-            planning, periods, deadline=deadline, should_cancel=should_cancel
+            planning,
+            periods,
+            deadline=deadline,
+            should_cancel=should_cancel,
+            weights=planning.priority_weights,
         )
+        local_weighted = local is not None and planning.priority_weights is not None
+        if (
+            local is None
+            and planning.priority_weights is not None
+            and monotonic() < deadline
+            and not (should_cancel is not None and should_cancel())
+        ):
+            local = construct_recovery(
+                planning, periods, deadline=deadline, should_cancel=should_cancel
+            )
         phase_finished(
             "RECOVERY_RETAIN",
             started_at=phase_start,
@@ -979,7 +1027,26 @@ def search_adaptive_schedule(
             deadline=deadline,
             should_cancel=should_cancel,
             weekly_reference=baseline,
+            **(
+                {"weights": planning.priority_weights}
+                if planning.priority_weights is not None
+                else {}
+            ),
         )
+        rebuilt_weighted = rebuilt is not None and planning.priority_weights is not None
+        if (
+            rebuilt is None
+            and planning.priority_weights is not None
+            and monotonic() < deadline
+            and not (should_cancel is not None and should_cancel())
+        ):
+            rebuilt = construct_schedule(
+                planning,
+                periods,
+                deadline=deadline,
+                should_cancel=should_cancel,
+                weekly_reference=baseline,
+            )
         phase_finished(
             "RECOVERY_REBUILD",
             started_at=phase_start,
@@ -988,8 +1055,8 @@ def search_adaptive_schedule(
         if should_cancel is not None and should_cancel():
             return _cancelled(start, "The request was cancelled during repair.")
         candidates = [
-            _room_pass(planning, profile, row, guarded=False)
-            for row in (local, rebuilt)
+            (_room_pass(planning, profile, row, guarded=False), weighted)
+            for row, weighted in ((local, local_weighted), (rebuilt, rebuilt_weighted))
             if row is not None
         ]
         if not candidates:
@@ -1019,7 +1086,31 @@ def search_adaptive_schedule(
                 {},
                 None,
             )
-        candidate = min(candidates, key=lambda row: profile.vector(planning, row))
+        if planning.priority_weights is None:
+            candidate, priorities_followed = min(
+                candidates, key=lambda item: profile.vector(planning, item[0])
+            )
+        else:
+
+            def weighted_cost(candidate: CandidateSchedule) -> int:
+                changes = len(
+                    measure_disruption(
+                        planning,
+                        baseline,
+                        candidate,
+                        policy,
+                        prior_changes=prior_changes,
+                    ).changes
+                )
+                metrics = measure_priority_metrics(planning, candidate, changed_lessons=changes)
+                return priority_cost(metrics, planning.priority_weights, origin=planning.origin)
+
+            scored = [(row, weighted, weighted_cost(row)) for row, weighted in candidates]
+            best_cost = min(cost for _candidate, _weighted, cost in scored)
+            tied = [row for row in scored if row[2] == best_cost]
+            candidate, priorities_followed, _cost = min(
+                tied, key=lambda item: profile.vector(planning, item[0])
+            )
         return _constructive_outcome(
             planning,
             profile,
@@ -1032,6 +1123,7 @@ def search_adaptive_schedule(
             rounds=0,
             best_bound=None,
             best_bound_proven=False,
+            priorities_followed=priorities_followed,
         )
     return _joint_search(
         snapshot,
