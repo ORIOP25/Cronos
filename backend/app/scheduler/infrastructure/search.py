@@ -470,6 +470,7 @@ def _joint_search(
     priorities_followed = constructed is not None and snapshot.priority_weights is not None
     if (
         constructed is None
+        and incumbent is None
         and snapshot.priority_weights is not None
         and monotonic() < hard_deadline
         and not (should_cancel is not None and should_cancel())

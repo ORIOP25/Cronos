@@ -25,6 +25,7 @@ from app.scheduler.infrastructure.placement_model import (
     STATUS_INCONCLUSIVE as PLACEMENT_INCONCLUSIVE,
 )
 from app.scheduler.infrastructure.placement_model import PlacementOutcome
+from app.scheduler.lab.recovery import laboratory_policy
 from app.scheduler.lab.scale import build_scale_fixture
 from tests.unit.test_scheduler_generation_quality_v1 import home_room_fixture
 from tests.unit.test_scheduler_recovery_solver_v1 import POLICY
@@ -419,3 +420,31 @@ def test_r23_the_stop_at_first_placement_route_reaches_zero_avoidable_room_chang
     assert validate_candidate(snapshot, outcome.candidate).valid
     assert home_room_misses(snapshot, outcome.candidate) == 0
     assert avoidable_room_changes(snapshot, outcome.candidate) == 0
+
+
+def test_joint_search_with_a_published_incumbent_never_builds_the_unweighted_fallback(
+    monkeypatch,
+):
+    """T11: the unweighted fallback replaces only a missing weighted construction."""
+    fixture = build_scale_fixture(6, seed=1)
+    baseline = search_module.construct_schedule(fixture.snapshot, fixture.periods)
+    snapshot = replace(
+        fixture.snapshot,
+        strategy=SchedulingStrategy.ADAPTIVE_RECOVERY,
+        baseline_lessons=baseline.lessons,
+        priority_weights=PriorityWeights(DEFAULT_LEVELS),
+    )
+    calls = []
+    original = search_module.construct_schedule
+
+    def recording(*args, **kwargs):
+        calls.append(kwargs.get("weights"))
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(search_module, "construct_schedule", recording)
+
+    search_module.search_adaptive_schedule(
+        snapshot, fixture.periods, baseline, laboratory_policy(snapshot), time_limit_seconds=2
+    )
+
+    assert calls == []
