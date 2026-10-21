@@ -294,6 +294,16 @@ class AvailabilityLedger:
             self.refused += 1
         return not blocked
 
+    def cannot_finish(self, period: Period) -> bool:
+        """True when a resource has more minutes left than eligible minutes from this period.
+
+        Capacity counts each eligible period once, so it never undercounts: the pass
+        that reaches this state ends with missing hours.
+        """
+        return any(
+            track.demand > track.capacity_from(period.start_utc) for track in self._tracks.values()
+        )
+
     def place(self, assignment: Assignment, minutes: int) -> None:
         for key in resource_keys(assignment):
             self._tracks[key].demand -= minutes

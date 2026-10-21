@@ -1,7 +1,13 @@
 """WBS S1: availability priority ledger (tech spec T01-T06, T08, T14) and risks R04, R18-R21."""
 
+from dataclasses import replace
 from datetime import date, time, timedelta
+from time import monotonic
 
+import pytest
+
+import app.scheduler.infrastructure.constructive as constructive
+import app.scheduler.infrastructure.recovery_construction as recovery_construction
 from app.scheduler.domain.availability_priority import AvailabilityLedger, is_avoided, on_pace
 from app.scheduler.domain.calendar import normalize_period
 from app.scheduler.domain.candidate import (
@@ -388,10 +394,10 @@ def test_r06_preferred_blocks_take_every_lesson_when_they_have_room():
     assert all(lesson.period.start_local.hour in (9, 10) for lesson in candidate.lessons)
 
 
-def test_r07_a_dead_end_caused_by_evitar_is_repaired_by_the_relaxed_pass():
+def r07_scenario() -> PlanningSnapshot:
     # T1 (teacher 7): Evitar on Monday and Tuesday, only 9h on Wednesday-Friday.
     # T2 (teacher 8): only 9h on Wednesday-Friday. Both teach class 1, 3 h each.
-    scenario = snapshot(
+    return snapshot(
         (
             assignment(1, teacher_id=7, class_ids=(1,), minutes=180),
             assignment(2, teacher_id=8, class_ids=(1,), minutes=180),
@@ -404,6 +410,10 @@ def test_r07_a_dead_end_caused_by_evitar_is_repaired_by_the_relaxed_pass():
         ),
     )
 
+
+def test_r07_a_dead_end_caused_by_evitar_is_repaired_by_the_relaxed_pass():
+    scenario = r07_scenario()
+
     candidate = construct_schedule(scenario, horizon_periods(1))
 
     assert candidate is not None
@@ -414,6 +424,58 @@ def test_r07_a_dead_end_caused_by_evitar_is_repaired_by_the_relaxed_pass():
     assert all(lesson.period.school_date == MONDAY for lesson in first)
     assert len(second) == 3
     assert all(lesson.period.school_date.weekday() in (2, 3, 4) for lesson in second)
+
+
+def strict_construction(scenario, periods, should_cancel):
+    return constructive._construct_pass(
+        scenario,
+        periods,
+        deadline=None,
+        should_cancel=should_cancel,
+        weekly_reference=None,
+        weights=None,
+        strict=True,
+    )
+
+
+def strict_recovery(scenario, periods, should_cancel):
+    return recovery_construction._construct_recovery(
+        replace(scenario, strategy=SchedulingStrategy.ADAPTIVE_RECOVERY),
+        periods,
+        deadline=monotonic() + 60,
+        should_cancel=should_cancel,
+        weights=None,
+        strict=True,
+    )
+
+
+@pytest.mark.parametrize("strict_pass", [strict_construction, strict_recovery])
+def test_r07_the_strict_pass_gives_up_once_class_1_has_more_hours_than_periods_left(strict_pass):
+    # The strict pass refuses T1's Evitar on Monday and Tuesday. From Tuesday 16h the
+    # class has 6 h left and only 5 periods (Tuesday 16h-18h, Wednesday-Friday 9h).
+    checks = []
+
+    def should_cancel() -> bool:
+        checks.append(True)
+        return False
+
+    candidate, refused = strict_pass(r07_scenario(), horizon_periods(1), should_cancel)
+
+    assert candidate is None
+    assert refused > 0
+    # One check per assignment, then one per period up to Tuesday 16h, never Wednesday.
+    assert len(checks) == 2 + 15
+
+
+def test_cannot_finish_once_a_resource_has_more_minutes_left_than_its_periods():
+    first_days = week_periods()[:5]
+    row = assignment(1, teacher_id=1, class_ids=(1,))
+    ledger = AvailabilityLedger.build(snapshot((row,)), {1: first_days}, {1: 240})
+
+    assert ledger.cannot_finish(first_days[1]) is False
+    assert ledger.cannot_finish(first_days[2]) is True
+    ledger.place(row, 60)
+    assert ledger.cannot_finish(first_days[2]) is False
 
 
 def test_is_avoided_flags_the_evitar_of_the_teacher_or_a_class_and_nothing_else():
