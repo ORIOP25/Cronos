@@ -36,6 +36,8 @@ UNIT_COSTS = MappingProxyType(
         "update_stability": 1200,
     }
 )
+# One day past the preferred end: 600 moved lessons at equal levels, 1 200 at recommended levels.
+LATE_DAY_COST = 720_000
 
 
 @dataclass(frozen=True, init=False)

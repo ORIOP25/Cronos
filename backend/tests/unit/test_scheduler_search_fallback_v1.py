@@ -453,11 +453,14 @@ def test_joint_search_with_a_published_incumbent_never_builds_the_unweighted_fal
     assert calls == []
 
 
-def _weighted_update_choice(monkeypatch, *, preferred_days_after_baseline: int, late_days: int):
-    """Two stubbed repairs: the baseline's end (cost 1) and a dearer-free later one (cost 0).
+def _weighted_update_choice(
+    monkeypatch, *, preferred_days_after_baseline: int, late_days: int, costs=(1, 0)
+):
+    """Two stubbed repairs: the baseline (cost ``costs[0]``) and a later one (``costs[1]``).
 
     The late repair adds one lesson ``late_days`` after the baseline's last lesson.
-    Returns the candidate the update choice picks.
+    Returns the candidate the update choice picks, both repairs, and the
+    ``preferred_end_date`` each ``priority_cost`` call received.
     """
     fixture = build_scale_fixture(6, seed=1)
     baseline = search_module.construct_schedule(fixture.snapshot, fixture.periods)
@@ -478,8 +481,9 @@ def _weighted_update_choice(monkeypatch, *, preferred_days_after_baseline: int, 
     )
     early = baseline
     late = CandidateSchedule((*baseline.lessons, extra))
-    costs = {id(early): 1, id(late): 0}
+    cost_of = {id(early): costs[0], id(late): costs[1]}
     chosen = []
+    preferred_end_dates = []
 
     monkeypatch.setattr(search_module, "construct_recovery", lambda *_a, **_k: late)
     monkeypatch.setattr(search_module, "construct_schedule", lambda *_a, **_k: early)
@@ -489,9 +493,12 @@ def _weighted_update_choice(monkeypatch, *, preferred_days_after_baseline: int, 
     )
     monkeypatch.setattr(search_module, "recovery_vector", lambda *_a, **_k: ())
     monkeypatch.setattr(search_module, "measure_priority_metrics", lambda _s, row, **_k: row)
-    monkeypatch.setattr(
-        search_module, "priority_cost", lambda metrics, _weights, **_k: costs[id(metrics)]
-    )
+
+    def recording_cost(metrics, _weights, *, preferred_end_date=None, **_k):
+        preferred_end_dates.append(preferred_end_date)
+        return cost_of[id(metrics)]
+
+    monkeypatch.setattr(search_module, "priority_cost", recording_cost)
     monkeypatch.setattr(
         search_module,
         "_constructive_outcome",
@@ -506,25 +513,26 @@ def _weighted_update_choice(monkeypatch, *, preferred_days_after_baseline: int, 
         stop_at_first_complete=True,
     )
     assert len(chosen) == 1
-    return chosen[0], early, late
+    return chosen[0], early, late, preferred_end_dates, snapshot.preferred_end_date
 
 
-def test_weighted_update_prefers_the_repair_inside_the_window_over_a_cheaper_one_past_it(
+def test_weighted_update_passes_the_preferred_end_to_the_cost_and_takes_the_cheapest(
     monkeypatch,
 ):
-    """T12: a repair that finishes after the preferred end loses to one that does not."""
-    chosen, early, _late = _weighted_update_choice(
-        monkeypatch, preferred_days_after_baseline=0, late_days=7
+    """T12: lateness is priced inside the cost, so a cheaper repair past the end can win."""
+    chosen, _early, late, preferred_end_dates, preferred_end = _weighted_update_choice(
+        monkeypatch, preferred_days_after_baseline=0, late_days=7, costs=(1_000_000, 0)
     )
 
-    assert chosen is early
+    assert chosen is late
+    assert preferred_end_dates == [preferred_end, preferred_end]
 
 
-def test_weighted_update_lets_the_cost_decide_when_both_repairs_finish_in_the_window(
+def test_weighted_update_lets_the_cost_decide_between_repairs_inside_the_window(
     monkeypatch,
 ):
-    """T12: days past the preferred end are clipped at zero, so the cost decides inside it."""
-    chosen, _early, late = _weighted_update_choice(
+    """T12: when both repairs finish in the window, the cheaper one wins."""
+    chosen, _early, late, _dates, _end = _weighted_update_choice(
         monkeypatch, preferred_days_after_baseline=7, late_days=7
     )
 
