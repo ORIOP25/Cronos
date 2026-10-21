@@ -9,10 +9,13 @@ fallback or an inconclusive outcome that keeps its evidence and statistics.
 from __future__ import annotations
 
 from dataclasses import replace
+from datetime import time, timedelta
+from types import SimpleNamespace
 
 import pytest
 
 import app.scheduler.infrastructure.search as search_module
+from app.scheduler.domain.calendar import normalize_period
 from app.scheduler.domain.candidate import CandidateSchedule, HomeRoom, SchedulingStrategy
 from app.scheduler.domain.candidate_validation import validate_candidate
 from app.scheduler.domain.home_rooms import avoidable_room_changes, home_room_misses
@@ -448,3 +451,55 @@ def test_joint_search_with_a_published_incumbent_never_builds_the_unweighted_fal
     )
 
     assert calls == []
+
+
+def test_weighted_update_prefers_the_earlier_finish_before_a_cheaper_later_one(monkeypatch):
+    """T12: the earlier finish wins the update choice even when the later one costs less."""
+    fixture = build_scale_fixture(6, seed=1)
+    baseline = search_module.construct_schedule(fixture.snapshot, fixture.periods)
+    snapshot = replace(
+        fixture.snapshot,
+        strategy=SchedulingStrategy.ADAPTIVE_RECOVERY,
+        baseline_lessons=baseline.lessons,
+        priority_weights=PriorityWeights(DEFAULT_LEVELS),
+    )
+    latest = max(lesson.period.school_date for lesson in baseline.lessons)
+    later_period = normalize_period(
+        latest + timedelta(days=7), time(9), time(10), snapshot.timezone_name
+    )
+    extra = replace(
+        baseline.lessons[0],
+        lesson_id=max(lesson.lesson_id for lesson in baseline.lessons) + 1,
+        period=later_period,
+    )
+    early = baseline
+    late = CandidateSchedule((*baseline.lessons, extra))
+    costs = {id(early): 1, id(late): 0}
+    chosen = []
+
+    monkeypatch.setattr(search_module, "construct_recovery", lambda *_a, **_k: late)
+    monkeypatch.setattr(search_module, "construct_schedule", lambda *_a, **_k: early)
+    monkeypatch.setattr(search_module, "_room_pass", lambda _s, _p, row, **_k: row)
+    monkeypatch.setattr(
+        search_module, "measure_disruption", lambda *_a, **_k: SimpleNamespace(changes=())
+    )
+    monkeypatch.setattr(search_module, "recovery_vector", lambda *_a, **_k: ())
+    monkeypatch.setattr(search_module, "measure_priority_metrics", lambda _s, row, **_k: row)
+    monkeypatch.setattr(
+        search_module, "priority_cost", lambda metrics, _weights, **_k: costs[id(metrics)]
+    )
+    monkeypatch.setattr(
+        search_module,
+        "_constructive_outcome",
+        lambda _planning, _profile, candidate, **kwargs: chosen.append(candidate) or candidate,
+    )
+
+    search_module.search_adaptive_schedule(
+        snapshot,
+        fixture.periods,
+        baseline,
+        laboratory_policy(snapshot),
+        stop_at_first_complete=True,
+    )
+
+    assert chosen == [early]
