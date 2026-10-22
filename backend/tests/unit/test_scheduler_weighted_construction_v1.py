@@ -707,3 +707,45 @@ def test_weighted_strict_pass_never_dodges_an_evitar_hour_by_teaching_after_the_
 
     assert result is not None
     assert [row.period for row in result.lessons] == [in_window]
+
+
+def scarce_class_pass(day_slots: int, minutes: int):
+    """One class with an option at each hour of a Monday; the previous Monday's 9h is empty.
+
+    That empty slot makes the weekly reference EMPTY, so the 9h option starts at -480
+    (weekly stability at level 1, unit cost 8, 60 minutes). Scarcity adds up to 32 x credit.
+    """
+    unavailable = (Unavailability(UnavailableResource.CLASS, 1, period(0, 9)),)
+    periods = (period(0, 9), *(period(7, 9 + hour) for hour in range(day_slots)))
+    row = assignment(1, teacher_id=1, class_id=1, minutes=minutes)
+    school = make_snapshot((row,), periods, unavailable=unavailable)
+    levels = dict.fromkeys(CRITERION_KEYS, 0)
+    levels["finish_early"] = 1
+    levels["weekly_stability"] = 1
+    candidate, _refused = constructive._construct_pass(
+        school,
+        periods,
+        deadline=None,
+        should_cancel=None,
+        weekly_reference=None,
+        weights=PriorityWeights(levels),
+        strict=False,
+    )
+    return candidate
+
+
+def first_taught_start(candidate):
+    return min(lesson.period.start_utc for lesson in candidate.lessons)
+
+
+def test_scarcity_teaches_a_tight_class_its_negative_option_now_and_leaves_an_ample_one_empty():
+    """T07: an empty hour in a tight calendar is not free, so the scarcity term admits it."""
+    # Tight: 120 minutes in 240 minutes of capacity, not necessary: teach 9h now.
+    tight = scarce_class_pass(day_slots=4, minutes=120)
+    # Ample: 60 minutes in 480 minutes of capacity: 9h stays empty, the pace teaches 10h.
+    ample = scarce_class_pass(day_slots=8, minutes=60)
+
+    assert tight is not None
+    assert first_taught_start(tight) == period(7, 9).start_utc
+    assert ample is not None
+    assert first_taught_start(ample) == period(7, 10).start_utc

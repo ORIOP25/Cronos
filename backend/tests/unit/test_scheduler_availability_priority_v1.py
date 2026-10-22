@@ -2,6 +2,7 @@
 
 from dataclasses import replace
 from datetime import date, time, timedelta
+from fractions import Fraction
 from time import monotonic
 
 import pytest
@@ -491,3 +492,20 @@ def test_is_avoided_flags_the_evitar_of_the_teacher_or_a_class_and_nothing_else(
     assert is_avoided(scenario, by_teacher, first_day) is True
     assert is_avoided(scenario, by_class, first_day) is True
     assert is_avoided(scenario, neither, first_day) is False
+
+
+def test_tightness_is_the_demand_over_the_capacity_left_capped_at_one():
+    """T07: a full resource is tight, a loose one counts demand over capacity, an untracked one not at all."""
+    row = assignment(1, teacher_id=1, class_ids=(1,), minutes=120)
+    full = (period(0, 9), period(0, 10))
+    loose = (period(0, 9), period(0, 10), period(0, 11), period(0, 12))
+
+    full_ledger = AvailabilityLedger.build(snapshot((row,)), {1: full}, {1: 120})
+    loose_ledger = AvailabilityLedger.build(snapshot((row,)), {1: loose}, {1: 120})
+    untracked = AvailabilityLedger.build(snapshot((row,)), {1: full}, {1: 0})
+
+    assert full_ledger.tightness(row, full[0]) == 1
+    assert loose_ledger.tightness(row, loose[0]) == Fraction(1, 2)
+    # Only one hour is left from 12h, so demand exceeds capacity: capped at one.
+    assert loose_ledger.tightness(row, loose[3]) == 1
+    assert untracked.tightness(row, full[0]) == 0

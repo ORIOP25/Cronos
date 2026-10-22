@@ -42,6 +42,7 @@ from app.scheduler.infrastructure.constructive import (
     _presence_left_fits,
     _resource_keys,
     _room_value,
+    _scarcity,
     _select_period,
     _slots_by_day,
     strict_window_periods,
@@ -493,11 +494,14 @@ def _construct_recovery(
                     pace_lag=_pace_lag(identity, pace_peers[identity], required, remaining),
                 )
                 allowed_rooms = []
+                scarcity = _scarcity(weights, ledger, assignment, period, credit)
                 for room in rooms:
                     value = _room_value(
                         weights, measures, assignment, room, home_rooms, credit=credit
                     )
-                    if necessary or _fills_hour(weights, measures, value, strict=strict, fill=fill):
+                    if necessary or _fills_hour(
+                        weights, measures, value + scarcity, strict=strict, fill=fill
+                    ):
                         allowed_rooms.append((room, value))
                         scores[(identity, room)] = (necessary, value, urgency)
                 if allowed_rooms:

@@ -40,6 +40,8 @@ UNIT_COSTS = MappingProxyType(
 )
 # One day past the preferred end: 600 moved lessons at equal levels (4 x 2 880 000 against 4 x 4 800).
 LATE_DAY_COST = 2_880_000
+# An empty hour in a fully booked calendar is not free, because the lesson must still be taught later.
+SCARCITY_UNIT_COST = 32
 
 
 @dataclass(frozen=True, init=False)

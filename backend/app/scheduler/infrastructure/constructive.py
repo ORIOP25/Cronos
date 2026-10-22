@@ -45,7 +45,7 @@ from app.scheduler.domain.capacity import (
     eligible_periods,
     residual_minutes,
 )
-from app.scheduler.domain.priorities import PriorityWeights
+from app.scheduler.domain.priorities import SCARCITY_UNIT_COST, PriorityWeights
 from app.scheduler.domain.priority_value import (
     WeeklyHistory,
     WeeklyReference,
@@ -260,6 +260,23 @@ def _fills_hour(
         return value > 0
     preferences = {key: measures[key] for key in _PREFERENCE_KEYS if key in measures}
     return value - option_value(weights, preferences) > 0
+
+
+def _scarcity(
+    weights: PriorityWeights,
+    ledger: AvailabilityLedger,
+    assignment: Assignment,
+    period: Period,
+    credit: int,
+) -> int:
+    """T07: what an empty hour in a tight calendar would lose.
+
+    The lesson must still be taught later, so the push to teach now (finish_early) prices
+    it. With that push at Ignorar, leaving the hour empty costs nothing (I05).
+    """
+    if weights.finish_early == 0:
+        return 0
+    return round(SCARCITY_UNIT_COST * credit * ledger.tightness(assignment, period))
 
 
 def _gives_up(ledger: AvailabilityLedger, period: Period, *, strict: bool) -> bool:
@@ -1185,11 +1202,14 @@ def _construct_pass(
                     ),
                     pace_lag=_pace_lag(identity, pace_peers[identity], required, remaining),
                 )
+                scarcity = _scarcity(weights, ledger, assignment, period, credit)
                 for room in rooms:
                     value = _room_value(
                         weights, measures, assignment, room, home_rooms, credit=credit
                     )
-                    if necessary or _fills_hour(weights, measures, value, strict=strict, fill=fill):
+                    if necessary or _fills_hour(
+                        weights, measures, value + scarcity, strict=strict, fill=fill
+                    ):
                         allowed_rooms.append(room)
                         scores[(identity, room)] = (necessary, value, urgency)
                 if allowed_rooms:
