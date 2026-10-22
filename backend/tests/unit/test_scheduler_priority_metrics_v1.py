@@ -22,6 +22,7 @@ from app.scheduler.domain.priorities import (
     CRITERION_KEYS,
     LATE_DAY_COST,
     PRIORITY_MULTIPLIERS,
+    UNIT_COSTS,
     PriorityWeights,
 )
 from app.scheduler.domain.priority_metrics import measure_priority_metrics, priority_cost
@@ -340,7 +341,11 @@ def test_priority_cost_is_integer_and_weights_only_the_selected_criterion():
     stronger_class_gaps_cost = priority_cost(
         metrics, PriorityWeights(stronger_class_gaps), origin=school.origin
     )
-    assert stronger_class_gaps_cost - class_gaps_cost == 2 * metrics["class_gaps"]
+    assert stronger_class_gaps_cost - class_gaps_cost == (
+        (PRIORITY_MULTIPLIERS[3] - PRIORITY_MULTIPLIERS[2])
+        * UNIT_COSTS["class_gaps"]
+        * metrics["class_gaps"]
+    )
     assert type(class_gaps_cost) is int
 
 

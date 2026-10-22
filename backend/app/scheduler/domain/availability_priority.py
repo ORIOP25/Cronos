@@ -12,6 +12,7 @@ from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
+from fractions import Fraction
 
 from app.scheduler.domain.calendar import Period
 from app.scheduler.domain.candidate import Assignment, PlanningSnapshot, UnavailableResource
@@ -92,6 +93,16 @@ class _Track:
 
     def neutral_capacity_from(self, start: datetime) -> int:
         return self.neutral_from[bisect_left(self.starts, start)]
+
+
+def _pressure(track: _Track, start: datetime) -> Fraction:
+    """T07: demand over the capacity left from ``start``, capped at one; zero without demand."""
+    if track.demand <= 0:
+        return Fraction(0)
+    capacity = track.capacity_from(start)
+    if capacity <= track.demand:
+        return Fraction(1)
+    return Fraction(track.demand, capacity)
 
 
 def _track(
@@ -179,6 +190,16 @@ class AvailabilityLedger:
             )
         ]
         return min(paced, default=self._ceiling)
+
+    def tightness(self, assignment: Assignment, period: Period) -> Fraction:
+        """T07: the largest demand over the capacity left from this period, capped at one.
+
+        A resource without minutes left, or no tracked resource at all, is not tight.
+        """
+        return max(
+            (_pressure(track, period.start_utc) for track in self._tracks_of(assignment)),
+            default=Fraction(0),
+        )
 
     def urgency(self, assignment: Assignment, period: Period) -> int:
         """Schedule priorities T09: the smallest remaining capacity among resources

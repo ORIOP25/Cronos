@@ -45,8 +45,13 @@ from app.scheduler.domain.capacity import (
     eligible_periods,
     residual_minutes,
 )
-from app.scheduler.domain.priorities import PriorityWeights
-from app.scheduler.domain.priority_value import option_value
+from app.scheduler.domain.priorities import SCARCITY_UNIT_COST, PriorityWeights
+from app.scheduler.domain.priority_value import (
+    WeeklyHistory,
+    WeeklyReference,
+    option_value,
+    weekly_stability_measure,
+)
 from app.scheduler.domain.projection import ModuleSlice
 from app.scheduler.domain.quality import lunch_minutes_in
 from app.scheduler.domain.teacher_presence import (
@@ -160,7 +165,7 @@ def _option_measures(
     occupancy: Mapping[tuple, Sequence[tuple[int, int]]],
     day_slots: Sequence[GridSlot],
     counts_teacher_single_lessons: bool,
-    weekly_assignment_ids: Sequence[int | None],
+    weekly_references: Sequence[int | WeeklyReference],
     pace_lag: Fraction | None,
 ) -> dict[str, int]:
     """T06: the room-independent measures of one option, in lesson minutes.
@@ -201,11 +206,7 @@ def _option_measures(
             snapshot, UnavailableResource.CLASS, class_id, period
         ):
             measures["class_preferences"] = measures.get("class_preferences", 0) - credit
-    weekly_stability = sum(
-        credit if reference_id == assignment.assignment_id else -credit
-        for reference_id in weekly_assignment_ids
-        if reference_id is not None
-    )
+    weekly_stability = weekly_stability_measure(assignment.assignment_id, weekly_references, credit)
     if weekly_stability:
         measures["weekly_stability"] = weekly_stability
     if pace_lag is not None:
@@ -259,6 +260,25 @@ def _fills_hour(
         return value > 0
     preferences = {key: measures[key] for key in _PREFERENCE_KEYS if key in measures}
     return value - option_value(weights, preferences) > 0
+
+
+def _scarcity(
+    ledger: AvailabilityLedger,
+    assignment: Assignment,
+    period: Period,
+    credit: int,
+    *,
+    spread: bool,
+) -> int:
+    """T07: an empty hour in a tight calendar is not free, because the lesson must still be
+    taught later. With finish_early at Ignorar (``spread``) lessons may spread up to the
+    preferred date (D14): a calendar half booked or less spreads freely, and the push to
+    teach grows to full as the calendar fills, with ``2t - 1`` of the tightness ``t``.
+    """
+    tightness = ledger.tightness(assignment, period)
+    if spread:
+        tightness = max(Fraction(0), 2 * tightness - 1)
+    return round(SCARCITY_UNIT_COST * credit * tightness)
 
 
 def _gives_up(ledger: AvailabilityLedger, period: Period, *, strict: bool) -> bool:
@@ -751,6 +771,9 @@ def _construct_pass(
     busy: dict[tuple, list[Period]] = defaultdict(list)
     occupancy: dict[tuple, list[tuple[int, int]]] = defaultdict(list)
     weekly_pattern: dict[tuple, tuple[int, int]] = {}
+    # Weighted weekly stability compares with the previous teaching day, as the metric
+    # does; the unweighted ordering keeps its first-week pattern (I02).
+    weekly_history = WeeklyHistory(snapshot)
     if weekly_reference is not None:
         for row in weekly_reference.lessons:
             assignment = assignments.get(row.assignment_id)
@@ -765,11 +788,14 @@ def _construct_pass(
                         ),
                         (row.assignment_id, row.room_id),
                     )
-    # Weighted weekly stability follows the previous teaching week of each slot, as the
-    # metric does; the unweighted ordering keeps its first-week pattern (I02).
-    latest_week: dict[tuple, int] = (
-        {key: value[0] for key, value in weekly_pattern.items()} if weights is not None else {}
-    )
+                    if weights is not None:
+                        weekly_history.record(
+                            class_id,
+                            row.period.school_date,
+                            row.period.start_local,
+                            row.period.end_local,
+                            row.assignment_id,
+                        )
     used_ids = {row.lesson_id for row in snapshot.protected_lessons} | set(
         snapshot.reserved_lesson_ids
     )
@@ -790,7 +816,13 @@ def _construct_pass(
             )
             weekly_pattern.setdefault(slot_key, (assignment.assignment_id, room))
             if weights is not None:
-                latest_week[slot_key] = assignment.assignment_id
+                weekly_history.record(
+                    class_id,
+                    period.school_date,
+                    period.start_local,
+                    period.end_local,
+                    assignment.assignment_id,
+                )
         for key in _resource_keys(assignment, room, teacher, period.school_date):
             busy[key].append(period)
             if key[0] != "room":
@@ -1164,16 +1196,28 @@ def _construct_pass(
                     occupancy=occupancy,
                     day_slots=slots_by_day.get(period.school_date.weekday(), ()),
                     counts_teacher_single_lessons=assignment.teacher_id not in presence_rules,
-                    weekly_assignment_ids=tuple(
-                        latest_week.get((class_id, *signature)) for class_id in assignment.class_ids
+                    weekly_references=tuple(
+                        weekly_history.reference(
+                            class_id, period.school_date, period.start_local, period.end_local
+                        )
+                        for class_id in assignment.class_ids
                     ),
                     pace_lag=_pace_lag(identity, pace_peers[identity], required, remaining),
+                )
+                scarcity = _scarcity(
+                    ledger,
+                    assignment,
+                    period,
+                    credit,
+                    spread=weights.finish_early == 0,
                 )
                 for room in rooms:
                     value = _room_value(
                         weights, measures, assignment, room, home_rooms, credit=credit
                     )
-                    if necessary or _fills_hour(weights, measures, value, strict=strict, fill=fill):
+                    if necessary or _fills_hour(
+                        weights, measures, value + scarcity, strict=strict, fill=fill
+                    ):
                         allowed_rooms.append(room)
                         scores[(identity, room)] = (necessary, value, urgency)
                 if allowed_rooms:
