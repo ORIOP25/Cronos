@@ -613,7 +613,7 @@ def test_a_fill_pass_follows_the_priorities_when_empty_hours_left_both_passes_sh
 
     def fake_pass(*_args, strict, fill=False, **_kwargs):
         calls.append((strict, fill))
-        return (built if fill else None), 1
+        return (built if fill else None), 1, False
 
     monkeypatch.setattr(constructive, "_construct_pass", fake_pass)
     result = construct_schedule(None, (), weights=PriorityWeights(DEFAULT_LEVELS))
@@ -722,7 +722,7 @@ def scarce_class_pass(day_slots: int, minutes: int, *, finish_early: int = 1):
     levels = dict.fromkeys(CRITERION_KEYS, 0)
     levels["finish_early"] = finish_early
     levels["weekly_stability"] = 1
-    candidate, _refused = constructive._construct_pass(
+    candidate, _refused, _paced_out = constructive._construct_pass(
         school,
         periods,
         deadline=None,
@@ -829,3 +829,72 @@ def test_period_repair_models_keep_their_variables_hints_and_objective(monkeypat
         "c88676210ce40157",
         "ac0f6fa4c831f375",
     ]
+
+
+def run_pass(school, periods, *, weights_value, strict):
+    return constructive._construct_pass(
+        school,
+        periods,
+        deadline=None,
+        should_cancel=None,
+        weekly_reference=None,
+        weights=weights_value,
+        strict=strict,
+    )
+
+
+def pace_school(*, evitar: bool):
+    """Five teachers, each with a 10 h class of 600 min, over three weeks of 10 hours.
+
+    With ``evitar`` every teacher's Evitar covers weeks one and two, so the strict pass
+    refuses those hours and falls behind the linear pace; without it the pass stays on pace.
+    """
+    periods = tuple(
+        period(7 * week + day, hour) for week in range(3) for day in range(5) for hour in (9, 10)
+    )
+    rows = tuple(
+        assignment(identity, teacher_id=identity, class_id=identity, minutes=600)
+        for identity in range(1, 6)
+    )
+    soft = (
+        tuple(
+            Unavailability(UnavailableResource.TEACHER, identity, slot)
+            for identity in range(1, 6)
+            for slot in periods[:20]
+        )
+        if evitar
+        else ()
+    )
+    return make_snapshot(rows, periods, soft=soft), periods
+
+
+def test_a_strict_pass_behind_pace_for_two_weeks_gives_up_and_the_relaxed_pass_follows():
+    """Schedule priorities T07, pace abort: the strict pass stops early and the relaxed pass runs."""
+    school, periods = pace_school(evitar=True)
+
+    candidate, refused, paced_out = run_pass(school, periods, weights_value=weights(), strict=True)
+    relaxed, _refused, _paced = run_pass(school, periods, weights_value=weights(), strict=False)
+
+    assert candidate is None
+    assert paced_out is True
+    assert refused > 0
+    assert relaxed is not None
+    assert construct_schedule(school, periods, weights=weights()) == relaxed
+
+
+def test_a_strict_pass_on_pace_does_not_give_up():
+    school, periods = pace_school(evitar=False)
+
+    candidate, _refused, paced_out = run_pass(school, periods, weights_value=weights(), strict=True)
+
+    assert candidate is not None
+    assert paced_out is False
+
+
+def test_an_unweighted_strict_pass_never_gives_up_on_pace():
+    """I02: the pace abort is for weighted passes only."""
+    school, periods = pace_school(evitar=True)
+
+    _candidate, _refused, paced_out = run_pass(school, periods, weights_value=None, strict=True)
+
+    assert paced_out is False

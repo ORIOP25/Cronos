@@ -13,6 +13,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from fractions import Fraction
+from math import ceil
 
 from app.scheduler.domain.calendar import Period
 from app.scheduler.domain.candidate import Assignment, PlanningSnapshot, UnavailableResource
@@ -22,6 +23,12 @@ TEACHER = "teacher"
 CLASS = "class"
 RESOURCE_KINDS = frozenset((TEACHER, CLASS))
 PeriodKey = tuple[datetime, datetime]
+
+# Realistic school: a failing strict pass shows 24 h of deficit, a succeeding one at most 2 h.
+PACE_MIN_BEHIND = 5
+PACE_BEHIND_SHARE = Fraction(1, 10)
+PACE_MIN_DEFICIT_MINUTES = 10 * 60
+PACE_FALLING_WEEKS = 2
 
 
 def on_pace(demand: int, initial_demand: int, capacity_left: int, initial_capacity: int) -> bool:
@@ -93,6 +100,10 @@ class _Track:
 
     def neutral_capacity_from(self, start: datetime) -> int:
         return self.neutral_from[bisect_left(self.starts, start)]
+
+    def behind_pace(self, capacity: int) -> bool:
+        """The negation of ``on_pace``: the demand is ahead of its share of the capacity left."""
+        return self.demand * self.total > self.initial_demand * capacity
 
 
 def _pressure(track: _Track, start: datetime) -> Fraction:
@@ -242,7 +253,7 @@ class AvailabilityLedger:
             capacity = track.capacity_from(period.start_utc)
             if track.demand > capacity - period.duration_minutes:
                 return True
-            if not avoidable and track.demand * track.total > track.initial_demand * capacity:
+            if not avoidable and track.behind_pace(capacity):
                 return True
         return False
 
@@ -325,9 +336,60 @@ class AvailabilityLedger:
             track.demand > track.capacity_from(period.start_utc) for track in self._tracks.values()
         )
 
+    def pace_signal(self, start: datetime) -> PaceSignal:
+        """The tracked resources behind their linear pace from ``start``, and their deficit."""
+        tracked = [track for track in self._tracks.values() if track.demand > 0]
+        behind = 0
+        deficit = Fraction(0)
+        for track in tracked:
+            capacity = track.capacity_from(start)
+            if track.behind_pace(capacity):
+                behind += 1
+                deficit += track.demand - Fraction(track.initial_demand * capacity, track.total)
+        return PaceSignal(behind, deficit, len(tracked))
+
     def place(self, assignment: Assignment, minutes: int) -> None:
         for key in resource_keys(assignment):
             self._tracks[key].demand -= minutes
 
     def _tracks_of(self, assignment: Assignment) -> list[_Track]:
         return [self._tracks[key] for key in resource_keys(assignment) if key in self._tracks]
+
+
+@dataclass(frozen=True)
+class PaceSignal:
+    """Weekly pace state of a pass: resources behind pace, their deficit, tracked count."""
+
+    behind: int
+    deficit_minutes: Fraction
+    tracked: int
+
+    @property
+    def falling_behind(self) -> bool:
+        return (
+            self.behind >= max(PACE_MIN_BEHIND, ceil(PACE_BEHIND_SHARE * self.tracked))
+            and self.deficit_minutes >= PACE_MIN_DEFICIT_MINUTES
+        )
+
+
+class PaceWatch:
+    """Weekly pace checks of a weighted strict pass (SCHEDULE_PRIORITIES T07).
+
+    The check runs at the first period of each ISO week; the pass gives up once
+    ``PACE_FALLING_WEEKS`` checks in a row fall behind.
+    """
+
+    def __init__(self) -> None:
+        self._week: tuple[int, int] | None = None
+        self._falling_weeks = 0
+
+    def gives_up(self, ledger: AvailabilityLedger, period: Period) -> bool:
+        week = period.school_date.isocalendar()[:2]
+        if week == self._week:
+            return False
+        self._week = week
+        if ledger.pace_signal(period.start_utc).falling_behind:
+            self._falling_weeks += 1
+        else:
+            self._falling_weeks = 0
+        return self._falling_weeks >= PACE_FALLING_WEEKS
