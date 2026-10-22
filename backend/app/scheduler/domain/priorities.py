@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from fractions import Fraction
 from types import MappingProxyType
 
 CRITERION_KEYS = (
@@ -42,6 +43,8 @@ UNIT_COSTS = MappingProxyType(
 LATE_DAY_COST = 2_880_000
 # An empty hour in a fully booked calendar is not free, because the lesson must still be taught later.
 SCARCITY_UNIT_COST = 32
+# With finish_early at Ignorar, scarcity applies only from this tightness: below it the calendar has room to spread (T07).
+SPREAD_TIGHTNESS = Fraction(9, 10)
 
 
 @dataclass(frozen=True, init=False)

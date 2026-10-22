@@ -45,7 +45,7 @@ from app.scheduler.domain.capacity import (
     eligible_periods,
     residual_minutes,
 )
-from app.scheduler.domain.priorities import SCARCITY_UNIT_COST, PriorityWeights
+from app.scheduler.domain.priorities import SCARCITY_UNIT_COST, SPREAD_TIGHTNESS, PriorityWeights
 from app.scheduler.domain.priority_value import (
     WeeklyHistory,
     WeeklyReference,
@@ -263,20 +263,21 @@ def _fills_hour(
 
 
 def _scarcity(
-    weights: PriorityWeights,
     ledger: AvailabilityLedger,
     assignment: Assignment,
     period: Period,
     credit: int,
+    *,
+    spread: bool,
 ) -> int:
-    """T07: what an empty hour in a tight calendar would lose.
-
-    The lesson must still be taught later, so the push to teach now (finish_early) prices
-    it. With that push at Ignorar, leaving the hour empty costs nothing (I05).
+    """T07: an empty hour in a tight calendar is not free, because the lesson must still be
+    taught later. With finish_early at Ignorar (``spread``) the calendar has room to spread
+    lessons up to the preferred date (D14) below ``SPREAD_TIGHTNESS``, so the hour costs nothing.
     """
-    if weights.finish_early == 0:
+    tightness = ledger.tightness(assignment, period)
+    if spread and tightness < SPREAD_TIGHTNESS:
         return 0
-    return round(SCARCITY_UNIT_COST * credit * ledger.tightness(assignment, period))
+    return round(SCARCITY_UNIT_COST * credit * tightness)
 
 
 def _gives_up(ledger: AvailabilityLedger, period: Period, *, strict: bool) -> bool:
@@ -1202,7 +1203,13 @@ def _construct_pass(
                     ),
                     pace_lag=_pace_lag(identity, pace_peers[identity], required, remaining),
                 )
-                scarcity = _scarcity(weights, ledger, assignment, period, credit)
+                scarcity = _scarcity(
+                    ledger,
+                    assignment,
+                    period,
+                    credit,
+                    spread=weights.finish_early == 0,
+                )
                 for room in rooms:
                     value = _room_value(
                         weights, measures, assignment, room, home_rooms, credit=credit

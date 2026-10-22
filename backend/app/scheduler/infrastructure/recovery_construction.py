@@ -494,7 +494,13 @@ def _construct_recovery(
                     pace_lag=_pace_lag(identity, pace_peers[identity], required, remaining),
                 )
                 allowed_rooms = []
-                scarcity = _scarcity(weights, ledger, assignment, period, credit)
+                scarcity = _scarcity(
+                    ledger,
+                    assignment,
+                    period,
+                    credit,
+                    spread=weights.finish_early == 0,
+                )
                 for room in rooms:
                     value = _room_value(
                         weights, measures, assignment, room, home_rooms, credit=credit

@@ -709,7 +709,7 @@ def test_weighted_strict_pass_never_dodges_an_evitar_hour_by_teaching_after_the_
     assert [row.period for row in result.lessons] == [in_window]
 
 
-def scarce_class_pass(day_slots: int, minutes: int):
+def scarce_class_pass(day_slots: int, minutes: int, *, finish_early: int = 1):
     """One class with an option at each hour of a Monday; the previous Monday's 9h is empty.
 
     That empty slot makes the weekly reference EMPTY, so the 9h option starts at -480
@@ -720,7 +720,7 @@ def scarce_class_pass(day_slots: int, minutes: int):
     row = assignment(1, teacher_id=1, class_id=1, minutes=minutes)
     school = make_snapshot((row,), periods, unavailable=unavailable)
     levels = dict.fromkeys(CRITERION_KEYS, 0)
-    levels["finish_early"] = 1
+    levels["finish_early"] = finish_early
     levels["weekly_stability"] = 1
     candidate, _refused = constructive._construct_pass(
         school,
@@ -736,6 +736,23 @@ def scarce_class_pass(day_slots: int, minutes: int):
 
 def first_taught_start(candidate):
     return min(lesson.period.start_utc for lesson in candidate.lessons)
+
+
+def test_a_fully_booked_class_teaches_its_option_at_finish_early_zero():
+    """T07: a class with no room left is taught even with finish_early at Ignorar."""
+    booked = scarce_class_pass(day_slots=2, minutes=120, finish_early=0)
+
+    assert booked is not None
+    assert first_taught_start(booked) == period(7, 9).start_utc
+
+
+def test_below_nine_tenths_tightness_an_empty_hour_stays_empty_at_finish_early_zero():
+    """T07: at Ignorar the calendar has room to spread (D14) while tightness stays under 9/10."""
+    # 510 minutes in 600 of capacity is tightness 0.85: the 9h hour stays empty.
+    roomy = scarce_class_pass(day_slots=10, minutes=510, finish_early=0)
+
+    assert roomy is not None
+    assert first_taught_start(roomy) == period(7, 10).start_utc
 
 
 def test_scarcity_teaches_a_tight_class_its_negative_option_now_and_leaves_an_ample_one_empty():
