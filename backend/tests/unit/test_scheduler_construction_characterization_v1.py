@@ -218,9 +218,25 @@ def test_construction_campaign_profiles_cover_c01_to_c23():
 
 
 def test_construction_campaign_records_immutable_quality(monkeypatch):
+    from app.scheduler.domain.quality import SearchEvidence, measure_initial_quality
+    from app.scheduler.domain.results import SearchOutcome
     from tests._support import construction_snapshot
 
+    snapshot, _periods = base_inputs()
+    frozen = SearchOutcome(
+        "COMPLETE",
+        BASE_TYPED_CANDIDATE,
+        2,
+        SearchEvidence("FIXTURE", (), 0, "FIXTURE"),
+        "Frozen fixture",
+        0.0,
+        {},
+        measure_initial_quality(snapshot, BASE_TYPED_CANDIDATE),
+    )
     monkeypatch.setattr(construction_snapshot, "campaign_inputs", lambda _profile: base_inputs())
+    monkeypatch.setattr(
+        construction_snapshot, "search_complete_schedule", lambda *_args, **_kwargs: frozen
+    )
     record = construction_snapshot.run_profile("C01")
     assert record["status"] == "COMPLETE"
     assert record["quality"]["completion_dates"] == {"1": "2026-09-23"}
@@ -275,3 +291,27 @@ def test_construction_updates_do_not_double_count_completed_or_protected_credit(
     ]
     assert sum(row.credit_minutes for row in candidate.lessons) == 120
     assert 60 + sum(row.credit_minutes for row in candidate.lessons) == 180
+
+
+def test_construction_updates_do_not_read_update_stability():
+    from tests._support.construction_snapshot import without_update_stability_reads
+
+    snapshot, periods = base_inputs()
+    recovery = replace(snapshot, strategy=SchedulingStrategy.ADAPTIVE_RECOVERY)
+    reference = None
+    for level in range(5):
+        weights = PriorityWeights({**DEFAULT_LEVELS, "update_stability": level})
+        with without_update_stability_reads():
+            generated = construct_schedule(snapshot, periods, weights=weights)
+            retained = construct_recovery(
+                recovery, periods, weights=weights, deadline=monotonic() + 30
+            )
+        assert generated is not None
+        assert retained is not None
+        assert generated == WEIGHTED_TYPED_CANDIDATE
+        assert validate_candidate(snapshot, generated).valid
+        assert validate_candidate(recovery, retained).valid
+        pair = generated, retained
+        if reference is None:
+            reference = pair
+        assert pair == reference
