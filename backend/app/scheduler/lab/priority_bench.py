@@ -48,8 +48,6 @@ class _Scenario:
 
 def _profiles() -> dict[str, PriorityWeights]:
     important = dict.fromkeys(CRITERION_KEYS, 2)
-    finish_ignored = dict(DEFAULT_LEVELS)
-    finish_ignored["finish_early"] = 0
     class_gaps = dict(DEFAULT_LEVELS)
     class_gaps.update(class_gaps=4, finish_early=1)
     teacher_avoid = dict(DEFAULT_LEVELS)
@@ -61,7 +59,6 @@ def _profiles() -> dict[str, PriorityWeights]:
     return {
         "recommended": PriorityWeights(DEFAULT_LEVELS),
         "all-important": PriorityWeights(important),
-        "finish-early-ignore": PriorityWeights(finish_ignored),
         "class-gaps-maximum": PriorityWeights(class_gaps),
         "teacher-avoid-maximum": PriorityWeights(teacher_avoid),
         "weekly-stability-maximum": PriorityWeights(weekly),

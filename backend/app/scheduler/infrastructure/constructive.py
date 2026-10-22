@@ -270,22 +270,12 @@ def _fills_hour(
 
 
 def _scarcity(
-    ledger: AvailabilityLedger,
-    assignment: Assignment,
-    period: Period,
-    credit: int,
-    *,
-    spread: bool,
+    ledger: AvailabilityLedger, assignment: Assignment, period: Period, credit: int
 ) -> int:
     """T07: an empty hour in a tight calendar is not free, because the lesson must still be
-    taught later. With finish_early at Ignorar (``spread``) lessons may spread up to the
-    preferred date (D14): a calendar half booked or less spreads freely, and the push to
-    teach grows to full as the calendar fills, with ``2t - 1`` of the tightness ``t``.
+    taught later. The push grows with the tightness of the calendar, up to full.
     """
-    tightness = ledger.tightness(assignment, period)
-    if spread:
-        tightness = max(Fraction(0), 2 * tightness - 1)
-    return round(SCARCITY_UNIT_COST * credit * tightness)
+    return round(SCARCITY_UNIT_COST * credit * ledger.tightness(assignment, period))
 
 
 def _gives_up(ledger: AvailabilityLedger, period: Period, *, strict: bool) -> bool:
@@ -1222,13 +1212,7 @@ def _construct_pass(
                     ),
                     pace_lag=_pace_lag(identity, pace_peers[identity], required, remaining),
                 )
-                scarcity = _scarcity(
-                    ledger,
-                    assignment,
-                    period,
-                    credit,
-                    spread=weights.finish_early == 0,
-                )
+                scarcity = _scarcity(ledger, assignment, period, credit)
                 base_value = option_value(weights, measures)
                 same_room_value = option_value(weights, {"class_same_room": -credit})
                 preference_value = _preference_value(weights, measures)
