@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Cada escola passa a escolher, de 0 a 4, a importância de 11 critérios do horário. O gerador equilibra os critérios segundo esses pesos, e nenhum critério ganha sempre aos outros.
+Cada escola escolhe, de 0 a 4, a importância de 10 critérios do horário. "Acabar os módulos o mais cedo possível" é fixo no máximo (D19). O gerador equilibra os critérios segundo esses pesos, e nenhum critério ganha sempre aos outros.
 
 **Estado:** pronto para implementação. Textos do ecrã, valores recomendados e D15 confirmados pelo responsável de produto a 19 de outubro de 2026.
 **Base:** `main` em `3c312d17`, Alembic `0007_class_home_room`. Migração nova: `0008_schedule_priorities`.
@@ -43,7 +43,7 @@ Uma ordem fixa produz absurdos: acabar os módulos um dia mais cedo ganha sempre
 | ID | Decisão |
 | :--- | :--- |
 | D01 | O gerador deixa de ter preferências escondidas. Cada preferência do gerador passa a ser um dos critérios da D02, ou deixa de existir. A escola tem o controlo do que prioriza. |
-| D02 | Lista fixa de 11 critérios, pela ordem do ecrã: (1) Acabar os módulos o mais cedo possível; (2) Evitar tempos livres dos professores; (3) Evitar tempos livres das turmas; (4) Evitar que um professor venha à escola para uma só aula; (5) Evitar que uma turma venha à escola para uma só aula; (6) Respeitar Evitar e Preferencial dos professores; (7) Respeitar Evitar e Preferencial das turmas; (8) Manter a turma na mesma sala; (9) Manter o horário igual de semana para semana; (10) Avançar as disciplinas ao mesmo ritmo; (11) Nas atualizações, mexer pouco no horário publicado. O critério 5 foi pedido pelo responsável de produto a 19 de outubro de 2026: é a escola que declara a sua importância. |
+| D02 | Lista fixa de 11 critérios, pela ordem do ecrã (o (1) é fixo desde a D19; o ecrã mostra 10): (1) Acabar os módulos o mais cedo possível; (2) Evitar tempos livres dos professores; (3) Evitar tempos livres das turmas; (4) Evitar que um professor venha à escola para uma só aula; (5) Evitar que uma turma venha à escola para uma só aula; (6) Respeitar Evitar e Preferencial dos professores; (7) Respeitar Evitar e Preferencial das turmas; (8) Manter a turma na mesma sala; (9) Manter o horário igual de semana para semana; (10) Avançar as disciplinas ao mesmo ritmo; (11) Nas atualizações, mexer pouco no horário publicado. O critério 5 foi pedido pelo responsável de produto a 19 de outubro de 2026: é a escola que declara a sua importância. |
 | D03 | Escala de 0 a 4: Ignorar, Pouco importante, Importante, Muito importante, Prioridade máxima. Cada nível vale o dobro do anterior. Ignorar tira o critério da conta. |
 | D04 | As regras obrigatórias não têm peso e nunca se quebram: Impossível, mínimo de presença e furo máximo, hora de almoço, tipo de sala e lugares, ordem dos módulos, janela de estabilidade, data preferida e data limite como hoje, e a prioridade a quem tem pouca disponibilidade (serve para o horário caber). |
 | D05 | Cada critério mostra uma descrição e o impacto do valor mais baixo e do mais alto, com o que se ganha e o que se perde. Os textos estão em [Textos do ecrã](#textos-do-ecrã). |
@@ -55,18 +55,19 @@ Uma ordem fixa produz absurdos: acabar os módulos um dia mais cedo ganha sempre
 | D11 | Os valores aplicam-se às gerações e às atualizações ao longo do ano, só no futuro editável. |
 | D12 | A proposta mostra um resumo por critério, comparado com o horário publicado. |
 | D13 | O ecrã diz "tempos livres" para as horas sem aula entre aulas. "Furos" continua a querer dizer aulas não dadas por falta. |
-| D14 | Com "Acabar os módulos o mais cedo possível" em Ignorar, as aulas espalham-se até à data preferida. Revê a D10 do [Scheduler V1 Tech Spec](SCHEDULER_V1_TECH_SPEC_V2.md#binding-product-decisions) e a D11 do [spec de disponibilidade](AVAILABILITY_PRIORITY_TECH_SPEC.md). |
+| D14 | Superseded by D19. Antes, com "Acabar os módulos o mais cedo possível" em Ignorar, as aulas espalhavam-se até à data preferida. Revê a D10 do [Scheduler V1 Tech Spec](SCHEDULER_V1_TECH_SPEC_V2.md#binding-product-decisions) e a D11 do [spec de disponibilidade](AVAILABILITY_PRIORITY_TECH_SPEC.md). |
 | D15 | Com "Manter a turma na mesma sala" acima de Ignorar, a sala pode mudar a hora de uma aula. Revê a regra "a sala nunca muda a hora" do [spec da sala da turma](../02_domain_model/CLASS_HOME_ROOM_TECH_SPEC.md). Em Ignorar, a sala da turma não é considerada. |
 | D16 | O agente calibra quanto vale cada critério face aos outros com os dados da escola piloto e de uma escola piloto realista (`lab/realistic_pilot.py`, pedida pelo responsável de produto a 20 de outubro de 2026), e mostra horários de exemplo ao responsável de produto antes de fechar a calibração. A 20 de outubro de 2026 o responsável de produto aceitou, na escola realista, até mais 10% de minutos em Evitar dos professores em troca de muito menos tempos livres e dias com uma só aula. |
 | D17 | Não há limite de tempo de geração antes dos testes. Um ciclo de medição (vários cenários, várias corridas, otimizar, repetir) propõe o limite no fim. |
 | D18 | A escola realista tem 48 salas no total, incluindo salas especiais; algumas turmas partilham sala. A fixture associa salas próprias apenas às turmas cobertas pelas salas Normal disponíveis. A [fixture](../../backend/app/scheduler/lab/realistic_pilot.py) é a fonte dos detalhes. Decisão do responsável de produto, 20 de outubro de 2026. |
+| D19 | "Acabar os módulos o mais cedo possível" deixa de ser configurável. O Cronos acaba sempre o mais cedo possível, para deixar margem para recuperar faltas e ocorrências, e a escola escolhe os outros 10 critérios. Com o critério fixo, as regras de Ignorar deste critério (D14, T07, T13, I05) deixam de se aplicar. Decisão do responsável de produto, 22 de outubro de 2026. |
 
 ### Decisões técnicas
 
 | ID | Decisão |
 | :--- | :--- |
 | T01 | As regras puras vivem em três módulos novos do domínio: `priorities.py` (chaves, níveis, multiplicadores `(0, 1, 2, 4, 8)`, valores recomendados, validação e custos unitários), `priority_metrics.py` (métricas e custo de um horário) e `priority_value.py` (valor de uma opção). Três ficheiros deixam as slices correr em paralelo. |
-| T02 | Chaves, pela ordem da D02: `finish_early`, `teacher_gaps`, `class_gaps`, `teacher_single_lessons`, `class_single_lessons`, `teacher_preferences`, `class_preferences`, `class_same_room`, `weekly_stability`, `subject_pace`, `update_stability`. |
+| T02 | Chaves, pela ordem da D02: `finish_early`, `teacher_gaps`, `class_gaps`, `teacher_single_lessons`, `class_single_lessons`, `teacher_preferences`, `class_preferences`, `class_same_room`, `weekly_stability`, `subject_pace`, `update_stability`. A escola guarda só as 10 chaves das escolhas (`SCHOOL_CRITERION_KEYS`). `finish_early` fica fixo em 4 (`FIXED_LEVELS`, D19); uma chave `finish_early` já guardada é ignorada. |
 | T03 | Guarda: coluna `organization_settings.schedule_priorities` JSONB, nula por omissão. Nula quer dizer os valores recomendados. Guardar grava as 11 chaves. O Soft-Reset do ano não mexe em `organization_settings` (`school_year_reset_service.py`), por isso a D09 já vale. |
 | T04 | `PlanningSnapshot.priority_weights: PriorityWeights \| None = None`. `snapshot.py` preenche sempre o campo. `None` quer dizer a ordem de hoje e serve as fixtures, o laboratório e os testes atuais. `snapshot_to_dict` só escreve o campo quando não é `None`, para os digests atuais não mudarem. |
 | T05 | `construct_schedule` e `construct_recovery` ganham `weights: PriorityWeights \| None = None`. Com `None` correm como hoje, sem mudança (I02). Com pesos, cada opção de um período recebe o valor da T06 em vez da posição na ordem de hoje. |
@@ -91,6 +92,8 @@ Fora: o modelo exato (T16), critérios novos fora da D02, níveis por turma ou p
 ### Textos do ecrã
 
 Níveis: 0 Ignorar · 1 Pouco importante · 2 Importante · 3 Muito importante · 4 Prioridade máxima. A coluna "Recomendado" é o valor inicial e o do botão "Repor valores recomendados".
+
+Desde a D19 o critério 1 não aparece no ecrã: fica fixo em Prioridade máxima. O ecrã mostra os critérios 2 a 11, com os 10 valores da T02.
 
 | # | Critério e descrição | Valor mais baixo | Valor mais alto | Recomendado |
 | :--- | :--- | :--- | :--- | :--- |
@@ -150,8 +153,8 @@ Os valores recomendados mantêm o comportamento que a escola piloto já validou.
 
 ### API
 
-- `GET /api/v1/school/settings/schedule-priorities` devolve `{"levels": {chave: nível}, "defaults": {chave: nível}}`, com as 11 chaves da T02. Sem valores guardados, `levels` é igual a `defaults`.
-- `PUT /api/v1/school/settings/schedule-priorities` recebe `{"levels": {...}}` com as 11 chaves, inteiros de 0 a 4, sem chaves a mais. Devolve o mesmo corpo do `GET`.
+- `GET /api/v1/school/settings/schedule-priorities` devolve `{"levels": {chave: nível}, "defaults": {chave: nível}}`, com as 10 chaves escolhidas (D19). Sem valores guardados, `levels` é igual a `defaults`.
+- `PUT /api/v1/school/settings/schedule-priorities` recebe `{"levels": {...}}` com as 10 chaves, inteiros de 0 a 4, sem chaves a mais. Uma chave `finish_early` ou uma chave em falta dá 422. Devolve o mesmo corpo do `GET`.
 - O `PUT` regista a mudança com `record_scheduler_change` (`FUTURE_IMPACTING`). Valores iguais aos guardados dão `NO_OP` (D10).
 
 ### Geração e atualização
@@ -187,7 +190,7 @@ Os valores recomendados mantêm o comportamento que a escola piloto já validou.
 | Campo | Aponta para |
 | :--- | :--- |
 | `organization_settings.organization_id` e o `organization_id` do pedido | `organizations.id` |
-| chaves de `levels` | as 11 chaves da T02, nunca o texto do ecrã |
+| chaves de `levels` | as 10 chaves escolhidas (T02, D19), nunca o texto do ecrã |
 | `Assignment.teacher_id` nas métricas e no valor | `teachers.id` |
 | `Assignment.class_ids` nas métricas e no valor | `classes.id` |
 | sala da turma | `classes.home_room_id` → `rooms.id` |
@@ -241,7 +244,7 @@ Cada cenário é um teste que falha primeiro. Salvo indicação: grelha de 60 mi
 | R19 | Leitores do motor | Mudar `class_gaps` de 2 para 3. | `generation_input_snapshot` muda; o snapshot do motor tem `priority_weights.class_gaps == 3`. | `backend/tests/integration/committed/test_scheduler_fingerprint_service.py` |
 | R20 | Mudança de ano | Gravar níveis; Soft-Reset do ano. | O `GET` devolve os mesmos níveis. | `test_schedule_priorities_api.py` |
 | R21 | Resumo | `recovery_proposal_payload` com horário publicado; `initial_proposal_payload` sem publicado. | `priority_summary.published` com as 11 chaves e `priority_summary.proposal` com as 11 chaves; na geração inicial, `published is None`. | `backend/tests/unit/test_scheduler_publishing_v1.py` |
-| R22 | Ecrã | Separador "Prioridades do horário" com os 11 critérios; clicar "Muito importante" em "Evitar tempos livres das turmas"; "Guardar prioridades"; depois "Repor valores recomendados". | O `PUT` leva `class_gaps: 3`; os botões têm `role="radio"` com `aria-checked`; repor volta a `class_gaps: 2` antes de guardar. | `frontend/src/test/SchedulePrioritiesSection.test.jsx` (novo) |
+| R22 | Ecrã | Separador "Prioridades do horário" com os 10 critérios escolhidos; clicar "Muito importante" em "Evitar tempos livres das turmas"; "Guardar prioridades"; depois "Repor valores recomendados". | O `PUT` leva `class_gaps: 3`; os botões têm `role="radio"` com `aria-checked`; repor volta a `class_gaps: 2` antes de guardar. | `frontend/src/test/SchedulePrioritiesSection.test.jsx` (novo) |
 | R23 | Painel | Proposta com `priority_summary` publicado e proposta, e outra com `priorities_followed: false`. | Uma linha por critério com os dois valores; o aviso da Failure Modes só na segunda. | `frontend/src/test/DraftPanel.test.jsx` |
 | R24 | Calibração | Ciclo S7 nas fixtures de tipologia de 12 e 48 turmas, na de disponibilidade de 12 turmas e na escola piloto realista, com os valores recomendados. O ficheiro piloto original deixou de ser referência (responsável de produto, 21 de outubro de 2026). | Tipologia e disponibilidade: resultado `COMPLETE`; última aula não posterior à da construção sem pesos; minutos em Evitar dos professores não superiores. Escola realista: a construção sem pesos não a constrói (fica com horas por colocar), por isso exige-se horário completo e válido até à data preferida. | `backend/tests/unit/test_scheduler_typology_v1.py` e `test_scheduler_realistic_pilot_v1.py` (48 turmas e realista marcados `slow_solver`; a realista corre só localmente, cerca de 20 min) |
 | R25 | Efeito visível | Para cada critério de 1 a 10, níveis recomendados com esse critério em 0 e depois em 4, na fixture de 12 turmas. | A métrica desse critério com 4 é estritamente melhor do que com 0. | `test_scheduler_typology_v1.py` |

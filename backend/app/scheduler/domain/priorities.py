@@ -22,6 +22,12 @@ CRITERION_KEYS = (
 DEFAULT_LEVELS = MappingProxyType(
     dict(zip(CRITERION_KEYS, (4, 3, 2, 2, 2, 3, 2, 2, 2, 3, 3), strict=True))
 )
+# The school does not choose these. Finishing as early as possible leaves room to recover absences.
+FIXED_LEVELS = MappingProxyType({"finish_early": 4})
+SCHOOL_CRITERION_KEYS = tuple(key for key in CRITERION_KEYS if key not in FIXED_LEVELS)
+SCHOOL_DEFAULT_LEVELS = MappingProxyType(
+    {key: DEFAULT_LEVELS[key] for key in SCHOOL_CRITERION_KEYS}
+)
 PRIORITY_MULTIPLIERS = (0, 1, 2, 4, 8)
 UNIT_COSTS = MappingProxyType(
     {
@@ -70,3 +76,22 @@ class PriorityWeights:
 
     def to_dict(self) -> dict[str, int]:
         return {key: getattr(self, key) for key in CRITERION_KEYS}
+
+
+def school_levels(levels: Mapping[str, int] | None = None) -> dict[str, int]:
+    """The school's ten levels in criterion order. None means the recommended levels."""
+    chosen = SCHOOL_DEFAULT_LEVELS if levels is None else levels
+    return {key: chosen[key] for key in SCHOOL_CRITERION_KEYS}
+
+
+def school_priority_weights(levels: Mapping[str, int] | None = None) -> PriorityWeights:
+    """Engine weights from stored school levels. A stored finish_early is ignored."""
+    return PriorityWeights({**DEFAULT_LEVELS, **school_levels(levels), **FIXED_LEVELS})
+
+
+def validate_school_levels(levels: Mapping[str, int]) -> dict[str, int]:
+    """Accept exactly the ten school levels, each an integer from 0 to 4."""
+    if not isinstance(levels, Mapping) or set(levels) != set(SCHOOL_CRITERION_KEYS):
+        raise ValueError("School priority levels must contain exactly the 10 school criteria.")
+    school_priority_weights(levels)  # Rejects values outside 0 to 4 and non-integers.
+    return school_levels(levels)

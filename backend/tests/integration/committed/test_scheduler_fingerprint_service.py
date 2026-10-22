@@ -5,7 +5,7 @@ from sqlalchemy import select
 
 from app import models
 from app.scheduler.domain.candidate import SchedulingStrategy
-from app.scheduler.domain.priorities import DEFAULT_LEVELS
+from app.scheduler.domain.priorities import DEFAULT_LEVELS, SCHOOL_DEFAULT_LEVELS
 from app.scheduler.domain.serialization import canonical_json, payload_digest
 from app.scheduler.infrastructure.snapshot import load_snapshot
 from app.services import room_type_service
@@ -141,7 +141,7 @@ async def test_schedule_priorities_change_fingerprint_and_engine_snapshot(db_ses
     if settings is None:
         settings = models.OrganizationSettings(organization_id=seed.organization.id)
         db_session.add(settings)
-    levels = dict(DEFAULT_LEVELS)
+    levels = dict(SCHOOL_DEFAULT_LEVELS)
     levels["class_gaps"] = 3
     settings.schedule_priorities = levels
     await db_session.flush()
@@ -163,6 +163,41 @@ async def test_schedule_priorities_change_fingerprint_and_engine_snapshot(db_ses
         school_year_id=seed.year.id,
     )
     assert bundle.snapshot.priority_weights.class_gaps == 3
+
+
+async def test_legacy_stored_finish_early_never_reaches_the_engine(db_session):
+    seed = await seed_generatable_school(
+        db_session,
+        clerk_user_id="priority_legacy_admin",
+        clerk_org_id="priority_legacy_org",
+        module_minutes=60,
+    )
+    settings = await db_session.scalar(
+        select(models.OrganizationSettings).where(
+            models.OrganizationSettings.organization_id == seed.organization.id
+        )
+    )
+    if settings is None:
+        settings = models.OrganizationSettings(organization_id=seed.organization.id)
+        db_session.add(settings)
+    settings.schedule_priorities = {**DEFAULT_LEVELS, "finish_early": 0}
+    await db_session.commit()
+
+    fingerprint = await SchedulerFingerprintService(db_session).generation_input_snapshot(
+        seed.organization.id,
+        seed.year.id,
+        models.ScheduleGenerationStrategy.COMPLETE_GENERATION,
+    )
+    bundle = await load_snapshot(
+        db_session,
+        seed.organization.id,
+        strategy=SchedulingStrategy.COMPLETE_GENERATION,
+        now_utc=datetime(2026, 9, 1, tzinfo=UTC),
+        school_year_id=seed.year.id,
+    )
+
+    assert fingerprint["schedule_priorities"]["finish_early"] == 4
+    assert bundle.snapshot.priority_weights.finish_early == 4
 
 
 async def test_strategy_changes_snapshot_without_retired_active_schedule(db_session):
