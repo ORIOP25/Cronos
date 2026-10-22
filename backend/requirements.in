@@ -3,12 +3,12 @@ asyncpg==0.32.0
 celery==5.6.3
 clerk-backend-api==7.0.0
 email-validator==2.3.0
-fastapi==0.143.0
+fastapi==0.146.0
 holidays==0.106
 httpx==0.28.1
 ortools==9.15.6755
 psycopg2-binary==2.9.13
-pydantic-settings==2.15.0
+pydantic-settings==2.16.0
 redis==8.1.0
 slowapi==0.1.10
 structlog==26.1.0
