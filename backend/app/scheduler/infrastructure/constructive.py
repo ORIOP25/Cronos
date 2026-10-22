@@ -215,33 +215,40 @@ def _option_measures(
 
 
 def _room_value(
-    weights: PriorityWeights,
-    measures: Mapping[str, int],
+    base_value: int,
+    same_room_value: int,
     assignment: Assignment,
     room: int,
     home_rooms: Mapping[int, int],
-    *,
-    credit: int,
 ) -> int:
-    """T06: the option value in one room; only the home-room measure depends on it."""
-    room_measures = dict(measures)
+    """T06: the option value in one room; only the home-room measure depends on it.
+
+    ``base_value`` is the option value without that measure, and ``same_room_value``
+    is the measure's value when the room is not the class's home room.
+    """
     if not assignment.needs_special_room and any(
         class_id in home_rooms
         and home_rooms[class_id] in assignment.eligible_room_ids
         and home_rooms[class_id] != room
         for class_id in assignment.class_ids
     ):
-        room_measures["class_same_room"] = -credit
-    return option_value(weights, room_measures)
+        return base_value + same_room_value
+    return base_value
 
 
 _PREFERENCE_KEYS = ("teacher_preferences", "class_preferences")
 
 
+def _preference_value(weights: PriorityWeights, measures: Mapping[str, int]) -> int:
+    """The option value of its Evitar measures alone, the part that never changes by room."""
+    return option_value(
+        weights, {key: measures[key] for key in _PREFERENCE_KEYS if key in measures}
+    )
+
+
 def _fills_hour(
-    weights: PriorityWeights,
-    measures: Mapping[str, int],
     value: int,
+    preference_value: int,
     *,
     strict: bool,
     fill: bool = False,
@@ -258,8 +265,7 @@ def _fills_hour(
         return True
     if strict:
         return value > 0
-    preferences = {key: measures[key] for key in _PREFERENCE_KEYS if key in measures}
-    return value - option_value(weights, preferences) > 0
+    return value - preference_value > 0
 
 
 def _scarcity(
@@ -1211,12 +1217,13 @@ def _construct_pass(
                     credit,
                     spread=weights.finish_early == 0,
                 )
+                base_value = option_value(weights, measures)
+                same_room_value = option_value(weights, {"class_same_room": -credit})
+                preference_value = _preference_value(weights, measures)
                 for room in rooms:
-                    value = _room_value(
-                        weights, measures, assignment, room, home_rooms, credit=credit
-                    )
+                    value = _room_value(base_value, same_room_value, assignment, room, home_rooms)
                     if necessary or _fills_hour(
-                        weights, measures, value + scarcity, strict=strict, fill=fill
+                        value + scarcity, preference_value, strict=strict, fill=fill
                     ):
                         allowed_rooms.append(room)
                         scores[(identity, room)] = (necessary, value, urgency)
