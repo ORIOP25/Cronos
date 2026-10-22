@@ -43,14 +43,15 @@ jobs:
           SHA: ${{ github.sha }}
         run: |
           verified=false
-          head=$(gh api "repos/$REPO/commits/$SHA/pulls" --jq '[.[] | select(.merged_at != null)][0].head.sha // empty')
+          # A GitHub API error only means the shortcut is unproven: the jobs run as usual.
+          head=$(gh api "repos/$REPO/commits/$SHA/pulls" --jq '[.[] | select(.merged_at != null)][0].head.sha // empty') || head=""
           if [ -n "$head" ]; then
-            tree() { gh api "repos/$REPO/git/commits/$1" --jq .tree.sha; }
+            tree() { gh api "repos/$REPO/git/commits/$1" --jq .tree.sha || true; }
             pushed_tree=$(tree "$SHA"); head_tree=$(tree "$head")
             if [ -n "$pushed_tree" ] && [ "$pushed_tree" = "$head_tree" ]; then
               # e2e-browser must have run: a skipped browser job (Dependabot, forks) is no proof.
               green=$(gh api "repos/$REPO/commits/$head/check-runs?filter=latest&per_page=100" \
-                --jq '[.check_runs[] | select((.name == "backend" or .name == "frontend" or .name == "e2e-runtime" or .name == "e2e-browser") and .conclusion == "success") | .name] | unique | length')
+                --jq '[.check_runs[] | select((.name == "backend" or .name == "frontend" or .name == "e2e-runtime" or .name == "e2e-browser") and .conclusion == "success") | .name] | unique | length') || green=0
               if [ "$green" = 4 ]; then verified=true; fi
             fi
           fi
