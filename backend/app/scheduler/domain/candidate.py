@@ -428,6 +428,10 @@ class GridSlot:
         if self.start_local >= self.end_local:
             raise ValueError("A grid slot must have a positive local duration.")
 
+    @property
+    def duration_minutes(self) -> int:
+        return _minute_of_day(self.end_local) - _minute_of_day(self.start_local)
+
     def matches(self, period: Period) -> bool:
         return (
             self.day_of_week == period.school_date.weekday()

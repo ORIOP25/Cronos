@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Mapping, Sequence
 from datetime import date, time
 
@@ -10,6 +10,7 @@ from app.scheduler.domain.calendar import grid_dates
 from app.scheduler.domain.candidate import (
     Assignment,
     CandidateSchedule,
+    GridSlot,
     PlanningSnapshot,
     ScheduledLesson,
     Unavailability,
@@ -24,6 +25,11 @@ from app.scheduler.domain.priorities import (
     PriorityWeights,
 )
 from app.scheduler.domain.quality import _gap_minutes
+
+# Counts of single-lesson days, room changes and changed positions, priced in lesson minutes (T06).
+LESSON_COUNT_KEYS = frozenset(
+    {"teacher_single_lessons", "class_single_lessons", "class_same_room", "weekly_stability"}
+)
 
 
 def _slot_positions(snapshot: PlanningSnapshot, candidate: CandidateSchedule):
@@ -224,22 +230,32 @@ def measure_priority_metrics(
     }
 
 
+def typical_lesson_minutes(grid_slots: Sequence[GridSlot]) -> int:
+    """The most common grid slot length, the lesson minutes T13 prices one count at."""
+    return Counter(slot.duration_minutes for slot in grid_slots).most_common(1)[0][0]
+
+
 def priority_cost(
     metrics: Mapping[str, int | date],
     weights: PriorityWeights,
     *,
     origin: date,
+    lesson_minutes: int,
     preferred_end_date: date | None = None,
 ) -> int:
     """Return the T13 weighted metric cost using integer arithmetic only.
 
-    With ``preferred_end_date``, each day the last lesson falls after it adds
-    the finish_early multiplier times ``LATE_DAY_COST`` (T12, T15).
+    Counts of lessons (single-lesson days, room changes, changed positions) are
+    priced in lesson minutes, as T06 does; ``update_stability`` already counts
+    moved lessons. With ``preferred_end_date``, each day the last lesson falls
+    after it adds the finish_early multiplier times ``LATE_DAY_COST`` (T12, T15).
     """
     if set(metrics) != set(CRITERION_KEYS) or type(weights) is not PriorityWeights:
         raise ValueError("Priority cost needs exactly eleven metrics and validated weights.")
     if type(origin) is not date or type(metrics["finish_early"]) is not date:
         raise ValueError("Priority cost needs valid origin and completion dates.")
+    if type(lesson_minutes) is not int or lesson_minutes <= 0:
+        raise ValueError("Lesson minutes must be a positive integer.")
     if preferred_end_date is not None and type(preferred_end_date) is not date:
         raise ValueError("The preferred end date must be a date when given.")
     completion_days = (metrics["finish_early"] - origin).days
@@ -250,6 +266,8 @@ def priority_cost(
         measure = completion_days if key == "finish_early" else metrics[key]
         if type(measure) is not int or measure < 0:
             raise ValueError("Priority measures must be nonnegative integers.")
+        if key in LESSON_COUNT_KEYS:
+            measure *= lesson_minutes
         total += PRIORITY_MULTIPLIERS[getattr(weights, key)] * UNIT_COSTS[key] * measure
     if preferred_end_date is not None:
         late_days = max(0, (metrics["finish_early"] - preferred_end_date).days)
