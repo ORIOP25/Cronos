@@ -382,20 +382,6 @@ def test_joining_a_single_lesson_day_is_rewarded_and_opening_one_is_not_penalise
     assert _joined_day_gain((nine, ten), afternoon) == 0
 
 
-def test_all_zero_priorities_spread_one_lesson_every_other_week():
-    dates = (0, 7, 14, 21)
-    periods = tuple(period(offset, 9) for offset in dates)
-    row = assignment(1, teacher_id=1, class_id=1, minutes=120)
-    ignored = weights(**{key: 0 for key in DEFAULT_LEVELS})
-
-    result = construct_schedule(make_snapshot((row,), periods), periods, weights=ignored)
-
-    assert [lesson.period.school_date for lesson in result.lessons] == [
-        periods[1].school_date,
-        periods[3].school_date,
-    ]
-
-
 def test_finish_early_priority_uses_first_two_weeks():
     dates = (0, 7, 14, 21)
     periods = tuple(period(offset, 9) for offset in dates)
@@ -709,7 +695,7 @@ def test_weighted_strict_pass_never_dodges_an_evitar_hour_by_teaching_after_the_
     assert [row.period for row in result.lessons] == [in_window]
 
 
-def scarce_class_pass(day_slots: int, minutes: int, *, finish_early: int = 1):
+def scarce_class_pass(day_slots: int, minutes: int):
     """One class with an option at each hour of a Monday; the previous Monday's 9h is empty.
 
     That empty slot makes the weekly reference EMPTY, so the 9h option starts at -480
@@ -720,7 +706,7 @@ def scarce_class_pass(day_slots: int, minutes: int, *, finish_early: int = 1):
     row = assignment(1, teacher_id=1, class_id=1, minutes=minutes)
     school = make_snapshot((row,), periods, unavailable=unavailable)
     levels = dict.fromkeys(CRITERION_KEYS, 0)
-    levels["finish_early"] = finish_early
+    levels["finish_early"] = 1
     levels["weekly_stability"] = 1
     candidate, _refused, _paced_out = constructive._construct_pass(
         school,
@@ -738,36 +724,23 @@ def first_taught_start(candidate):
     return min(lesson.period.start_utc for lesson in candidate.lessons)
 
 
-def test_a_fully_booked_class_teaches_its_option_at_finish_early_zero():
-    """T07: a class with no room left is taught even with finish_early at Ignorar."""
-    booked = scarce_class_pass(day_slots=2, minutes=120, finish_early=0)
+def test_a_fully_booked_class_teaches_its_option():
+    """T07: a class with no room left is taught, whatever the school's other levels are."""
+    booked = scarce_class_pass(day_slots=2, minutes=120)
 
     assert booked is not None
     assert first_taught_start(booked) == period(7, 9).start_utc
 
 
-def test_at_half_booked_an_empty_hour_stays_empty_at_finish_early_zero():
-    """T07: at Ignorar a half booked calendar spreads freely, so the 9h hour stays empty."""
-    # 120 minutes in 240 of capacity is tightness 1/2: the push to teach is zero.
-    half = scarce_class_pass(day_slots=4, minutes=120, finish_early=0)
-
-    assert half is not None
-    assert first_taught_start(half) == period(7, 10).start_utc
-
-
-def test_at_three_quarters_booked_the_push_at_finish_early_zero_is_two_t_minus_one():
-    """T07: at Ignorar the push uses 2t - 1 in place of t: at three quarters booked, 1/2 of the unit."""
+def test_scarcity_is_the_tightness_times_the_unit_cost_with_no_spread():
+    """T07: the push to teach is the tightness times the unit cost. No level spreads lessons."""
     # 180 minutes in 240 of capacity is tightness 3/4.
     periods = tuple(period(7, 9 + hour) for hour in range(4))
     row = assignment(1, teacher_id=1, class_id=1, minutes=180)
     school = make_snapshot((row,), periods)
     ledger = AvailabilityLedger.build(school, {1: periods}, {1: 180})
 
-    calibrated = constructive._scarcity(ledger, row, periods[0], 60, spread=False)
-    push = constructive._scarcity(ledger, row, periods[0], 60, spread=True)
-
-    assert calibrated == round(32 * 60 * Fraction(3, 4))
-    assert push == round(32 * 60 * (2 * Fraction(3, 4) - 1))
+    assert constructive._scarcity(ledger, row, periods[0], 60) == round(32 * 60 * Fraction(3, 4))
 
 
 def test_scarcity_teaches_a_tight_class_its_negative_option_now_and_leaves_an_ample_one_empty():

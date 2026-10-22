@@ -456,12 +456,6 @@ class ScheduleQualityMetrics:
     class_progress_spread_per_mille: int = 0
     class_progress_per_mille: Mapping[int, int] = field(default_factory=dict)
 
-    @property
-    def gap_and_availability_cost_minutes(self) -> int:
-        return (
-            self.class_gap_minutes + self.teacher_gap_minutes + self.availability_disutility_minutes
-        )
-
     def as_dict(self) -> dict[str, Any]:
         return {
             key: value for key, value in self.__dict__.items() if key != "class_progress_per_mille"
