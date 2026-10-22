@@ -34,7 +34,11 @@ from app.scheduler.domain.candidate import (
 from app.scheduler.domain.candidate_validation import validate_candidate
 from app.scheduler.domain.capacity import available_rooms, eligible_periods
 from app.scheduler.domain.diagnostics import diagnose_joint_isolation
-from app.scheduler.domain.priority_metrics import measure_priority_metrics, priority_cost
+from app.scheduler.domain.priority_metrics import (
+    measure_priority_metrics,
+    priority_cost,
+    typical_lesson_minutes,
+)
 from app.scheduler.domain.quality import SearchEvidence, measure_initial_quality
 from app.scheduler.domain.recovery import RecoveryPolicy, measure_disruption, recovery_vector
 from app.scheduler.domain.results import (
@@ -1091,6 +1095,7 @@ def search_adaptive_schedule(
                 candidates, key=lambda item: profile.vector(planning, item[0])
             )
         else:
+            lesson_minutes = typical_lesson_minutes(planning.grid_slots)
 
             def weighted_cost(candidate: CandidateSchedule) -> int:
                 changes = len(
@@ -1107,6 +1112,7 @@ def search_adaptive_schedule(
                     metrics,
                     planning.priority_weights,
                     origin=planning.origin,
+                    lesson_minutes=lesson_minutes,
                     preferred_end_date=planning.preferred_end_date,
                 )
 
