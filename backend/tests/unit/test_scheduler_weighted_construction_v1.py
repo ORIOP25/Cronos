@@ -2,6 +2,7 @@
 
 from dataclasses import replace
 from datetime import date, time, timedelta
+from fractions import Fraction
 
 import pytest
 
@@ -746,13 +747,28 @@ def test_a_fully_booked_class_teaches_its_option_at_finish_early_zero():
     assert first_taught_start(booked) == period(7, 9).start_utc
 
 
-def test_below_nine_tenths_tightness_an_empty_hour_stays_empty_at_finish_early_zero():
-    """T07: at Ignorar the calendar has room to spread (D14) while tightness stays under 9/10."""
-    # 510 minutes in 600 of capacity is tightness 0.85: the 9h hour stays empty.
-    roomy = scarce_class_pass(day_slots=10, minutes=510, finish_early=0)
+def test_at_half_booked_an_empty_hour_stays_empty_at_finish_early_zero():
+    """T07: at Ignorar a half booked calendar spreads freely, so the 9h hour stays empty."""
+    # 120 minutes in 240 of capacity is tightness 1/2: the push to teach is zero.
+    half = scarce_class_pass(day_slots=4, minutes=120, finish_early=0)
 
-    assert roomy is not None
-    assert first_taught_start(roomy) == period(7, 10).start_utc
+    assert half is not None
+    assert first_taught_start(half) == period(7, 10).start_utc
+
+
+def test_at_three_quarters_booked_the_push_at_finish_early_zero_is_two_t_minus_one():
+    """T07: at Ignorar the push uses 2t - 1 in place of t: at three quarters booked, 1/2 of the unit."""
+    # 180 minutes in 240 of capacity is tightness 3/4.
+    periods = tuple(period(7, 9 + hour) for hour in range(4))
+    row = assignment(1, teacher_id=1, class_id=1, minutes=180)
+    school = make_snapshot((row,), periods)
+    ledger = AvailabilityLedger.build(school, {1: periods}, {1: 180})
+
+    calibrated = constructive._scarcity(ledger, row, periods[0], 60, spread=False)
+    push = constructive._scarcity(ledger, row, periods[0], 60, spread=True)
+
+    assert calibrated == round(32 * 60 * Fraction(3, 4))
+    assert push == round(32 * 60 * (2 * Fraction(3, 4) - 1))
 
 
 def test_scarcity_teaches_a_tight_class_its_negative_option_now_and_leaves_an_ample_one_empty():

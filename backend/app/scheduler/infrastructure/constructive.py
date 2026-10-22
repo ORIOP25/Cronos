@@ -45,7 +45,7 @@ from app.scheduler.domain.capacity import (
     eligible_periods,
     residual_minutes,
 )
-from app.scheduler.domain.priorities import SCARCITY_UNIT_COST, SPREAD_TIGHTNESS, PriorityWeights
+from app.scheduler.domain.priorities import SCARCITY_UNIT_COST, PriorityWeights
 from app.scheduler.domain.priority_value import (
     WeeklyHistory,
     WeeklyReference,
@@ -271,12 +271,13 @@ def _scarcity(
     spread: bool,
 ) -> int:
     """T07: an empty hour in a tight calendar is not free, because the lesson must still be
-    taught later. With finish_early at Ignorar (``spread``) the calendar has room to spread
-    lessons up to the preferred date (D14) below ``SPREAD_TIGHTNESS``, so the hour costs nothing.
+    taught later. With finish_early at Ignorar (``spread``) lessons may spread up to the
+    preferred date (D14): a calendar half booked or less spreads freely, and the push to
+    teach grows to full as the calendar fills, with ``2t - 1`` of the tightness ``t``.
     """
     tightness = ledger.tightness(assignment, period)
-    if spread and tightness < SPREAD_TIGHTNESS:
-        return 0
+    if spread:
+        tightness = max(Fraction(0), 2 * tightness - 1)
     return round(SCARCITY_UNIT_COST * credit * tightness)
 
 
