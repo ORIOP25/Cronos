@@ -6,6 +6,10 @@ import { useScheduleDiff } from '../../features/scheduling/data'
 import { SCHEDULE_PRIORITY_CRITERIA } from '../../features/schoolConfig/schedulePriorities'
 import FeedbackBanner from '../FeedbackBanner'
 
+// The finish date is a measure of the proposal, not a school criterion, so it is listed here only.
+const FINISH_DATE_ROW = { key: 'finish_early', title: 'Acabar os módulos o mais cedo possível.' }
+const PRIORITY_SUMMARY_ROWS = [FINISH_DATE_ROW, ...SCHEDULE_PRIORITY_CRITERIA]
+
 const CHANGE_LABELS = {
   ADDED: 'Adicionado',
   MOVED: 'Movido',
@@ -120,7 +124,7 @@ const DraftPanel = ({ draft, onApprove, onReject, isApproving, isRejecting, allo
                   </tr>
                 </thead>
                 <tbody>
-                  {SCHEDULE_PRIORITY_CRITERIA.map(({ key, title }) => (
+                  {PRIORITY_SUMMARY_ROWS.map(({ key, title }) => (
                     <tr key={key}>
                       <th scope="row">{title}</th>
                       {prioritySummary.published && (
