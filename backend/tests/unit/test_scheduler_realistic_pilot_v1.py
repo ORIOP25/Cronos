@@ -152,3 +152,12 @@ def test_r24_recommended_weights_build_the_realistic_school_by_the_preferred_end
     assert validate_candidate(school.snapshot, weighted).valid is True
     finish = measure_priority_metrics(school.snapshot, weighted)["finish_early"]
     assert finish <= school.snapshot.preferred_end_date
+
+
+@pytest.mark.slow_solver
+def test_the_unweighted_construction_builds_the_realistic_school_validly(school):
+    # Without weights the construction must not strand end-of-year hours a feasible plan teaches.
+    candidate = construct_schedule(school.snapshot, school.periods)
+
+    assert candidate is not None
+    assert validate_candidate(school.snapshot, candidate).valid is True

@@ -25,15 +25,23 @@ DEFAULT_LEVELS = MappingProxyType(
 PRIORITY_MULTIPLIERS = (0, 1, 2, 4, 8)
 UNIT_COSTS = MappingProxyType(
     {
-        **dict.fromkeys(CRITERION_KEYS, 1),
-        "teacher_gaps": 3,
-        "teacher_single_lessons": 15,
-        "class_single_lessons": 10,
-        "teacher_preferences": 20,
-        "class_preferences": 5,
-        "subject_pace": 20,
+        **dict.fromkeys(CRITERION_KEYS, 4),
+        "finish_early": 1,
+        "teacher_gaps": 12,
+        "teacher_single_lessons": 60,
+        "class_single_lessons": 40,
+        "teacher_preferences": 80,
+        "class_preferences": 20,
+        "weekly_stability": 8,
+        "subject_pace": 80,
+        # One moved lesson at "Muito importante" (4 x 4800) equals one hour of Evitar (4 x 80 x 60).
+        "update_stability": 4800,
     }
 )
+# One day past the preferred end: 600 moved lessons at equal levels (4 x 2 880 000 against 4 x 4 800).
+LATE_DAY_COST = 2_880_000
+# An empty hour in a fully booked calendar is not free, because the lesson must still be taught later.
+SCARCITY_UNIT_COST = 32
 
 
 @dataclass(frozen=True, init=False)

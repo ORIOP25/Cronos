@@ -18,6 +18,7 @@ from app.scheduler.domain.candidate import (
 from app.scheduler.domain.home_rooms import avoidable_room_changes
 from app.scheduler.domain.priorities import (
     CRITERION_KEYS,
+    LATE_DAY_COST,
     PRIORITY_MULTIPLIERS,
     UNIT_COSTS,
     PriorityWeights,
@@ -224,13 +225,23 @@ def measure_priority_metrics(
 
 
 def priority_cost(
-    metrics: Mapping[str, int | date], weights: PriorityWeights, *, origin: date
+    metrics: Mapping[str, int | date],
+    weights: PriorityWeights,
+    *,
+    origin: date,
+    preferred_end_date: date | None = None,
 ) -> int:
-    """Return the T13 weighted metric cost using integer arithmetic only."""
+    """Return the T13 weighted metric cost using integer arithmetic only.
+
+    With ``preferred_end_date``, each day the last lesson falls after it adds
+    the finish_early multiplier times ``LATE_DAY_COST`` (T12, T15).
+    """
     if set(metrics) != set(CRITERION_KEYS) or type(weights) is not PriorityWeights:
         raise ValueError("Priority cost needs exactly eleven metrics and validated weights.")
     if type(origin) is not date or type(metrics["finish_early"]) is not date:
         raise ValueError("Priority cost needs valid origin and completion dates.")
+    if preferred_end_date is not None and type(preferred_end_date) is not date:
+        raise ValueError("The preferred end date must be a date when given.")
     completion_days = (metrics["finish_early"] - origin).days
     if completion_days < 0:
         raise ValueError("The completion date cannot precede the schedule origin.")
@@ -240,4 +251,7 @@ def priority_cost(
         if type(measure) is not int or measure < 0:
             raise ValueError("Priority measures must be nonnegative integers.")
         total += PRIORITY_MULTIPLIERS[getattr(weights, key)] * UNIT_COSTS[key] * measure
+    if preferred_end_date is not None:
+        late_days = max(0, (metrics["finish_early"] - preferred_end_date).days)
+        total += PRIORITY_MULTIPLIERS[weights.finish_early] * LATE_DAY_COST * late_days
     return total
