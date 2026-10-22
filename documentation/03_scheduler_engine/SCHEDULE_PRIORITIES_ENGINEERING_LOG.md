@@ -285,6 +285,31 @@ Prova de horários iguais (impressão digital de todas as aulas, `digest.py` no 
 Tempo no mesmo instante, recomendado, duas corridas em paralelo: `main` 388 s, ramo 350 s (cerca de 10% mais rápido). Ambas as corridas partilham a máquina, por isso o número é relativo. Uma corrida isolada do ramo levou 266 s, mas não há medição isolada do `main` sem outras corridas.
 Os testes `-k "scheduler or priorities"` passaram: 858 testes.
 
+#### Unidades do custo da atualização (22 de outubro de 2026)
+
+Problema. A T13 contava dias, trocas de sala e posições alteradas para os quatro critérios de aulas (professor e turma com uma só aula, sala da turma e padrão semanal). A T06 mede os mesmos critérios em minutos de aula. Na atualização, os quatro pesavam cerca de 60 vezes menos do que na geração, para aulas de 60 minutos.
+
+Mudança. `priority_cost` recebe `lesson_minutes` e multiplica esses quatro critérios por ele. Os minutos vêm da duração mais comum da grelha (`typical_lesson_minutes`). Na escola de referência todas as horas da grelha duram 60 minutos. `update_stability` não muda, porque já conta aulas alteradas. `finish_early` e `LATE_DAY_COST` também não mudam.
+
+Medição. Cada cenário correu uma vez com o código novo. A construção não depende do nível de `update_stability` nem da fórmula da T13, por isso o custo de cada nível e de cada fórmula sai das métricas impressas de cada candidato. A fórmula antiga é a mesma com minutos de aula iguais a 1. Verificação: no nível 3, o custo recalculado é igual ao custo impresso pelo código (março: 99 319 784 e 799 373 984; quarta-feira: 401 726 936 e 821 570 360). Em março, no nível 3, a escolha antiga é a reparação com 63 aulas movidas e 41 trocas de sala, como na base.
+
+| Cenário | Nível | Antes | Depois | Aulas alteradas | Fim | Evitar de professor (h) |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| Março | 0 | reconstrução | reconstrução | 38 291 | 9 jun 2027 | 2 254 |
+| Março | 1 | reparação | reparação | 104 | 14 jun 2027 | 3 779 |
+| Março | 2 | reparação | reparação | 104 | 14 jun 2027 | 3 779 |
+| Março | 3 | reparação | reparação | 104 | 14 jun 2027 | 3 779 |
+| Março | 4 | reparação | reparação | 104 | 14 jun 2027 | 3 779 |
+| Quartas | 0 | reconstrução | reconstrução | 38 253 | 16 jun 2027 | 2 224 |
+| Quartas | 1 | reconstrução | reconstrução | 38 253 | 16 jun 2027 | 2 224 |
+| Quartas | 2 | reparação | reparação | 247 | 28 jun 2027 | 3 779 |
+| Quartas | 3 | reparação | reparação | 247 | 28 jun 2027 | 3 779 |
+| Quartas | 4 | reparação | reparação | 247 | 28 jun 2027 | 3 779 |
+
+Resultado. Nenhuma escolha mudou nos dez pares de cenário e nível. Em cada um, a fórmula antiga e a nova escolhem o mesmo candidato. Aulas alteradas conta movidas e trocas de sala. A reparação de março tem 63 movidas e 41 trocas de sala. A reparação das quartas tem 77 movidas e 170 trocas de sala. A reconstrução das quartas tem 38 253 alteradas, sem a divisão entre movidas e trocas.
+
+Limitações. A reconstrução das quartas não tem a divisão entre movidas e trocas nos registos, por isso não se pode confirmar o total de 35 520 movidas da base. As horas de Evitar são a soma de `teacher_preferences` dividida por 60.
+
 #### Lições
 
 - Um script chamado `profile.py` esconde o módulo `profile` do Python e parte o cProfile. Use outro nome.
