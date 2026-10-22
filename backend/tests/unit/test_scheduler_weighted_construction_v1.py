@@ -823,4 +823,9 @@ def test_period_repair_models_keep_their_variables_hints_and_objective(monkeypat
     _select_period(unweighted, deadline=None)
     _select_period([], deadline=None, scores={})
 
-    assert digests == ["0c8c1ffb6149da58", "aec05e7976e8e8af", "c88676210ce40157", "ac0f6fa4c831f375"]
+    assert digests == [
+        "0c8c1ffb6149da58",
+        "aec05e7976e8e8af",
+        "c88676210ce40157",
+        "ac0f6fa4c831f375",
+    ]
