@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models, schemas
 from app.core.logging import safe_exception_frames
-from app.scheduler.domain.priorities import DEFAULT_LEVELS, PriorityWeights
+from app.scheduler.domain.priorities import SCHOOL_DEFAULT_LEVELS, school_levels
 from app.scheduler.infrastructure.progress import configure_school_year
 from app.services import internship_flow_service, timeslot_service
 from app.services.scheduler_state_service import (
@@ -182,10 +182,8 @@ async def get_schedule_priorities(
     settings = await get_settings(db, organization_id)
     if settings is None:
         return None
-    levels = PriorityWeights(
-        DEFAULT_LEVELS if settings.schedule_priorities is None else settings.schedule_priorities
-    ).to_dict()
-    return schemas.SchedulePrioritiesRead(levels=levels, defaults=dict(DEFAULT_LEVELS))
+    levels = school_levels(settings.schedule_priorities)
+    return schemas.SchedulePrioritiesRead(levels=levels, defaults=dict(SCHOOL_DEFAULT_LEVELS))
 
 
 async def update_schedule_priorities(
@@ -198,9 +196,7 @@ async def update_schedule_priorities(
     if settings is None:
         return None
 
-    before = PriorityWeights(
-        DEFAULT_LEVELS if settings.schedule_priorities is None else settings.schedule_priorities
-    ).to_dict()
+    before = school_levels(settings.schedule_priorities)
     after = data.levels
     settings.schedule_priorities = after
     await db.flush()
@@ -214,7 +210,7 @@ async def update_schedule_priorities(
         after=after,
         changed_by_membership_id=changed_by_membership_id,
     )
-    return schemas.SchedulePrioritiesRead(levels=after, defaults=dict(DEFAULT_LEVELS))
+    return schemas.SchedulePrioritiesRead(levels=after, defaults=dict(SCHOOL_DEFAULT_LEVELS))
 
 
 async def upsert_settings(

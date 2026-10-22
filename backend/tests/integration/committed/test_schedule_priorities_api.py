@@ -3,7 +3,7 @@ from datetime import UTC, date, datetime
 from sqlalchemy import select
 
 from app import models
-from app.scheduler.domain.priorities import DEFAULT_LEVELS
+from app.scheduler.domain.priorities import SCHOOL_DEFAULT_LEVELS
 from app.scheduler.infrastructure.models import SchedulerJobV1, SchedulerProposalV1
 from tests._support.db_fixtures import create_org_and_user
 
@@ -11,7 +11,7 @@ ENDPOINT = "/api/v1/school/settings/schedule-priorities"
 
 
 def _changed_levels() -> dict[str, int]:
-    levels = dict(DEFAULT_LEVELS)
+    levels = dict(SCHOOL_DEFAULT_LEVELS)
     levels["class_gaps"] = 3
     return levels
 
@@ -26,7 +26,7 @@ async def test_schedule_priorities_are_admin_only_tenant_scoped_and_strict(
     db_session.add(settings)
     await db_session.commit()
 
-    defaults = {"levels": dict(DEFAULT_LEVELS), "defaults": dict(DEFAULT_LEVELS)}
+    defaults = {"levels": dict(SCHOOL_DEFAULT_LEVELS), "defaults": dict(SCHOOL_DEFAULT_LEVELS)}
     response = await async_client.get(ENDPOINT, headers=clerk_admin_headers)
     assert response.status_code == 200
     assert response.json() == defaults
@@ -34,11 +34,12 @@ async def test_schedule_priorities_are_admin_only_tenant_scoped_and_strict(
     levels = _changed_levels()
     saved = await async_client.put(ENDPOINT, json={"levels": levels}, headers=clerk_admin_headers)
     assert saved.status_code == 200
-    assert saved.json() == {"levels": levels, "defaults": dict(DEFAULT_LEVELS)}
+    assert saved.json() == {"levels": levels, "defaults": dict(SCHOOL_DEFAULT_LEVELS)}
 
     malformed = [
         {"levels": {**levels, "class_gaps": 5}},
         {"levels": {key: value for key, value in levels.items() if key != "class_gaps"}},
+        {"levels": {**levels, "finish_early": 0}},
         {"levels": {**levels, "unexpected": 1}},
         {"levels": {**levels, "class_gaps": True}},
         {"levels": {**levels, "class_gaps": 2.5}},
@@ -70,6 +71,24 @@ async def test_schedule_priorities_are_admin_only_tenant_scoped_and_strict(
     )
     assert org_b_response.status_code == 200
     assert org_b_response.json() == defaults
+
+
+async def test_schedule_priorities_read_ignores_a_stored_legacy_finish_early(
+    async_client, db_session, clerk_admin_headers
+):
+    organization = await db_session.scalar(
+        select(models.Organization).where(models.Organization.clerk_org_id == "org_test_001")
+    )
+    legacy = {**SCHOOL_DEFAULT_LEVELS, "finish_early": 0}
+    db_session.add(
+        models.OrganizationSettings(organization_id=organization.id, schedule_priorities=legacy)
+    )
+    await db_session.commit()
+
+    response = await async_client.get(ENDPOINT, headers=clerk_admin_headers)
+
+    assert response.status_code == 200
+    assert response.json()["levels"] == dict(SCHOOL_DEFAULT_LEVELS)
 
 
 async def test_schedule_priorities_missing_settings_returns_not_found(
@@ -137,6 +156,16 @@ async def test_schedule_priorities_change_stales_pending_proposal_and_identical_
     assert changed.status_code == 200
     await db_session.refresh(state)
     assert state.input_revision == 1
+    audit = await db_session.scalar(
+        select(models.SchedulerStateVersionEvent)
+        .where(
+            models.SchedulerStateVersionEvent.organization_id == organization.id,
+            models.SchedulerStateVersionEvent.entity_type == "SCHEDULE_PRIORITIES",
+        )
+        .order_by(models.SchedulerStateVersionEvent.id.desc())
+    )
+    assert audit.before_metadata_json == dict(SCHOOL_DEFAULT_LEVELS)
+    assert audit.after_metadata_json == levels
     status = await async_client.get("/api/v1/scheduler/status", headers=clerk_admin_headers)
     assert status.status_code == 200
     assert status.json()["pending_proposal"]["is_stale"] is True
