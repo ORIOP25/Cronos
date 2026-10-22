@@ -161,6 +161,23 @@ def run_profile(profile):
         num_workers=1,
         stop_at_first_complete=True,
     )
+    if profile == "C23":
+        assert outcome.status == "INCONCLUSIVE", (profile, outcome.status, outcome.message)
+        assert outcome.candidate is None
+        assert outcome.quality is None
+        assert outcome.evidence is not None
+        assert outcome.evidence.objective_scope == "ANNUAL_QUOTA_SEARCH"
+        assert outcome.evidence.stop_reason == "SEARCH_STOPPED"
+        return {
+            "snapshot": snapshot_to_dict(snapshot),
+            "periods": [asdict(period) for period in periods],
+            "candidate": None,
+            "typed_candidate": None,
+            "status": outcome.status,
+            "message": outcome.message,
+            "quality": None,
+            "evidence": asdict(outcome.evidence),
+        }
     assert outcome.status == "COMPLETE", (profile, outcome.status, outcome.message)
     assert outcome.candidate is not None
     assert validate_candidate(snapshot, outcome.candidate).valid

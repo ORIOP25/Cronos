@@ -261,6 +261,8 @@ Todos os perfis usam o *snapshot*/períodos de `build_realistic_pilot()`; todos 
 A ordem C02–C19 é a de `SCHOOL_CRITERION_KEYS` em `domain/priorities.py`; não se copiam os 11 mapas.
 C23 aplica `max(1, (minutos * 70) // 100)` a cada requisito, preservando minutos positivos e a identidade da unidade partilhada, sem vírgula flutuante.
 
+Na base intacta `5a4fd7d3`, C23 termina `INCONCLUSIVE`: construção sem candidato, pesquisa anual `UNKNOWN` e colocação recusada pelo limite existente de variáveis. O responsável autorizou rever esta expectativa em 23 de outubro de 2026. C23 exige exatamente `INCONCLUSIVE`, candidato e qualidade `None`, `objective_scope=ANNUAL_QUOTA_SEARCH` e `stop_reason=SEARCH_STOPPED`; compara-se a evidência completa e a mensagem, sem tempos. C01–C22 e as dez atualizações continuam a exigir `COMPLETE` e candidato válido. A exceção caracteriza a base; não muda o solver, o currículo de C23 nem os limites.
+
 ### Update scenarios A and B
 
 Fixture fixa: `SCHOOL_YEAR_START=2026-09-14`, `HARD_END=2027-07-30`, referência 2027-02-22; as 5 primeiras datas de `grid_dates` vão até 2027-02-26.
@@ -287,7 +289,7 @@ O histórico é idêntico nos dois *snapshots*; a consistência conjunta R10 nã
 A base B0 é capturada no *commit* base, em três lotes de 8/8/7 perfis, antes de S3.
 A campanha completa de 23 perfis pareados demora cerca de 4 h; com base/cabeça em cache, cerca de 2 h mais referências.
 Cada execução realista demora cerca de 340 s; lotes param aos 80 min e retomam do perfil pendente, sem saltar.
-O PR final corre 23/23 e 10/10 pares, zero *skips*, `None`, `timedout` ou omissões.
+O PR final corre 23/23 e 10/10 pares: 22 candidatos completos, o resultado terminal exato de C23 e dez atualizações completas. Não aceita *skips*, `timedout`, omissões ou `None` inesperado; apenas candidato/qualidade de C23 são `None`, conforme a referência aprovada.
 
 O manifesto crítico seleciona o ficheiro rápido inteiro, sem filtro `-m`; por isso o ficheiro lento é separado.
 `e2e-runtime` continua a correr três testes de tipologia e a recuperação da *worker*; os quatro jobs obrigatórios (`backend`, `frontend`, `e2e-runtime`, `e2e-browser`) mantêm-se verdes.

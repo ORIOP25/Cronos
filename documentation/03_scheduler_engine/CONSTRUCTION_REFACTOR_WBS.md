@@ -7,6 +7,7 @@ Decompõe o [tech spec](CONSTRUCTION_REFACTOR_TECH_SPEC.md) em dez *slices* seri
 ## Regras de Execução
 
 - Nenhum *slice* altera comportamento observável.
+- C01–C22 e atualizações exigem candidato completo; C23 preserva exatamente o `INCONCLUSIVE` da base, com candidato/qualidade `None`, conforme revisão autorizada no tech spec. Não se altera o solver ou os limites.
 - Engenharia em 90 minutos; campanha em lotes de 80 minutos com retoma do perfil pendente.
 - Uma lane de escrita de produção em S3–S7; S1/S2 preparam prova sem alterar produção.
 - Ficheiros quentes não cabem em S1: uma lane serial em S3–S7, extrações limitadas/inalteradas e sem escrita concorrente; não criar um mega-S3.
@@ -66,7 +67,7 @@ O ficheiro lento é separado do rápido: o manifesto crítico corre o ficheiro r
 - S2 captura a *baseline* `str(model.Proto())` das mesmas quatro opções, ordem e versão OR-Tools; sem *proto* gigante no repositório.
 - Registar na Command Reference a inspeção do Sonar existente e a exceção `-m slow_solver`; sem *runner*, subcomando, *scanner* ou configuração.
 - Capturar B0 em três jobs de 8/8/7 perfis no *commit* base, com *overlay* só de testes; nunca correr código alterado para referência.
-- Prova: 23 IDs de base; manifesto só com testes rápidos; *fixture* de atualização capturado; zero omissões.
+- Prova: 23 IDs de base (22 candidatos completos e o resultado terminal de C23); manifesto só com testes rápidos; *fixture* de atualização capturado; zero omissões.
 
 ### S3 — Helpers puros e seletor
 
@@ -89,7 +90,7 @@ O ficheiro lento é separado do rápido: o manifesto crítico corre o ficheiro r
 - Mover prioridade, desempate, histórico, medidas ponderadas, admissão, `fill_admitted`, execução do *run* e junção do candidato.
 - `_construct_pass` fica coordenador de fases; conserva estrito/relaxado/preenchimento, recusas, `paced_out` e cancelamento.
 - Correr C01 (base), C03, C17, C21, C23 e C18; correspondem aos seis perfis nomeados, não certificam o script antigo nem a escala; C20 fixa `SCHOOL_CRITERION_KEYS=2` e `finish_early=4`.
-- Prova: 6/6, R07 com 17 verificações e consumidores de geração iguais; unitário de publicação no *fast* `-k publishing`.
+- Prova: 6/6 (cinco candidatos e o resultado terminal de C23), R07 com 17 verificações e consumidores de geração iguais; unitário de publicação no *fast* `-k publishing`.
 - Integração: `-k "scheduler_v1_api or scheduler_v1_lifecycle or joint_lesson_engine"`.
 
 ### S6 — Estado de recuperação
@@ -130,7 +131,7 @@ O ficheiro lento é separado do rápido: o manifesto crítico corre o ficheiro r
 
 ### S10 — C13–C23 e fecho
 
-- 11 perfis; 23/23 no total; 10/10 atualizações; zero `None`/`timedout`/omissões.
+- 11 perfis; 23/23 no total (22 candidatos e C23 `INCONCLUSIVE`); 10/10 atualizações completas; zero `None` inesperado, `timedout` ou omissões.
 - `-k "C13 or C14 or C15 or C16 or C17 or C18 or C19 or C20 or C21 or C22 or C23"`.
 - Rever assinaturas, imports privados, consumidores, reexports, `git diff` e ausência de segunda implementação.
 - Abrir o relatório SonarCloud S3776 do PR de implementação: URL, pontuação por função, exatamente as três funções alvo e novas/extraídas, máximo 15. Sem relatório, a prova numérica fica não verificada.

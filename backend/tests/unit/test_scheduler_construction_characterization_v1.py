@@ -315,3 +315,46 @@ def test_construction_updates_do_not_read_update_stability():
         if reference is None:
             reference = pair
         assert pair == reference
+
+
+@pytest.mark.parametrize(
+    ("profile", "status", "with_candidate", "accepted"),
+    (
+        ("C23", "INCONCLUSIVE", False, True),
+        ("C23", "COMPLETE", True, False),
+        ("C23", "INCONCLUSIVE", True, False),
+        ("C01", "INCONCLUSIVE", False, False),
+    ),
+)
+def test_construction_campaign_c23_requires_exact_terminal_outcome(
+    monkeypatch, profile, status, with_candidate, accepted
+):
+    from app.scheduler.domain.quality import SearchEvidence, measure_initial_quality
+    from app.scheduler.domain.results import SearchOutcome
+    from tests._support import construction_snapshot
+
+    result = SearchOutcome(
+        status,
+        BASE_TYPED_CANDIDATE if with_candidate else None,
+        None,
+        SearchEvidence("ANNUAL_QUOTA_SEARCH", (), 0, "SEARCH_STOPPED"),
+        "The search stopped before a complete candidate or a proof.",
+        0.0,
+        {},
+        measure_initial_quality(base_inputs()[0], BASE_TYPED_CANDIDATE) if with_candidate else None,
+    )
+    monkeypatch.setattr(construction_snapshot, "campaign_inputs", lambda _profile: base_inputs())
+    monkeypatch.setattr(
+        construction_snapshot, "search_complete_schedule", lambda *_args, **_kwargs: result
+    )
+    if accepted:
+        record = construction_snapshot.run_profile(profile)
+        assert record["status"] == "INCONCLUSIVE"
+        assert record["candidate"] is None
+        assert record["typed_candidate"] is None
+        assert record["quality"] is None
+        assert record["evidence"]["objective_scope"] == "ANNUAL_QUOTA_SEARCH"
+        assert record["evidence"]["stop_reason"] == "SEARCH_STOPPED"
+    else:
+        with pytest.raises(AssertionError):
+            construction_snapshot.run_profile(profile)
