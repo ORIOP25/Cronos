@@ -566,7 +566,8 @@ def _select_period(
     choices: dict[tuple, tuple[Assignment, cp_model.IntVar]] = {}
     resource_choices: dict[tuple[str, int], list] = defaultdict(list)
     preferred = {(row.assignment_id, room) for row, room in selected}
-    terms = []
+    choice_variables: list[cp_model.IntVar] = []
+    coefficients: list[int] = []
     total_value = (
         sum(
             abs(value)
@@ -610,7 +611,7 @@ def _select_period(
             # Identical resource choices retain the highest-priority subject.
             if key in choices:
                 continue
-            variable = model.NewBoolVar(f"choice_{assignment.assignment_id}_{room}")
+            variable = model.new_bool_var(f"choice_{assignment.assignment_id}_{room}")
             choices[key] = (assignment, variable)
             identities = [
                 ("teacher", assignment.teacher_id),
@@ -620,24 +621,27 @@ def _select_period(
             for kind, identity in identities:
                 resource_choices[(kind, identity)].append(variable)
             if scores is None:
-                terms.append((count_weight + len(options) - rank) * variable)
+                coefficient = count_weight + len(options) - rank
             else:
                 necessary, value, priority = scores.get(
                     (assignment.assignment_id, room), (False, 0, 0)
                 )
-                terms.append(
-                    (
-                        int(necessary) * count_weight
-                        + urgency_rank.get(priority, 0) * priority_weight * int(necessary)
-                        + fill_weight
-                        + value
-                    )
-                    * variable
+                coefficient = (
+                    int(necessary) * count_weight
+                    + urgency_rank.get(priority, 0) * priority_weight * int(necessary)
+                    + fill_weight
+                    + value
                 )
-            model.AddHint(variable, int((assignment.assignment_id, room) in preferred))
+            choice_variables.append(variable)
+            coefficients.append(coefficient)
+            model.add_hint(variable, int((assignment.assignment_id, room) in preferred))
     for variables in resource_choices.values():
-        model.AddAtMostOne(variables)
-    model.Maximize(sum(terms))
+        model.add_at_most_one(variables)
+    # An empty period keeps the constant objective it always had.
+    objective = (
+        cp_model.LinearExpr.weighted_sum(choice_variables, coefficients) if choice_variables else 0
+    )
+    model.maximize(objective)
     solver = cp_model.CpSolver()
     solver.parameters.num_search_workers = 1
     solver.parameters.random_seed = 1
