@@ -7,7 +7,7 @@ import { SCHEDULE_PRIORITY_CRITERIA } from '../../features/schoolConfig/schedule
 import FeedbackBanner from '../FeedbackBanner'
 
 // The finish date is a measure of the proposal, not a school criterion, so it is listed here only.
-const FINISH_DATE_ROW = { key: 'finish_early', title: 'Acabar os módulos o mais cedo possível.' }
+const FINISH_DATE_ROW = { key: 'finish_early', title: 'Data da última aula.' }
 const PRIORITY_SUMMARY_ROWS = [FINISH_DATE_ROW, ...SCHEDULE_PRIORITY_CRITERIA]
 
 const CHANGE_LABELS = {

@@ -38,7 +38,7 @@ const WARNINGS = {
 }
 
 const INTRO =
-  'As regras obrigatórias (Impossível, presença mínima, almoço, tipo de sala e datas do ano letivo) nunca se quebram. O Cronos acaba sempre os módulos o mais cedo possível, para deixar margem para recuperar faltas e ocorrências. Os critérios abaixo decidem como, e alguns podem atrasar o fim do ano.'
+  'Escolha a importância de cada critério. O Cronos equilibra-os segundo estes valores. As regras obrigatórias (Impossível, presença mínima, almoço, tipo de sala e datas do ano letivo) nunca se quebram. O Cronos acaba sempre os módulos o mais cedo possível, para deixar margem para recuperar faltas e ocorrências. Os critérios abaixo decidem como, e alguns podem atrasar o fim do ano.'
 
 const CRITERIA = [
   'Evitar tempos livres dos professores.',

@@ -303,7 +303,7 @@ describe('DraftPanel', () => {
     )).toBeInTheDocument()
     expect(screen.getByTestId('priority-fallback-warning')).not.toHaveTextContent(/valores recomendados/i)
     expect(within(table).getAllByRole('row')).toHaveLength(12)
-    expect(within(table).getByRole('rowheader', { name: 'Acabar os módulos o mais cedo possível.' })).toBeInTheDocument()
+    expect(within(table).getByRole('rowheader', { name: 'Data da última aula.' })).toBeInTheDocument()
     expect(within(table).getByText('2027-03-18')).toBeInTheDocument()
     expect(within(table).getAllByText('1,5 h')).toHaveLength(2)
     expect(within(table).getAllByText('2,5 dias')).toHaveLength(2)
