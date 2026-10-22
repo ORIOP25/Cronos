@@ -259,7 +259,7 @@ def test_subject_pace_summary_is_per_class_while_cost_uses_the_total():
     assert payload.metrics["priority_summary"]["proposal"]["subject_pace"] == 10
     # Level 2 doubles the calibrated unit cost of the 20-day total (T13).
     assert (
-        priority_cost(measured, PriorityWeights(levels), origin=school.origin)
+        priority_cost(measured, PriorityWeights(levels), origin=school.origin, lesson_minutes=60)
         == 2 * UNIT_COSTS["subject_pace"] * 20
     )
 
