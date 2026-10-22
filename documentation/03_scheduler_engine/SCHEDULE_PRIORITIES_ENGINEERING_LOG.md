@@ -285,6 +285,43 @@ Prova de horários iguais (impressão digital de todas as aulas, `digest.py` no 
 Tempo no mesmo instante, recomendado, duas corridas em paralelo: `main` 388 s, ramo 350 s (cerca de 10% mais rápido). Ambas as corridas partilham a máquina, por isso o número é relativo. Uma corrida isolada do ramo levou 266 s, mas não há medição isolada do `main` sem outras corridas.
 Os testes `-k "scheduler or priorities"` passaram: 858 testes.
 
+#### Limpeza (22 de outubro de 2026)
+
+Limpeza do que sobrou de "Acabar cedo", sem mudar nenhuma aula.
+- Saiu o caminho de espalhar aulas (D14, T07). A escassez usa sempre `t`. `_scarcity` deixou de receber `spread`, e os dois chamadores (`constructive.py` e `recovery_construction.py`) deixaram de o passar.
+- Testes removidos, porque só pinavam o caminho que saiu: `test_all_zero_priorities_spread_one_lesson_every_other_week` (D14, tudo em zero) e `test_at_half_booked_an_empty_hour_stays_empty_at_finish_early_zero` (meio ocupado). O teste de três quartos deu lugar a `test_scarcity_is_the_tightness_times_the_unit_cost_with_no_spread`, que falhou antes da mudança (`TypeError`, o argumento `spread` já não existe) e passa depois. O teste de turma lotada passou a usar o nível por defeito, porque deixou de depender de `finish_early` zero.
+- Saiu o perfil `finish-early-ignore` de `lab/priority_bench.py`.
+- Saiu código sem uso: `assignment_physical_minutes` (`annual_model.py`), `gap_and_availability_cost_minutes` (`quality.py`) e o parâmetro `lessons` de `_choose_rooms` (`room_assignment.py`).
+- Especificação: T07 e T15 perdem as frases sobre Ignorar, e sai a linha R05 ("Ignorar tudo"), que descrevia o teste removido.
+- A passagem de Acabar cedo em Ignorar fica só no histórico desta secção. Não há mais caminho em produção.
+
+Prova de horários iguais (`digest.py` no ramo, seis casos):
+
+| Caso | `main` | Ramo |
+| :--- | :--- | :--- |
+| Recomendado | `61fc5fb0ee3f99f3` | igual |
+| Tempos livres dos professores no máximo | `53dca1005caaeef6` | igual |
+| Estabilidade semanal no máximo | `004684d7388854c6` | igual |
+| Salas próprias e tempos livres das turmas | `c87552c238903b36` | igual |
+| Recomendado com 70% das horas | `34aa991e603aa9c7` | igual |
+| Ritmo das disciplinas em Ignorar | `abf8fa425fc9c2b8` | igual |
+
+Tempo e memória, recomendado, uma corrida de cada vez, na mesma máquina:
+- `main`: 358 s, pico de RSS 242 852 KB.
+- Ramo: 340 s, pico de RSS 242 844 KB.
+
+A diferença fica dentro do ruído de uma corrida. Esta limpeza não é uma otimização medida. Uma corrida anterior do `main`, feita com outro contentor a correr, levou 516 s, por isso não é comparável.
+
+Coleta de lixo: depois da corrida, `gc.collect()` devolveu 0 objetos inalcançáveis. Por isso o worker não ganha nada com `gc.collect()` depois de cada tarefa, e nada foi acrescentado. O worker já recicla o processo filho (ver [o relatório de memória](../09_ops_observability/SERVER_MEMORY_AUDIT_2026-10-18.md)).
+
+Não foi feito (cada item com o motivo):
+- Complexidade cognitiva de `_construct_pass`: refatoração grande, fora do âmbito de uma limpeza.
+- `PriorityWeights` ainda aceita `finish_early` zero, quando construído diretamente. Apertar a validação mudaria testes de domínio; a escola já não consegue escolher esse valor, porque `school_priority_weights` fixa 4.
+- Perfil `class-gaps-maximum` do laboratório ainda usa `finish_early` 1, um nível que a escola já não escolhe. Fica para não mudar a referência do laboratório.
+- Avisos ARG restantes: a assinatura do ouvinte do SQLAlchemy (`models.py`) e a porta do despachante (`task_dispatcher.py`) têm argumentos fixos. Não são código morto.
+- Auxiliares usados só por testes (`build_recovery_case`, `candidate_digest`, `total_physical_minutes` e outros) ficam, porque os testes os usam para fixar digests e contratos.
+- Passo 3 da velocidade (usar o modelo por período só quando melhora a escolha; estimativa de 5,2 para cerca de 4 min) fica como opção futura. O responsável de produto parou-o a 22 de outubro de 2026 em 5,2 min.
+
 #### Lições
 
 - Um script chamado `profile.py` esconde o módulo `profile` do Python e parte o cProfile. Use outro nome.
