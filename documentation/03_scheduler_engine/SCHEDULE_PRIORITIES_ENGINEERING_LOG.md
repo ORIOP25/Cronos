@@ -211,6 +211,65 @@ O caso de verificação do spec dá 12,7 h de tempos livres por turma, contra 21
 - "Dias de uma só aula dos professores" em Prioridade máxima fica ligeiramente pior do que no recomendado (76 contra 68).
 - Os tempos livres dos professores no recomendado subiram 0,8 h por professor por ano, acima do alvo de 0,5 h.
 
+### "Acabar cedo" deixa de ser configurável (22 de outubro de 2026)
+
+A campanha mostrou que baixar "Acabar cedo" só comprava cerca de 2 h de tempos livres por professor por ano.
+Em troca, as turmas ganhavam 8 h de tempos livres, os professores 2 h de Evitar, e perdia-se uma semana de margem antes da data de fim.
+O responsável de produto decidiu acabar com o slider (D19, [#183](https://github.com/ORIOP25/Cronos/pull/183)): o gerador acaba sempre o mais cedo possível, para deixar margem para recuperar faltas e ocorrências.
+A escola escolhe os outros 10 critérios. O motor continua a medir a data da última aula.
+
+### Velocidade
+
+Perfil da escola realista com os níveis recomendados, com cProfile. O perfil torna a corrida cerca de 2 vezes mais lenta.
+
+| Parte | Tempo | Peso |
+| :--- | :--- | :--- |
+| Passagem estrita (falha a 3 jun) | 1 366 s | 56% |
+| Passagem relaxada (dá o horário) | 1 030 s | 42% |
+| `_select_period` (as duas passagens) | 726 s | 30%, dos quais 174 s a resolver e o resto a montar o modelo em Python |
+| `option_value` | 328 s | calculado uma vez por sala, quando só a sala da turma depende da sala |
+| `open_rooms` | 321 s | salas livres e indisponibilidades |
+| `presence_run` | 270 s | o filtro antes da escolha e a colocação planeiam a mesma presença |
+
+Sinal da passagem estrita, medido no início de cada semana. "Atrasados" são os recursos atrás do ritmo linear; "atraso" é a soma das horas em falta face a esse ritmo.
+
+| Escola | Passagem estrita | Início de outubro | Depois |
+| :--- | :--- | :--- | :--- |
+| Realista (horas × 1,0) | falha a 3 jun | 19 atrasados, 24 h | 68 h em novembro, até 174 h |
+| Horas × 0,85 | tem sucesso | 3 atrasados, 2 h | ≤ 2 h |
+| Horas × 0,70 | tem sucesso | 1 atrasado, 1 h | ≤ 1 h |
+| Horas × 0,55 | tem sucesso | 0 | 0 h |
+
+Com a data preferida 2 ou 4 semanas mais tarde, a passagem estrita da escola realista continua a falhar.
+
+O modelo de cada período devolveu a escolha rápida em 2 553 de 2 645 chamadas (99%). Essas chamadas gastaram quase todo o tempo do modelo.
+
+Plano aprovado pelo responsável de produto: desistir cedo da passagem estrita condenada; cortar trabalho repetido sem mudar nenhuma aula; usar o modelo só quando pode melhorar.
+Cada passo entra com os horários provados iguais (impressão digital de todas as aulas em seis casos) ou com a qualidade medida.
+
+#### Passo 1: desistir cedo da passagem estrita
+
+A passagem estrita com pesos desiste quando duas verificações semanais seguidas mostram pelo menos 10% dos recursos atrás do ritmo e 10 h de atraso (limiares em `availability_priority.py`). A relaxada vem a seguir.
+Na escola realista desiste a 28 de setembro de 2026, em vez de 3 de junho de 2027. Nas escolas com 85% e 70% das horas não desiste.
+
+Prova de horários iguais (impressão digital de todas as aulas):
+
+| Caso | `main` | Com o passo 1 |
+| :--- | :--- | :--- |
+| Recomendado | `61fc5fb0ee3f99f3` | igual |
+| Tempos livres dos professores no máximo | `53dca1005caaeef6` | igual |
+| Recomendado com 70% das horas | `34aa991e603aa9c7` | igual |
+| Atualização às quartas, critério 11 em Ignorar | reconstrução, 35 520 aulas mudadas, fim a 16 jun | igual |
+| Atualização de março | reparação, 63 aulas mudadas, 41 mudanças de sala | igual |
+
+Tempo da reconstrução numa atualização, nas mesmas condições: 919 s → 511 s.
+
+#### Lições
+
+- Um script chamado `profile.py` esconde o módulo `profile` do Python e parte o cProfile. Use outro nome.
+- `python -I` ignora o `PYTHONPATH` e não encontra o pacote `app`.
+- O cProfile mede onde está o tempo, mas não quanto dura uma corrida normal.
+
 ## Failure Modes
 
 ### Boas decisões
