@@ -230,6 +230,10 @@ def measure_priority_metrics(
     }
 
 
+def _lesson_minutes_measure(key: str, measure: int, lesson_minutes: int) -> int:
+    return measure * lesson_minutes if key in LESSON_COUNT_KEYS else measure
+
+
 def typical_lesson_minutes(grid_slots: Sequence[GridSlot]) -> int:
     """The most common grid slot length, the lesson minutes T13 prices one count at."""
     return Counter(slot.duration_minutes for slot in grid_slots).most_common(1)[0][0]
@@ -266,9 +270,8 @@ def priority_cost(
         measure = completion_days if key == "finish_early" else metrics[key]
         if type(measure) is not int or measure < 0:
             raise ValueError("Priority measures must be nonnegative integers.")
-        if key in LESSON_COUNT_KEYS:
-            measure *= lesson_minutes
-        total += PRIORITY_MULTIPLIERS[getattr(weights, key)] * UNIT_COSTS[key] * measure
+        priced = _lesson_minutes_measure(key, measure, lesson_minutes)
+        total += PRIORITY_MULTIPLIERS[getattr(weights, key)] * UNIT_COSTS[key] * priced
     if preferred_end_date is not None:
         late_days = max(0, (metrics["finish_early"] - preferred_end_date).days)
         total += PRIORITY_MULTIPLIERS[weights.finish_early] * LATE_DAY_COST * late_days
