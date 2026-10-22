@@ -3,6 +3,8 @@
 from dataclasses import replace
 from datetime import date, time, timedelta
 
+import pytest
+
 from app.scheduler.domain.availability_priority import AvailabilityLedger
 from app.scheduler.domain.calendar import normalize_period
 from app.scheduler.domain.candidate import (
@@ -23,7 +25,7 @@ from app.scheduler.domain.priorities import (
     UNIT_COSTS,
     PriorityWeights,
 )
-from app.scheduler.domain.priority_value import option_value
+from app.scheduler.domain.priority_value import WeeklyHistory, WeeklyReference, option_value
 from app.scheduler.domain.projection import ModuleRequirement, ModuleSlice
 from app.scheduler.infrastructure import constructive
 from app.scheduler.infrastructure.constructive import (
@@ -103,20 +105,11 @@ def test_joint_assignment_weekly_score_counts_each_class_reference(monkeypatch):
         replace(assignment(3, teacher_id=3, class_id=1), class_ids=(1, 2)),
     )
     periods = (period(7, 9), period(7, 10))
-    school = make_snapshot(assignments, periods)
-    previous_period = period(0, 9)
+    # The origin includes the previous teaching day, as the metric's calendar does.
+    school = replace(make_snapshot(assignments, periods), origin=MONDAY)
+    # Class 1 kept assignment 1 at 9h the week before; class 2 had no lesson there.
     reference = CandidateSchedule(
-        tuple(
-            ScheduledLesson(
-                identity,
-                identity,
-                previous_period,
-                identity + 100,
-                60,
-                (ModuleSlice(identity * 10, 1, 0, 60),),
-            )
-            for identity in (1, 2)
-        )
+        (ScheduledLesson(1, 1, period(0, 9), 101, 60, (ModuleSlice(10, 1, 0, 60),)),)
     )
     levels = dict.fromkeys(CRITERION_KEYS, 0)
     levels["weekly_stability"] = 4
@@ -140,10 +133,11 @@ def test_joint_assignment_weekly_score_counts_each_class_reference(monkeypatch):
     )
 
     assert candidate is not None
-    assert captured[(3, 103)][1] == option_value(selected_weights, {"weekly_stability": -120})
+    # Class 1 kept another subject (no credit); class 2 had an empty hour (-credit).
+    assert captured[(3, 103)][1] == option_value(selected_weights, {"weekly_stability": -60})
 
 
-def test_joint_weekly_score_cancels_one_match_and_one_mismatch():
+def test_joint_weekly_score_counts_a_match_and_ignores_a_different_lesson():
     periods = (period(0, 9),)
     row = replace(assignment(3, teacher_id=3, class_id=1), class_ids=(1, 2))
     school = make_snapshot((row,), periods)
@@ -161,11 +155,76 @@ def test_joint_weekly_score_cancels_one_match_and_one_mismatch():
         },
         day_slots=school.grid_slots,
         counts_teacher_single_lessons=False,
-        weekly_assignment_ids=(3, 2),
+        weekly_references=(3, 2),
         pace_lag=None,
     )
 
-    assert measures.get("weekly_stability", 0) == 0
+    assert measures["weekly_stability"] == 60
+
+
+@pytest.mark.parametrize(
+    ("reference", "expected"),
+    [
+        (3, 60),
+        (2, 0),
+        (WeeklyReference.EMPTY, -60),
+        (WeeklyReference.NO_PREVIOUS_DAY, 0),
+    ],
+    ids=["same-lesson", "different-lesson", "empty-slot", "no-previous-day"],
+)
+def test_weekly_stability_measure_of_one_class_follows_its_previous_teaching_day(
+    reference, expected
+):
+    periods = (period(0, 9),)
+    row = assignment(3, teacher_id=3, class_id=1)
+    school = make_snapshot((row,), periods)
+
+    measures = constructive._option_measures(
+        school,
+        row,
+        periods[0],
+        credit=60,
+        needed_evitar=frozenset(),
+        occupancy={("teacher", 3, MONDAY): [], ("class", 1, MONDAY): []},
+        day_slots=school.grid_slots,
+        counts_teacher_single_lessons=False,
+        weekly_references=(reference,),
+        pace_lag=None,
+    )
+
+    assert measures.get("weekly_stability", 0) == expected
+
+
+def test_weekly_history_compares_with_the_previous_teaching_day_not_an_older_lesson():
+    """T06: an empty previous teaching day is a change, even when an older week taught the slot."""
+    weeks = (period(0, 9), period(7, 9), period(14, 9))
+    school = make_snapshot((assignment(2, teacher_id=2, class_id=1),), weeks)
+    history = WeeklyHistory(school)
+    week_one, week_two, week_three = (row.school_date for row in weeks)
+    nine = weeks[0]
+    history.record(1, week_one, nine.start_local, nine.end_local, 2)
+
+    assert history.reference(1, week_two, nine.start_local, nine.end_local) == 2
+    assert (
+        history.reference(1, week_three, nine.start_local, nine.end_local) is WeeklyReference.EMPTY
+    )
+
+
+def test_weekly_history_skips_the_days_its_class_is_blocked_on():
+    weeks = (period(0, 9), period(7, 9), period(14, 9))
+    school = replace(
+        make_snapshot((assignment(2, teacher_id=2, class_id=1),), weeks),
+        class_blocked_dates={1: frozenset({weeks[1].school_date})},
+    )
+    history = WeeklyHistory(school)
+    nine = weeks[0]
+    history.record(1, weeks[0].school_date, nine.start_local, nine.end_local, 2)
+
+    assert history.reference(1, weeks[2].school_date, nine.start_local, nine.end_local) == 2
+    assert (
+        history.reference(1, weeks[0].school_date, nine.start_local, nine.end_local)
+        is WeeklyReference.NO_PREVIOUS_DAY
+    )
 
 
 def test_gap_priority_counts_empty_grid_slots_and_ignores_lunch_break_minutes():
@@ -232,7 +291,7 @@ def test_teacher_gap_option_counts_the_last_lunch_slot_for_a_dispensed_teacher()
         },
         day_slots=school.grid_slots,
         counts_teacher_single_lessons=False,
-        weekly_assignment_ids=(),
+        weekly_references=(),
         pace_lag=None,
     )
 

@@ -71,7 +71,7 @@ def positions(candidate):
     return {(row.assignment_id, row.period, row.room_id) for row in candidate.lessons}
 
 
-def test_joint_recovery_weekly_score_counts_each_class_reference(monkeypatch):
+def test_joint_recovery_weekly_score_ignores_a_different_lesson_in_each_class(monkeypatch):
     periods = (period(0, 9), period(0, 10, 11))
     assignments = (
         assignment(1, 1, 1, {101}, 60),
@@ -87,6 +87,8 @@ def test_joint_recovery_weekly_score_counts_each_class_reference(monkeypatch):
         plan(periods, assignments),
         strategy=SchedulingStrategy.ADAPTIVE_RECOVERY,
         baseline_lessons=baseline,
+        # The reference needs the previous teaching day inside the origin, as the metric does.
+        origin=previous_period.school_date,
     )
     levels = dict.fromkeys(CRITERION_KEYS, 0)
     levels["weekly_stability"] = 4
@@ -109,7 +111,45 @@ def test_joint_recovery_weekly_score_counts_each_class_reference(monkeypatch):
     )
 
     assert candidate is not None
-    assert captured[(3, 103)][1] == option_value(selected_weights, {"weekly_stability": -120})
+    # Both classes taught another subject on the previous teaching day: no credit, no penalty.
+    assert captured[(3, 103)][1] == 0
+
+
+def test_recovery_weekly_reference_is_the_empty_previous_teaching_day_not_an_older_lesson(
+    monkeypatch,
+):
+    """T06: a slot empty last week is a change, even when an older week taught it the same subject."""
+    periods = (period(0, 9),)
+    row = assignment(1, 1, 1, {101}, 60)
+    older = ScheduledLesson(100, 1, period(-14, 9), 101, 60, (ModuleSlice(100, 1, 0, 60),))
+    target = replace(
+        plan(periods, [row]),
+        strategy=SchedulingStrategy.ADAPTIVE_RECOVERY,
+        baseline_lessons=(older,),
+        origin=period(-14, 9).school_date,
+    )
+    levels = dict.fromkeys(CRITERION_KEYS, 0)
+    levels["weekly_stability"] = 4
+    selected_weights = PriorityWeights(levels)
+    captured = {}
+    original_select = recovery_construction._select_period
+
+    def capture_scores(options, *, deadline, scores=None, fill_admitted=False):
+        if not captured and 1 in {row.assignment_id for row, _rooms in options}:
+            captured.update(scores or {})
+        return original_select(options, deadline=deadline, scores=scores)
+
+    monkeypatch.setattr(recovery_construction, "_select_period", capture_scores)
+
+    candidate = construct_recovery(
+        target,
+        periods,
+        deadline=monotonic() + 20,
+        weights=selected_weights,
+    )
+
+    assert candidate is not None
+    assert captured[(1, 101)][1] == option_value(selected_weights, {"weekly_stability": -60})
 
 
 @pytest.mark.parametrize(
