@@ -264,6 +264,27 @@ Prova de horários iguais (impressão digital de todas as aulas):
 
 Tempo da reconstrução numa atualização, nas mesmas condições: 919 s → 511 s.
 
+#### Passo 2: cortar trabalho repetido
+
+Três mudanças, sem mudar nenhuma aula.
+- O valor de cada opção sem a medida da sala de origem calcula-se uma vez por opção. Cada sala só soma a sua parte. A mesma regra vale na reconstrução de atualizações.
+- O modelo de reparação de cada período usa a API `snake_case` do OR-Tools e uma só expressão `weighted_sum` para o objetivo. Um período vazio mantém o objetivo constante de antes.
+- A medição de presença não foi guardada em cache. Só a colocação repetia as chamadas das opções escolhidas, uma pequena parte das chamadas do filtro. O ganho estimado era menor que 1%.
+
+Prova de horários iguais (impressão digital de todas as aulas, `digest.py` no `main` e no ramo):
+
+| Caso | `main` | Com o passo 2 |
+| :--- | :--- | :--- |
+| Recomendado | `61fc5fb0ee3f99f3` | igual |
+| Tempos livres dos professores no máximo | `53dca1005caaeef6` | igual |
+| Estabilidade semanal no máximo | `004684d7388854c6` | igual |
+| Salas próprias e tempos livres das turmas | `c87552c238903b36` | igual |
+| Recomendado com 70% das horas | `34aa991e603aa9c7` | igual |
+| Ritmo das disciplinas em Ignorar | `abf8fa425fc9c2b8` | igual |
+
+Tempo no mesmo instante, recomendado, duas corridas em paralelo: `main` 388 s, ramo 350 s (cerca de 10% mais rápido). Ambas as corridas partilham a máquina, por isso o número é relativo. Uma corrida isolada do ramo levou 266 s, mas não há medição isolada do `main` sem outras corridas.
+Os testes `-k "scheduler or priorities"` passaram: 858 testes.
+
 #### Lições
 
 - Um script chamado `profile.py` esconde o módulo `profile` do Python e parte o cProfile. Use outro nome.

@@ -25,7 +25,7 @@ from app.scheduler.domain.capacity import (
     residual_minutes,
 )
 from app.scheduler.domain.priorities import PriorityWeights
-from app.scheduler.domain.priority_value import WeeklyHistory
+from app.scheduler.domain.priority_value import WeeklyHistory, option_value
 from app.scheduler.infrastructure.constructive import (
     _continues_open_presence,
     _evitar_kinds,
@@ -38,6 +38,7 @@ from app.scheduler.infrastructure.constructive import (
     _option_measures,
     _pace_lag,
     _pace_peers,
+    _preference_value,
     _presence_day_complies,
     _presence_left_fits,
     _resource_keys,
@@ -501,12 +502,13 @@ def _construct_recovery(
                     credit,
                     spread=weights.finish_early == 0,
                 )
+                base_value = option_value(weights, measures)
+                same_room_value = option_value(weights, {"class_same_room": -credit})
+                preference_value = _preference_value(weights, measures)
                 for room in rooms:
-                    value = _room_value(
-                        weights, measures, assignment, room, home_rooms, credit=credit
-                    )
+                    value = _room_value(base_value, same_room_value, assignment, room, home_rooms)
                     if necessary or _fills_hour(
-                        weights, measures, value + scarcity, strict=strict, fill=fill
+                        value + scarcity, preference_value, strict=strict, fill=fill
                     ):
                         allowed_rooms.append((room, value))
                         scores[(identity, room)] = (necessary, value, urgency)

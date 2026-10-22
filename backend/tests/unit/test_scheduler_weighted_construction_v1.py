@@ -1,5 +1,6 @@
 """Weighted constructive behavior for schedule-priority risk cases."""
 
+import hashlib
 from dataclasses import replace
 from datetime import date, time, timedelta
 from fractions import Fraction
@@ -626,10 +627,8 @@ def test_a_fill_pass_follows_the_priorities_when_empty_hours_left_both_passes_sh
 
 
 def test_the_fill_pass_teaches_an_option_whatever_its_value():
-    weights = PriorityWeights(DEFAULT_LEVELS)
-
-    assert constructive._fills_hour(weights, {}, -500, strict=True) is False
-    assert constructive._fills_hour(weights, {}, -500, strict=False, fill=True) is True
+    assert constructive._fills_hour(-500, 0, strict=True) is False
+    assert constructive._fills_hour(-500, 0, strict=False, fill=True) is True
 
 
 def test_weekly_stability_follows_the_previous_week_not_the_first_one():
@@ -782,6 +781,54 @@ def test_scarcity_teaches_a_tight_class_its_negative_option_now_and_leaves_an_am
     assert first_taught_start(tight) == period(7, 9).start_utc
     assert ample is not None
     assert first_taught_start(ample) == period(7, 10).start_utc
+
+
+def _repair_model_digests(monkeypatch):
+    """Digests of the serialized repair models, in the order the period repair solves them."""
+    digests = []
+    solver_class = constructive.cp_model.CpSolver
+
+    class RecordingSolver(solver_class):
+        def Solve(self, model):
+            digests.append(hashlib.sha256(str(model.Proto()).encode()).hexdigest()[:16])
+            return super().Solve(model)
+
+    monkeypatch.setattr(constructive.cp_model, "CpSolver", RecordingSolver)
+    return digests
+
+
+def test_period_repair_models_keep_their_variables_hints_and_objective(monkeypatch):
+    """The repair model is built faster, but it stays the same model (perf, schedules unchanged)."""
+    digests = _repair_model_digests(monkeypatch)
+    first = assignment(1, teacher_id=1, class_id=1)
+    second = assignment(2, teacher_id=2, class_id=2)
+    third = assignment(3, teacher_id=1, class_id=3)
+    weighted = [(first, (101, 102)), (second, (102, 103)), (third, (103,))]
+    scores = {
+        (1, 101): (True, 5, 2),
+        (1, 102): (False, 3, 0),
+        (2, 102): (False, -4, 0),
+        (2, 103): (False, 0, 1),
+        (3, 103): (False, 0, 0),
+    }
+    joint = Assignment(1, (1, 2), 1, 1, frozenset({101}), (ModuleRequirement(10, 1, 60),))
+    unweighted = [
+        (joint, (101,)),
+        (assignment(2, teacher_id=2, class_id=1), (102,)),
+        (assignment(3, teacher_id=3, class_id=2), (103,)),
+    ]
+
+    _select_period(weighted, deadline=None, scores=scores)
+    _select_period(weighted, deadline=None, scores=scores, fill_admitted=True)
+    _select_period(unweighted, deadline=None)
+    _select_period([], deadline=None, scores={})
+
+    assert digests == [
+        "0c8c1ffb6149da58",
+        "aec05e7976e8e8af",
+        "c88676210ce40157",
+        "ac0f6fa4c831f375",
+    ]
 
 
 def run_pass(school, periods, *, weights_value, strict):
