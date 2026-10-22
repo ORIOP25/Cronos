@@ -24,6 +24,7 @@ from app.scheduler.domain.availability_priority import (
     RESOURCE_KINDS,
     TEACHER,
     AvailabilityLedger,
+    PaceWatch,
 )
 from app.scheduler.domain.calendar import Period
 from app.scheduler.domain.candidate import (
@@ -692,7 +693,7 @@ def construct_schedule(
     failed, one relaxed pass repeats the construction without it (T09).
     """
     strict_periods = strict_window_periods(snapshot, periods, weights)
-    candidate, refused = _construct_pass(
+    candidate, refused, paced_out = _construct_pass(
         snapshot,
         strict_periods,
         deadline=deadline,
@@ -703,10 +704,10 @@ def construct_schedule(
     )
     if (
         candidate is None
-        and (refused or strict_periods != periods)
+        and (refused or paced_out or strict_periods != periods)
         and not _interrupted(deadline, should_cancel)
     ):
-        candidate, _refused = _construct_pass(
+        candidate, _refused, _paced_out = _construct_pass(
             snapshot,
             periods,
             deadline=deadline,
@@ -716,7 +717,7 @@ def construct_schedule(
             strict=False,
         )
     if candidate is None and weights is not None and not _interrupted(deadline, should_cancel):
-        candidate, _refused = _construct_pass(
+        candidate, _refused, _paced_out = _construct_pass(
             snapshot,
             periods,
             deadline=deadline,
@@ -739,8 +740,12 @@ def _construct_pass(
     weights: PriorityWeights | None,
     strict: bool,
     fill: bool = False,
-) -> tuple[CandidateSchedule | None, int]:
-    """One construction pass; returns the plan and the options the Evitar filter refused."""
+) -> tuple[CandidateSchedule | None, int, bool]:
+    """One construction pass.
+
+    Returns the plan, the options the Evitar filter refused, and whether the weekly pace
+    check stopped the pass (SCHEDULE_PRIORITIES T07).
+    """
     canonical = canonical_periods(periods)
     slots = sorted(
         snapshot.grid_slots, key=lambda slot: (slot.day_of_week, slot.start_local, slot.end_local)
@@ -862,7 +867,7 @@ def _construct_pass(
     teacher_remaining: dict[int, int] = defaultdict(int)
     for identity, assignment in assignments.items():
         if _interrupted(deadline, should_cancel):
-            return None, 0
+            return None, 0, False
         if remaining[identity] <= 0:
             continue
         eligible = eligible_periods(snapshot, assignment, canonical)
@@ -1090,11 +1095,14 @@ def _construct_pass(
             return None
         return [(assignment, period, room)]
 
+    pace_watch = PaceWatch() if weights is not None and strict else None
     for period in canonical:
         if _interrupted(deadline, should_cancel):
-            return None, ledger.refused
+            return None, ledger.refused, False
         if _gives_up(ledger, period, strict=strict):
-            return None, ledger.refused
+            return None, ledger.refused, False
+        if pace_watch is not None and pace_watch.gives_up(ledger, period):
+            return None, ledger.refused, True
         active = [
             row
             for row in options_by_period[period]
@@ -1247,11 +1255,11 @@ def _construct_pass(
                 continue
             for run_assignment, run_period, run_room in run:
                 if not place(run_assignment, run_period, run_room):
-                    return None, ledger.refused
+                    return None, ledger.refused, False
         if not any(remaining.values()):
             break
     if any(remaining.values()):
-        return None, ledger.refused
+        return None, ledger.refused, False
     candidate = CandidateSchedule((*snapshot.protected_lessons, *lessons))
     valid = validate_candidate(snapshot, candidate).valid
-    return (candidate if valid else None), ledger.refused
+    return (candidate if valid else None), ledger.refused, False

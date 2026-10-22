@@ -9,7 +9,13 @@ import pytest
 
 import app.scheduler.infrastructure.constructive as constructive
 import app.scheduler.infrastructure.recovery_construction as recovery_construction
-from app.scheduler.domain.availability_priority import AvailabilityLedger, is_avoided, on_pace
+from app.scheduler.domain.availability_priority import (
+    AvailabilityLedger,
+    PaceSignal,
+    PaceWatch,
+    is_avoided,
+    on_pace,
+)
 from app.scheduler.domain.calendar import normalize_period
 from app.scheduler.domain.candidate import (
     Assignment,
@@ -428,7 +434,7 @@ def test_r07_a_dead_end_caused_by_evitar_is_repaired_by_the_relaxed_pass():
 
 
 def strict_construction(scenario, periods, should_cancel):
-    return constructive._construct_pass(
+    candidate, refused, _paced_out = constructive._construct_pass(
         scenario,
         periods,
         deadline=None,
@@ -437,6 +443,7 @@ def strict_construction(scenario, periods, should_cancel):
         weights=None,
         strict=True,
     )
+    return candidate, refused
 
 
 def strict_recovery(scenario, periods, should_cancel):
@@ -509,3 +516,66 @@ def test_tightness_is_the_demand_over_the_capacity_left_capped_at_one():
     # Only one hour is left from 12h, so demand exceeds capacity: capped at one.
     assert loose_ledger.tightness(row, loose[3]) == 1
     assert untracked.tightness(row, full[0]) == 0
+
+
+def one_resource_behind_at_the_tenth_hour():
+    """One assignment of 600 minutes over the first 20 hours: teacher 1 and class 1 track it."""
+    grid = week_periods()
+    row = assignment(1, teacher_id=1, class_ids=(1,))
+    ledger = AvailabilityLedger.build(snapshot((row,)), {1: grid[:20]}, {1: 600})
+    return ledger, row, grid
+
+
+def test_pace_signal_counts_the_resources_behind_their_linear_pace_and_their_deficit():
+    # 600 min left over 600 min of capacity from 10h, while the linear share is 300 min:
+    # teacher 1 and class 1 are each 300 min behind.
+    ledger, _row, grid = one_resource_behind_at_the_tenth_hour()
+
+    signal = ledger.pace_signal(grid[10].start_utc)
+
+    assert signal == PaceSignal(behind=2, deficit_minutes=Fraction(600), tracked=2)
+
+
+def test_pace_signal_is_zero_for_a_ledger_on_pace():
+    ledger, row, grid = one_resource_behind_at_the_tenth_hour()
+    assert ledger.pace_signal(grid[0].start_utc) == PaceSignal(0, Fraction(0), 2)
+
+    ledger.place(row, 300)
+
+    assert ledger.pace_signal(grid[10].start_utc) == PaceSignal(0, Fraction(0), 2)
+
+
+def test_pace_signal_falls_behind_only_with_enough_resources_and_deficit():
+    # Behind pace: at least max(5, a tenth of the tracked resources) and at least 10 h of deficit.
+    assert PaceSignal(5, Fraction(600), 40).falling_behind is True
+    assert PaceSignal(4, Fraction(600), 40).falling_behind is False
+    assert PaceSignal(12, Fraction(600), 117).falling_behind is True
+    assert PaceSignal(11, Fraction(600), 117).falling_behind is False
+    assert PaceSignal(5, Fraction(599), 40).falling_behind is False
+
+
+def test_pace_watch_gives_up_only_after_two_falling_behind_weeks_in_a_row():
+    # Five assignments of 600 min over three weeks of 10 hours each (1800 min per resource).
+    # Week 1 starts on pace. Week 2 and week 3 are each 200 and 400 min behind per resource.
+    periods = tuple(
+        period(7 * week + day, hour) for week in range(3) for day in range(5) for hour in (9, 10)
+    )
+    rows = tuple(
+        assignment(identity, teacher_id=identity, class_ids=(identity,)) for identity in range(1, 6)
+    )
+    ledger = AvailabilityLedger.build(
+        snapshot(rows, weeks=3),
+        {row.assignment_id: periods for row in rows},
+        {row.assignment_id: 600 for row in rows},
+    )
+    watch = PaceWatch()
+
+    checks = [
+        watch.gives_up(ledger, periods[0]),
+        watch.gives_up(ledger, periods[1]),
+        watch.gives_up(ledger, periods[10]),
+        watch.gives_up(ledger, periods[11]),
+        watch.gives_up(ledger, periods[20]),
+    ]
+
+    assert checks == [False, False, False, False, True]
