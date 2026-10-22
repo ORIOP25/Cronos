@@ -100,7 +100,7 @@ def assign_rooms_by_period(
     for (school_date, _start, _end), lessons in _periods(candidate.lessons):
         editable = [row for row in lessons if row.lesson_id not in protected_ids]
         if editable and school_date not in partly_overlapping:
-            chosen = _choose_rooms(context, habits, lessons, editable)
+            chosen = _choose_rooms(context, habits, editable)
             if chosen is None:
                 # The period cannot give each lesson its own room, so the input is invalid
                 # and the validator rejects it downstream.
@@ -195,7 +195,6 @@ def _partly_overlapping_dates(
 def _choose_rooms(
     context: _PassContext,
     habits: RoomHabits,
-    lessons: Sequence[ScheduledLesson],
     editable: Sequence[ScheduledLesson],
 ) -> dict[int, int] | None:
     """Best rooms for the editable lessons of one period; None when they cannot all get one."""

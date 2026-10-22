@@ -92,13 +92,6 @@ class QuotaDistribution:
     def total_physical_minutes(self) -> int:
         return sum(duration * count for (_, _, duration), count in self.counts.items())
 
-    def assignment_physical_minutes(self, assignment_id: int) -> int:
-        return sum(
-            duration * count
-            for (owner, _, duration), count in self.counts.items()
-            if owner == assignment_id
-        )
-
 
 @dataclass(frozen=True)
 class AnnualPlan:
