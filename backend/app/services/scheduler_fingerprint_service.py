@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app import models
 from app.core.task_keys import resolve_repair_window_days
 from app.scheduler.domain.calendar import first_editable_grid_date
-from app.scheduler.domain.priorities import DEFAULT_LEVELS, PriorityWeights
+from app.scheduler.domain.priorities import school_priority_weights
 from app.scheduler.domain.serialization import (
     canonical_json,
     canonical_json_value,
@@ -605,9 +605,7 @@ class SchedulerFingerprintService:
             "organization_id": organization_id,
             "school_year_id": school_year_id,
             "strategy": strategy,
-            "schedule_priorities": PriorityWeights(
-                DEFAULT_LEVELS if priority_levels is None else priority_levels
-            ).to_dict(),
+            "schedule_priorities": school_priority_weights(priority_levels).to_dict(),
             "quality_policy_version": "baseline-v1",
             "timezone": school_year.timezone,
             "start_date": school_year.start_date,

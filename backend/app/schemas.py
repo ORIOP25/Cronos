@@ -25,7 +25,7 @@ from .models import (
     PreferenceLevel,
     TimesheetStatus,
 )
-from .scheduler.domain.priorities import PriorityWeights
+from .scheduler.domain.priorities import validate_school_levels
 from .scheduler.domain.timetable import BreakOverride, build_daily_slots
 
 END_BEFORE_START_MESSAGE = "A data de fim não pode ser anterior à data de início"
@@ -1240,7 +1240,7 @@ class SchedulePrioritiesUpdate(BaseModel):
     @field_validator("levels")
     @classmethod
     def validate_levels(cls, levels: dict[str, int]) -> dict[str, int]:
-        return PriorityWeights(levels).to_dict()
+        return validate_school_levels(levels)
 
 
 class OrganizationGridSettingsUpsert(BaseModel):

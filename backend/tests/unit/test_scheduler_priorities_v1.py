@@ -8,10 +8,70 @@ from app.scheduler.domain.priorities import (
     DEFAULT_LEVELS,
     LATE_DAY_COST,
     PRIORITY_MULTIPLIERS,
+    SCHOOL_CRITERION_KEYS,
+    SCHOOL_DEFAULT_LEVELS,
     UNIT_COSTS,
     PriorityWeights,
+    school_levels,
+    school_priority_weights,
+    validate_school_levels,
 )
 from app.schemas import SchedulePrioritiesUpdate
+
+
+def test_school_criteria_are_the_eleven_criteria_without_finish_early():
+    assert SCHOOL_CRITERION_KEYS == tuple(key for key in CRITERION_KEYS if key != "finish_early")
+    assert len(SCHOOL_CRITERION_KEYS) == 10
+    assert tuple(SCHOOL_DEFAULT_LEVELS) == SCHOOL_CRITERION_KEYS
+    assert tuple(SCHOOL_DEFAULT_LEVELS.values()) == (3, 2, 2, 2, 3, 2, 2, 2, 3, 3)
+
+
+def test_finish_early_is_fixed_at_maximum_whatever_the_school_stored():
+    assert school_priority_weights(None).finish_early == 4
+    legacy = {**DEFAULT_LEVELS, "finish_early": 0}
+
+    weights = school_priority_weights(legacy)
+
+    assert weights.finish_early == 4
+    assert weights.teacher_gaps == DEFAULT_LEVELS["teacher_gaps"]
+
+
+def test_school_levels_pass_through_to_the_weights_the_engine_reads():
+    levels = {**SCHOOL_DEFAULT_LEVELS, "class_gaps": 3, "update_stability": 0}
+
+    weights = school_priority_weights(levels)
+
+    assert weights.class_gaps == 3
+    assert weights.update_stability == 0
+    assert weights.finish_early == 4
+
+
+def test_school_levels_view_has_ten_keys_and_ignores_a_stored_finish_early():
+    assert school_levels(None) == dict(SCHOOL_DEFAULT_LEVELS)
+    assert school_levels({**DEFAULT_LEVELS, "finish_early": 0}) == dict(SCHOOL_DEFAULT_LEVELS)
+
+
+@pytest.mark.parametrize(
+    "levels",
+    [
+        {**SCHOOL_DEFAULT_LEVELS, "finish_early": 4},
+        {key: value for key, value in SCHOOL_DEFAULT_LEVELS.items() if key != "class_gaps"},
+        {**SCHOOL_DEFAULT_LEVELS, "class_gaps": 5},
+        {**SCHOOL_DEFAULT_LEVELS, "class_gaps": -1},
+        {**SCHOOL_DEFAULT_LEVELS, "class_gaps": True},
+        {**SCHOOL_DEFAULT_LEVELS, "class_gaps": 2.0},
+    ],
+    ids=("finish-early", "missing", "above-range", "below-range", "bool", "float"),
+)
+def test_validate_school_levels_rejects_anything_but_the_ten_school_levels(levels):
+    with pytest.raises(ValueError):
+        validate_school_levels(levels)
+
+
+def test_validate_school_levels_returns_the_ten_levels_in_order():
+    assert validate_school_levels(dict(reversed(SCHOOL_DEFAULT_LEVELS.items()))) == dict(
+        SCHOOL_DEFAULT_LEVELS
+    )
 
 
 def test_priority_weights_accepts_exact_levels_and_exposes_named_values():
@@ -46,15 +106,17 @@ def test_priority_weights_rejects_invalid_level_mappings(change):
 
 
 def test_priority_schema_reuses_strict_domain_validation():
-    valid = SchedulePrioritiesUpdate(levels=dict(DEFAULT_LEVELS))
+    valid = SchedulePrioritiesUpdate(levels=dict(SCHOOL_DEFAULT_LEVELS))
 
-    assert valid.levels == dict(DEFAULT_LEVELS)
+    assert valid.levels == dict(SCHOOL_DEFAULT_LEVELS)
     with pytest.raises(ValidationError):
-        SchedulePrioritiesUpdate(levels={**DEFAULT_LEVELS, "finish_early": True})
+        SchedulePrioritiesUpdate(levels={**SCHOOL_DEFAULT_LEVELS, "finish_early": 4})
     with pytest.raises(ValidationError):
-        SchedulePrioritiesUpdate(levels={**DEFAULT_LEVELS, "finish_early": 1.0})
+        SchedulePrioritiesUpdate(levels={**SCHOOL_DEFAULT_LEVELS, "class_gaps": True})
     with pytest.raises(ValidationError):
-        SchedulePrioritiesUpdate(levels={**DEFAULT_LEVELS, "unexpected": 1})
+        SchedulePrioritiesUpdate(levels={**SCHOOL_DEFAULT_LEVELS, "class_gaps": 1.0})
+    with pytest.raises(ValidationError):
+        SchedulePrioritiesUpdate(levels={**SCHOOL_DEFAULT_LEVELS, "unexpected": 1})
 
 
 def test_priority_multipliers_and_unit_costs_are_complete():
