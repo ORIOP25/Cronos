@@ -28,7 +28,7 @@ Decompõe o [tech spec](CONSTRUCTION_REFACTOR_TECH_SPEC.md) em dez *slices* seri
 | Oracle rápido | `backend/tests/unit/test_scheduler_construction_characterization_v1.py` `(novo)` | S1–S2 |
 | Campanha lenta | `backend/tests/unit/test_scheduler_construction_campaign_v1.py` `(novo)` | S2, S8–S10 |
 | Testes focados | `test_scheduler_weighted_construction_v1.py`, `test_scheduler_availability_priority_v1.py`, `test_scheduler_recovery_construction_v1.py`, `test_scheduler_constructive_progress_v1.py` | S1, S3–S7 |
-| Manifesto e comandos | `backend/tests/critical_manifest.json`, `documentation/00_getting_started/COMMAND_REFERENCE.md` | S2 |
+| Manifesto e comandos | `backend/tests/critical_selection.py`, `backend/tests/critical_manifest.json`, `documentation/00_getting_started/COMMAND_REFERENCE.md` | S2 |
 | Leitura apenas | `search.py`, `placement_model.py`, aplicação, composição, propostas, publicação, laboratório, CI | — |
 
 O ficheiro lento é separado do rápido: o manifesto crítico corre o ficheiro rápido **inteiro**, sem filtro `-m`. O manifesto não inclui o ficheiro `slow_solver`.

@@ -153,6 +153,33 @@ Run the narrowest proof during the TDD cycle. Open a pull request for the full C
 
 ### Inspect without changing state
 
+### Manual construction equivalence campaign
+
+The [construction refactor plan](../03_scheduler_engine/CONSTRUCTION_REFACTOR_WBS.md) requires a manual campaign outside CI.
+The fast characterization file runs in full in the critical manifest. The campaign file stays outside that manifest.
+Capture references before editing production, with the test harness over base commit `5a4fd7d3`.
+The harness verifies base source hashes and refuses to replace a different reference.
+It stores candidate order, typed fields, input, OR-Tools version, model text, hashes and provenance under `.test-artifacts/construction/base/`.
+
+```bash
+node scripts/test.mjs fast --scope backend -- -m slow_solver -k "construction_campaign_freeze_base_models"
+node scripts/test.mjs fast --scope backend -- -m slow_solver -k "construction_campaign_freeze_base and (C01 or C02 or C03 or C04 or C05 or C06 or C07 or C08)"
+node scripts/test.mjs fast --scope backend -- -m slow_solver -k "construction_campaign_freeze_base and (C09 or C10 or C11 or C12 or C13 or C14 or C15 or C16)"
+node scripts/test.mjs fast --scope backend -- -m slow_solver -k "construction_campaign_freeze_base and (C17 or C18 or C19 or C20 or C21 or C22 or C23)"
+node scripts/test.mjs fast --scope backend -- -m slow_solver -k "construction_campaign_freeze_base_update_inputs"
+node scripts/test.mjs fast --scope backend -- -m slow_solver -k "construction_campaign_period_models_match_frozen_base"
+node scripts/test.mjs fast --scope backend -- -m slow_solver -k "construction_campaign_matches_frozen_base and (C01 or C03 or C17 or C18 or C21 or C23)"
+```
+
+This campaign is the explicit exception to the usual local `slow_solver` restriction.
+Run realistic profiles in bounded batches and retain each completed reference.
+Never capture a new baseline from refactored production.
+Inspect the existing SonarCloud analysis through the pull request check's Details link, then filter Python rule `S3776`.
+Record the report URL and each target or extracted function's cognitive complexity; the plan requires a maximum of 15.
+Missing analysis leaves the numerical complexity proof unverified. Do not substitute Ruff C901 or add a scanner.
+
+### Read-only runtime inspection
+
 | Question | Command |
 | :--- | :--- |
 | Local services | `docker compose ps` |

@@ -98,9 +98,7 @@ BASE_CANDIDATE = {"lessons": BASE_LESSONS}
 WEIGHTED_TYPED_CANDIDATE = CandidateSchedule(
     lessons=tuple(replace(lesson, room_id=501) for lesson in BASE_TYPED_CANDIDATE.lessons)
 )
-WEIGHTED_CANDIDATE = {
-    "lessons": [row[:3] + [501] + row[4:] for row in BASE_LESSONS]
-}
+WEIGHTED_CANDIDATE = {"lessons": [row[:3] + [501] + row[4:] for row in BASE_LESSONS]}
 
 
 def base_inputs() -> tuple[PlanningSnapshot, tuple]:
@@ -131,9 +129,7 @@ def test_construction_candidate_matches_base_fixture(weights, expected, projecti
     assert candidate is not None
     actual_rooms = [(lesson.lesson_id, lesson.room_id) for lesson in candidate.lessons]
     expected_rooms = [(lesson.lesson_id, lesson.room_id) for lesson in expected.lessons]
-    assert candidate == expected, (
-        f"rooms actual={actual_rooms} expected={expected_rooms}"
-    )
+    assert candidate == expected, f"rooms actual={actual_rooms} expected={expected_rooms}"
     assert candidate_to_dict(candidate) == projection
     assert candidate_digest(candidate) == payload_digest(projection)
     assert validate_candidate(snapshot, candidate).valid is True
@@ -204,6 +200,31 @@ def test_construction_oracle_detects_candidate_mutations(change):
         mutated = CandidateSchedule((replace(lessons[0], **field), lessons[1]))
     assert mutated != BASE_TYPED_CANDIDATE
     assert candidate_digest(mutated) != payload_digest(BASE_CANDIDATE)
+
+
+def test_construction_campaign_profiles_cover_c01_to_c23():
+    from tests._support.construction_snapshot import campaign_profiles
+
+    profiles = campaign_profiles()
+    assert tuple(profiles) == tuple(f"C{index:02d}" for index in range(1, 24))
+    assert profiles["C01"] == PriorityWeights(DEFAULT_LEVELS)
+    assert profiles["C03"].teacher_gaps == 4
+    assert profiles["C17"].weekly_stability == 4
+    assert profiles["C18"].subject_pace == 0
+    assert profiles["C21"].class_gaps == 0
+    assert profiles["C21"].class_same_room == 4
+    assert all(weights.finish_early == 4 for weights in profiles.values())
+    assert profiles["C20"].update_stability == 2
+
+
+def test_construction_campaign_records_immutable_quality(monkeypatch):
+    from tests._support import construction_snapshot
+
+    monkeypatch.setattr(construction_snapshot, "campaign_inputs", lambda _profile: base_inputs())
+    record = construction_snapshot.run_profile("C01")
+    assert record["status"] == "COMPLETE"
+    assert record["quality"]["completion_dates"] == {"1": "2026-09-23"}
+    assert len(record["typed_candidate"]["lessons"]) == 2
 
 
 def test_construction_updates_do_not_double_count_completed_or_protected_credit():
