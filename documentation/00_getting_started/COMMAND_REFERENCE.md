@@ -171,6 +171,9 @@ node scripts/test.mjs fast --scope backend -- -m slow_solver -k "construction_ca
 ```
 
 This campaign is the explicit exception to the usual local `slow_solver` restriction.
+C01–C22 and all update levels require `COMPLETE` with a valid candidate.
+C23 preserves the owner-approved base result: exactly `INCONCLUSIVE`, no candidate or quality, `ANNUAL_QUOTA_SEARCH` and `SEARCH_STOPPED`, with the full message and evidence compared.
+The C23 exception does not change the solver, curriculum or search limits.
 Run realistic profiles in bounded batches and retain each completed reference.
 Never capture a new baseline from refactored production.
 The same tests capture only when production hashes match the agreed base; otherwise they compare immutable references and write small match receipts under `.test-artifacts/construction/head/`.

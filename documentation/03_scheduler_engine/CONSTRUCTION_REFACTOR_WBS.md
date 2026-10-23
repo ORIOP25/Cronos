@@ -142,7 +142,7 @@ O ficheiro lento é separado do rápido: o manifesto crítico corre o ficheiro r
 | Lote | Conteúdo | Saída |
 | :--- | :--- | :--- |
 | B0a/B0b/B0c | Base C01–C08/C09–C16/C17–C23 no *commit* base | 23 referências, `hash` e proveniência |
-| B1 | Seis casos nomeados | 6/6 candidatos iguais |
+| B1 | Seis casos nomeados | 6/6 resultados iguais: cinco candidatos e C23 terminal |
 | B2 | Cenários A/B, 5 níveis | 10 pares |
 | S9 | Cabeça C01–C12 | 12 comparações |
 | S10 | Cabeça C13–C23 | 11 comparações |
