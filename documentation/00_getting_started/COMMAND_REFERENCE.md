@@ -151,6 +151,38 @@ Run the narrowest proof during the TDD cycle. Open a pull request for the full C
 | Priority benchmark | In the backend test image: `python -m app.scheduler.lab.priority_bench --scenario scale-3 --profile recommended --repetitions 3 --output /workspace/.test-artifacts/priority-bench.json`. Repeat `--scenario` and `--profile` for more cases; use `--scenario pilot-48` for the sample CSV pilot, `--scenario pilot-real` for the realistic pilot school (`lab/realistic_pilot.py`) or `--input /workspace/.test-artifacts/snapshot.json` for a JSON bundle. Keep exported schedules and input bundles under `.test-artifacts/` or another local path, outside source control. |
 | CI, runner, or scripts | `npm run test:scripts` in `frontend/`. |
 
+### Manual construction equivalence campaign
+
+The [construction refactor plan](../03_scheduler_engine/CONSTRUCTION_REFACTOR_WBS.md) requires a manual campaign outside CI.
+The fast characterization file runs in full in the critical manifest. The campaign file stays outside that manifest.
+Capture references before editing production, with the test harness over base commit `5a4fd7d3`.
+The harness verifies base source hashes and refuses to replace a different reference.
+It stores candidate order, typed fields, input, OR-Tools version, model text, hashes and provenance under `.test-artifacts/construction/base/`.
+
+```bash
+node -e "const fs=require('node:fs'); const cp=require('node:child_process'); fs.mkdirSync('.test-artifacts/construction',{recursive:true}); fs.writeFileSync('.test-artifacts/construction/harness-commit.txt',cp.execFileSync('git',['rev-parse','HEAD']));"
+node scripts/test.mjs fast --scope backend -- -m slow_solver -k "construction_campaign_period_models_match_frozen_base"
+node scripts/test.mjs fast --scope backend -- -m slow_solver -k "construction_campaign_matches_frozen_base and (C01 or C02 or C03 or C04 or C05 or C06 or C07 or C08)"
+node scripts/test.mjs fast --scope backend -- -m slow_solver -k "construction_campaign_matches_frozen_base and (C09 or C10 or C11 or C12 or C13 or C14 or C15 or C16)"
+node scripts/test.mjs fast --scope backend -- -m slow_solver -k "construction_campaign_matches_frozen_base and (C17 or C18 or C19 or C20 or C21 or C22 or C23)"
+node scripts/test.mjs fast --scope backend -- -m slow_solver -k "construction_campaign_update_inputs_match_frozen_base"
+node scripts/test.mjs fast --scope backend -- -m slow_solver -k "construction_updates_match_frozen_base"
+node scripts/test.mjs fast --scope backend -- -m slow_solver -k "construction_campaign_matches_frozen_base and (C01 or C03 or C17 or C18 or C21 or C23)"
+```
+
+This campaign is the explicit exception to the usual local `slow_solver` restriction.
+C01–C22 and all update levels require `COMPLETE` with a valid candidate.
+C23 preserves the owner-approved base result: exactly `INCONCLUSIVE`, no candidate or quality, `ANNUAL_QUOTA_SEARCH` and `SEARCH_STOPPED`, with the full message and evidence compared.
+The C23 exception does not change the solver, curriculum or search limits.
+Run realistic profiles in bounded batches and retain each completed reference.
+Never capture a new baseline from refactored production.
+The same tests capture only when production hashes match the agreed base; otherwise they compare immutable references and write small match receipts under `.test-artifacts/construction/head/`.
+Commit the test harness before writing its commit marker. Resume a pending profile with its ID in the filter; do not repeat completed captures.
+The update campaign constructs one retained/rebuilt pair per event and reuses it for the five levels, while executing real selection and cost calculation at every level.
+Inspect the existing SonarCloud analysis through the pull request check's Details link, then filter Python rule `S3776`.
+Record the report URL and each target or extracted function's cognitive complexity; the plan requires a maximum of 15.
+Missing analysis leaves the numerical complexity proof unverified. Do not substitute Ruff C901 or add a scanner.
+
 ### Inspect without changing state
 
 | Question | Command |

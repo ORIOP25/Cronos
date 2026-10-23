@@ -518,7 +518,7 @@ def test_period_repair_is_bounded_by_deterministic_time_so_the_schedule_repeats(
     assert len(recorded) == 1
     wall_limit, deterministic_limit = recorded[0]
     assert wall_limit == float("inf")
-    assert deterministic_limit > 0
+    assert deterministic_limit == constructive.PERIOD_REPAIR_DETERMINISTIC_TIME
 
 
 def test_unweighted_period_repair_keeps_its_wall_clock_limit(monkeypatch):
