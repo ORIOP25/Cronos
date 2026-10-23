@@ -39,9 +39,8 @@ Stability window. The stability window protects only an already-published schedu
 
 Protected availability conflicts. Recovery checks hard availability against protected lessons before search.
 
-Class day gaps. A class may keep one internal gap hour on a day, but two or more are forbidden at every slider level. Generation adds the excess term (`CLASS_DAY_EXCESS_UNIT`) to the T06 value of each option, and a same-day compaction step moves an edge lesson into an empty hour when the moved teacher gains no gap minutes and no Evitar minutes. Both run in generation only; updates and recovery do not apply them yet.
+Class day gaps. A class may keep one internal gap hour on a day, but two or more are forbidden at every slider level. Generation adds the excess term (`CLASS_DAY_EXCESS_UNIT`) to the T06 value of each option, and a same-day compaction step moves an edge lesson into an empty hour when the moved teacher gains no gap minutes and no Evitar minutes. Updates apply the same rules: the repair and the rebuild both get the excess term, and the compaction runs on both results before the choice. Each lesson it moves costs one `update_stability` change, so a move must gain more than that.
 
-Class day gaps. A class may keep one internal gap hour on a day, but two or more are forbidden at every slider level. Generation adds the excess term (`CLASS_DAY_EXCESS_UNIT`) to the T06 value of each option, and a same-day compaction step moves an edge lesson into an empty hour when the moved teacher gains no gap minutes and no Evitar minutes. Both run in generation only; updates and recovery do not apply them yet.
 A conflict is proven infeasible because recovery must preserve those physical positions.
 The generation panel asks the administrator to review availability or the protection window; it never moves protected lessons automatically.
 The diagnosis includes the affected classes and subject. See `domain/diagnostics.py` `diagnose_protected_availability`.

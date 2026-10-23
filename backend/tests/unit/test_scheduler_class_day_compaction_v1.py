@@ -1,5 +1,6 @@
 """Same-day compaction of class days (owner rules, 23 Oct 2026)."""
 
+from dataclasses import replace
 from datetime import date, time
 from types import SimpleNamespace
 
@@ -241,3 +242,46 @@ def test_class_day_excess_value_rewards_each_excess_minute_removed():
     value = class_day_excess_value([intervals], (660, 720), slots, None)
 
     assert value == 60 * CLASS_DAY_EXCESS_UNIT
+
+
+def test_update_move_is_refused_when_the_changed_lesson_costs_more_than_the_gap_it_closes():
+    # Class 1 has one tolerated empty hour (10h). Moving the 9h lesson closes it: the class gains
+    # one gap hour at class_gaps level 2, which is less than one changed lesson at update level 3.
+    first = assignment(1, (1,), teacher_id=1, room_id=101)
+    second = assignment(2, (1,), teacher_id=2, room_id=102)
+    school = snapshot((first, second))
+    candidate = CandidateSchedule((lesson(1, first, 9, 101), lesson(2, second, 11, 102)))
+
+    compacted = compact_class_days(
+        school, candidate, weights(update_stability=3), moves_are_changes=True
+    )
+
+    assert compacted is candidate
+
+
+def test_update_move_is_accepted_when_a_changed_lesson_costs_nothing_at_update_level_zero():
+    first = assignment(1, (1,), teacher_id=1, room_id=101)
+    second = assignment(2, (1,), teacher_id=2, room_id=102)
+    school = snapshot((first, second))
+    candidate = CandidateSchedule((lesson(1, first, 9, 101), lesson(2, second, 11, 102)))
+
+    compacted = compact_class_days(
+        school, candidate, weights(update_stability=0), moves_are_changes=True
+    )
+
+    assert times_by_lesson(compacted) == {1: 10, 2: 11}
+
+
+def test_update_compaction_never_moves_a_protected_lesson():
+    first = assignment(1, (1,), teacher_id=1, room_id=101)
+    second = assignment(2, (1,), teacher_id=2, room_id=102)
+    first_lesson = lesson(1, first, 9, 101)
+    school = replace(snapshot((first, second)), protected_lessons=(first_lesson,))
+    candidate = CandidateSchedule((first_lesson, lesson(2, second, 11, 102)))
+
+    compacted = compact_class_days(
+        school, candidate, weights(update_stability=0), moves_are_changes=True
+    )
+
+    # The protected 9h lesson stays; the editable 11h lesson fills the empty 10h hour.
+    assert times_by_lesson(compacted) == {1: 9, 2: 10}
