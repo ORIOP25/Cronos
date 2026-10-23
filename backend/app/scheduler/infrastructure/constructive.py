@@ -780,72 +780,69 @@ class _ConstructionPass:
             return ()
         return rooms
 
-    def plan_presence_run(
-        self, assignment: Assignment, period: Period, room: int
-    ) -> list[tuple[Assignment, Period, int]] | None:
-        """Plan the later lessons that make the teacher's day meet the presence rule.
-
-        Returns the lessons to book, starting with the given one, or None when the
-        rest of the date cannot reach the rule. Booked lessons are not applied here.
-        """
+    def plan_presence_run(self, assignment: Assignment, period: Period, room: int):
+        """Preview later lessons without committing resources or curricular credit."""
         teacher_id = assignment.teacher_id
         school_date = period.school_date
-        booked: list[tuple[Assignment, Period, int]] = []
-        pending: dict[tuple, list[Period]] = defaultdict(list)
-        planned: list[tuple[Assignment, int]] = []
-        credited: dict[int, int] = defaultdict(int)
-
-        def add(row: tuple[Assignment, Period, int]) -> None:
-            booked.append(row)
-            row_assignment, row_period, row_room = row
-            identity = row_assignment.assignment_id
-            credit = min(self.remaining[identity] - credited[identity], row_period.duration_minutes)
-            credited[identity] += credit
-            planned.append((row_assignment, credit))
-            for key in _resource_keys(row_assignment, row_room, teacher_id, row_period.school_date):
-                pending[key].append(row_period)
-
-        def run_complete() -> bool:
-            left = self.teacher_remaining[teacher_id] - sum(credited.values())
-            return self.presence_complies(
-                teacher_id, school_date, [row_period for _a, row_period, _r in booked]
-            ) and _presence_left_fits(
-                left, self.presence_rules[teacher_id], self.longest_presence[teacher_id]
-            )
-
-        def next_lesson(later: Period) -> tuple[Assignment, int] | None:
-            previous = booked[-1][0].assignment_id
-            candidates = sorted(
-                (
-                    row
-                    for row in self.assignments_by_teacher[teacher_id]
-                    if self.remaining[row.assignment_id] - credited[row.assignment_id] > 0
-                    and later in self.eligible_by_assignment.get(row.assignment_id, ())
-                ),
-                key=lambda row: (
-                    row.assignment_id != previous,
-                    -(self.remaining[row.assignment_id] - credited[row.assignment_id]),
-                    row.assignment_id,
-                ),
-            )
-            for row in candidates:
-                if not self.ready(row.assignment_id, later):
-                    continue
-                rooms = self.open_rooms(row, later, pending, planned)
-                if rooms:
-                    return row, min(rooms, key=lambda value: (self.room_pressure[value], value))
-            return None
-
-        add((assignment, period, room))
+        self.preview_booked = []
+        self.preview_pending = defaultdict(list)
+        self.preview_planned = []
+        self.preview_credited = defaultdict(int)
+        self.add_preview((assignment, period, room), teacher_id)
         for later in self.periods_by_date[school_date]:
             if later.start_utc <= period.start_utc:
                 continue
-            choice = next_lesson(later)
+            choice = self.next_presence_lesson(teacher_id, later)
             if choice is None:
                 continue
-            add((choice[0], later, choice[1]))
-            if run_complete():
-                return booked
+            self.add_preview((choice[0], later, choice[1]), teacher_id)
+            if self.preview_complete(teacher_id, school_date):
+                return self.preview_booked
+        return None
+
+    def add_preview(self, row, teacher_id):
+        self.preview_booked.append(row)
+        assignment, period, room = row
+        identity = assignment.assignment_id
+        credit = min(
+            self.remaining[identity] - self.preview_credited[identity], period.duration_minutes
+        )
+        self.preview_credited[identity] += credit
+        self.preview_planned.append((assignment, credit))
+        for key in _resource_keys(assignment, room, teacher_id, period.school_date):
+            self.preview_pending[key].append(period)
+
+    def preview_complete(self, teacher_id, school_date):
+        left = self.teacher_remaining[teacher_id] - sum(self.preview_credited.values())
+        return self.presence_complies(
+            teacher_id,
+            school_date,
+            [period for _a, period, _r in self.preview_booked],
+        ) and _presence_left_fits(
+            left, self.presence_rules[teacher_id], self.longest_presence[teacher_id]
+        )
+
+    def next_presence_lesson(self, teacher_id, later):
+        previous = self.preview_booked[-1][0].assignment_id
+        candidates = sorted(
+            (
+                row
+                for row in self.assignments_by_teacher[teacher_id]
+                if self.remaining[row.assignment_id] - self.preview_credited[row.assignment_id] > 0
+                and later in self.eligible_by_assignment.get(row.assignment_id, ())
+            ),
+            key=lambda row: (
+                row.assignment_id != previous,
+                -(self.remaining[row.assignment_id] - self.preview_credited[row.assignment_id]),
+                row.assignment_id,
+            ),
+        )
+        for row in candidates:
+            if not self.ready(row.assignment_id, later):
+                continue
+            rooms = self.open_rooms(row, later, self.preview_pending, self.preview_planned)
+            if rooms:
+                return row, min(rooms, key=lambda room: (self.room_pressure[room], room))
         return None
 
     def presence_run(
@@ -870,6 +867,204 @@ class _ConstructionPass:
             return None
         return [(assignment, period, room)]
 
+    def run(self) -> tuple[CandidateSchedule | None, int, bool]:
+        if not self.prepare_options():
+            return None, 0, False
+        self.initialize_presence()
+        self.pace_watch = PaceWatch() if self.weights is not None and self.strict else None
+        for period in self.canonical:
+            stop, paced_out = self.stop_before_period(period)
+            if stop:
+                return None, self._ledger.refused, paced_out
+            options = self.period_options(period)
+            if options is None:
+                continue
+            if not self.place_period(period, *options):
+                return None, self._ledger.refused, False
+            if not any(self.remaining.values()):
+                break
+        return self.build_candidate()
+
+    def stop_before_period(self, period):
+        if _interrupted(self.deadline, self.should_cancel):
+            return True, False
+        if _gives_up(self._ledger, period, strict=self.strict):
+            return True, False
+        if self.pace_watch is not None and self.pace_watch.gives_up(self._ledger, period):
+            return True, True
+        return False, False
+
+    def build_candidate(self):
+        if any(self.remaining.values()):
+            return None, self._ledger.refused, False
+        candidate = CandidateSchedule((*self.snapshot.protected_lessons, *self.lessons))
+        valid = validate_candidate(self.snapshot, candidate).valid
+        return (candidate if valid else None), self._ledger.refused, False
+
+    def rooms_for_option(self, assignment, period, signature):
+        preferred = self.weekly_preferred(assignment, signature)
+        preferred_room = (
+            preferred[1]
+            if preferred is not None and preferred[0] == assignment.assignment_id
+            else None
+        )
+        return tuple(
+            sorted(
+                self.open_rooms(assignment, period, {}),
+                key=lambda room: (room != preferred_room, self.room_pressure[room], room),
+            )
+        )
+
+    def period_options(self, period):
+        active = [
+            row
+            for row in self.options_by_period[period]
+            if self.remaining[row.assignment_id] > 0 and self.ready(row.assignment_id, period)
+        ]
+        if not active:
+            return None
+        preceding_end = self.preceding_ends.get(
+            (period.school_date.weekday(), period.start_local, period.end_local)
+        )
+        signature = (period.school_date.weekday(), period.start_local, period.end_local)
+        options = []
+        scores = {} if self.weights is not None else None
+        for assignment in sorted(
+            active, key=lambda row: self.priority(row, period, preceding_end, signature)
+        ):
+            rooms = self.rooms_for_option(assignment, period, signature)
+            if not rooms or self.presence_run(assignment, period, rooms[0]) is None:
+                continue
+            if self.weights is None:
+                options.append((assignment, rooms))
+                continue
+            admitted = self.weighted_rooms(assignment, period, rooms, scores)
+            if admitted:
+                options.append((assignment, admitted))
+        if scores is not None:
+            self.sort_weighted_options(options, scores)
+        return options, scores
+
+    def place_period(self, period, options, scores):
+        for assignment, room in _select_period(
+            options,
+            deadline=self.deadline,
+            scores=scores,
+            fill_admitted=scores is not None and not self.strict,
+        ):
+            run = self.presence_run(assignment, period, room)
+            if run is None:
+                continue
+            for run_assignment, run_period, run_room in run:
+                if not self.place(run_assignment, run_period, run_room):
+                    return False
+        return True
+
+    def weekly_preferred(self, assignment: Assignment, current_signature: tuple):
+        for class_id in assignment.class_ids:
+            preferred = self.weekly_pattern.get((class_id, *current_signature))
+            if preferred is not None:
+                return preferred
+        return None
+
+    def priority(self, assignment, current_period, previous_end, current_signature):
+        identity = assignment.assignment_id
+        preferred = self.weekly_preferred(assignment, current_signature)
+        repeats = preferred is not None and preferred[0] == identity
+        continues = _continues_open_presence(
+            self.slots_by_day,
+            self.occupancy,
+            assignment.teacher_id,
+            current_period,
+            self.presence_rules,
+        )
+        adjacent = sum(
+            any(
+                end == previous_end
+                for _start, end in self.occupancy[(kind, resource, current_period.school_date)]
+            )
+            for kind, resource in (
+                *(("class", class_id) for class_id in assignment.class_ids),
+                ("teacher", assignment.teacher_id),
+            )
+        )
+        return (
+            self._ledger.priority(assignment, current_period),
+            self._ledger.unfavorable(assignment, current_period, evitar_kinds=self.evitar_kinds),
+            any(class_id in self.started_classes for class_id in assignment.class_ids),
+            self.initial_remaining[identity] != self.remaining[identity],
+            Fraction(
+                self.required[identity]
+                - self.remaining[identity]
+                - (
+                    min(self.remaining[identity], current_period.duration_minutes) if repeats else 0
+                ),
+                self.required[identity],
+            ),
+            not continues,
+            -adjacent,
+            preferred is None,
+            not repeats,
+            -self.teacher_remaining[assignment.teacher_id],
+            -sum(self.class_remaining[class_id] for class_id in assignment.class_ids),
+            len(assignment.eligible_room_ids),
+            identity,
+        )
+
+    def weighted_rooms(self, assignment, period, rooms, scores):
+        """Admit rooms using necessity, scarcity, school values and pass policy."""
+        identity = assignment.assignment_id
+        necessary = self._ledger.is_necessary(assignment, period, evitar_kinds=self.evitar_kinds)
+        urgency = self._ledger.urgency(assignment, period)
+        allowed_rooms = []
+        credit = min(self.remaining[identity], period.duration_minutes)
+        measures = _option_measures(
+            self.snapshot,
+            assignment,
+            period,
+            credit=credit,
+            needed_evitar=self._ledger.needed_evitar(
+                assignment, period, evitar_kinds=self.evitar_kinds
+            ),
+            occupancy=self.occupancy,
+            day_slots=self.slots_by_day.get(period.school_date.weekday(), ()),
+            counts_teacher_single_lessons=assignment.teacher_id not in self.presence_rules,
+            weekly_references=tuple(
+                self.weekly_history.reference(
+                    class_id, period.school_date, period.start_local, period.end_local
+                )
+                for class_id in assignment.class_ids
+            ),
+            pace_lag=_pace_lag(identity, self.pace_peers[identity], self.required, self.remaining),
+        )
+        scarcity = _scarcity(self._ledger, assignment, period, credit)
+        base_value = option_value(self.weights, measures)
+        same_room_value = option_value(self.weights, {"class_same_room": -credit})
+        preference_value = _preference_value(self.weights, measures)
+        for room in rooms:
+            value = _room_value(base_value, same_room_value, assignment, room, self.home_rooms)
+            if necessary or _fills_hour(
+                value + scarcity, preference_value, strict=self.strict, fill=self.fill
+            ):
+                allowed_rooms.append(room)
+                scores[(identity, room)] = (necessary, value, urgency)
+        return tuple(allowed_rooms)
+
+    def sort_weighted_options(self, options, scores):
+        options.sort(
+            key=lambda row: max(
+                (
+                    int(scores[(row[0].assignment_id, room)][0]),
+                    -scores[(row[0].assignment_id, room)][2]
+                    if scores[(row[0].assignment_id, room)][0]
+                    else 0,
+                    scores[(row[0].assignment_id, room)][1],
+                )
+                for room in row[1]
+            ),
+            reverse=True,
+        )
+
 
 def _construct_pass(
     snapshot: PlanningSnapshot,
@@ -887,7 +1082,7 @@ def _construct_pass(
     Returns the plan, the options the Evitar filter refused, and whether the weekly pace
     check stopped the pass (SCHEDULE_PRIORITIES T07).
     """
-    state = _ConstructionPass(
+    return _ConstructionPass(
         snapshot,
         periods,
         deadline=deadline,
@@ -896,186 +1091,4 @@ def _construct_pass(
         weights=weights,
         strict=strict,
         fill=fill,
-    )
-    if not state.prepare_options():
-        return None, 0, False
-    state.initialize_presence()
-    state.pace_watch = PaceWatch() if state.weights is not None and state.strict else None
-    for period in state.canonical:
-        if _interrupted(state.deadline, state.should_cancel):
-            return None, state._ledger.refused, False
-        if _gives_up(state._ledger, period, strict=state.strict):
-            return None, state._ledger.refused, False
-        if state.pace_watch is not None and state.pace_watch.gives_up(state._ledger, period):
-            return None, state._ledger.refused, True
-        active = [
-            row
-            for row in state.options_by_period[period]
-            if state.remaining[row.assignment_id] > 0 and state.ready(row.assignment_id, period)
-        ]
-        if not active:
-            continue
-        preceding_end = state.preceding_ends.get(
-            (period.school_date.weekday(), period.start_local, period.end_local)
-        )
-        signature = (period.school_date.weekday(), period.start_local, period.end_local)
-
-        def weekly_preferred(assignment: Assignment, current_signature: tuple):
-            for class_id in assignment.class_ids:
-                preferred = state.weekly_pattern.get((class_id, *current_signature))
-                if preferred is not None:
-                    return preferred
-            return None
-
-        def priority(
-            assignment: Assignment,
-            current_period: Period = period,
-            previous_end: int | None = preceding_end,
-            current_signature: tuple = signature,
-        ):
-            identity = assignment.assignment_id
-            preferred = weekly_preferred(assignment, current_signature)
-            repeats = preferred is not None and preferred[0] == identity
-            continues = _continues_open_presence(
-                state.slots_by_day,
-                state.occupancy,
-                assignment.teacher_id,
-                current_period,
-                state.presence_rules,
-            )
-            adjacent = sum(
-                any(
-                    end == previous_end
-                    for _start, end in state.occupancy[(kind, resource, current_period.school_date)]
-                )
-                for kind, resource in (
-                    *(("class", class_id) for class_id in assignment.class_ids),
-                    ("teacher", assignment.teacher_id),
-                )
-            )
-            return (
-                state._ledger.priority(assignment, current_period),
-                state._ledger.unfavorable(
-                    assignment, current_period, evitar_kinds=state.evitar_kinds
-                ),
-                any(class_id in state.started_classes for class_id in assignment.class_ids),
-                state.initial_remaining[identity] != state.remaining[identity],
-                Fraction(
-                    state.required[identity]
-                    - state.remaining[identity]
-                    - (
-                        min(state.remaining[identity], current_period.duration_minutes)
-                        if repeats
-                        else 0
-                    ),
-                    state.required[identity],
-                ),
-                not continues,
-                -adjacent,
-                preferred is None,
-                not repeats,
-                -state.teacher_remaining[assignment.teacher_id],
-                -sum(state.class_remaining[class_id] for class_id in assignment.class_ids),
-                len(assignment.eligible_room_ids),
-                identity,
-            )
-
-        options = []
-        scores: dict[tuple[int, int], tuple[bool, int, int]] | None = (
-            {} if state.weights is not None else None
-        )
-        for assignment in sorted(active, key=priority):
-            identity = assignment.assignment_id
-            preferred = weekly_preferred(assignment, signature)
-            preferred_room = (
-                preferred[1] if preferred is not None and preferred[0] == identity else None
-            )
-            rooms = tuple(
-                sorted(
-                    state.open_rooms(assignment, period, {}),
-                    key=lambda room: (room != preferred_room, state.room_pressure[room], room),
-                )
-            )
-            # An option whose presence cannot complete is dropped later; keeping it out of
-            # the selection leaves its class and teacher free for another subject (T11).
-            if rooms and state.presence_run(assignment, period, rooms[0]) is None:
-                continue
-            if rooms:
-                if state.weights is None:
-                    options.append((assignment, rooms))
-                    continue
-                necessary = state._ledger.is_necessary(
-                    assignment, period, evitar_kinds=state.evitar_kinds
-                )
-                urgency = state._ledger.urgency(assignment, period)
-                allowed_rooms = []
-                credit = min(state.remaining[identity], period.duration_minutes)
-                measures = _option_measures(
-                    state.snapshot,
-                    assignment,
-                    period,
-                    credit=credit,
-                    needed_evitar=state._ledger.needed_evitar(
-                        assignment, period, evitar_kinds=state.evitar_kinds
-                    ),
-                    occupancy=state.occupancy,
-                    day_slots=state.slots_by_day.get(period.school_date.weekday(), ()),
-                    counts_teacher_single_lessons=assignment.teacher_id not in state.presence_rules,
-                    weekly_references=tuple(
-                        state.weekly_history.reference(
-                            class_id, period.school_date, period.start_local, period.end_local
-                        )
-                        for class_id in assignment.class_ids
-                    ),
-                    pace_lag=_pace_lag(
-                        identity, state.pace_peers[identity], state.required, state.remaining
-                    ),
-                )
-                scarcity = _scarcity(state._ledger, assignment, period, credit)
-                base_value = option_value(state.weights, measures)
-                same_room_value = option_value(state.weights, {"class_same_room": -credit})
-                preference_value = _preference_value(state.weights, measures)
-                for room in rooms:
-                    value = _room_value(
-                        base_value, same_room_value, assignment, room, state.home_rooms
-                    )
-                    if necessary or _fills_hour(
-                        value + scarcity, preference_value, strict=state.strict, fill=state.fill
-                    ):
-                        allowed_rooms.append(room)
-                        scores[(identity, room)] = (necessary, value, urgency)
-                if allowed_rooms:
-                    options.append((assignment, tuple(allowed_rooms)))
-        if scores is not None:
-            options.sort(
-                key=lambda row: max(
-                    (
-                        int(scores[(row[0].assignment_id, room)][0]),
-                        -scores[(row[0].assignment_id, room)][2]
-                        if scores[(row[0].assignment_id, room)][0]
-                        else 0,
-                        scores[(row[0].assignment_id, room)][1],
-                    )
-                    for room in row[1]
-                ),
-                reverse=True,
-            )
-        for assignment, room in _select_period(
-            options,
-            deadline=state.deadline,
-            scores=scores,
-            fill_admitted=scores is not None and not state.strict,
-        ):
-            run = state.presence_run(assignment, period, room)
-            if run is None:
-                continue
-            for run_assignment, run_period, run_room in run:
-                if not state.place(run_assignment, run_period, run_room):
-                    return None, state._ledger.refused, False
-        if not any(state.remaining.values()):
-            break
-    if any(state.remaining.values()):
-        return None, state._ledger.refused, False
-    candidate = CandidateSchedule((*state.snapshot.protected_lessons, *state.lessons))
-    valid = validate_candidate(state.snapshot, candidate).valid
-    return (candidate if valid else None), state._ledger.refused, False
+    ).run()
