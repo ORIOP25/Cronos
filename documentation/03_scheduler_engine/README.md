@@ -38,6 +38,10 @@ Per-class module selection. The projection reads `class_subject_module` and plan
 Stability window. The stability window protects only an already-published schedule. The snapshot computes `protected_dates` only when an ACTIVE `SchedulerVersionV1` exists; a first generation has empty `protected_dates`. The window counts grid days, not calendar days, and always preserves executed and past lessons.
 
 Protected availability conflicts. Recovery checks hard availability against protected lessons before search.
+
+Class day gaps. A class may keep one internal gap hour on a day, but two or more are forbidden at every slider level. Generation adds the excess term (`CLASS_DAY_EXCESS_UNIT`) to the T06 value of each option, and a same-day compaction step moves an edge lesson into an empty hour when the moved teacher gains no gap minutes and no Evitar minutes. Both run in generation only; updates and recovery do not apply them yet.
+
+Class day gaps. A class may keep one internal gap hour on a day, but two or more are forbidden at every slider level. Generation adds the excess term (`CLASS_DAY_EXCESS_UNIT`) to the T06 value of each option, and a same-day compaction step moves an edge lesson into an empty hour when the moved teacher gains no gap minutes and no Evitar minutes. Both run in generation only; updates and recovery do not apply them yet.
 A conflict is proven infeasible because recovery must preserve those physical positions.
 The generation panel asks the administrator to review availability or the protection window; it never moves protected lessons automatically.
 The diagnosis includes the affected classes and subject. See `domain/diagnostics.py` `diagnose_protected_availability`.
