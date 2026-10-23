@@ -65,6 +65,7 @@ from app.scheduler.infrastructure.annual_model import (
     plan_annual_quotas,
     week_index,
 )
+from app.scheduler.infrastructure.class_day_compaction import compact_class_days
 from app.scheduler.infrastructure.constructive import construct_schedule
 from app.scheduler.infrastructure.diagnostics import phase_finished, phase_started
 from app.scheduler.infrastructure.placement_model import (
@@ -482,6 +483,8 @@ def _joint_search(
         constructed = construct_schedule(
             snapshot, periods, deadline=hard_deadline, should_cancel=should_cancel
         )
+    if constructed is not None and snapshot.priority_weights is not None:
+        constructed = compact_class_days(snapshot, constructed, snapshot.priority_weights)
     phase_finished(
         "CONSTRUCTIVE",
         started_at=constructive_start,

@@ -23,7 +23,7 @@ def test_school_criteria_are_the_eleven_criteria_without_finish_early():
     assert SCHOOL_CRITERION_KEYS == tuple(key for key in CRITERION_KEYS if key != "finish_early")
     assert len(SCHOOL_CRITERION_KEYS) == 10
     assert tuple(SCHOOL_DEFAULT_LEVELS) == SCHOOL_CRITERION_KEYS
-    assert tuple(SCHOOL_DEFAULT_LEVELS.values()) == (3, 2, 2, 2, 3, 2, 2, 2, 3, 3)
+    assert tuple(SCHOOL_DEFAULT_LEVELS.values()) == (2, 2, 2, 2, 3, 2, 2, 2, 3, 3)
 
 
 def test_finish_early_is_fixed_at_maximum_whatever_the_school_stored():
@@ -79,10 +79,10 @@ def test_priority_weights_accepts_exact_levels_and_exposes_named_values():
 
     assert tuple(weights.to_dict()) == CRITERION_KEYS
     assert weights.finish_early == 4
-    assert weights.teacher_gaps == 3
+    assert weights.teacher_gaps == 2
     assert weights.class_gaps == 2
     assert weights.update_stability == 3
-    assert tuple(DEFAULT_LEVELS.values()) == (4, 3, 2, 2, 2, 3, 2, 2, 2, 3, 3)
+    assert tuple(DEFAULT_LEVELS.values()) == (4, 2, 2, 2, 2, 3, 2, 2, 2, 3, 3)
 
 
 @pytest.mark.parametrize(

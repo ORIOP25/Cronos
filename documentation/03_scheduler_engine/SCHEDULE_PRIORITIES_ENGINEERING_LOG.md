@@ -346,6 +346,40 @@ Resultado. Nenhuma escolha mudou nos dez pares de cenário e nível. Em cada um,
 
 Limitações. A reconstrução das quartas não tem a divisão entre movidas e trocas nos registos, por isso não se pode confirmar o total de 35 520 movidas da base. As horas de Evitar são a soma de `teacher_preferences` dividida por 60.
 
+#### Furos das turmas por dia (23 de outubro de 2026)
+
+O responsável de produto viu no horário publicado dias de turma com furos a mais, por exemplo TAS 12 à sexta (9h, três furos e duas aulas à tarde) e TDES 10 à segunda (9h, dois furos, almoço e tarde cheia). A regra de `class_gaps` já define o furo; faltava uma regra que o motor cumprisse.
+
+Primeira tentativa: compactação só depois da construção, sem termo na construção. Movia uma aula de extremidade para uma hora vazia da mesma turma, na mesma data. Dias com dois ou mais furos passaram de 163 para 139 (-15%). Quase todas as recusas eram de professor ocupado noutra turma na hora vazia (528 em 1 000 tentativas) e de almoço do professor (157). Trocar a ordem dos dias não mudou o resultado. A compactação sozinha não chega.
+
+Experiências com o termo de furos (B = 192 por minuto) e com a compactação, que só aceita um movimento quando o professor não ganha furos nem Evitar. Medição: escola realista, níveis recomendados (exceto onde indicado), uma geração por corrida, em série.
+
+| Medida | main | A (48) | B (192) | B1 (furos prof. 2) | B2 (Evitar prof. 2) | B3 (ambos 2) |
+| :--- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Dias de turma com 0 furos | 6 941 | 7 015 | 7 057 | 7 161 | 7 053 | 7 212 |
+| Dias com 1 furo (1 h) | 671 | 743 | 704 | 551 | 739 | 525 |
+| Dias com 2 furos (2 h) | 138 | 33 | 1 | 1 | 2 | 1 |
+| Dias com 3 ou mais furos | 25 | 1 | 0 | 1 | 0 | 0 |
+| Dias de turma com uma só aula | 30 | 36 | 43 | 40 | 46 | 51 |
+| Dias de professor com uma só aula | 68 | 76 | 88 | 69 | 72 | 74 |
+| Furos dos professores, total (h) | 1 459 | 1 425 | 1 489 | 2 156 | 1 367 | 2 174 |
+| Furos dos professores, média por professor (h) | 21,1 | 20,7 | 21,6 | 31,3 | 19,8 | 31,5 |
+| Furos dos professores, maior subida num professor (h) | - | +24 | +31 | +52 | +45 | +51 |
+| Evitar dos professores, total (h) | 3 535 | 3 639 | 3 605 | 3 433 | 3 557 | 3 439 |
+| Evitar dos professores, média por professor (h) | 51,2 | 52,7 | 52,3 | 49,8 | 51,6 | 49,8 |
+| Evitar dos professores, maior subida num professor (h) | - | +43 | +55 | +36 | +43 | +49 |
+| Furos das turmas, total (h) | 1 026 | 812 | 706 | 556 | 743 | 527 |
+| Mudanças de estabilidade semanal | 12 244 | 12 224 | 12 209 | 11 694 | 12 543 | 11 691 |
+| Data de fim | 8 jun 2027 | 11 jun 2027 | 11 jun 2027 | 8 jun 2027 | 11 jun 2027 | 4 jun 2027 |
+| Segundos | 303 | 307 | 313 | 314 | 317 | 318 |
+
+A escolha. O responsável de produto escolheu a B1: "Sim, avança com a B1: regra dos 2+ furos e furos dos professores em Importante no valor recomendado." A B1 deixa 2 dias de turma com dois ou mais furos, contra 163 no main. O custo aceite é o do professor: a média sobe cerca de 10 horas de furo por professor, e um professor sobe 52 horas. As turmas perdem dias com uma só aula (30 para 40), e os dias de professor com uma só aula ficam em 69, perto dos 68 de main.
+
+Porque é que o termo funciona. A construção percorre as horas por ordem. O termo muda só a admissão de uma opção. Numa turma com aulas às 9h e às 15h, uma aula às 14h em vez das 13h fecha o furo de duas horas. O mesmo gesto pode abrir um furo noutra turma: no dia medido, a turma 1 passou de 2 para 3 horas de furo. A regra vale por turma; por isso o teste de construção só verifica a turma que melhora.
+
+Limitações. A recuperação e a atualização ainda não aplicam o termo nem a compactação. A compactação não move uma aula para uma hora ocupada por outra turma do mesmo professor; isso exige trocas em cadeia, que não entraram.
+
+
 #### Lições
 
 - Um script chamado `profile.py` esconde o módulo `profile` do Python e parte o cProfile. Use outro nome.

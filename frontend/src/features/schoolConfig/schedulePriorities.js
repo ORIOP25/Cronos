@@ -18,7 +18,7 @@ export const SCHEDULE_PRIORITY_CRITERIA = [
   {
     key: 'class_gaps',
     title: 'Evitar tempos livres das turmas.',
-    description: 'Horas sem aula entre duas aulas da mesma turma no mesmo dia.',
+    description: 'Horas sem aula entre duas aulas da mesma turma no mesmo dia. Um furo num dia tolera-se; dois ou mais no mesmo dia o Cronos evita sempre.',
     lowest: 'A turma pode ficar com horas vazias, e os alunos saem ou esperam na escola.',
     highest: 'Os dias da turma ficam compactos. Os professores podem ficar com mais tempos livres e vir mais vezes para uma só aula.',
   },
