@@ -37,6 +37,7 @@ UNIT_PATHS: tuple[str, ...] = (
     "tests/unit/test_scheduler_room_eligibility.py",
     "tests/unit/test_scheduler_candidate_validation.py",
     "tests/unit/test_scheduler_candidate_contracts.py",
+    "tests/unit/test_scheduler_construction_characterization_v1.py",
     "tests/unit/test_scheduler_lunch_break_v1.py",
     "tests/unit/test_scheduler_teacher_presence_v1.py",
     "tests/unit/test_scheduler_placement_cancellation_v1.py",

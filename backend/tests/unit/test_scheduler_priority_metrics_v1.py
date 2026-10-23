@@ -25,7 +25,11 @@ from app.scheduler.domain.priorities import (
     UNIT_COSTS,
     PriorityWeights,
 )
-from app.scheduler.domain.priority_metrics import measure_priority_metrics, priority_cost
+from app.scheduler.domain.priority_metrics import (
+    measure_priority_metrics,
+    priority_cost,
+    typical_lesson_minutes,
+)
 from app.scheduler.domain.projection import ModuleRequirement, ModuleSlice
 from app.scheduler.domain.quality import lunch_minutes_in
 from app.scheduler.domain.recovery import (
@@ -336,10 +340,12 @@ def test_priority_cost_is_integer_and_weights_only_the_selected_criterion():
     class_gaps = dict(ignored.to_dict(), class_gaps=2)
     stronger_class_gaps = dict(class_gaps, class_gaps=3)
 
-    assert priority_cost(metrics, ignored, origin=school.origin) == 0
-    class_gaps_cost = priority_cost(metrics, PriorityWeights(class_gaps), origin=school.origin)
+    assert priority_cost(metrics, ignored, origin=school.origin, lesson_minutes=60) == 0
+    class_gaps_cost = priority_cost(
+        metrics, PriorityWeights(class_gaps), origin=school.origin, lesson_minutes=60
+    )
     stronger_class_gaps_cost = priority_cost(
-        metrics, PriorityWeights(stronger_class_gaps), origin=school.origin
+        metrics, PriorityWeights(stronger_class_gaps), origin=school.origin, lesson_minutes=60
     )
     assert stronger_class_gaps_cost - class_gaps_cost == (
         (PRIORITY_MULTIPLIERS[3] - PRIORITY_MULTIPLIERS[2])
@@ -362,10 +368,14 @@ def finish_early_weights(level: int) -> PriorityWeights:
 
 def test_priority_cost_prices_each_day_past_the_preferred_end_at_the_late_day_cost():
     weights = finish_early_weights(4)
-    on_time = priority_cost(finish_only_metrics(), weights, origin=ORIGIN)
+    on_time = priority_cost(finish_only_metrics(), weights, origin=ORIGIN, lesson_minutes=60)
 
     late = priority_cost(
-        finish_only_metrics(), weights, origin=ORIGIN, preferred_end_date=FINISH - timedelta(7)
+        finish_only_metrics(),
+        weights,
+        origin=ORIGIN,
+        lesson_minutes=60,
+        preferred_end_date=FINISH - timedelta(7),
     )
 
     assert late - on_time == 7 * PRIORITY_MULTIPLIERS[4] * LATE_DAY_COST
@@ -376,16 +386,24 @@ def test_priority_cost_adds_no_lateness_on_or_before_the_preferred_end(preferred
     weights = finish_early_weights(4)
 
     assert priority_cost(
-        finish_only_metrics(), weights, origin=ORIGIN, preferred_end_date=preferred_end
-    ) == priority_cost(finish_only_metrics(), weights, origin=ORIGIN)
+        finish_only_metrics(),
+        weights,
+        origin=ORIGIN,
+        lesson_minutes=60,
+        preferred_end_date=preferred_end,
+    ) == priority_cost(finish_only_metrics(), weights, origin=ORIGIN, lesson_minutes=60)
 
 
 def test_priority_cost_adds_no_lateness_when_finish_early_is_ignored():
     weights = finish_early_weights(0)
 
     assert priority_cost(
-        finish_only_metrics(), weights, origin=ORIGIN, preferred_end_date=FINISH - timedelta(7)
-    ) == priority_cost(finish_only_metrics(), weights, origin=ORIGIN)
+        finish_only_metrics(),
+        weights,
+        origin=ORIGIN,
+        lesson_minutes=60,
+        preferred_end_date=FINISH - timedelta(7),
+    ) == priority_cost(finish_only_metrics(), weights, origin=ORIGIN, lesson_minutes=60)
 
 
 def test_priority_cost_rejects_a_preferred_end_that_is_not_a_date():
@@ -394,5 +412,46 @@ def test_priority_cost_rejects_a_preferred_end_that_is_not_a_date():
             finish_only_metrics(),
             finish_early_weights(4),
             origin=ORIGIN,
+            lesson_minutes=60,
             preferred_end_date="2026-09-14",
         )
+
+
+@pytest.mark.parametrize(
+    "key",
+    ["teacher_single_lessons", "class_single_lessons", "class_same_room", "weekly_stability"],
+)
+def test_priority_cost_prices_lesson_count_criteria_in_lesson_minutes(key):
+    # T13 follows T06: one day, room change or changed position counts as one lesson's minutes.
+    weights = PriorityWeights({**{k: 0 for k in CRITERION_KEYS}, key: 2})
+    metrics = finish_only_metrics() | {key: 1}
+
+    assert priority_cost(metrics, weights, origin=ORIGIN, lesson_minutes=60) == (
+        PRIORITY_MULTIPLIERS[2] * UNIT_COSTS[key] * 60
+    )
+    assert priority_cost(metrics, weights, origin=ORIGIN, lesson_minutes=45) == (
+        PRIORITY_MULTIPLIERS[2] * UNIT_COSTS[key] * 45
+    )
+
+
+def test_priority_cost_keeps_update_stability_per_moved_lesson():
+    weights = PriorityWeights({**{k: 0 for k in CRITERION_KEYS}, "update_stability": 3})
+    metrics = finish_only_metrics() | {"update_stability": 2}
+
+    assert priority_cost(metrics, weights, origin=ORIGIN, lesson_minutes=60) == (
+        PRIORITY_MULTIPLIERS[3] * UNIT_COSTS["update_stability"] * 2
+    )
+    assert priority_cost(metrics, weights, origin=ORIGIN, lesson_minutes=45) == (
+        priority_cost(metrics, weights, origin=ORIGIN, lesson_minutes=60)
+    )
+
+
+def test_typical_lesson_minutes_is_the_most_common_grid_slot_length():
+    # The grid mixes a 45-minute slot with 60-minute slots; 60 is the common lesson.
+    slots = (
+        GridSlot(0, time(9), time(9, 45)),
+        GridSlot(0, time(10), time(11)),
+        GridSlot(1, time(9), time(10)),
+    )
+
+    assert typical_lesson_minutes(slots) == 60

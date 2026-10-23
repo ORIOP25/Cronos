@@ -1,5 +1,6 @@
 """Weighted constructive behavior for schedule-priority risk cases."""
 
+import hashlib
 from dataclasses import replace
 from datetime import date, time, timedelta
 from fractions import Fraction
@@ -381,20 +382,6 @@ def test_joining_a_single_lesson_day_is_rewarded_and_opening_one_is_not_penalise
     assert _joined_day_gain((nine, ten), afternoon) == 0
 
 
-def test_all_zero_priorities_spread_one_lesson_every_other_week():
-    dates = (0, 7, 14, 21)
-    periods = tuple(period(offset, 9) for offset in dates)
-    row = assignment(1, teacher_id=1, class_id=1, minutes=120)
-    ignored = weights(**{key: 0 for key in DEFAULT_LEVELS})
-
-    result = construct_schedule(make_snapshot((row,), periods), periods, weights=ignored)
-
-    assert [lesson.period.school_date for lesson in result.lessons] == [
-        periods[1].school_date,
-        periods[3].school_date,
-    ]
-
-
 def test_finish_early_priority_uses_first_two_weeks():
     dates = (0, 7, 14, 21)
     periods = tuple(period(offset, 9) for offset in dates)
@@ -531,7 +518,7 @@ def test_period_repair_is_bounded_by_deterministic_time_so_the_schedule_repeats(
     assert len(recorded) == 1
     wall_limit, deterministic_limit = recorded[0]
     assert wall_limit == float("inf")
-    assert deterministic_limit > 0
+    assert deterministic_limit == constructive.PERIOD_REPAIR_DETERMINISTIC_TIME
 
 
 def test_unweighted_period_repair_keeps_its_wall_clock_limit(monkeypatch):
@@ -612,7 +599,7 @@ def test_a_fill_pass_follows_the_priorities_when_empty_hours_left_both_passes_sh
 
     def fake_pass(*_args, strict, fill=False, **_kwargs):
         calls.append((strict, fill))
-        return (built if fill else None), 1
+        return (built if fill else None), 1, False
 
     monkeypatch.setattr(constructive, "_construct_pass", fake_pass)
     result = construct_schedule(None, (), weights=PriorityWeights(DEFAULT_LEVELS))
@@ -626,10 +613,8 @@ def test_a_fill_pass_follows_the_priorities_when_empty_hours_left_both_passes_sh
 
 
 def test_the_fill_pass_teaches_an_option_whatever_its_value():
-    weights = PriorityWeights(DEFAULT_LEVELS)
-
-    assert constructive._fills_hour(weights, {}, -500, strict=True) is False
-    assert constructive._fills_hour(weights, {}, -500, strict=False, fill=True) is True
+    assert constructive._fills_hour(-500, 0, strict=True) is False
+    assert constructive._fills_hour(-500, 0, strict=False, fill=True) is True
 
 
 def test_weekly_stability_follows_the_previous_week_not_the_first_one():
@@ -710,7 +695,7 @@ def test_weighted_strict_pass_never_dodges_an_evitar_hour_by_teaching_after_the_
     assert [row.period for row in result.lessons] == [in_window]
 
 
-def scarce_class_pass(day_slots: int, minutes: int, *, finish_early: int = 1):
+def scarce_class_pass(day_slots: int, minutes: int):
     """One class with an option at each hour of a Monday; the previous Monday's 9h is empty.
 
     That empty slot makes the weekly reference EMPTY, so the 9h option starts at -480
@@ -721,9 +706,9 @@ def scarce_class_pass(day_slots: int, minutes: int, *, finish_early: int = 1):
     row = assignment(1, teacher_id=1, class_id=1, minutes=minutes)
     school = make_snapshot((row,), periods, unavailable=unavailable)
     levels = dict.fromkeys(CRITERION_KEYS, 0)
-    levels["finish_early"] = finish_early
+    levels["finish_early"] = 1
     levels["weekly_stability"] = 1
-    candidate, _refused = constructive._construct_pass(
+    candidate, _refused, _paced_out = constructive._construct_pass(
         school,
         periods,
         deadline=None,
@@ -739,36 +724,23 @@ def first_taught_start(candidate):
     return min(lesson.period.start_utc for lesson in candidate.lessons)
 
 
-def test_a_fully_booked_class_teaches_its_option_at_finish_early_zero():
-    """T07: a class with no room left is taught even with finish_early at Ignorar."""
-    booked = scarce_class_pass(day_slots=2, minutes=120, finish_early=0)
+def test_a_fully_booked_class_teaches_its_option():
+    """T07: a class with no room left is taught, whatever the school's other levels are."""
+    booked = scarce_class_pass(day_slots=2, minutes=120)
 
     assert booked is not None
     assert first_taught_start(booked) == period(7, 9).start_utc
 
 
-def test_at_half_booked_an_empty_hour_stays_empty_at_finish_early_zero():
-    """T07: at Ignorar a half booked calendar spreads freely, so the 9h hour stays empty."""
-    # 120 minutes in 240 of capacity is tightness 1/2: the push to teach is zero.
-    half = scarce_class_pass(day_slots=4, minutes=120, finish_early=0)
-
-    assert half is not None
-    assert first_taught_start(half) == period(7, 10).start_utc
-
-
-def test_at_three_quarters_booked_the_push_at_finish_early_zero_is_two_t_minus_one():
-    """T07: at Ignorar the push uses 2t - 1 in place of t: at three quarters booked, 1/2 of the unit."""
+def test_scarcity_is_the_tightness_times_the_unit_cost_with_no_spread():
+    """T07: the push to teach is the tightness times the unit cost. No level spreads lessons."""
     # 180 minutes in 240 of capacity is tightness 3/4.
     periods = tuple(period(7, 9 + hour) for hour in range(4))
     row = assignment(1, teacher_id=1, class_id=1, minutes=180)
     school = make_snapshot((row,), periods)
     ledger = AvailabilityLedger.build(school, {1: periods}, {1: 180})
 
-    calibrated = constructive._scarcity(ledger, row, periods[0], 60, spread=False)
-    push = constructive._scarcity(ledger, row, periods[0], 60, spread=True)
-
-    assert calibrated == round(32 * 60 * Fraction(3, 4))
-    assert push == round(32 * 60 * (2 * Fraction(3, 4) - 1))
+    assert constructive._scarcity(ledger, row, periods[0], 60) == round(32 * 60 * Fraction(3, 4))
 
 
 def test_scarcity_teaches_a_tight_class_its_negative_option_now_and_leaves_an_ample_one_empty():
@@ -782,3 +754,120 @@ def test_scarcity_teaches_a_tight_class_its_negative_option_now_and_leaves_an_am
     assert first_taught_start(tight) == period(7, 9).start_utc
     assert ample is not None
     assert first_taught_start(ample) == period(7, 10).start_utc
+
+
+def _repair_model_digests(monkeypatch):
+    """Digests of the serialized repair models, in the order the period repair solves them."""
+    digests = []
+    solver_class = constructive.cp_model.CpSolver
+
+    class RecordingSolver(solver_class):
+        def Solve(self, model):
+            digests.append(hashlib.sha256(str(model.Proto()).encode()).hexdigest()[:16])
+            return super().Solve(model)
+
+    monkeypatch.setattr(constructive.cp_model, "CpSolver", RecordingSolver)
+    return digests
+
+
+def test_period_repair_models_keep_their_variables_hints_and_objective(monkeypatch):
+    """The repair model is built faster, but it stays the same model (perf, schedules unchanged)."""
+    digests = _repair_model_digests(monkeypatch)
+    first = assignment(1, teacher_id=1, class_id=1)
+    second = assignment(2, teacher_id=2, class_id=2)
+    third = assignment(3, teacher_id=1, class_id=3)
+    weighted = [(first, (101, 102)), (second, (102, 103)), (third, (103,))]
+    scores = {
+        (1, 101): (True, 5, 2),
+        (1, 102): (False, 3, 0),
+        (2, 102): (False, -4, 0),
+        (2, 103): (False, 0, 1),
+        (3, 103): (False, 0, 0),
+    }
+    joint = Assignment(1, (1, 2), 1, 1, frozenset({101}), (ModuleRequirement(10, 1, 60),))
+    unweighted = [
+        (joint, (101,)),
+        (assignment(2, teacher_id=2, class_id=1), (102,)),
+        (assignment(3, teacher_id=3, class_id=2), (103,)),
+    ]
+
+    _select_period(weighted, deadline=None, scores=scores)
+    _select_period(weighted, deadline=None, scores=scores, fill_admitted=True)
+    _select_period(unweighted, deadline=None)
+    _select_period([], deadline=None, scores={})
+
+    assert digests == [
+        "0c8c1ffb6149da58",
+        "aec05e7976e8e8af",
+        "c88676210ce40157",
+        "ac0f6fa4c831f375",
+    ]
+
+
+def run_pass(school, periods, *, weights_value, strict):
+    return constructive._construct_pass(
+        school,
+        periods,
+        deadline=None,
+        should_cancel=None,
+        weekly_reference=None,
+        weights=weights_value,
+        strict=strict,
+    )
+
+
+def pace_school(*, evitar: bool):
+    """Five teachers, each with a 10 h class of 600 min, over three weeks of 10 hours.
+
+    With ``evitar`` every teacher's Evitar covers weeks one and two, so the strict pass
+    refuses those hours and falls behind the linear pace; without it the pass stays on pace.
+    """
+    periods = tuple(
+        period(7 * week + day, hour) for week in range(3) for day in range(5) for hour in (9, 10)
+    )
+    rows = tuple(
+        assignment(identity, teacher_id=identity, class_id=identity, minutes=600)
+        for identity in range(1, 6)
+    )
+    soft = (
+        tuple(
+            Unavailability(UnavailableResource.TEACHER, identity, slot)
+            for identity in range(1, 6)
+            for slot in periods[:20]
+        )
+        if evitar
+        else ()
+    )
+    return make_snapshot(rows, periods, soft=soft), periods
+
+
+def test_a_strict_pass_behind_pace_for_two_weeks_gives_up_and_the_relaxed_pass_follows():
+    """Schedule priorities T07, pace abort: the strict pass stops early and the relaxed pass runs."""
+    school, periods = pace_school(evitar=True)
+
+    candidate, refused, paced_out = run_pass(school, periods, weights_value=weights(), strict=True)
+    relaxed, _refused, _paced = run_pass(school, periods, weights_value=weights(), strict=False)
+
+    assert candidate is None
+    assert paced_out is True
+    assert refused > 0
+    assert relaxed is not None
+    assert construct_schedule(school, periods, weights=weights()) == relaxed
+
+
+def test_a_strict_pass_on_pace_does_not_give_up():
+    school, periods = pace_school(evitar=False)
+
+    candidate, _refused, paced_out = run_pass(school, periods, weights_value=weights(), strict=True)
+
+    assert candidate is not None
+    assert paced_out is False
+
+
+def test_an_unweighted_strict_pass_never_gives_up_on_pace():
+    """I02: the pace abort is for weighted passes only."""
+    school, periods = pace_school(evitar=True)
+
+    _candidate, _refused, paced_out = run_pass(school, periods, weights_value=None, strict=True)
+
+    assert paced_out is False

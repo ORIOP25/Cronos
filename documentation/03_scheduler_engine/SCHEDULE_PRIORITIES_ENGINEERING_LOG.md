@@ -211,6 +211,147 @@ O caso de verificação do spec dá 12,7 h de tempos livres por turma, contra 21
 - "Dias de uma só aula dos professores" em Prioridade máxima fica ligeiramente pior do que no recomendado (76 contra 68).
 - Os tempos livres dos professores no recomendado subiram 0,8 h por professor por ano, acima do alvo de 0,5 h.
 
+### "Acabar cedo" deixa de ser configurável (22 de outubro de 2026)
+
+A campanha mostrou que baixar "Acabar cedo" só comprava cerca de 2 h de tempos livres por professor por ano.
+Em troca, as turmas ganhavam 8 h de tempos livres, os professores 2 h de Evitar, e perdia-se uma semana de margem antes da data de fim.
+O responsável de produto decidiu acabar com o slider (D19, [#183](https://github.com/ORIOP25/Cronos/pull/183)): o gerador acaba sempre o mais cedo possível, para deixar margem para recuperar faltas e ocorrências.
+A escola escolhe os outros 10 critérios. O motor continua a medir a data da última aula.
+
+### Velocidade
+
+Perfil da escola realista com os níveis recomendados, com cProfile. O perfil torna a corrida cerca de 2 vezes mais lenta.
+
+| Parte | Tempo | Peso |
+| :--- | :--- | :--- |
+| Passagem estrita (falha a 3 jun) | 1 366 s | 56% |
+| Passagem relaxada (dá o horário) | 1 030 s | 42% |
+| `_select_period` (as duas passagens) | 726 s | 30%, dos quais 174 s a resolver e o resto a montar o modelo em Python |
+| `option_value` | 328 s | calculado uma vez por sala, quando só a sala da turma depende da sala |
+| `open_rooms` | 321 s | salas livres e indisponibilidades |
+| `presence_run` | 270 s | o filtro antes da escolha e a colocação planeiam a mesma presença |
+
+Sinal da passagem estrita, medido no início de cada semana. "Atrasados" são os recursos atrás do ritmo linear; "atraso" é a soma das horas em falta face a esse ritmo.
+
+| Escola | Passagem estrita | Início de outubro | Depois |
+| :--- | :--- | :--- | :--- |
+| Realista (horas × 1,0) | falha a 3 jun | 19 atrasados, 24 h | 68 h em novembro, até 174 h |
+| Horas × 0,85 | tem sucesso | 3 atrasados, 2 h | ≤ 2 h |
+| Horas × 0,70 | tem sucesso | 1 atrasado, 1 h | ≤ 1 h |
+| Horas × 0,55 | tem sucesso | 0 | 0 h |
+
+Com a data preferida 2 ou 4 semanas mais tarde, a passagem estrita da escola realista continua a falhar.
+
+O modelo de cada período devolveu a escolha rápida em 2 553 de 2 645 chamadas (99%). Essas chamadas gastaram quase todo o tempo do modelo.
+
+Plano aprovado pelo responsável de produto: desistir cedo da passagem estrita condenada; cortar trabalho repetido sem mudar nenhuma aula; usar o modelo só quando pode melhorar.
+Cada passo entra com os horários provados iguais (impressão digital de todas as aulas em seis casos) ou com a qualidade medida.
+
+#### Passo 1: desistir cedo da passagem estrita
+
+A passagem estrita com pesos desiste quando duas verificações semanais seguidas mostram pelo menos 10% dos recursos atrás do ritmo e 10 h de atraso (limiares em `availability_priority.py`). A relaxada vem a seguir.
+Na escola realista desiste a 28 de setembro de 2026, em vez de 3 de junho de 2027. Nas escolas com 85% e 70% das horas não desiste.
+
+Prova de horários iguais (impressão digital de todas as aulas):
+
+| Caso | `main` | Com o passo 1 |
+| :--- | :--- | :--- |
+| Recomendado | `61fc5fb0ee3f99f3` | igual |
+| Tempos livres dos professores no máximo | `53dca1005caaeef6` | igual |
+| Recomendado com 70% das horas | `34aa991e603aa9c7` | igual |
+| Atualização às quartas, critério 11 em Ignorar | reconstrução, 35 520 aulas mudadas, fim a 16 jun | igual |
+| Atualização de março | reparação, 63 aulas mudadas, 41 mudanças de sala | igual |
+
+Tempo da reconstrução numa atualização, nas mesmas condições: 919 s → 511 s.
+
+#### Passo 2: cortar trabalho repetido
+
+Três mudanças, sem mudar nenhuma aula.
+- O valor de cada opção sem a medida da sala de origem calcula-se uma vez por opção. Cada sala só soma a sua parte. A mesma regra vale na reconstrução de atualizações.
+- O modelo de reparação de cada período usa a API `snake_case` do OR-Tools e uma só expressão `weighted_sum` para o objetivo. Um período vazio mantém o objetivo constante de antes.
+- A medição de presença não foi guardada em cache. Só a colocação repetia as chamadas das opções escolhidas, uma pequena parte das chamadas do filtro. O ganho estimado era menor que 1%.
+
+Prova de horários iguais (impressão digital de todas as aulas, `digest.py` no `main` e no ramo):
+
+| Caso | `main` | Com o passo 2 |
+| :--- | :--- | :--- |
+| Recomendado | `61fc5fb0ee3f99f3` | igual |
+| Tempos livres dos professores no máximo | `53dca1005caaeef6` | igual |
+| Estabilidade semanal no máximo | `004684d7388854c6` | igual |
+| Salas próprias e tempos livres das turmas | `c87552c238903b36` | igual |
+| Recomendado com 70% das horas | `34aa991e603aa9c7` | igual |
+| Ritmo das disciplinas em Ignorar | `abf8fa425fc9c2b8` | igual |
+
+Tempo no mesmo instante, recomendado, duas corridas em paralelo: `main` 388 s, ramo 350 s (cerca de 10% mais rápido). Ambas as corridas partilham a máquina, por isso o número é relativo. Uma corrida isolada do ramo levou 266 s, mas não há medição isolada do `main` sem outras corridas.
+Os testes `-k "scheduler or priorities"` passaram: 858 testes.
+
+#### Limpeza (22 de outubro de 2026)
+
+Limpeza do que sobrou de "Acabar cedo", sem mudar nenhuma aula.
+- Saiu o caminho de espalhar aulas (D14, T07). A escassez usa sempre `t`. `_scarcity` deixou de receber `spread`, e os dois chamadores (`constructive.py` e `recovery_construction.py`) deixaram de o passar.
+- Testes removidos, porque só pinavam o caminho que saiu: `test_all_zero_priorities_spread_one_lesson_every_other_week` (D14, tudo em zero) e `test_at_half_booked_an_empty_hour_stays_empty_at_finish_early_zero` (meio ocupado). O teste de três quartos deu lugar a `test_scarcity_is_the_tightness_times_the_unit_cost_with_no_spread`, que falhou antes da mudança (`TypeError`, o argumento `spread` já não existe) e passa depois. O teste de turma lotada passou a usar o nível por defeito, porque deixou de depender de `finish_early` zero.
+- Saiu o perfil `finish-early-ignore` de `lab/priority_bench.py`.
+- Saiu código sem uso: `assignment_physical_minutes` (`annual_model.py`), `gap_and_availability_cost_minutes` (`quality.py`) e o parâmetro `lessons` de `_choose_rooms` (`room_assignment.py`).
+- Especificação: T07 e T15 perdem as frases sobre Ignorar, e sai a linha R05 ("Ignorar tudo"), que descrevia o teste removido.
+- A passagem de Acabar cedo em Ignorar fica só no histórico desta secção. Não há mais caminho em produção.
+
+Prova de horários iguais (`digest.py` no ramo, seis casos):
+
+| Caso | `main` | Ramo |
+| :--- | :--- | :--- |
+| Recomendado | `61fc5fb0ee3f99f3` | igual |
+| Tempos livres dos professores no máximo | `53dca1005caaeef6` | igual |
+| Estabilidade semanal no máximo | `004684d7388854c6` | igual |
+| Salas próprias e tempos livres das turmas | `c87552c238903b36` | igual |
+| Recomendado com 70% das horas | `34aa991e603aa9c7` | igual |
+| Ritmo das disciplinas em Ignorar | `abf8fa425fc9c2b8` | igual |
+
+Tempo e memória, recomendado, uma corrida de cada vez, na mesma máquina:
+- `main`: 358 s, pico de RSS 242 852 KB.
+- Ramo: 340 s, pico de RSS 242 844 KB.
+
+A diferença fica dentro do ruído de uma corrida. Esta limpeza não é uma otimização medida. Uma corrida anterior do `main`, feita com outro contentor a correr, levou 516 s, por isso não é comparável.
+
+Coleta de lixo: depois da corrida, `gc.collect()` devolveu 0 objetos inalcançáveis. Por isso o worker não ganha nada com `gc.collect()` depois de cada tarefa, e nada foi acrescentado. O worker já recicla o processo filho (ver [o relatório de memória](../09_ops_observability/SERVER_MEMORY_AUDIT_2026-10-18.md)).
+
+Não foi feito (cada item com o motivo):
+- Complexidade cognitiva de `_construct_pass`: refatoração grande, fora do âmbito de uma limpeza.
+- `PriorityWeights` ainda aceita `finish_early` zero, quando construído diretamente. Apertar a validação mudaria testes de domínio; a escola já não consegue escolher esse valor, porque `school_priority_weights` fixa 4.
+- Perfil `class-gaps-maximum` do laboratório ainda usa `finish_early` 1, um nível que a escola já não escolhe. Fica para não mudar a referência do laboratório.
+- Avisos ARG restantes: a assinatura do ouvinte do SQLAlchemy (`models.py`) e a porta do despachante (`task_dispatcher.py`) têm argumentos fixos. Não são código morto.
+- Auxiliares usados só por testes (`build_recovery_case`, `candidate_digest`, `total_physical_minutes` e outros) ficam, porque os testes os usam para fixar digests e contratos.
+- Passo 3 da velocidade (usar o modelo por período só quando melhora a escolha; estimativa de 5,2 para cerca de 4 min) fica como opção futura. O responsável de produto parou-o a 22 de outubro de 2026 em 5,2 min.
+#### Unidades do custo da atualização (22 de outubro de 2026)
+
+Problema. A T13 contava dias, trocas de sala e posições alteradas para os quatro critérios de aulas (professor e turma com uma só aula, sala da turma e padrão semanal). A T06 mede os mesmos critérios em minutos de aula. Na atualização, os quatro pesavam cerca de 60 vezes menos do que na geração, para aulas de 60 minutos.
+
+Mudança. `priority_cost` recebe `lesson_minutes` e multiplica esses quatro critérios por ele. Os minutos vêm da duração mais comum da grelha (`typical_lesson_minutes`). Na escola de referência todas as horas da grelha duram 60 minutos. `update_stability` não muda, porque já conta aulas alteradas. `finish_early` e `LATE_DAY_COST` também não mudam.
+
+Medição. Cada cenário correu uma vez com o código novo. A construção não depende do nível de `update_stability` nem da fórmula da T13, por isso o custo de cada nível e de cada fórmula sai das métricas impressas de cada candidato. A fórmula antiga é a mesma com minutos de aula iguais a 1. Verificação: no nível 3, o custo recalculado é igual ao custo impresso pelo código (março: 99 319 784 e 799 373 984; quarta-feira: 401 726 936 e 821 570 360). Em março, no nível 3, a escolha antiga é a reparação com 63 aulas movidas e 41 trocas de sala, como na base.
+
+| Cenário | Nível | Antes | Depois | Aulas alteradas | Fim | Evitar de professor (h) |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| Março | 0 | reconstrução | reconstrução | 38 291 | 9 jun 2027 | 2 254 |
+| Março | 1 | reparação | reparação | 104 | 14 jun 2027 | 3 779 |
+| Março | 2 | reparação | reparação | 104 | 14 jun 2027 | 3 779 |
+| Março | 3 | reparação | reparação | 104 | 14 jun 2027 | 3 779 |
+| Março | 4 | reparação | reparação | 104 | 14 jun 2027 | 3 779 |
+| Quartas | 0 | reconstrução | reconstrução | 38 253 | 16 jun 2027 | 2 224 |
+| Quartas | 1 | reconstrução | reconstrução | 38 253 | 16 jun 2027 | 2 224 |
+| Quartas | 2 | reparação | reparação | 247 | 28 jun 2027 | 3 779 |
+| Quartas | 3 | reparação | reparação | 247 | 28 jun 2027 | 3 779 |
+| Quartas | 4 | reparação | reparação | 247 | 28 jun 2027 | 3 779 |
+
+Resultado. Nenhuma escolha mudou nos dez pares de cenário e nível. Em cada um, a fórmula antiga e a nova escolhem o mesmo candidato. Aulas alteradas conta movidas e trocas de sala. A reparação de março tem 63 movidas e 41 trocas de sala. A reparação das quartas tem 77 movidas e 170 trocas de sala. A reconstrução das quartas tem 38 253 alteradas, sem a divisão entre movidas e trocas.
+
+Limitações. A reconstrução das quartas não tem a divisão entre movidas e trocas nos registos, por isso não se pode confirmar o total de 35 520 movidas da base. As horas de Evitar são a soma de `teacher_preferences` dividida por 60.
+
+#### Lições
+
+- Um script chamado `profile.py` esconde o módulo `profile` do Python e parte o cProfile. Use outro nome.
+- `python -I` ignora o `PYTHONPATH` e não encontra o pacote `app`.
+- O cProfile mede onde está o tempo, mas não quanto dura uma corrida normal.
+
 ## Failure Modes
 
 ### Boas decisões
