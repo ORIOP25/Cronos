@@ -39,6 +39,7 @@ from app.scheduler.domain.capacity import (
     eligible_periods,
     residual_minutes,
 )
+from app.scheduler.domain.class_day_gaps import class_day_excess_value
 from app.scheduler.domain.priorities import PriorityWeights
 from app.scheduler.domain.priority_value import (
     WeeklyHistory,
@@ -1038,7 +1039,15 @@ class _ConstructionPass:
             pace_lag=_pace_lag(identity, self.pace_peers[identity], self.required, self.remaining),
         )
         scarcity = _scarcity(self._ledger, assignment, period, credit)
-        base_value = option_value(self.weights, measures)
+        base_value = option_value(self.weights, measures) + class_day_excess_value(
+            (
+                self.occupancy[("class", class_id, period.school_date)]
+                for class_id in assignment.class_ids
+            ),
+            _local_interval(period),
+            self.slots_by_day.get(period.school_date.weekday(), ()),
+            self.snapshot.lunch_rule,
+        )
         same_room_value = option_value(self.weights, {"class_same_room": -credit})
         preference_value = _preference_value(self.weights, measures)
         for room in rooms:
