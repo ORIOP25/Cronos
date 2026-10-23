@@ -3,7 +3,12 @@ import { CBadge, CButton, CSpinner } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import { cilBan, cilCheckCircle, cilList, cilWarning } from '@coreui/icons'
 import { useScheduleDiff } from '../../features/scheduling/data'
+import { SCHEDULE_PRIORITY_CRITERIA } from '../../features/schoolConfig/schedulePriorities'
 import FeedbackBanner from '../FeedbackBanner'
+
+// The finish date is a measure of the proposal, not a school criterion, so it is listed here only.
+const FINISH_DATE_ROW = { key: 'finish_early', title: 'Data da última aula.' }
+const PRIORITY_SUMMARY_ROWS = [FINISH_DATE_ROW, ...SCHEDULE_PRIORITY_CRITERIA]
 
 const CHANGE_LABELS = {
   ADDED: 'Adicionado',
@@ -39,11 +44,26 @@ function changeSummary(diff) {
     .map(([key, label]) => `${label}: ${counts[key]}`)
 }
 
+function formatPriorityMeasure(key, value) {
+  if (value == null) return '—'
+  if (key === 'finish_early') return value
+  if (key === 'teacher_gaps' || key === 'class_gaps'
+    || key === 'teacher_preferences' || key === 'class_preferences') {
+    return `${preferenceHoursFormatter.format(value / 60)} h`
+  }
+  if (key === 'subject_pace') {
+    const days = preferenceHoursFormatter.format(value)
+    return `${days} ${value === 1 ? 'dia' : 'dias'}`
+  }
+  return value
+}
+
 const DraftPanel = ({ draft, onApprove, onReject, isApproving, isRejecting, allowApprove = true, allowReject = true }) => {
   const [showDiff, setShowDiff] = useState(false)
   const proposalId = draft.proposal_id
   const { data: diff, isLoading } = useScheduleDiff(proposalId, showDiff)
   const metrics = draft.metrics || {}
+  const prioritySummary = metrics.priority_summary
   const quality = draft.quality_summary || {}
   const certifiedStages = Number(quality.certified_stages ?? 0)
   const totalStages = Number(quality.total_stages ?? 0)
@@ -90,6 +110,39 @@ const DraftPanel = ({ draft, onApprove, onReject, isApproving, isRejecting, allo
                   <strong>{preferenceHoursFormatter.format(metrics.preference_cost_minutes / 60)} h</strong> em blocos a evitar
                 </span>
               )}
+            </div>
+          )}
+
+          {prioritySummary?.proposal && (
+            <div className="table-responsive mb-3" data-testid="priority-summary">
+              <table className="table table-sm align-middle" aria-label="Resumo das prioridades do horário">
+                <thead>
+                  <tr>
+                    <th scope="col">Critério</th>
+                    {prioritySummary.published && <th scope="col">Horário publicado</th>}
+                    <th scope="col">Proposta</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {PRIORITY_SUMMARY_ROWS.map(({ key, title }) => (
+                    <tr key={key}>
+                      <th scope="row">{title}</th>
+                      {prioritySummary.published && (
+                        <td>{formatPriorityMeasure(key, prioritySummary.published[key])}</td>
+                      )}
+                      <td>{formatPriorityMeasure(key, prioritySummary.proposal[key])}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {metrics.priorities_followed === false && (
+            <div className="mb-3" data-testid="priority-fallback-warning">
+              <FeedbackBanner tone="warning">
+                Não foi possível seguir as prioridades definidas pela escola nesta proposta. Experimente baixar alguns critérios e gerar outra proposta.
+              </FeedbackBanner>
             </div>
           )}
 

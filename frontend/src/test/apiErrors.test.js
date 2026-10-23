@@ -54,6 +54,15 @@ describe('api error contract', () => {
     expect(presentation.supportRequired).toBe(false)
   })
 
+  it('explains the valid levels for schedule priorities', () => {
+    const presentation = getApiErrorPresentation({
+      response: { status: 422, data: { detail: { code: 'schedule_priorities_invalid' } } },
+    })
+
+    expect(presentation.code).toBe('schedule_priorities_invalid')
+    expect(presentation.message).toBe('Escolha um nível de 0 a 4 em cada critério.')
+  })
+
   it('maps status and context when the server cannot provide a code', () => {
     expect(getApiErrorPresentation({ response: { status: 401 } }, 'auth').code)
       .toBe('authentication_required')

@@ -9,6 +9,7 @@ const PRESENTATIONS = {
   resource_in_use: { title: 'Em utilização', message: 'Este item está a ser utilizado no horário atual. Remova ou republique o horário primeiro.' },
   course_has_classes: { title: 'Turmas atuais', message: 'Apague primeiro as turmas atuais deste curso.' },
   validation_error: { title: 'Reveja os dados', message: 'Reveja os dados indicados e tente novamente.' },
+  schedule_priorities_invalid: { title: 'Prioridades inválidas', message: 'Escolha um nível de 0 a 4 em cada critério.' },
   bad_request: { title: 'Não foi possível concluir', message: 'Não foi possível concluir o pedido. Tente novamente.' },
   too_many_requests: { title: 'Aguarde um momento', message: 'Foram efetuadas demasiadas tentativas. Aguarde e tente novamente.', retryable: true },
   service_unavailable: { title: 'Serviço temporariamente indisponível', message: 'Tente novamente dentro de instantes.', retryable: true },

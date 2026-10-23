@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import DraftPanel from '../components/schedules/DraftPanel'
 import { useScheduleDiff } from '../features/scheduling/data'
@@ -262,6 +262,90 @@ describe('DraftPanel', () => {
 
     expect(screen.queryByText(/aulas? fora da sala da turma/)).toBeNull()
     expect(screen.queryByText(/em blocos a evitar/)).toBeNull()
+  })
+
+  it('compares all priority measures with the published schedule and shows the fallback notice', () => {
+    const metrics = {
+      finish_early: '2027-03-18',
+      teacher_gaps: 90,
+      class_gaps: 45,
+      teacher_single_lessons: 2,
+      class_single_lessons: 1,
+      teacher_preferences: 120,
+      class_preferences: 30,
+      class_same_room: 3,
+      weekly_stability: 4,
+      subject_pace: 2.5,
+      update_stability: 5,
+    }
+    render(
+      <DraftPanel
+        draft={{
+          ...proposal,
+          metrics: {
+            ...proposal.metrics,
+            priorities_followed: false,
+            priority_summary: {
+              published: { ...metrics, finish_early: '2027-03-10' },
+              proposal: metrics,
+            },
+          },
+        }}
+        onApprove={vi.fn()}
+        onReject={vi.fn()}
+      />
+    )
+
+    const table = screen.getByRole('table', { name: 'Resumo das prioridades do horário' })
+    expect(within(table).getByRole('columnheader', { name: 'Horário publicado' })).toBeInTheDocument()
+    expect(screen.getByText(
+      'Não foi possível seguir as prioridades definidas pela escola nesta proposta. Experimente baixar alguns critérios e gerar outra proposta.',
+    )).toBeInTheDocument()
+    expect(screen.getByTestId('priority-fallback-warning')).not.toHaveTextContent(/valores recomendados/i)
+    expect(within(table).getAllByRole('row')).toHaveLength(12)
+    expect(within(table).getByRole('rowheader', { name: 'Data da última aula.' })).toBeInTheDocument()
+    expect(within(table).getByText('2027-03-18')).toBeInTheDocument()
+    expect(within(table).getAllByText('1,5 h')).toHaveLength(2)
+    expect(within(table).getAllByText('2,5 dias')).toHaveLength(2)
+  })
+
+  it('omits the published column for first generation and preserves legacy metric rendering', () => {
+    render(
+      <DraftPanel
+        draft={{
+          ...proposal,
+          metrics: {
+            ...proposal.metrics,
+            priorities_followed: true,
+            preference_cost_minutes: 90,
+            priority_summary: {
+              published: null,
+              proposal: {
+                finish_early: '2027-03-18',
+                teacher_gaps: 0,
+                class_gaps: 0,
+                teacher_single_lessons: 0,
+                class_single_lessons: 0,
+                teacher_preferences: 0,
+                class_preferences: 0,
+                class_same_room: 0,
+                weekly_stability: 0,
+                subject_pace: 0,
+                update_stability: 0,
+              },
+            },
+          },
+        }}
+        onApprove={vi.fn()}
+        onReject={vi.fn()}
+      />
+    )
+
+    const table = screen.getByRole('table', { name: 'Resumo das prioridades do horário' })
+    expect(within(table).queryByRole('columnheader', { name: 'Horário publicado' })).not.toBeInTheDocument()
+    expect(within(table).getAllByRole('row')).toHaveLength(12)
+    expect(screen.getByText('em blocos a evitar').parentElement).toHaveTextContent('1,5 h')
+    expect(screen.queryByText(/Não foi possível seguir as prioridades/)).not.toBeInTheDocument()
   })
 
   it('hides the avoidable room changes on an outdated proposal', () => {

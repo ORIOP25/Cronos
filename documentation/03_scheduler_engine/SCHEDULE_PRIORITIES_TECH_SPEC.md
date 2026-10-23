@@ -91,25 +91,19 @@ Fora: o modelo exato (T16), critérios novos fora da D02, níveis por turma ou p
 
 ### Textos do ecrã
 
-Níveis: 0 Ignorar · 1 Pouco importante · 2 Importante · 3 Muito importante · 4 Prioridade máxima. A coluna "Recomendado" é o valor inicial e o do botão "Repor valores recomendados".
+Níveis: 0 Ignorar · 1 Pouco importante · 2 Importante · 3 Muito importante · 4 Prioridade máxima.
+O valor recomendado é o valor inicial e o do botão "Repor valores recomendados". Os valores vivem em [`priorities.py`](../../backend/app/scheduler/domain/priorities.py) (`SCHOOL_DEFAULT_LEVELS`).
 
-Desde a D19 o critério 1 não aparece no ecrã: fica fixo em Prioridade máxima. O ecrã mostra os critérios 2 a 11, com os 10 valores da T02.
+Desde a D19 o critério 1 não aparece no ecrã: fica fixo em Prioridade máxima. O ecrã mostra os outros 10 critérios.
 
-| # | Critério e descrição | Valor mais baixo | Valor mais alto | Recomendado |
-| :--- | :--- | :--- | :--- | :--- |
-| 1 | **Acabar os módulos o mais cedo possível.** O Cronos marca as aulas o mais cedo que puder no ano letivo. | As aulas espalham-se até à data preferida. O ano acaba mais tarde, mas sobra espaço para os outros critérios: menos tempos livres, menos blocos Evitar, semanas mais parecidas. A data preferida e a data limite continuam a valer. | Os módulos acabam o mais cedo possível e sobra margem para recuperar faltas. Em troca, aceita mais tempos livres, mais blocos Evitar e semanas diferentes. No fim do ano podem ficar tardes ou dias vazios. | 4 |
-| 2 | **Evitar tempos livres dos professores.** Horas sem aula entre duas aulas do mesmo professor no mesmo dia. | O professor pode ficar com horas vazias entre aulas. O Cronos usa mais horas do dia e o ano tende a acabar mais cedo. | As aulas do professor ficam seguidas. Para isso, o Cronos pode deixar horas por usar: o ano acaba mais tarde e as turmas podem ficar com mais tempos livres. | 3 |
-| 3 | **Evitar tempos livres das turmas.** Horas sem aula entre duas aulas da mesma turma no mesmo dia. | A turma pode ficar com horas vazias, e os alunos saem ou esperam na escola. O ano tende a acabar mais cedo. | Os dias da turma ficam compactos. O ano pode acabar mais tarde e os professores podem ficar com mais tempos livres. | 2 |
-| 4 | **Evitar que um professor venha à escola para uma só aula.** Dias em que o professor tem uma única aula. Não conta os professores com mínimo de presença, que já têm uma regra obrigatória. | O professor pode vir à escola só para uma aula. Cabem mais aulas cedo no ano. | As aulas juntam-se em menos dias, e alguns dias ficam mais carregados. O ano pode acabar mais tarde. | 2 |
-| 5 | **Evitar que uma turma venha à escola para uma só aula.** Dias em que a turma tem uma única aula. | A turma pode vir à escola só para uma aula. Cabem mais aulas cedo no ano. | As aulas da turma juntam-se em menos dias, e os alunos não se deslocam para uma aula. Alguns dias ficam mais carregados e o ano pode acabar mais tarde. | 2 |
-| 6 | **Respeitar Evitar e Preferencial dos professores.** Os blocos que cada professor marcou na sua disponibilidade. Impossível nunca é usado, em nenhum valor. | Os blocos Evitar contam como horas normais e o Preferencial quase não conta. O ano acaba mais cedo, mas os professores recebem aulas nas horas que pediram para evitar. | O Cronos só usa um bloco Evitar quando o horário não caberia de outra forma, e prefere os blocos Preferencial. O ano pode acabar mais tarde e as turmas podem ficar com mais tempos livres. | 3 |
-| 7 | **Respeitar Evitar e Preferencial das turmas.** Os blocos que o administrador marcou na disponibilidade de cada turma. Impossível nunca é usado. | Os blocos Evitar da turma contam como horas normais. O ano acaba mais cedo. | A turma só tem aulas nos blocos Evitar quando não há alternativa. O ano pode acabar mais tarde e os professores podem ficar com mais tempos livres. | 2 |
-| 8 | **Manter a turma na mesma sala.** As aulas normais da turma ficam na sala da turma (a escolhida pelo administrador ou pelo Cronos). As disciplinas com tipo de sala especial vão sempre para uma sala desse tipo. | A turma muda de sala sempre que for mais prático e a sala da turma não é considerada. A sala nunca muda a hora das aulas. | A turma fica na sua sala sempre que possível, mesmo que isso mude a hora de algumas aulas. Pode dar mais tempos livres e acabar o ano mais tarde. | 2 |
-| 9 | **Manter o horário igual de semana para semana.** Como os módulos acabam ao longo do ano, o horário semanal muda. Este critério conta as aulas que mudam de uma semana para a seguinte. | Cada semana é feita para aproveitar ao máximo as horas. O ano acaba mais cedo, mas professores e alunos têm de consultar o horário todas as semanas. | As semanas repetem-se e são fáceis de decorar. Quando um módulo acaba, a hora livre pode ficar por usar, e o ano acaba mais tarde. | 2 |
-| 10 | **Avançar as disciplinas ao mesmo ritmo.** Quando várias disciplinas da mesma turma disputam as mesmas horas. | O Cronos pode concentrar uma disciplina e acabar os seus módulos primeiro, enquanto outras ficam paradas durante semanas. Útil para módulos intensivos. | Todas as disciplinas avançam a par e acabam perto da mesma altura. Há menos liberdade para encaixar aulas, o que pode deixar horas por usar e atrasar o fim do ano. | 3 |
-| 11 | **Nas atualizações, mexer pouco no horário publicado.** Só conta quando o administrador atualiza um horário já publicado. As aulas dentro da janela de estabilidade nunca mudam, em nenhum valor. | O Cronos refaz o futuro livremente para melhorar os outros critérios. O horário publicado pode mudar muito, e professores e alunos têm de o rever. | O Cronos muda só o necessário. Os outros critérios melhoram menos, e as horas perdidas podem demorar mais a recuperar. | 3 |
+Os textos de cada critério vivem em [`schedulePriorities.js`](../../frontend/src/features/schoolConfig/schedulePriorities.js):
 
-Topo do separador: "Escolha a importância de cada critério. O Cronos equilibra-os segundo estes valores. As regras obrigatórias (Impossível, presença mínima, almoço, tipo de sala e datas do ano letivo) nunca se quebram."
+- título e descrição;
+- o que acontece em Ignorar e em Prioridade máxima, com os impactos medidos na escola realista (campanha de 22 de outubro de 2026, no [registo de engenharia](SCHEDULE_PRIORITIES_ENGINEERING_LOG.md));
+- um aviso opcional, discreto, com o mesmo estilo do nível recomendado, quando um extremo piora outros critérios de forma visível (responsável de produto, 22 de outubro de 2026).
+
+O topo do separador diz que o Cronos equilibra os critérios, que as regras obrigatórias nunca se quebram e que acaba sempre os módulos o mais cedo possível, para deixar margem para recuperar faltas e ocorrências.
+No resumo da proposta, a data do critério 1 chama-se "Data da última aula.".
 
 ## Why the Behavior Exists
 
@@ -212,8 +206,8 @@ Os valores recomendados mantêm o comportamento que a escola piloto já validou.
 | Nível fora de 0–4, chave em falta ou a mais | 422 `schedule_priorities_invalid` | "Escolha um nível de 0 a 4 em cada critério." |
 | Configuração da escola por criar | 404 `settings_not_found` | a mensagem atual de configuração em falta |
 | Professor a ler ou escrever | 403, como as outras rotas de administrador | a página de acesso negado atual |
-| Construção com pesos sem saída | repetição sem pesos (T11); `priorities_followed = false` | "Não foi possível seguir as prioridades da escola nesta proposta. O horário segue os valores recomendados. Experimente baixar alguns critérios." |
-| As duas construções falham | caminho exato, como hoje (T16); `priorities_followed = false` | o mesmo aviso |
+| Construção com pesos sem saída | repetição sem pesos (T11); `priorities_followed = false` | "Não foi possível seguir as prioridades definidas pela escola nesta proposta. Experimente baixar alguns critérios e gerar outra proposta." |
+| As duas construções falham | caminho exato, como hoje (T16); `priorities_followed = false` | o mesmo aviso; não afirma que a proposta segue valores recomendados |
 | Proposta pendente quando os níveis mudam | proposta `STALE` | o texto atual de proposta desatualizada |
 | Guardar com sucesso | 200 | "Prioridades guardadas. A próxima geração ou atualização usa estes valores." |
 
