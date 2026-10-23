@@ -417,6 +417,17 @@ def _cancelled(start: float, message: str) -> SearchOutcome:
     )
 
 
+def _compact_update(
+    snapshot: PlanningSnapshot, candidate: CandidateSchedule | None
+) -> CandidateSchedule | None:
+    """Same-day compaction of a repair or rebuild; each moved lesson is a change (update_stability)."""
+    if candidate is None:
+        return None
+    return compact_class_days(
+        snapshot, candidate, snapshot.priority_weights, moves_are_changes=True
+    )
+
+
 def _joint_search(
     snapshot: PlanningSnapshot,
     periods: tuple[Period, ...],
@@ -1061,6 +1072,9 @@ def search_adaptive_schedule(
         )
         if should_cancel is not None and should_cancel():
             return _cancelled(start, "The request was cancelled during repair.")
+        if planning.priority_weights is not None:
+            local = _compact_update(planning, local)
+            rebuilt = _compact_update(planning, rebuilt)
         candidates = [
             (_room_pass(planning, profile, row, guarded=False), weighted)
             for row, weighted in ((local, local_weighted), (rebuilt, rebuilt_weighted))

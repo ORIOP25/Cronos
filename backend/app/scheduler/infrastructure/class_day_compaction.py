@@ -41,10 +41,18 @@ ROOM = "room"
 
 
 def compact_class_days(
-    snapshot: PlanningSnapshot, candidate: CandidateSchedule, weights: PriorityWeights
+    snapshot: PlanningSnapshot,
+    candidate: CandidateSchedule,
+    weights: PriorityWeights,
+    *,
+    moves_are_changes: bool = False,
 ) -> CandidateSchedule:
-    """Return the candidate with its class days compacted, or the input when that is invalid."""
-    compacted = _Compaction(snapshot, candidate, weights).run()
+    """Return the candidate with its class days compacted, or the input when that is invalid.
+
+    An update passes ``moves_are_changes``: each move then also pays the update_stability
+    price of one changed lesson, so a move must gain more than that price.
+    """
+    compacted = _Compaction(snapshot, candidate, weights, moves_are_changes).run()
     if compacted is candidate:
         return candidate
     report = validate_candidate(snapshot, compacted)
@@ -59,10 +67,15 @@ def compact_class_days(
 
 class _Compaction:
     def __init__(
-        self, snapshot: PlanningSnapshot, candidate: CandidateSchedule, weights: PriorityWeights
+        self,
+        snapshot: PlanningSnapshot,
+        candidate: CandidateSchedule,
+        weights: PriorityWeights,
+        moves_are_changes: bool,
     ) -> None:
         self._snapshot = snapshot
         self._weights = weights
+        self._move_price = _penalty(weights, "update_stability", 1) if moves_are_changes else 0
         self._source = candidate
         self._assignments = {row.assignment_id: row for row in snapshot.assignments}
         self._protected = frozenset(row.lesson_id for row in snapshot.protected_lessons)
@@ -156,7 +169,8 @@ class _Compaction:
         gap_change, evitar_change = self._teacher_change(lesson, moved, assignment)
         if gap_change > 0 or evitar_change > 0:
             return None
-        return (self._cost_change(lesson, moved, assignment), lesson_id, moved)
+        cost = self._cost_change(lesson, moved, assignment) + self._move_price
+        return (cost, lesson_id, moved)
 
     def _teacher_change(
         self, lesson: ScheduledLesson, moved: ScheduledLesson, assignment: Assignment

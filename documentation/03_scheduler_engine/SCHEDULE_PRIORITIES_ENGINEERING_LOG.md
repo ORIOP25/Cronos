@@ -380,6 +380,35 @@ Porque é que o termo funciona. A construção percorre as horas por ordem. O te
 Limitações. A recuperação e a atualização ainda não aplicam o termo nem a compactação. A compactação não move uma aula para uma hora ocupada por outra turma do mesmo professor; isso exige trocas em cadeia, que não entraram.
 
 
+#### Furos das turmas nas atualizações (23 de outubro de 2026)
+
+A regra da geração passa às atualizações. A reparação local e a reconstrução recebem o termo de furos; a compactação corre sobre as duas antes da escolha e só move aulas futuras editáveis. Cada aula movida paga o preço de uma mudança de `update_stability`, por isso uma mudança só é aceite se ganhar mais do que esse preço. As aulas anteriores a 1 de março de 2027 ficam protegidas, como a janela de estabilidade em produção.
+
+Medição: escola realista (`pilot-real`), horário publicado com os níveis recomendados (`main` 21dae55a, 346 s, data de fim 8 de junho de 2027). Três atualizações: março (um professor Impossível de 1 a 12 de março de 2027), e quartas (um professor Impossível todas as quartas de março a julho) com `update_stability` 3 e 0. Os números só contam o futuro editável, a partir de 1 de março de 2027.
+
+| Medida | Março (main / branch) | Quarta, nível 3 (main / branch) | Quarta, nível 0 (main / branch) |
+| :--- | ---: | ---: | ---: |
+| Dias de turma com 2 ou mais furos | 23 / 15 | 0 / 0 | 0 / 0 |
+| Dias de turma com 0 / 1 / 2 / 3+ furos | 2 395 / 210 / 15 / 8 → 2 398 / 216 / 11 / 4 | 2 379 / 243 / 0 / 0 (igual) | 2 379 / 243 / 0 / 0 → 2 384 / 238 / 0 / 0 |
+| Aulas alteradas | 126 / 122 | 10 329 / 10 329 | 10 329 / 10 330 |
+| Mudanças de sala | 61 / 55 | 1 076 / 1 076 | 1 076 / 1 076 |
+| Furos dos professores, total (h) | 447,0 / 443,0 | 397,0 / 397,0 | 397,0 / 395,0 |
+| Furos dos professores, média por professor face a main (h) | - / -0,06 | - / 0,00 | - / -0,03 |
+| Dias de professor com uma só aula | 46 / 46 | 34 / 34 | 34 / 34 |
+| Evitar dos professores, total (h) | 706,0 / 698,0 | 709,0 / 709,0 | 709,0 / 709,0 |
+| Evitar, média por professor face a main (h) | - / -0,12 | - / 0,00 | - / 0,00 |
+| Data de fim | 8 jun 2027 / 8 jun 2027 | 7 jun 2027 / 7 jun 2027 | 7 jun 2027 / 7 jun 2027 |
+| Fonte escolhida | reparação / reparação | reconstrução / reconstrução | reconstrução / reconstrução |
+| Segundos | 244 / 268 | 245 / 260 | 250 / 266 |
+
+Leitura. Nas quartas a regra já estava cumprida em main, porque a reconstrução com pesos recebe o termo desde a geração. Em março, a reparação fica com 15 dias com dois ou mais furos, contra 23 em main, e não chega à redução de 90% que o critério pedia. O motivo é a compactação: só move uma aula de extremidade para uma hora vazia da mesma turma, sem que o professor ganhe furo ou Evitar. Em muitos desses dias a hora vazia é de um professor ocupado noutra turma, ou o movimento aumentaria o Evitar do professor.
+
+Achado. Pela contagem por horário feita pela coordenação, 13 dos 19 dias ruins restantes caem nas semanas de falta (1 a 12 de março de 2027). São buracos deixados pelo professor ausente, e não furos que a atualização cria em turmas normais. As substituições tratam esses buracos. A contagem por dia de turma desta tabela (15) é outra medida e não se soma com a contagem por horário.
+
+Decisão. O responsável de produto aceitou o resultado como está: "Sim, faz o merge como está. Os buracos da falta resolvem-se com substituições."
+
+Limitações. A compactação não move uma aula para uma hora ocupada por outra turma do mesmo professor; isso exige trocas em cadeia, que não entraram. As quartas não mudam porque o caminho escolhido já era a reconstrução com o termo.
+
 #### Lições
 
 - Um script chamado `profile.py` esconde o módulo `profile` do Python e parte o cProfile. Use outro nome.

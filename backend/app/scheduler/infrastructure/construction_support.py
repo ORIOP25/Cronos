@@ -21,6 +21,7 @@ from app.scheduler.domain.candidate import (
     PlanningSnapshot,
     TeacherPresenceRule,
 )
+from app.scheduler.domain.class_day_gaps import class_day_excess_value
 from app.scheduler.domain.priorities import SCARCITY_UNIT_COST, PriorityWeights
 from app.scheduler.domain.priority_value import _grid_interval, _local_interval
 from app.scheduler.domain.teacher_presence import (
@@ -127,6 +128,18 @@ def _resource_keys(
         ("teacher", teacher, school_date),
         ("room", room, school_date),
         *(("class", class_id, school_date) for class_id in assignment.class_ids),
+    )
+
+
+def class_day_excess_option_value(
+    occupancy, assignment: Assignment, period: Period, slots: Sequence[GridSlot], lunch_rule
+) -> int:
+    """T06 excess-gap term of an option: the excess minutes its classes shed on that date."""
+    return class_day_excess_value(
+        (occupancy[("class", class_id, period.school_date)] for class_id in assignment.class_ids),
+        _local_interval(period),
+        slots,
+        lunch_rule,
     )
 
 

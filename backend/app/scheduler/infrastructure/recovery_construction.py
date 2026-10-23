@@ -49,6 +49,7 @@ from app.scheduler.infrastructure.construction_support import (
     _resource_keys,
     _scarcity,
     _slots_by_day,
+    class_day_excess_option_value,
 )
 from app.scheduler.infrastructure.constructive import _select_period, strict_window_periods
 from app.scheduler.infrastructure.placement_model import _build_candidate
@@ -590,7 +591,13 @@ class _RecoveryPass:
         )
         allowed_rooms = []
         scarcity = _scarcity(self._ledger, assignment, period, credit)
-        base_value = option_value(self.weights, measures)
+        base_value = option_value(self.weights, measures) + class_day_excess_option_value(
+            self.occupancy,
+            assignment,
+            period,
+            self.slots_by_day.get(period.school_date.weekday(), ()),
+            self.snapshot.lunch_rule,
+        )
         same_room_value = option_value(self.weights, {"class_same_room": -credit})
         preference_value = _preference_value(self.weights, measures)
         for room in rooms:
