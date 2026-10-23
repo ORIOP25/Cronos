@@ -20,7 +20,7 @@ CRITERION_KEYS = (
     "update_stability",
 )
 DEFAULT_LEVELS = MappingProxyType(
-    dict(zip(CRITERION_KEYS, (4, 3, 2, 2, 2, 3, 2, 2, 2, 3, 3), strict=True))
+    dict(zip(CRITERION_KEYS, (4, 2, 2, 2, 2, 3, 2, 2, 2, 3, 3), strict=True))
 )
 # The school does not choose these. Finishing as early as possible leaves room to recover absences.
 FIXED_LEVELS = MappingProxyType({"finish_early": 4})

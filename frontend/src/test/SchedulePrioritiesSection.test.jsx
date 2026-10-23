@@ -18,7 +18,7 @@ vi.mock('../apiClient', () => ({
 import apiClient from '../apiClient'
 
 const DEFAULTS = {
-  teacher_gaps: 3,
+  teacher_gaps: 2,
   class_gaps: 2,
   teacher_single_lessons: 2,
   class_single_lessons: 2,
@@ -94,7 +94,7 @@ describe('Schedule priorities configuration', () => {
     expect(screen.getByText(/O professor pode ficar com muitas horas vazias entre aulas/)).toBeInTheDocument()
     expect(screen.getByText(/O Cronos só usa um bloco Evitar quando o horário não caberia de outra forma/)).toBeInTheDocument()
     expect(screen.getAllByText(/^Nível recomendado: /)).toHaveLength(10)
-    expect(within(screen.getByText(CRITERIA[0]).closest('fieldset')).getByText('Nível recomendado: Muito importante'))
+    expect(within(screen.getByText(CRITERIA[0]).closest('fieldset')).getByText('Nível recomendado: Importante'))
       .toBeInTheDocument()
     // Criteria 4 and 5 count whole days with a single lesson (owner, 21 Oct 2026).
     expect(screen.getByText(/^Dias em que o professor tem uma única aula/)).toBeInTheDocument()
