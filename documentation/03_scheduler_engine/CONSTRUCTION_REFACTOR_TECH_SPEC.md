@@ -3,7 +3,7 @@
 ## Purpose
 
 Reduzir a complexidade da construção anual e da recuperação adaptativa sem alterar o horário produzido, as regras de negócio, os contratos públicos ou o comportamento do solver.
-**Estado:** pronto para implementação. **Base:** `origin/main` em `5a4fd7d369062eefaf08446f6adb5fa1398e5af6`, Alembic `0008_schedule_priorities`. Este trabalho não cria migração.
+**Estado:** arquitetura implementada; evidência e limitações constam dos PRs da entrega. **Base:** `origin/main` em `5a4fd7d369062eefaf08446f6adb5fa1398e5af6`, Alembic `0008_schedule_priorities`. Este trabalho não cria migração.
 
 ## Intended Reader
 
@@ -12,7 +12,7 @@ O responsável de produto decide apenas o que este documento não consegue prova
 
 ## Prerequisites
 
-Atualizar `origin/main` e rever PRs abertos antes do primeiro *slice*.
+Atualizar `origin/main` e rever PRs abertos antes do primeiro *slice*. Os dados seguintes registam a investigação documental de 22 de outubro de 2026; a implementação atualiza a base nas barreiras entre PRs.
 O diff do PR #186 foi lido: altera FastAPI, Pydantic Settings e *hashes* de dependências; não altera o *pin* de OR-Tools nem ficheiros do scheduler.
 Essa leitura prova apenas o diff revisto, não o comportamento futuro de todo o PR.
 O `origin/main` de referência é `5a4fd7d3`; o `main` local de outras *worktrees* está em `feee8deb` e não é a base.
@@ -20,8 +20,8 @@ A fonte Alembic é `0008_schedule_priorities`; o seu `down_revision` é `0007_cl
 
 ## What the System Does
 
-`_construct_pass` (`constructive.py`, 733–1260), `_select_period` (516–659) e `_construct_recovery` (`recovery_construction.py`, 117–550) misturam orquestração, estado mutável, presença, *ledger*, salas, prioridades, orçamento, cancelamento e candidato.
-A refatoração separa responsabilidades sem mudar resultados.
+Na base congelada `5a4fd7d3`, `_construct_pass`, `_select_period` e `_construct_recovery` misturavam orquestração, estado mutável, presença, *ledger*, salas, prioridades, orçamento, cancelamento e candidato.
+A implementação separa medidas puras em `priority_value.py`, heurísticas em `construction_support.py` e estado nos detentores privados `_ConstructionPass` e `_RecoveryPass`. As três funções alvo coordenam unidades focadas, preservando assinaturas, *bindings* e resultados.
 
 ### Decisões fechadas
 
@@ -175,7 +175,7 @@ Não há estado novo, transição nova ou escrita fora de `_ConstructionPass`/`_
 | R08 | Semente semanal muda | `test_weekly_stability_measure_of_one_class_follows_its_previous_teaching_day` e `test_weekly_history_compares_with_the_previous_teaching_day_not_an_older_lesson`; referências iguais. |
 | R09 | Desempate de sala muda | `test_uniform_class_rooms_fill_a_teacher_matching_without_sat_search` e `test_different_subject_rooms_use_flow_when_selected_subjects_fit`; salas/ordem iguais. |
 | R10 | Precedência/módulo muda | `test_a_successor_unit_never_starts_before_its_predecessor_ends`; candidato válido e igual. |
-| R11 | Crédito muda | Plano com módulos 75+75, executado M1=50, lições futuras 60+40: lição 1 `[(M1,50,25),(M2,0,35)]`, lição 2 `[(M2,35,40)]`; futuro 100 + executado 50 = 150. Offsets são locais ao módulo; teste planeado `test_construction_and_recovery_keep_cross_module_slice_offsets` no ficheiro de recuperação existente, dono S6, sem teste existente para esta sequência. |
+| R11 | Crédito muda | Plano com módulos 75+75, executado M1=50, lições futuras 60+40: lição 1 `[(M1,50,25),(M2,0,35)]`, lição 2 `[(M2,35,40)]`; futuro 100 + executado 50 = 150. Offsets são locais ao módulo; `test_construction_and_recovery_keep_cross_module_slice_offsets` no ficheiro de recuperação valida a sequência nas duas rotas; dono S6. |
 | R12 | Aplicação recebe outro resultado | `test_scheduler_generation_v1.py` e `test_scheduler_recovery_v1.py`; estado, relatório e qualidade iguais. |
 | R13 | Import privado quebra | Testes diretos acima; `binding` e assinatura iguais. |
 | R14 | Permutação de entrada altera saída | `test_construction_is_independent_of_input_assignment_and_period_order`; candidato igual, sem alargar a garantia. |
@@ -301,7 +301,7 @@ As horas são estimativa, não objetivo de desempenho.
 
 ## Coexistence
 
-A base é `origin/main` `5a4fd7d3`; não se faz *fetch* neste trabalho.
+A investigação documental congelou a referência em `origin/main` `5a4fd7d3`, sem *fetch* nessa fase. A implementação parte do `origin/main` atualizado em cada barreira, preservando os artefactos dessa referência.
 A fonte Alembic é `0008_schedule_priorities`, cujo `down_revision` é `0007_class_home_room`; não há migração nova.
 Os PRs #177, #129, #130, #142 e Dependabot #138, #139, #184, #185, #186, #187, #188 estão abertos a 22 de outubro de 2026.
 O #186 mexe apenas em requisitos/lock: FastAPI/Pydantic Settings; não altera o *pin* `ortools==9.15.6755` nem ficheiros do scheduler.
@@ -310,12 +310,12 @@ O código atual vence qualquer spec antiga; atualizar `origin/main` antes de imp
 
 ## Verification Procedure
 
-Neste PR documental: verificar ligações relativas, `git diff --check`, `git diff`, `git status` e *trailing whitespace* nos ficheiros novos, que o `git diff --check` não cobre.
-A verificação SonarCloud S3776 aplica-se apenas aos PRs de implementação futuros e exige o relatório para as três funções alvo e todas as novas/extraídas, com URL e pontuação por função; este PR documental não faz essa alegação.
-O ficheiro `.sonarcloud.properties` define o âmbito de análise automática; a presença da análise é pré-requisito operacional a confirmar, não um facto verificado aqui.
+Verificar ligações relativas, `git diff --check`, `git diff`, `git status` e *trailing whitespace* nos ficheiros novos, que o `git diff --check` não cobre.
+A verificação SonarCloud S3776 exige os relatórios dos PRs de implementação para as três funções alvo e todas as novas/extraídas, com URL e pontuação por função. A evidência distingue pontuações exatas expostas pelo serviço de limites superiores inferidos da regra ativa; não inventa valores abaixo do limiar.
+O ficheiro `.sonarcloud.properties` define o âmbito da análise automática. A prova exige o check concluído na cabeça testada; não se infere apenas da configuração.
 Se o relatório não existir, a afirmação numérica de complexidade fica **não verificada** e bloqueia a prova; não se substitui por Ruff C901, AST aproximado ou configuração nova.
-Na fase de implementação, a Command Reference passa a indicar como inspecionar esse relatório SonarCloud existente, sem *scanner*, plugin ou configuração nova.
-Para os testes futuros, usar o *runner* existente documentado na Command Reference; caminhos são relativos a `backend/`. O perfil `critical` é o job CI, não prova de BD local em Windows.
+A Command Reference indica como inspecionar esse relatório SonarCloud existente, sem *scanner*, plugin ou configuração nova.
+Os testes usam o *runner* existente documentado na Command Reference; caminhos são relativos a `backend/`. O perfil `critical` é o job CI, não prova de BD local em Windows.
 A campanha lenta usa os argumentos `-m slow_solver` e o perfil de atualização documentados em S2; não se cria marcador, *runner* ou subcomando adicional.
 Cada PR regista comando, perfil, filtro, código de saída e saída relevante; uma execução sem casos não é prova.
 
@@ -326,7 +326,7 @@ Caminhos relativos a `backend/`. “Dono” é o *slice* que pode alterar o fich
 | Fonte | Chamadas/importações | Dono | Estado |
 | :--- | :--- | :--- | :--- |
 | [`constructive.py`](../../backend/app/scheduler/infrastructure/constructive.py) | Escritor de `_construct_pass` e `_select_period` | S3–S5 | Escrita |
-| [`recovery_construction.py`](../../backend/app/scheduler/infrastructure/recovery_construction.py) | Importa 20 nomes privados de `constructive` (29–50) | S6–S7 | Escrita |
+| [`recovery_construction.py`](../../backend/app/scheduler/infrastructure/recovery_construction.py) | Preserva `_select_period` e `strict_window_periods`; importa regras puras de `priority_value` e heurísticas de `construction_support` | S6–S7 | Escrita |
 | [`search.py`](../../backend/app/scheduler/infrastructure/search.py) | `_joint_search` 460/482; `search_adaptive_schedule` 1002/1016, 1028/1047, 1062, 1125, 1139 | — | Leitura |
 | [`lab/recovery.py`](../../backend/app/scheduler/lab/recovery.py) | `construct_schedule` 229/234 | — | Leitura |
 | [`lab/typology.py`](../../backend/app/scheduler/lab/typology.py) | `construct_schedule` 195/434 | — | Leitura |
@@ -342,13 +342,13 @@ Caminhos relativos a `backend/`. “Dono” é o *slice* que pode alterar o fich
 | [`tests/_support/scheduler_v1.py`](../../backend/tests/_support/scheduler_v1.py) | `construct_schedule` 428 | — | Leitura |
 | [`test_scheduler_weighted_construction_v1.py`](../../backend/tests/unit/test_scheduler_weighted_construction_v1.py) | Helpers, `_select_period`, `construct_schedule`; *patch* | S3–S5 | Regressão |
 | [`test_scheduler_availability_priority_v1.py`](../../backend/tests/unit/test_scheduler_availability_priority_v1.py) | `construct_schedule`; `_construct_pass` 437; `_construct_recovery` 450 | S4–S6 | Regressão |
-| [`test_scheduler_recovery_construction_v1.py`](../../backend/tests/unit/test_scheduler_recovery_construction_v1.py) | `construct_recovery`; *patch*; teste R11 planeado | S6–S7 | Regressão |
+| [`test_scheduler_recovery_construction_v1.py`](../../backend/tests/unit/test_scheduler_recovery_construction_v1.py) | `construct_recovery`; *patch*; teste R11 nas duas rotas | S6–S7 | Regressão |
 | [`test_scheduler_constructive_progress_v1.py`](../../backend/tests/unit/test_scheduler_constructive_progress_v1.py) | Helpers, `_select_period`, `cp_model` | S1/S3–S4 | Regressão |
 | [`test_scheduler_constructive_presence_v1.py`](../../backend/tests/unit/test_scheduler_constructive_presence_v1.py) | `construct_schedule` e `search_adaptive_schedule` | S4–S6 | Regressão |
 | [`test_scheduler_lab_fixtures.py`](../../backend/tests/unit/test_scheduler_lab_fixtures.py) / [`test_scheduler_search_fallback_v1.py`](../../backend/tests/unit/test_scheduler_search_fallback_v1.py) | Fixture `BASE_SPEC` e ordem de *fallback* | S1/S8 | Regressão |
 | [`test_scheduler_generation_v1.py`](../../backend/tests/unit/test_scheduler_generation_v1.py) / [`test_scheduler_recovery_v1.py`](../../backend/tests/unit/test_scheduler_recovery_v1.py) | Consumidores de geração e recuperação | S5/S7 | Regressão |
-| [`domain/`](../../backend/app/scheduler/domain/) / [`infrastructure/`](../../backend/app/scheduler/infrastructure/) | `priority_value.py`; `construction_support.py` planeado | S3–S7 | Novo |
-| [`tests/unit/`](../../backend/tests/unit/) | Caracterização e campanha planeadas | S1–S2 | Novo |
+| [`domain/`](../../backend/app/scheduler/domain/) / [`infrastructure/`](../../backend/app/scheduler/infrastructure/) | `priority_value.py`; `construction_support.py` | S3–S7 | Novo |
+| [`tests/unit/`](../../backend/tests/unit/) | Oracle rápido autónomo e campanha de equivalência | S1–S2 | Novo |
 
 ### Identidade e contabilidade
 
