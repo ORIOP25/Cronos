@@ -10,8 +10,7 @@ Construction failure is inconclusive; every returned plan is independently valid
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Callable, Iterable, Mapping, Sequence
-from collections.abc import Set as AbstractSet
+from collections.abc import Callable, Mapping, Sequence
 from datetime import date, datetime
 from fractions import Fraction
 from time import monotonic
@@ -20,9 +19,6 @@ from ortools.graph.python import min_cost_flow
 from ortools.sat.python import cp_model
 
 from app.scheduler.domain.availability_priority import (
-    CLASS,
-    RESOURCE_KINDS,
-    TEACHER,
     AvailabilityLedger,
     PaceWatch,
 )
@@ -30,11 +26,8 @@ from app.scheduler.domain.calendar import Period
 from app.scheduler.domain.candidate import (
     Assignment,
     CandidateSchedule,
-    GridSlot,
-    LunchRule,
     PlanningSnapshot,
     ScheduledLesson,
-    TeacherPresenceRule,
     UnavailableResource,
     allocate_lesson_identity,
     continuous_break_minutes,
@@ -46,391 +39,81 @@ from app.scheduler.domain.capacity import (
     eligible_periods,
     residual_minutes,
 )
-from app.scheduler.domain.priorities import SCARCITY_UNIT_COST, PriorityWeights
+from app.scheduler.domain.priorities import PriorityWeights
 from app.scheduler.domain.priority_value import (
     WeeklyHistory,
-    WeeklyReference,
     option_value,
-    weekly_stability_measure,
+)
+from app.scheduler.domain.priority_value import (
+    _fills_hour as _fills_hour,
+)
+from app.scheduler.domain.priority_value import (
+    _gap_minutes as _gap_minutes,
+)
+from app.scheduler.domain.priority_value import (
+    _gap_option_measure as _gap_option_measure,
+)
+from app.scheduler.domain.priority_value import (
+    _joined_day_gain as _joined_day_gain,
+)
+from app.scheduler.domain.priority_value import (
+    _local_interval as _local_interval,
+)
+from app.scheduler.domain.priority_value import (
+    _option_measures as _option_measures,
+)
+from app.scheduler.domain.priority_value import (
+    _pace_lag as _pace_lag,
+)
+from app.scheduler.domain.priority_value import (
+    _pace_peers as _pace_peers,
+)
+from app.scheduler.domain.priority_value import (
+    _preference_value as _preference_value,
+)
+from app.scheduler.domain.priority_value import (
+    _room_value as _room_value,
 )
 from app.scheduler.domain.projection import ModuleSlice
-from app.scheduler.domain.quality import lunch_minutes_in
-from app.scheduler.domain.teacher_presence import (
-    PresenceLesson,
-    longest_presence_minutes,
-    presence_minutes_fit,
-    teacher_day_complies,
+from app.scheduler.infrastructure.construction_support import (
+    _continues_open_presence as _continues_open_presence,
 )
-
-
-def _local_interval(period: Period) -> tuple[int, int]:
-    return (
-        period.start_local.hour * 60 + period.start_local.minute,
-        period.end_local.hour * 60 + period.end_local.minute,
-    )
-
-
-def _grid_interval(slot: GridSlot) -> tuple[int, int]:
-    return (
-        slot.start_local.hour * 60 + slot.start_local.minute,
-        slot.end_local.hour * 60 + slot.end_local.minute,
-    )
-
-
-def _gap_minutes(
-    intervals: Iterable[tuple[int, int]],
-    slots: Sequence[GridSlot],
-    lunch_rule: LunchRule | None = None,
-) -> int:
-    """Free minutes between the first and last lesson: empty grid slots minus lunch."""
-    grid = [_grid_interval(slot) for slot in slots]
-    positions = {interval: index for index, interval in enumerate(grid)}
-    occupied = {positions[interval] for interval in intervals if interval in positions}
-    if len(occupied) < 2:
-        return 0
-    occupied_intervals = [grid[index] for index in occupied]
-    empty = [
-        grid[index] for index in range(min(occupied) + 1, max(occupied)) if index not in occupied
-    ]
-    return sum(end - start for start, end in empty) - lunch_minutes_in(
-        empty, lunch_rule, occupied_intervals
-    )
-
-
-def _gap_option_measure(
-    intervals: Sequence[tuple[int, int]],
-    interval: tuple[int, int],
-    slots: Sequence[GridSlot],
-    *,
-    credit: int,
-    lunch_rule: LunchRule | None = None,
-) -> int:
-    """T06: the gap minutes a lesson removes, plus its credit when it continues a neighbour.
-
-    A neighbour is the previous or next grid slot, whatever break separates them.
-    """
-    removed = _gap_minutes(intervals, slots, lunch_rule) - _gap_minutes(
-        (*intervals, interval), slots, lunch_rule
-    )
-    grid = [_grid_interval(slot) for slot in slots]
-    position = grid.index(interval) if interval in grid else None
-    continues = position is not None and any(
-        neighbour in intervals
-        for neighbour in grid[max(0, position - 1) : position + 2]
-        if neighbour != interval
-    )
-    return removed + (credit if continues else 0)
-
-
-def _joined_day_gain(intervals: Sequence[tuple[int, int]], interval: tuple[int, int]) -> int:
-    """One when the lesson joins a day that held exactly one lesson, else zero.
-
-    The first lesson of a day is not penalised (owner, 19 Oct 2026), and a single
-    lesson counts per whole day, not per morning or afternoon (owner, 21 Oct 2026).
-    """
-    return int(len(intervals) == 1 and interval not in intervals)
-
-
-def _pace_peers(assignments: Mapping[int, Assignment]) -> dict[int, tuple[int, ...]]:
-    """The assignments that share a class with each assignment, itself included."""
-    return {
-        identity: tuple(
-            other_id
-            for other_id, other in assignments.items()
-            if set(other.class_ids) & set(row.class_ids)
-        )
-        for identity, row in assignments.items()
-    }
-
-
-def _pace_lag(
-    identity: int,
-    peers: Sequence[int],
-    required: Mapping[int, int],
-    remaining: Mapping[int, int],
-) -> Fraction | None:
-    """T06: how far a subject is behind the mean progress of its class subjects."""
-    if len(peers) < 2:
-        return None
-    progress = {peer: Fraction(required[peer] - remaining[peer], required[peer]) for peer in peers}
-    return sum(progress.values(), Fraction()) / len(peers) - progress[identity]
-
-
-def _option_measures(
-    snapshot: PlanningSnapshot,
-    assignment: Assignment,
-    period: Period,
-    *,
-    credit: int,
-    needed_evitar: frozenset[tuple[str, int]],
-    occupancy: Mapping[tuple, Sequence[tuple[int, int]]],
-    day_slots: Sequence[GridSlot],
-    counts_teacher_single_lessons: bool,
-    weekly_references: Sequence[int | WeeklyReference],
-    pace_lag: Fraction | None,
-) -> dict[str, int]:
-    """T06: the room-independent measures of one option, in lesson minutes.
-
-    Generation and updates share this function, so a level means the same in both.
-    """
-    interval = _local_interval(period)
-    teacher_intervals = occupancy[("teacher", assignment.teacher_id, period.school_date)]
-    measures = {
-        "finish_early": credit,
-        "teacher_gaps": _gap_option_measure(
-            teacher_intervals,
-            interval,
-            day_slots,
-            credit=credit,
-            lunch_rule=(
-                None
-                if assignment.teacher_id in snapshot.lunch_dispensed_teacher_ids
-                else snapshot.lunch_rule
-            ),
-        ),
-    }
-    if counts_teacher_single_lessons:
-        measures["teacher_single_lessons"] = _joined_day_gain(teacher_intervals, interval) * credit
-    if (TEACHER, assignment.teacher_id) not in needed_evitar and _soft_overlap(
-        snapshot, UnavailableResource.TEACHER, assignment.teacher_id, period
-    ):
-        measures["teacher_preferences"] = -credit
-    for class_id in assignment.class_ids:
-        class_intervals = occupancy[("class", class_id, period.school_date)]
-        measures["class_gaps"] = measures.get("class_gaps", 0) + _gap_option_measure(
-            class_intervals, interval, day_slots, credit=credit, lunch_rule=snapshot.lunch_rule
-        )
-        measures["class_single_lessons"] = measures.get("class_single_lessons", 0) + (
-            _joined_day_gain(class_intervals, interval) * credit
-        )
-        if (CLASS, class_id) not in needed_evitar and _soft_overlap(
-            snapshot, UnavailableResource.CLASS, class_id, period
-        ):
-            measures["class_preferences"] = measures.get("class_preferences", 0) - credit
-    weekly_stability = weekly_stability_measure(assignment.assignment_id, weekly_references, credit)
-    if weekly_stability:
-        measures["weekly_stability"] = weekly_stability
-    if pace_lag is not None:
-        measures["subject_pace"] = round(pace_lag * credit)
-    return measures
-
-
-def _room_value(
-    base_value: int,
-    same_room_value: int,
-    assignment: Assignment,
-    room: int,
-    home_rooms: Mapping[int, int],
-) -> int:
-    """T06: the option value in one room; only the home-room measure depends on it.
-
-    ``base_value`` is the option value without that measure, and ``same_room_value``
-    is the measure's value when the room is not the class's home room.
-    """
-    if not assignment.needs_special_room and any(
-        class_id in home_rooms
-        and home_rooms[class_id] in assignment.eligible_room_ids
-        and home_rooms[class_id] != room
-        for class_id in assignment.class_ids
-    ):
-        return base_value + same_room_value
-    return base_value
-
-
-_PREFERENCE_KEYS = ("teacher_preferences", "class_preferences")
-
-
-def _preference_value(weights: PriorityWeights, measures: Mapping[str, int]) -> int:
-    """The option value of its Evitar measures alone, the part that never changes by room."""
-    return option_value(
-        weights, {key: measures[key] for key in _PREFERENCE_KEYS if key in measures}
-    )
-
-
-def _fills_hour(
-    value: int,
-    preference_value: int,
-    *,
-    strict: bool,
-    fill: bool = False,
-) -> bool:
-    """T07: whether an option's value is worth teaching instead of leaving the hour empty.
-
-    The relaxed pass runs because the strict pass proved some Evitar unavoidable.
-    There Evitar still orders the options through ``value``, but it no longer
-    leaves an hour empty, as in the construction without weights. The fill pass
-    runs when leaving hours empty made both passes fail: every hour that can be
-    taught is taught, and the priorities only choose which lesson (T11).
-    """
-    if fill:
-        return True
-    if strict:
-        return value > 0
-    return value - preference_value > 0
-
-
-def _scarcity(
-    ledger: AvailabilityLedger, assignment: Assignment, period: Period, credit: int
-) -> int:
-    """T07: an empty hour in a tight calendar is not free, because the lesson must still be
-    taught later. The push grows with the tightness of the calendar, up to full.
-    """
-    return round(SCARCITY_UNIT_COST * credit * ledger.tightness(assignment, period))
-
-
-def _gives_up(ledger: AvailabilityLedger, period: Period, *, strict: bool) -> bool:
-    """Whether a pass stops early because it can no longer place every missing hour.
-
-    A strict pass waits for its first refusal: only a refusal sends the
-    construction on to the relaxed pass, and a later one could still come.
-    """
-    return (ledger.refused > 0 or not strict) and ledger.cannot_finish(period)
-
-
-def _soft_overlap(
-    snapshot: PlanningSnapshot, resource: UnavailableResource, identity: int, period: Period
-) -> bool:
-    return any(
-        row.overlaps(period)
-        for row in snapshot.soft_unavailable_on(resource, identity, period.school_date)
-    )
-
-
-def _evitar_kinds(weights: PriorityWeights | None) -> frozenset[str]:
-    """The resource kinds whose Evitar blocks steer the construction (D01, I05).
-
-    Without weights the construction keeps its availability rules for both kinds.
-    """
-    if weights is None:
-        return RESOURCE_KINDS
-    return frozenset(
-        kind
-        for kind, level in (
-            (TEACHER, weights.teacher_preferences),
-            (CLASS, weights.class_preferences),
-        )
-        if level > 0
-    )
-
-
-def _minimum_presence_teachers(snapshot: PlanningSnapshot) -> dict[int, TeacherPresenceRule]:
-    """Teachers with a presence minimum, keyed by teacher id."""
-    return {
-        row.teacher_id: row for row in snapshot.teacher_presence if row.minimum_minutes is not None
-    }
-
-
-def _longest_presences(
-    snapshot: PlanningSnapshot,
-    rules: Mapping[int, TeacherPresenceRule],
-    slots_by_day: Mapping[int, Sequence[GridSlot]],
-) -> dict[int, int]:
-    """The longest presence each teacher with a minimum can hold on any grid day."""
-    return {
-        teacher_id: max(
-            (
-                longest_presence_minutes(
-                    rule, [_grid_interval(slot) for slot in slots], lunch_rule=snapshot.lunch_rule
-                )
-                for slots in slots_by_day.values()
-            ),
-            default=0,
-        )
-        for teacher_id, rule in rules.items()
-    }
-
-
-def _presence_left_fits(left: int, rule: TeacherPresenceRule, longest: int) -> bool:
-    """Minutes left to a teacher must still split into valid presences (no stranded hours)."""
-    return presence_minutes_fit(left, minimum=rule.minimum_minutes, longest=longest)
-
-
-def _grid_intervals_by_day(
-    slots_by_day: Mapping[int, Sequence[GridSlot]],
-) -> dict[int, tuple[tuple[int, int], ...]]:
-    return {
-        day: tuple(_grid_interval(slot) for slot in day_slots)
-        for day, day_slots in slots_by_day.items()
-    }
-
-
-def _presence_day_complies(
-    intervals: Iterable[tuple[int, int]],
-    protected: AbstractSet[tuple[int, int]],
-    rule: TeacherPresenceRule,
-    lunch_rule: LunchRule | None,
-    grid_slots: Sequence[tuple[int, int]],
-) -> bool:
-    """True when a teacher's booked intervals on one day meet the presence rule."""
-    lessons = [PresenceLesson(start, end, (start, end) in protected) for start, end in intervals]
-    return teacher_day_complies(lessons, rule, lunch_rule=lunch_rule, grid_slots=grid_slots)
-
-
-def _resource_keys(
-    assignment: Assignment, room: int, teacher: int, school_date: date
-) -> tuple[tuple, ...]:
-    """Busy keys of one lesson: its teacher, room and classes on the date."""
-    return (
-        ("teacher", teacher, school_date),
-        ("room", room, school_date),
-        *(("class", class_id, school_date) for class_id in assignment.class_ids),
-    )
-
-
-def _slots_by_day(snapshot: PlanningSnapshot) -> dict[int, tuple[GridSlot, ...]]:
-    by_day: dict[int, list[GridSlot]] = defaultdict(list)
-    for slot in snapshot.grid_slots:
-        by_day[slot.day_of_week].append(slot)
-    return {
-        day: tuple(sorted(rows, key=lambda slot: (slot.start_local, slot.end_local)))
-        for day, rows in by_day.items()
-    }
-
-
-def _slot_position_for_interval(slots: Sequence[GridSlot], interval: tuple[int, int]) -> int | None:
-    start, end = interval
-    for position, slot in enumerate(slots):
-        if (
-            slot.start_local.hour * 60 + slot.start_local.minute == start
-            and slot.end_local.hour * 60 + slot.end_local.minute == end
-        ):
-            return position
-    return None
-
-
-def _continues_open_presence(
-    slots_by_day: dict[int, tuple[GridSlot, ...]],
-    occupancy: dict,
-    teacher_id: int,
-    period: Period,
-    presence_rules: dict[int, TeacherPresenceRule],
-) -> bool:
-    """True when the period extends an open presence of a minimum teacher.
-
-    Adjacency is by grid position, not by wall-clock minutes, so the default
-    grid's short inter-block break still counts as continuing. The exact
-    minimum/gap semantics live in ``domain/teacher_presence.py`` and the
-    validator; this only prefers extending an open run so a presence reaches the
-    minimum instead of fragmenting the day.
-    """
-    if teacher_id not in presence_rules:
-        return False
-    slots = slots_by_day.get(period.school_date.weekday(), ())
-    position = _slot_position_for_interval(slots, _local_interval(period))
-    if position is None:
-        return False
-    return any(
-        (other := _slot_position_for_interval(slots, row)) is not None
-        and abs(other - position) == 1
-        for row in occupancy[("teacher", teacher_id, period.school_date)]
-    )
-
-
-def _next_module(modules, cursor: dict[int, int]) -> int | None:
-    for index, module in enumerate(modules):
-        if cursor[module.module_id] < module.required_minutes:
-            return index
-    return None
+from app.scheduler.infrastructure.construction_support import (
+    _evitar_kinds as _evitar_kinds,
+)
+from app.scheduler.infrastructure.construction_support import (
+    _gives_up as _gives_up,
+)
+from app.scheduler.infrastructure.construction_support import (
+    _grid_intervals_by_day as _grid_intervals_by_day,
+)
+from app.scheduler.infrastructure.construction_support import (
+    _longest_presences as _longest_presences,
+)
+from app.scheduler.infrastructure.construction_support import (
+    _minimum_presence_teachers as _minimum_presence_teachers,
+)
+from app.scheduler.infrastructure.construction_support import (
+    _next_module as _next_module,
+)
+from app.scheduler.infrastructure.construction_support import (
+    _predecessors_ready,
+)
+from app.scheduler.infrastructure.construction_support import (
+    _presence_day_complies as _presence_day_complies,
+)
+from app.scheduler.infrastructure.construction_support import (
+    _presence_left_fits as _presence_left_fits,
+)
+from app.scheduler.infrastructure.construction_support import (
+    _resource_keys as _resource_keys,
+)
+from app.scheduler.infrastructure.construction_support import (
+    _scarcity as _scarcity,
+)
+from app.scheduler.infrastructure.construction_support import (
+    _slots_by_day as _slots_by_day,
+)
 
 
 def _flow_selection(
@@ -513,19 +196,10 @@ def _flow_selection(
 PERIOD_REPAIR_DETERMINISTIC_TIME = 0.02
 
 
-def _select_period(
+def _greedy_period_selection(
     options: list[tuple[Assignment, tuple[int, ...]]],
-    *,
-    deadline: float | None,
-    scores: Mapping[tuple[int, int], tuple[bool, int, int]] | None = None,
-    fill_admitted: bool = False,
 ) -> list[tuple[Assignment, int]]:
-    """Fill a period; repair greedy resource choices with a small native model.
-
-    With ``fill_admitted`` (relaxed and fill passes) every option the pass admitted
-    counts for filling the hour before its value: an admitted option with a negative
-    value is still taught rather than left out (T07, T11).
-    """
+    """Choose the first available resource combination in option order."""
     selected = []
     classes: set[int] = set()
     teachers: set[int] = set()
@@ -538,27 +212,23 @@ def _select_period(
         classes.update(assignment.class_ids)
         teachers.add(assignment.teacher_id)
         rooms.add(room)
-    upper = min(
+    return selected
+
+
+def _period_resource_upper_bound(options: list[tuple[Assignment, tuple[int, ...]]]) -> int:
+    return min(
         len({class_id for row, _ in options for class_id in row.class_ids}),
         len({row.teacher_id for row, _ in options}),
         len({room for _, available in options for room in available}),
     )
-    if scores is None and len(selected) == upper:
-        return selected
 
-    if scores is None:
-        matched = _flow_selection(options)
-        if matched is not None:
-            return matched
 
-    # ponytail: resolve only this period, without annual placement variables.
-    # A construction dead end still falls back to the existing complete search.
-    model = cp_model.CpModel()
-    choices: dict[tuple, tuple[Assignment, cp_model.IntVar]] = {}
-    resource_choices: dict[tuple[str, int], list] = defaultdict(list)
-    preferred = {(row.assignment_id, room) for row, room in selected}
-    choice_variables: list[cp_model.IntVar] = []
-    coefficients: list[int] = []
+def _period_objective_weights(
+    options: list[tuple[Assignment, tuple[int, ...]]],
+    scores: Mapping[tuple[int, int], tuple[bool, int, int]] | None,
+    fill_admitted: bool,
+) -> tuple[dict[int, int], int, int, int]:
+    """Keep count, urgency, fill and school values in their original integer scale."""
     total_value = (
         sum(
             abs(value)
@@ -595,6 +265,25 @@ def _select_period(
     priority_bound = len(options) * max_rank * priority_weight + len(options) * fill_weight
     count_weight = (
         priority_bound + 2 * total_value + 1 if scores is not None else len(options) ** 2 + 1
+    )
+    return urgency_rank, fill_weight, priority_weight, count_weight
+
+
+def _period_repair_model(
+    options: list[tuple[Assignment, tuple[int, ...]]],
+    selected: list[tuple[Assignment, int]],
+    scores: Mapping[tuple[int, int], tuple[bool, int, int]] | None,
+    fill_admitted: bool,
+) -> tuple[cp_model.CpModel, dict[tuple, tuple[Assignment, cp_model.IntVar]]]:
+    """Build the period model in its original variable and constraint order."""
+    model = cp_model.CpModel()
+    choices: dict[tuple, tuple[Assignment, cp_model.IntVar]] = {}
+    resource_choices: dict[tuple[str, int], list] = defaultdict(list)
+    preferred = {(row.assignment_id, room) for row, room in selected}
+    choice_variables: list[cp_model.IntVar] = []
+    coefficients: list[int] = []
+    urgency_rank, fill_weight, priority_weight, count_weight = _period_objective_weights(
+        options, scores, fill_admitted
     )
     for rank, (assignment, available) in enumerate(options):
         for room in available:
@@ -633,6 +322,18 @@ def _select_period(
         cp_model.LinearExpr.weighted_sum(choice_variables, coefficients) if choice_variables else 0
     )
     model.maximize(objective)
+    return model, choices
+
+
+def _solve_period_repair(
+    model: cp_model.CpModel,
+    choices: dict[tuple, tuple[Assignment, cp_model.IntVar]],
+    selected: list[tuple[Assignment, int]],
+    *,
+    deadline: float | None,
+    scores: Mapping[tuple[int, int], tuple[bool, int, int]] | None,
+) -> list[tuple[Assignment, int]]:
+    """Use the original budgets and preserve greedy fallback and choice order."""
     solver = cp_model.CpSolver()
     solver.parameters.num_search_workers = 1
     solver.parameters.random_seed = 1
@@ -656,6 +357,35 @@ def _select_period(
         for key, (assignment, variable) in choices.items()
         if solver.Value(variable)
     ]
+
+
+def _select_period(
+    options: list[tuple[Assignment, tuple[int, ...]]],
+    *,
+    deadline: float | None,
+    scores: Mapping[tuple[int, int], tuple[bool, int, int]] | None = None,
+    fill_admitted: bool = False,
+) -> list[tuple[Assignment, int]]:
+    """Fill a period; repair greedy resource choices with a small native model.
+
+    With ``fill_admitted`` (relaxed and fill passes) every option the pass admitted
+    counts for filling the hour before its value: an admitted option with a negative
+    value is still taught rather than left out (T07, T11).
+    """
+    selected = _greedy_period_selection(options)
+    upper = _period_resource_upper_bound(options)
+    if scores is None and len(selected) == upper:
+        return selected
+
+    if scores is None:
+        matched = _flow_selection(options)
+        if matched is not None:
+            return matched
+
+    # ponytail: resolve only this period, without annual placement variables.
+    # A construction dead end still falls back to the existing complete search.
+    model, choices = _period_repair_model(options, selected, scores, fill_admitted)
+    return _solve_period_repair(model, choices, selected, deadline=deadline, scores=scores)
 
 
 def _interrupted(deadline: float | None, should_cancel: Callable[[], bool] | None) -> bool:
@@ -855,10 +585,7 @@ def _construct_pass(
 
     def ready(identity: int, period: Period) -> bool:
         """All predecessor units are finished before the period (WBS 3.3.2)."""
-        return all(
-            remaining[source] <= 0 and last_end.get(source, period.start_utc) <= period.start_utc
-            for source in predecessors.get(identity, ())
-        )
+        return _predecessors_ready(predecessors, remaining, last_end, identity, period)
 
     options_by_period: dict[Period, list[Assignment]] = defaultdict(list)
     eligible_by_assignment: dict[int, tuple[Period, ...]] = {}
