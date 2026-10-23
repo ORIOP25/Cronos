@@ -1036,3 +1036,42 @@ def test_weighted_recovery_strict_pass_never_dodges_an_evitar_hour_by_teaching_a
     assert candidate is not None
     assert validate_candidate(snapshot, candidate).valid
     assert [row.period for row in candidate.lessons] == [slot(0, 9)]
+
+
+@pytest.mark.parametrize("route", ("generation", "recovery"))
+def test_construction_and_recovery_keep_cross_module_slice_offsets(route):
+    from app.scheduler.infrastructure.constructive import construct_schedule
+
+    periods = (period(0), period(1))
+    unit = replace(
+        assignment(1, 1, 7, {1}, 150),
+        modules=(ModuleRequirement(1, 1, 75), ModuleRequirement(2, 2, 75)),
+    )
+    baseline = (
+        ScheduledLesson(
+            10,
+            1,
+            periods[0],
+            1,
+            60,
+            (ModuleSlice(10, 1, 50, 25), ModuleSlice(10, 2, 0, 35)),
+        ),
+        ScheduledLesson(11, 1, periods[1], 1, 40, (ModuleSlice(11, 2, 35, 40),)),
+    )
+    target = replace(
+        _retaining_target(periods, [unit], baseline),
+        executed_minutes={1: {1: 50}},
+        reserved_lesson_ids=frozenset({10, 11}),
+    )
+    construct = construct_schedule if route == "generation" else construct_recovery
+    candidate = construct(target, periods, deadline=monotonic() + 20)
+
+    assert candidate is not None
+    assert validate_candidate(target, candidate).valid
+    lessons = sorted(candidate.lessons, key=lambda row: row.period.start_utc)
+    assert [row.credit_minutes for row in lessons] == [60, 40]
+    assert [
+        [(part.module_id, part.offset_minutes, part.credit_minutes) for part in row.slices]
+        for row in lessons
+    ] == [[(1, 50, 25), (2, 0, 35)], [(2, 35, 40)]]
+    assert 50 + sum(row.credit_minutes for row in lessons) == 150
