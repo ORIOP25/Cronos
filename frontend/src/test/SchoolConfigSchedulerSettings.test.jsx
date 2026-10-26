@@ -254,6 +254,30 @@ describe('SchoolConfig scheduler settings', () => {
     expect(invalidate).not.toHaveBeenCalled()
   })
 
+  it('explains why a published timetable cannot be regenerated instead of a generic refresh', async () => {
+    apiClient.post.mockRejectedValueOnce({
+      response: {
+        status: 409,
+        data: {
+          detail: {
+            code: 'grid_regeneration_blocked',
+            message: 'technical details must not be shown',
+            reference: 'ABC123DEF456',
+          },
+        },
+      },
+    })
+    renderWithProviders(<SchoolConfig />, { withToaster: true })
+
+    fireEvent.click(await screen.findByRole('tab', { name: /grelha/i }))
+    await screen.findByLabelText(/duração da aula/i)
+    fireEvent.click(screen.getByRole('button', { name: /guardar e regenerar/i }))
+
+    expect(await screen.findByText(/Não é possível regenerar a grelha enquanto existirem horários/)).toBeInTheDocument()
+    expect(screen.queryByText('Atualize a página e tente novamente.')).not.toBeInTheDocument()
+    expect(screen.queryByText(/technical details/)).not.toBeInTheDocument()
+  })
+
   it('does not request or show success while the form is invalid', async () => {
     renderWithProviders(<SchoolConfig />)
 

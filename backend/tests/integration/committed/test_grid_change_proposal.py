@@ -603,6 +603,87 @@ async def test_grid_change_endpoint_keeps_the_job_queued_on_dispatch_failure(
     assert await grid_change_service.pending_grid_change(db_session, organization.id) is not None
 
 
+REGENERATE_BODY = {
+    "grid_settings": {},
+    "timeslots": {
+        "start_time": "09:00",
+        "end_time": "12:00",
+        "slot_duration_minutes": 50,
+        "break_duration_minutes": 10,
+        "break_overrides": [],
+        "days_of_week": [0],
+    },
+}
+
+
+async def test_regeneration_of_a_published_timetable_returns_its_own_conflict_code(
+    async_client, db_session, clerk_admin_headers
+):
+    organization = await _seed_v1_configuration_for_admin_org(db_session)
+    state = await db_session.scalar(
+        select(models.SchedulerSchoolYearState).where(
+            models.SchedulerSchoolYearState.organization_id == organization.id
+        )
+    )
+    state.school_year_publication_state = models.SchoolYearPublicationState.PUBLISHED
+    state.active_schedule_version_id = "1"
+    await db_session.commit()
+
+    response = await async_client.post(
+        f"{API}/school/grid-settings/regenerate",
+        json=REGENERATE_BODY,
+        headers=clerk_admin_headers,
+    )
+
+    assert response.status_code == 409
+    detail = response.json()["detail"]
+    assert detail["code"] == "grid_regeneration_blocked"
+    assert detail["message"] == (
+        "Não é possível regenerar a grelha enquanto existirem horários, rascunhos "
+        "ou registos operacionais. Se pretende apagar esses dados, use “Período "
+        "Letivo > Recomeçar Ano Letivo” e confirme a operação antes de tentar novamente."
+    )
+
+
+async def test_regeneration_blocked_by_slot_rules_returns_its_own_conflict_code(
+    async_client, db_session, clerk_admin_headers
+):
+    organization = await _seed_v1_configuration_for_admin_org(db_session)
+    slot = await db_session.scalar(
+        select(models.Timeslot).where(models.Timeslot.organization_id == organization.id)
+    )
+    class_ = await db_session.scalar(
+        select(models.Class).where(models.Class.organization_id == organization.id)
+    )
+    subject = await db_session.scalar(
+        select(models.Subject).where(models.Subject.organization_id == organization.id)
+    )
+    db_session.add(
+        models.Constraint(
+            organization_id=organization.id,
+            rule_type=models.ConstraintType.lock_time,
+            class_id=class_.id,
+            subject_id=subject.id,
+            timeslot_id=slot.id,
+        )
+    )
+    await db_session.commit()
+
+    response = await async_client.post(
+        f"{API}/school/grid-settings/regenerate",
+        json=REGENERATE_BODY,
+        headers=clerk_admin_headers,
+    )
+
+    assert response.status_code == 409
+    detail = response.json()["detail"]
+    assert detail["code"] == "grid_slot_rules_blocked"
+    assert detail["message"] == (
+        "Existem regras associadas aos blocos horários atuais. Remova ou recrie "
+        "essas regras antes de substituir a grelha."
+    )
+
+
 async def _first_published_class_block(db_session, seed, *, score):
     published = await grid_version_service.get_active_grid_version(db_session, seed.organization.id)
     block = (

@@ -29,6 +29,19 @@ PUBLIC_ERROR_CATALOG: dict[str, dict[str, Any]] = {
     "settings_not_found": {"message": "Configurações da escola não encontradas"},
     "bad_request": {"message": "Não foi possível processar o pedido."},
     "course_has_classes": {"message": "Apague primeiro as turmas deste curso."},
+    "grid_regeneration_blocked": {
+        "message": (
+            "Não é possível regenerar a grelha enquanto existirem horários, rascunhos "
+            "ou registos operacionais. Se pretende apagar esses dados, use “Período "
+            "Letivo > Recomeçar Ano Letivo” e confirme a operação antes de tentar novamente."
+        ),
+    },
+    "grid_slot_rules_blocked": {
+        "message": (
+            "Existem regras associadas aos blocos horários atuais. Remova ou recrie "
+            "essas regras antes de substituir a grelha."
+        ),
+    },
     "room_type_name_taken": {"message": "Já existe um tipo de sala com este nome."},
     "room_type_fixed": {
         "message": "O tipo Normal é fixo: não pode mudar de nome nem ser removido.",
