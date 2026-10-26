@@ -56,7 +56,7 @@ async def _published_grid_org(db_session) -> V1Seed:
         schemas.OrganizationSettingsUpsert(
             school_start_date=date(2026, 9, 1),
             school_hard_end_date=date(2027, 7, 31),
-            preferred_end_date=date(2026, 10, 30),
+            preferred_end_date=date(2027, 6, 30),
             repair_stability_window_days=0,
         ),
     )
@@ -404,7 +404,7 @@ async def _seed_v1_configuration_for_admin_org(db_session) -> models.Organizatio
         schemas.OrganizationSettingsUpsert(
             school_start_date=date(2026, 9, 1),
             school_hard_end_date=date(2027, 7, 31),
-            preferred_end_date=date(2026, 10, 30),
+            preferred_end_date=date(2027, 6, 30),
             repair_stability_window_days=0,
         ),
     )

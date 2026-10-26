@@ -148,7 +148,7 @@ async def seed_generatable_school(
     clerk_user_id: str = "v1_admin",
     clerk_org_id: str = "v1_org",
     module_minutes: int = 100,
-    preferred_end_date: date = date(2026, 10, 30),
+    preferred_end_date: date = date(2027, 6, 30),
 ) -> V1Seed:
     """Minimal school with a grid and a preferred end date ready to generate."""
     seed = await seed_v1_assignment(
@@ -191,7 +191,7 @@ async def seed_joint_school(
     db_session,
     *,
     module_minutes: int = 100,
-    preferred_end_date: date = date(2026, 10, 30),
+    preferred_end_date: date = date(2027, 6, 30),
 ) -> JointSeed:
     """Two classes sharing one subject in a joint group, ready to generate (WBS 3.1.1)."""
     seed = await seed_generatable_school(
