@@ -14,15 +14,6 @@ from app.services.scheduler_state_service import record_scheduler_change
 
 logger = structlog.get_logger(__name__)
 
-PROTECTED_GRID_MESSAGE = (
-    "Não é possível regenerar a grelha enquanto existirem horários, rascunhos "
-    "ou registos operacionais. Se pretende apagar esses dados, use “Período "
-    "Letivo > Recomeçar Ano Letivo” e confirme a operação antes de tentar novamente."
-)
-SLOT_RULES_MESSAGE = (
-    "Existem regras associadas aos blocos horários atuais. Remova ou recrie "
-    "essas regras antes de substituir a grelha."
-)
 PENDING_PROPOSAL_MESSAGE = (
     "Existe uma proposta de alteração da grelha pendente. Conclua ou cancele "
     "a proposta antes de regenerar a grelha."
@@ -388,8 +379,12 @@ async def preflight_grid_regeneration(
             actor_membership_id=changed_by_membership_id,
             blockers=blockers,
         )
-        message = SLOT_RULES_MESSAGE if set(blockers) == {"slot_rules"} else PROTECTED_GRID_MESSAGE
-        raise AppError(kind="conflict", code="conflict", detail=message)
+        code = (
+            "grid_slot_rules_blocked"
+            if set(blockers) == {"slot_rules"}
+            else "grid_regeneration_blocked"
+        )
+        raise AppError(kind="conflict", code=code, detail=code)
     return plan
 
 

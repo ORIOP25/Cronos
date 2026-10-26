@@ -71,6 +71,8 @@ and unknown kinds -> `500`.
 | `resource_not_found` | `404` | Tenant-scoped lookup miss |
 | `conflict` | `409` | State or version conflict |
 | `resource_in_use` | `409` | Active schedule or operation blocks removal |
+| `grid_regeneration_blocked` | `409` | Grid regeneration needs the published timetable, drafts or operational records removed first |
+| `grid_slot_rules_blocked` | `409` | Rules on the current timeslots must be removed before the grid is replaced |
 | `authentication_required` | `401` | Missing or invalid session |
 | `access_forbidden` | `403` | Insufficient capability or ownership |
 | `LEGAL_ACCEPTANCE_REQUIRED` | `409` | Organization must accept legal documents |
