@@ -1,7 +1,7 @@
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import PageHeader from '../components/PageHeader'
 import FeedbackBanner from '../components/FeedbackBanner'
-import { CBadge, CCard, CCardBody, CCardHeader, CSpinner } from '@coreui/react'
+import { CBadge, CCard, CCardBody, CSpinner } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import { cilBook, cilEducation } from '@coreui/icons'
 import { useCurrentMember } from '../features/members/data'
@@ -78,7 +78,6 @@ function SubjectRow({ subject }) {
 }
 
 function ClassCard({ classData }) {
-  const [expanded, setExpanded] = useState(true)
   const avg = useMemo(() => {
     if (!classData.subjects || classData.subjects.length === 0) return 0
     return Math.round(
@@ -87,12 +86,8 @@ function ClassCard({ classData }) {
   }, [classData.subjects])
 
   return (
-    <CCard className="border-0 shadow-sm mb-3">
-      <CCardHeader
-        className="bg-light border-0 d-flex justify-content-between align-items-center"
-        style={{ cursor: 'pointer' }}
-        onClick={() => setExpanded((prev) => !prev)}
-      >
+    <details className="compact-disclosure">
+      <summary>
         <div className="d-flex align-items-center gap-2">
           <CIcon icon={cilEducation} style={{ opacity: 0.7 }} />
           <div>
@@ -108,13 +103,9 @@ function ClassCard({ classData }) {
           <CBadge color={avg < 50 ? 'warning' : 'success'} className="px-2 py-1">
             Média: {avg}%
           </CBadge>
-          <span style={{ fontSize: '0.75rem', color: 'var(--rs-muted)' }}>
-            {expanded ? '▼' : '▶'}
-          </span>
         </div>
-      </CCardHeader>
-      {expanded && (
-        <CCardBody style={{ padding: '12px 20px' }}>
+      </summary>
+        <div className="compact-disclosure__body">
           {classData.subjects && classData.subjects.length > 0 ? (
             classData.subjects.map((subject) => (
               <SubjectRow key={subject.subject_id} subject={subject} />
@@ -124,9 +115,8 @@ function ClassCard({ classData }) {
               Sem disciplinas atribuídas nesta turma.
             </div>
           )}
-        </CCardBody>
-      )}
-    </CCard>
+        </div>
+    </details>
   )
 }
 
@@ -191,7 +181,9 @@ function MyProgress() {
           </CCardBody>
         </CCard>
       ) : (
-        classes.map((classData) => <ClassCard key={classData.class_id} classData={classData} />)
+        <div className="compact-list">
+          {classes.map((classData) => <ClassCard key={classData.class_id} classData={classData} />)}
+        </div>
       )}
     </div>
   )
