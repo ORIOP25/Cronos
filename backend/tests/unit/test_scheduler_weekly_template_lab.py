@@ -5,7 +5,7 @@ school weeks. The assertions read observable output: the weekly template placeme
 materialized candidate checked by the independent validator.
 """
 
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import date, time, timedelta
 
 from app.scheduler.domain.calendar import normalize_period
@@ -15,6 +15,7 @@ from app.scheduler.domain.candidate import (
     LunchRule,
     PlanningSnapshot,
     SchedulingStrategy,
+    TeacherPresenceRule,
     Unavailability,
     UnavailableResource,
 )
@@ -23,7 +24,11 @@ from app.scheduler.domain.candidate_validation import (
     validate_candidate,
 )
 from app.scheduler.domain.projection import ModuleRequirement
-from app.scheduler.lab.weekly_template import build_weekly_template, generate_weekly_template
+from app.scheduler.lab.weekly_template import (
+    _costs,
+    build_weekly_template,
+    generate_weekly_template,
+)
 
 TIMEZONE = "Europe/Lisbon"
 ORIGIN = date(2026, 3, 2)  # a Monday
@@ -66,6 +71,8 @@ UNITS = (
     _unit(JOINT_UNIT, (CLASS_1, CLASS_2), 4),
 )
 CLASSES_OF = {unit.assignment_id: unit.class_ids for unit in UNITS}
+TEACHER_OF = {unit.assignment_id: unit.teacher_id for unit in UNITS}
+TEACHER_1 = 1  # Teaches units 1 and 4.
 
 
 def _periods():
@@ -77,7 +84,7 @@ def _periods():
     )
 
 
-def _snapshot(unavailable=()):
+def _snapshot(unavailable=(), presence=()):
     return PlanningSnapshot(
         strategy=SchedulingStrategy.COMPLETE_GENERATION,
         origin=ORIGIN,
@@ -90,6 +97,7 @@ def _snapshot(unavailable=()):
         blocked_dates=frozenset(),
         unavailable=tuple(unavailable),
         lunch_rule=LUNCH,
+        teacher_presence=tuple(presence),
     )
 
 
@@ -235,3 +243,54 @@ def test_holiday_week_moves_its_lessons_onto_school_days():
 
         assert result.stats["skipped_placements"].get("no_school_date", 0) == 0, holiday
         assert all(lesson.period.school_date != holiday for lesson in result.candidate.lessons)
+
+
+def _teacher_day_counts(placements):
+    """Lesson count per (teacher, weekday) of one weekly template."""
+    return Counter((TEACHER_OF[unit], weekday) for unit, weekday, _start, _end in placements)
+
+
+def test_teacher_single_lesson_day_joins_another_lesson_of_the_same_teacher():
+    # Unit 1 has one tail lesson; unit 4, taught by the same teacher, has lessons on other days.
+    remaining = {1: LESSON_MINUTES, 2: LESSON_MINUTES, 4: 6 * LESSON_MINUTES}
+    template = build_weekly_template(_snapshot(), _periods(), remaining=remaining, weeks_left=2)
+
+    assert template.placements
+    single_days = [
+        key
+        for key, count in _teacher_day_counts(template.placements).items()
+        if count == 1 and key[0] == TEACHER_1
+    ]
+    assert single_days == []
+
+
+def test_teacher_single_lesson_day_costs_more_than_one_teacher_gap_hour():
+    costs = _costs(_snapshot())
+    single_day = costs["teacher_single_lessons"] * LESSON_MINUTES
+    one_gap_hour = costs["teacher_gaps"] * 60
+
+    assert single_day > one_gap_hour
+
+
+def test_stage_b_teacher_presence_rule_rejects_a_split_below_the_minimum():
+    # The teacher is blocked at 9:00, 14:50 and 16:00 on every day, so the only 3-lesson day
+    # (10:10, 11:20, 13:40) splits around lunch into 2 + 1 lessons, below the 3-hour minimum.
+    teacher_blocks = [
+        Unavailability(
+            UnavailableResource.TEACHER,
+            TEACHER_1,
+            normalize_period(ORIGIN + timedelta(weeks=week, days=day), start, end, TIMEZONE),
+        )
+        for week in range(WEEKS)
+        for day in range(5)
+        for start, end in (SLOTS[0], SLOTS[5], SLOTS[6])
+    ]
+    presence = (TeacherPresenceRule(TEACHER_1, True, 180, 60),)
+    snapshot = _snapshot(teacher_blocks, presence)
+
+    result = generate_weekly_template(snapshot, _periods(), target_finish=LAST_DAY)
+
+    report = validate_candidate(snapshot, result.candidate)
+    assert ValidationViolationCode.TEACHER_PRESENCE_VIOLATION not in {
+        violation.code for violation in report.violations
+    }
