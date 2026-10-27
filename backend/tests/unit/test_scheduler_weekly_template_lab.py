@@ -177,3 +177,61 @@ def test_generated_candidate_is_valid_and_finishes_every_unit_by_target():
     assert [violation.code for violation in report.violations] == []
     assert report.total_credit_minutes == len(UNITS) * UNIT_MINUTES
     assert ValidationViolationCode.COVERAGE_MISMATCH not in {v.code for v in report.violations}
+
+
+def test_tail_unit_finishes_its_last_two_lessons_on_a_short_class_day():
+    template = build_weekly_template(
+        _snapshot(), _periods(), remaining={1: 2 * LESSON_MINUTES}, weeks_left=1
+    )
+
+    assert len(template.placements) == 2
+    assert {unit for unit, *_slot in template.placements} == {1}
+
+
+def test_short_class_days_hold_only_units_finishing_their_last_lessons():
+    remaining = {1: 2 * LESSON_MINUTES, 2: UNIT_MINUTES, 3: UNIT_MINUTES, 4: UNIT_MINUTES}
+    template = build_weekly_template(_snapshot(), _periods(), remaining=remaining, weeks_left=WEEKS)
+
+    units_by_class_day = defaultdict(list)
+    for unit, weekday, _start, _end in template.placements:
+        for class_id in CLASSES_OF[unit]:
+            units_by_class_day[(class_id, weekday)].append(unit)
+    assert sum(1 for unit, *_slot in template.placements if unit == 1) == 2
+    for key, units in units_by_class_day.items():
+        if len(units) <= 2:
+            assert set(units) <= {1}, key
+
+
+def test_stage_b_keeps_class_gaps_at_most_one_on_a_restricted_week():
+    blocked_slot = (2, SLOTS[1][0], SLOTS[1][1])
+    available = frozenset(
+        (weekday, start, end) for weekday in range(5) for start, end in SLOTS
+    ) - {blocked_slot}
+    template = build_weekly_template(
+        _snapshot(),
+        _periods(),
+        remaining={unit.assignment_id: UNIT_MINUTES for unit in UNITS},
+        weeks_left=WEEKS,
+        available=available,
+    )
+
+    assert template.placements
+    assert not [row for row in template.placements if row[1:] == blocked_slot]
+    for (class_id, weekday), indexes in _class_days(template.placements).items():
+        internal_gaps = [
+            index
+            for index in range(min(indexes), max(indexes))
+            if index not in indexes and SLOTS[index] != LUNCH_SLOT
+        ]
+        assert len(internal_gaps) <= 1, (class_id, weekday, internal_gaps)
+
+
+def test_holiday_week_moves_its_lessons_onto_school_days():
+    for offset in range(5):
+        holiday = ORIGIN + timedelta(days=offset)
+        periods = tuple(period for period in _periods() if period.school_date != holiday)
+
+        result = generate_weekly_template(_snapshot(), periods, target_finish=LAST_DAY)
+
+        assert result.stats["skipped_placements"].get("no_school_date", 0) == 0, holiday
+        assert all(lesson.period.school_date != holiday for lesson in result.candidate.lessons)

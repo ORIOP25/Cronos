@@ -1,10 +1,14 @@
-"""Lab MVP of a weekly-template timetable: one CP-SAT pattern rolled out on real dates.
+"""Lab MVP2 of a weekly-template timetable: two CP-SAT stages rolled out on real dates.
 
-Not wired into production (search, jobs, API). A template is a weekly pattern of booleans
-x[unit, weekday, slot] that enforces the owner's day rules for every class: zero lessons or at
-least three, at most one internal gap, lunch kept free. The rollout walks the calendar week by
-week: a template lesson lands on its real date when that date is still usable, otherwise it is
-skipped. Rooms and validation reuse the production passes, so a violation is reported, not hidden.
+Stage A chooses how many lessons each unit gets on each weekday of one week: one small integer
+model. Stage B places one weekday's lessons into slots: one independent model per day. A day that
+stage B cannot place sends a cut back to stage A: one lesson fewer for the busiest class that day.
+A class day holds zero lessons or at least three, except a tail: one or two lessons that finish
+the last remaining lessons of their units. A class has at most one internal gap slot per day.
+
+Not wired into production (search, jobs, API). The rollout walks the calendar week by week and
+solves each week against the school days that week really has. Rooms and validation reuse the
+production passes, so a violation is reported, not hidden.
 """
 
 from __future__ import annotations
@@ -24,6 +28,7 @@ from app.scheduler.domain.candidate import (
     CandidateSchedule,
     PlanningSnapshot,
     ScheduledLesson,
+    TeacherPresenceRule,
     UnavailableResource,
     allocate_lesson_identity,
 )
@@ -48,14 +53,15 @@ Placement = tuple[int, int, time, time]  # (assignment_id, weekday, start_local,
 TEACHER = UnavailableResource.TEACHER
 CLASS = UnavailableResource.CLASS
 REFRESH_WEEKS = 4
-# One lesson below its weekly target costs more than any preference, so the target holds
-# whenever the rules allow it; a shortfall is reported, never silently accepted.
-SHORTFALL_WEIGHT = 10**6
+# One lesson short of its weekly target costs more than every preference and gap together, so the
+# target is a hard equality whenever the rules allow it. A shortfall is reported, never hidden.
+SHORTFALL_WEIGHT = 10**9
 SOLVED_STATUSES = ("OPTIMAL", "FEASIBLE")
-# Deterministic solver budgets: about three minutes for the first template, about two minutes for a
-# warm-started re-solve, measured on the development machine (CP-SAT ticks are not seconds).
-FIRST_SOLVE_TICKS = 60
-RESOLVE_TICKS = 40
+# Deterministic solver budgets (CP-SAT ticks are not seconds).
+COUNT_TICKS = 40
+DAY_TICKS = 5
+MAX_CUT_ROUNDS = 5
+TAIL_LESSONS = 2
 
 
 @dataclass(frozen=True)
@@ -65,6 +71,7 @@ class Template:
     variables: int
     shortfall: int
     seconds: float
+    cut_rounds: int = 0
 
 
 @dataclass(frozen=True)
@@ -72,6 +79,24 @@ class MvpResult:
     candidate: CandidateSchedule | None
     status: str
     stats: dict[str, object]
+
+
+@dataclass(frozen=True)
+class _Week:
+    """What both stages read for one solve. Built once per call from the snapshot."""
+
+    slots: tuple[SlotKey, ...]
+    blocked: frozenset[tuple[UnavailableResource, int, SlotKey]]
+    evitar: Mapping[tuple[UnavailableResource, int, SlotKey], int]
+    lunch: Mapping[int, frozenset[SlotKey]]
+    lunch_rule_present: bool
+    presence: Mapping[int, TeacherPresenceRule]
+    dispensed: frozenset[int]
+    costs: Mapping[str, int]
+    lesson_minutes: int
+    units: Mapping[int, Assignment]
+    tail: frozenset[int]
+    previous: frozenset[Placement]
 
 
 def _minutes(value: time) -> int:
@@ -103,20 +128,24 @@ def _resources(assignment: Assignment) -> tuple[tuple[UnavailableResource, int],
     )
 
 
-def _minute_costs(snapshot: PlanningSnapshot) -> dict[str, int]:
-    """Integer cost of one measured minute per criterion, priced with the school levels (T13)."""
+def _costs(snapshot: PlanningSnapshot) -> dict[str, int]:
+    """Integer cost per measured minute, priced with the school levels (T13)."""
     weights = snapshot.priority_weights or PriorityWeights(DEFAULT_LEVELS)
-    return {
+    costs = {
         key: PRIORITY_MULTIPLIERS[getattr(weights, key)] * UNIT_COSTS[key]
         for key in (
             "teacher_gaps",
-            "class_gaps",
             "teacher_single_lessons",
             "teacher_preferences",
             "class_preferences",
             "weekly_stability",
         )
     }
+    # At equal levels one class 1-gap day costs one teacher gap hour (owner, round 2).
+    costs["class_gap_day"] = (
+        PRIORITY_MULTIPLIERS[weights.class_gaps] * UNIT_COSTS["teacher_gaps"] * 60
+    )
+    return costs
 
 
 def _blocked_resources(
@@ -176,6 +205,275 @@ def _lunch_slots(snapshot: PlanningSnapshot, slots: list[SlotKey]) -> dict[int, 
     return {weekday: frozenset(keys) for weekday, keys in fits.items()}
 
 
+def _minimize(model: cp_model.CpModel, cost_terms, *, ticks: int, seed: int, time_limit: float):
+    if cost_terms:
+        model.minimize(
+            cp_model.LinearExpr.weighted_sum(
+                [var for var, _ in cost_terms], [cost for _, cost in cost_terms]
+            )
+        )
+    solver = cp_model.CpSolver()
+    solver.parameters.num_workers = 1
+    solver.parameters.random_seed = seed
+    solver.parameters.max_deterministic_time = ticks
+    solver.parameters.max_time_in_seconds = time_limit
+    status = solver.solve(model)
+    return solver, solver.status_name(status), status in (cp_model.OPTIMAL, cp_model.FEASIBLE)
+
+
+def _solve_counts(
+    week: _Week,
+    targets: Mapping[int, int],
+    cuts: Mapping[tuple[int, int], int],
+    *,
+    seed: int,
+    time_limit: float,
+) -> tuple[dict[tuple[int, int], int] | None, str, int, int]:
+    """Stage A: lessons per (unit, weekday). Returns counts, status, variables and shortfall."""
+    days = sorted({key[0] for key in week.slots})
+    day_slots = {day: [key for key in week.slots if key[0] == day] for day in days}
+
+    def capacity(kind: UnavailableResource, identity: int, day: int) -> int:
+        """Most lessons a resource can hold on a day, leaving a lunch slot free when it must."""
+        usable = [key for key in day_slots[day] if (kind, identity, key) not in week.blocked]
+        lunch_keys = week.lunch.get(day, frozenset())
+        if not week.lunch_rule_present or (kind is TEACHER and identity in week.dispensed):
+            return len(usable)
+        if not lunch_keys:
+            return 0
+        plain = sum(1 for key in usable if key not in lunch_keys)
+        lunch_free = sum(1 for key in usable if key in lunch_keys)
+        return plain + min(lunch_free, len(lunch_keys) - 1)
+
+    model = cp_model.CpModel()
+    counts: dict[tuple[int, int], cp_model.IntVar] = {}
+    members: dict[tuple[UnavailableResource, int, int], list[tuple[int, cp_model.IntVar]]] = (
+        defaultdict(list)
+    )
+    cost_terms: list[tuple[cp_model.IntVar, int]] = []
+    shorts: list[cp_model.IntVar] = []
+    for unit_id, target in targets.items():
+        unit = week.units[unit_id]
+        row = []
+        for day in days:
+            allowed = sum(
+                1
+                for key in day_slots[day]
+                if not any((kind, identity, key) in week.blocked for kind, identity in _resources(unit))
+            )
+            if allowed:
+                var = model.new_int_var(0, allowed, "")
+                counts[(unit_id, day)] = var
+                row.append(var)
+                for kind, identity in _resources(unit):
+                    members[(kind, identity, day)].append((unit_id, var))
+        short = model.new_int_var(0, target, "")
+        model.add(sum(row) + short == target)
+        shorts.append(short)
+        cost_terms.append((short, SHORTFALL_WEIGHT))
+
+    for (kind, identity, day), rows in members.items():
+        total = sum(var for _unit, var in rows)
+        room = capacity(kind, identity, day)
+        model.add(total <= room)
+        if kind is CLASS:
+            # A day holds zero lessons or at least three. Tail units may stand alone on a short day.
+            has_regular = model.new_bool_var("")
+            for unit_id, var in rows:
+                if unit_id not in week.tail:
+                    model.add(var <= room * has_regular)
+            model.add(3 * has_regular <= total)
+            model.add(total <= TAIL_LESSONS + room * has_regular)
+            if (identity, day) in cuts:
+                model.add(total <= cuts[(identity, day)])
+        else:
+            single = model.new_bool_var("")
+            model.add(total >= single)
+            model.add(total <= 1 + room * (1 - single))
+            cost_terms.append((single, week.costs["teacher_single_lessons"] * week.lesson_minutes))
+            rule = week.presence.get(identity)
+            if rule is not None and rule.minimum_minutes:
+                used = model.new_bool_var("")
+                model.add(total <= room * used)
+                model.add(total >= ceil(rule.minimum_minutes / week.lesson_minutes) * used)
+
+    for room_set in {week.units[unit_id].eligible_room_ids for unit_id in targets}:
+        for day in days:
+            fitting = [
+                var
+                for (unit_id, unit_day), var in counts.items()
+                if unit_day == day and week.units[unit_id].eligible_room_ids <= room_set
+            ]
+            if fitting:
+                model.add(sum(fitting) <= len(room_set) * len(day_slots[day]))
+
+    previous_counts = Counter((unit_id, day) for unit_id, day, _start, _end in week.previous)
+    for (unit_id, day), var in counts.items():
+        moved = model.new_int_var(0, len(week.slots), "")
+        model.add(moved >= var - previous_counts[(unit_id, day)])
+        model.add(moved >= previous_counts[(unit_id, day)] - var)
+        cost_terms.append((moved, week.costs["weekly_stability"] * week.lesson_minutes))
+
+    solver, status, solved = _minimize(
+        model, cost_terms, ticks=COUNT_TICKS, seed=seed, time_limit=time_limit
+    )
+    variables = len(model.proto.variables)
+    if not solved:
+        return None, status, variables, sum(targets.values())
+    values = {key: solver.value(var) for key, var in counts.items() if solver.value(var)}
+    shortfall = sum(solver.value(short) for short in shorts)
+    return values, status, variables, shortfall
+
+
+def _gap_pairs(
+    model: cp_model.CpModel,
+    occupied: Mapping[SlotKey, list[cp_model.IntVar]],
+    keys: list[SlotKey],
+    skip: frozenset[SlotKey],
+) -> list[tuple[cp_model.IntVar, int]]:
+    """Empty grid slots between a resource's first and last lesson, as (flag, minutes) pairs."""
+    prefix: list[cp_model.IntVar] = []
+    suffix: list[cp_model.IntVar] = []
+    for key in keys:
+        flag = model.new_bool_var("")
+        for var in occupied[key]:
+            model.add(flag >= var)
+        if prefix:
+            model.add(flag >= prefix[-1])
+        prefix.append(flag)
+    for key in reversed(keys):
+        flag = model.new_bool_var("")
+        for var in occupied[key]:
+            model.add(flag >= var)
+        if suffix:
+            model.add(flag >= suffix[-1])
+        suffix.append(flag)
+    suffix.reverse()
+    pairs = []
+    for index in range(1, len(keys) - 1):
+        key = keys[index]
+        if key in skip:
+            continue
+        gap = model.new_bool_var("")
+        model.add(gap >= prefix[index - 1] + suffix[index + 1] - 1 - sum(occupied[key]))
+        pairs.append((gap, _duration(key)))
+    return pairs
+
+
+def _solve_day(
+    week: _Week,
+    weekday: int,
+    counts: Mapping[int, int],
+    *,
+    seed: int,
+    time_limit: float,
+) -> tuple[list[Placement] | None, str, int]:
+    """Stage B: place one weekday's lessons into slots. Returns rows, status and variables."""
+    keys = [key for key in week.slots if key[0] == weekday]
+    model = cp_model.CpModel()
+    x: dict[tuple[int, SlotKey], cp_model.IntVar] = {}
+    on: dict[tuple[UnavailableResource, int, SlotKey], list[cp_model.IntVar]] = defaultdict(list)
+    cost_terms: list[tuple[cp_model.IntVar, int]] = []
+    resources: Counter = Counter()
+    previous_slots: dict[int, list[tuple[time, time]]] = defaultdict(list)
+    for unit_id, weekday_placed, start, end in week.previous:
+        if weekday_placed == weekday:
+            previous_slots[unit_id].append((start, end))
+
+    for unit_id, count in counts.items():
+        unit = week.units[unit_id]
+        for resource in _resources(unit):
+            resources[resource] += count
+        row = []
+        for key in keys:
+            if any((kind, identity, key) in week.blocked for kind, identity in _resources(unit)):
+                continue
+            var = model.new_bool_var("")
+            x[(unit_id, key)] = var
+            model.add_hint(var, (unit_id, weekday, key[1], key[2]) in week.previous)
+            row.append(var)
+            for kind, identity in _resources(unit):
+                on[(kind, identity, key)].append(var)
+            evitar = sum(
+                week.evitar.get((kind, identity, key), 0) for kind, identity in _resources(unit)
+            )
+            if evitar:
+                cost_terms.append((var, evitar))
+        model.add(sum(row) == count)
+        kept = [x[(unit_id, (weekday, start, end))] for start, end in previous_slots[unit_id]
+                if (unit_id, (weekday, start, end)) in x]
+        if kept:
+            moved = model.new_int_var(0, len(kept), "")
+            model.add(moved >= len(kept) - sum(kept))
+            cost_terms.append((moved, week.costs["weekly_stability"] * week.lesson_minutes))
+
+    for members in on.values():
+        if len(members) > 1:
+            model.add(sum(members) <= 1)
+    for room_set in {week.units[unit_id].eligible_room_ids for unit_id in counts}:
+        for key in keys:
+            fitting = [
+                x[(unit_id, key)]
+                for unit_id in counts
+                if (unit_id, key) in x and week.units[unit_id].eligible_room_ids <= room_set
+            ]
+            if len(fitting) > len(room_set):
+                model.add(sum(fitting) <= len(room_set))
+
+    for kind, identity in sorted(resources, key=lambda row: (row[0].value, row[1])):
+        is_teacher = kind is TEACHER
+        lunch_required = not (is_teacher and identity in week.dispensed)
+        lunch_keys = week.lunch.get(weekday, frozenset()) if lunch_required else frozenset()
+        occupied = {key: on.get((kind, identity, key), []) for key in keys}
+        if lunch_required and week.lunch_rule_present:
+            if not lunch_keys:
+                return None, "NO_LUNCH_SLOT", len(model.proto.variables)
+            model.add(sum(var for key in lunch_keys for var in occupied[key]) <= len(lunch_keys) - 1)
+        pairs = _gap_pairs(model, occupied, keys, lunch_keys)
+        timed = [(_duration(key), var) for key in keys for var in occupied[key]]
+        if is_teacher:
+            cost_terms.extend((gap, week.costs["teacher_gaps"] * minutes) for gap, minutes in pairs)
+            rule = week.presence.get(identity)
+            if rule is not None and rule.minimum_minutes:
+                model.add(
+                    cp_model.LinearExpr.weighted_sum([v for _, v in timed], [d for d, _ in timed])
+                    >= rule.minimum_minutes
+                )
+                if pairs:
+                    model.add(
+                        cp_model.LinearExpr.weighted_sum(
+                            [gap for gap, _ in pairs], [minutes for _, minutes in pairs]
+                        )
+                        <= rule.max_gap_minutes
+                    )
+        else:
+            cost_terms.extend((gap, week.costs["class_gap_day"]) for gap, _ in pairs)
+            model.add(sum(gap for gap, _ in pairs) <= 1)
+
+    solver, status, solved = _minimize(
+        model, cost_terms, ticks=DAY_TICKS, seed=seed, time_limit=time_limit
+    )
+    variables = len(model.proto.variables)
+    if not solved:
+        return None, status, variables
+    rows = [
+        (unit_id, weekday, key[1], key[2])
+        for (unit_id, key), var in x.items()
+        if solver.value(var)
+    ]
+    return rows, status, variables
+
+
+def _busiest_class_cut(week: _Week, counts: Mapping[int, int], weekday: int) -> tuple[int, int, int]:
+    """(class, weekday, cap): one lesson fewer than the busiest class of the day."""
+    totals: Counter = Counter()
+    for unit_id, count in counts.items():
+        for class_id in week.units[unit_id].class_ids:
+            totals[class_id] += count
+    class_id = max(totals, key=lambda identity: (totals[identity], -identity))
+    return class_id, weekday, totals[class_id] - 1
+
+
 def build_weekly_template(
     snapshot: PlanningSnapshot,
     periods: Iterable[Period],
@@ -183,177 +481,95 @@ def build_weekly_template(
     remaining: Mapping[int, int],
     weeks_left: int,
     previous: frozenset[Placement] = frozenset(),
-    ticks: float = RESOLVE_TICKS,
+    available: frozenset[SlotKey] | None = None,
     time_limit_seconds: float = 600.0,
     random_seed: int = 1,
 ) -> Template:
-    """Solve one weekly pattern for the given units (remaining minutes per unit)."""
+    """Solve one weekly pattern for the given units (remaining minutes per unit).
+
+    ``available`` limits the slots a week really has (None means every grid slot).
+    """
     started = clock.perf_counter()
-    slots = sorted(
-        {(row.day_of_week, row.start_local, row.end_local) for row in snapshot.grid_slots}
-    )
+    grid = sorted({(row.day_of_week, row.start_local, row.end_local) for row in snapshot.grid_slots})
+    slots = tuple(key for key in grid if available is None or key in available)
     occurrences = Counter(_slot_of(period) for period in periods)
     lesson_minutes = typical_lesson_minutes(snapshot.grid_slots)
-    costs = _minute_costs(snapshot)
-    blocked = _blocked_resources(snapshot, slots, occurrences)
-    evitar = _evitar_costs(snapshot, slots, occurrences, costs)
-    lunch = _lunch_slots(snapshot, slots)
-    presence = {rule.teacher_id: rule for rule in snapshot.teacher_presence}
-    dispensed = snapshot.lunch_dispensed_teacher_ids
-    units = {unit_id: snapshot.assignment_for(unit_id) for unit_id in remaining}
-
-    model = cp_model.CpModel()
-    x: dict[tuple[int, SlotKey], cp_model.IntVar] = {}
-    on: dict[tuple[UnavailableResource, int, SlotKey], list[cp_model.IntVar]] = defaultdict(list)
-    cost_terms: list[tuple[cp_model.IntVar, int]] = []
-    for unit_id, unit in units.items():
-        for key in slots:
-            if any((kind, identity, key) in blocked for kind, identity in _resources(unit)):
-                continue
-            var = model.new_bool_var("")
-            x[(unit_id, key)] = var
-            model.add_hint(var, (unit_id, key[0], key[1], key[2]) in previous)
-            for kind, identity in _resources(unit):
-                on[(kind, identity, key)].append(var)
-            evitar_cost = sum(
-                evitar.get((kind, identity, key), 0) for kind, identity in _resources(unit)
-            )
-            if evitar_cost:
-                cost_terms.append((var, evitar_cost))
-
-    for members in on.values():
-        if len(members) > 1:
-            model.add(sum(members) <= 1)
-    for room_set in {unit.eligible_room_ids for unit in units.values()}:
-        for key in slots:
-            members = [
-                x[(unit_id, key)]
-                for unit_id, unit in units.items()
-                if (unit_id, key) in x and unit.eligible_room_ids <= room_set
-            ]
-            if len(members) > len(room_set):
-                model.add(sum(members) <= len(room_set))
-
-    day_keys = {
-        weekday: [key for key in slots if key[0] == weekday] for weekday in {k[0] for k in slots}
-    }
-    for kind, identity in sorted(
-        {(kind, identity) for kind, identity, _key in on}, key=lambda r: (r[0].value, r[1])
-    ):
-        is_teacher = kind is TEACHER
-        lunch_required = not (is_teacher and identity in dispensed)
-        rule = presence.get(identity) if is_teacher else None
-        for weekday, keys in sorted(day_keys.items()):
-            occupied = {key: on.get((kind, identity, key), []) for key in keys}
-            day_vars = [var for key in keys for var in occupied[key]]
-            if not day_vars:
-                continue
-            used = model.new_bool_var("")
-            for var in day_vars:
-                model.add(used >= var)
-            model.add(used <= sum(day_vars))
-            if not is_teacher:
-                model.add(3 * used <= sum(day_vars))
-                model.add(sum(day_vars) <= len(keys) * used)
-            lunch_keys = lunch.get(weekday, frozenset()) if lunch_required else frozenset()
-            if lunch_required:
-                lunch_vars = [var for key in lunch_keys for var in occupied[key]]
-                model.add(sum(lunch_vars) + used <= len(lunch_keys))
-            if rule is not None and rule.minimum_minutes:
-                timed = [(_duration(key), var) for key in keys for var in occupied[key]]
-                model.add(
-                    cp_model.LinearExpr.weighted_sum([v for _, v in timed], [d for d, _ in timed])
-                    >= rule.minimum_minutes * used
-                )
-            prefix, suffix = [], []
-            for key in keys:
-                flag = model.new_bool_var("")
-                for var in occupied[key]:
-                    model.add(flag >= var)
-                if prefix:
-                    model.add(flag >= prefix[-1])
-                prefix.append(flag)
-            for key in reversed(keys):
-                flag = model.new_bool_var("")
-                for var in occupied[key]:
-                    model.add(flag >= var)
-                if suffix:
-                    model.add(flag >= suffix[-1])
-                suffix.append(flag)
-            suffix.reverse()
-            gap_pairs = []
-            for index in range(1, len(keys) - 1):
-                key = keys[index]
-                if key in lunch_keys:
-                    continue
-                gap = model.new_bool_var("")
-                model.add(gap >= prefix[index - 1] + suffix[index + 1] - 1 - sum(occupied[key]))
-                gap_pairs.append((gap, _duration(key)))
-            if is_teacher:
-                cost_terms.extend(
-                    (gap, costs["teacher_gaps"] * minutes) for gap, minutes in gap_pairs
-                )
-            else:
-                cost_terms.extend(
-                    (gap, costs["class_gaps"] * minutes) for gap, minutes in gap_pairs
-                )
-                if gap_pairs:
-                    model.add(sum(gap for gap, _ in gap_pairs) <= 1)
-            if is_teacher:
-                single = model.new_bool_var("")
-                model.add(single >= 2 * used - sum(day_vars))
-                cost_terms.append((single, costs["teacher_single_lessons"] * lesson_minutes))
-
-    stability_units = defaultdict(list)
-    for unit_id, weekday, start, end in previous:
-        if unit_id in units and (unit_id, (weekday, start, end)) in x:
-            stability_units[unit_id].append(x[(unit_id, (weekday, start, end))])
-    for kept in stability_units.values():
-        moved = model.new_int_var(0, len(kept), "")
-        model.add(moved >= len(kept) - sum(kept))
-        cost_terms.append((moved, costs["weekly_stability"] * lesson_minutes))
-
-    targets = {}
-    for unit_id in units:
-        lessons_left = ceil(remaining[unit_id] / lesson_minutes)
-        target = min(ceil(lessons_left / weeks_left), lessons_left)
-        placed_vars = [x[(unit_id, key)] for key in slots if (unit_id, key) in x]
-        model.add(sum(placed_vars) <= target)
-        cost_terms.extend((var, -SHORTFALL_WEIGHT) for var in placed_vars)
-        targets[unit_id] = target
-
-    model.minimize(
-        cp_model.LinearExpr.weighted_sum([var for var, _ in cost_terms], [c for _, c in cost_terms])
+    costs = _costs(snapshot)
+    targets, tail = _targets(remaining, lesson_minutes, weeks_left)
+    week = _Week(
+        slots=slots,
+        blocked=_blocked_resources(snapshot, grid, occurrences),
+        evitar=_evitar_costs(snapshot, grid, occurrences, costs),
+        lunch=_lunch_slots(snapshot, list(slots)),
+        lunch_rule_present=snapshot.lunch_rule is not None,
+        presence={rule.teacher_id: rule for rule in snapshot.teacher_presence},
+        dispensed=snapshot.lunch_dispensed_teacher_ids,
+        costs=costs,
+        lesson_minutes=lesson_minutes,
+        units={unit_id: snapshot.assignment_for(unit_id) for unit_id in remaining},
+        tail=tail,
+        previous=previous,
     )
-    solver = cp_model.CpSolver()
-    solver.parameters.num_workers = 1
-    solver.parameters.random_seed = random_seed
-    solver.parameters.max_deterministic_time = ticks
-    solver.parameters.max_time_in_seconds = time_limit_seconds
-    status = solver.solve(model)
-    seconds = clock.perf_counter() - started
-    if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
-        return Template(
-            placements=frozenset(),
-            status=solver.status_name(status),
-            variables=len(model.proto.variables),
-            shortfall=sum(targets.values()),
-            seconds=seconds,
+
+    cuts: dict[tuple[int, int], int] = {}
+    day_cache: dict[tuple[int, tuple[tuple[int, int], ...]], tuple] = {}
+    variables = 0
+    statuses: list[str] = []
+    for cut_round in range(MAX_CUT_ROUNDS + 1):
+        counts, count_status, count_variables, shortfall = _solve_counts(
+            week, targets, cuts, seed=random_seed, time_limit=time_limit_seconds
         )
-    placements = frozenset(
-        (unit_id, key[0], key[1], key[2]) for (unit_id, key), var in x.items() if solver.value(var)
-    )
-    placed_per_unit = Counter(row[0] for row in placements)
-    shortfall = sum(
-        max(0, target - placed_per_unit[unit_id]) for unit_id, target in targets.items()
-    )
+        variables = max(variables, count_variables)
+        if counts is None:
+            return Template(
+                frozenset(), count_status, variables, sum(targets.values()),
+                clock.perf_counter() - started, cut_round,
+            )
+        placements: set[Placement] = set()
+        failed: list[int] = []
+        for weekday in sorted({day for _unit, day in counts}):
+            day_counts = {unit_id: count for (unit_id, day), count in counts.items() if day == weekday}
+            key = (weekday, tuple(sorted(day_counts.items())))
+            if key not in day_cache:
+                day_cache[key] = _solve_day(
+                    week, weekday, day_counts, seed=random_seed, time_limit=time_limit_seconds
+                )
+            rows, day_status, day_variables = day_cache[key]
+            variables = max(variables, day_variables)
+            statuses.append(day_status)
+            if rows is None:
+                failed.append(weekday)
+                cut = _busiest_class_cut(week, day_counts, weekday)
+                cuts[cut[0], cut[1]] = min(cuts.get((cut[0], cut[1]), cut[2]), cut[2])
+            else:
+                placements.update(rows)
+        statuses.append(count_status)
+        if not failed:
+            status = "OPTIMAL" if all(s == "OPTIMAL" for s in statuses) else "FEASIBLE"
+            return Template(
+                frozenset(placements), status, variables, shortfall,
+                clock.perf_counter() - started, cut_round,
+            )
     return Template(
-        placements=placements,
-        status=solver.status_name(status),
-        variables=len(model.proto.variables),
-        shortfall=shortfall,
-        seconds=seconds,
+        frozenset(), "INFEASIBLE_DAY", variables, sum(targets.values()),
+        clock.perf_counter() - started, MAX_CUT_ROUNDS,
     )
+
+
+def _targets(
+    remaining: Mapping[int, int], lesson_minutes: int, weeks_left: int
+) -> tuple[dict[int, int], frozenset[int]]:
+    """Weekly lesson target per unit, and the tail units that finish their last lessons now."""
+    targets: dict[int, int] = {}
+    tail: set[int] = set()
+    for unit_id, minutes in remaining.items():
+        lessons_left = ceil(minutes / lesson_minutes)
+        if lessons_left <= TAIL_LESSONS:
+            tail.add(unit_id)
+            targets[unit_id] = lessons_left
+        else:
+            targets[unit_id] = ceil(lessons_left / weeks_left)
+    return targets, frozenset(tail)
 
 
 def _calendar(
@@ -404,11 +620,18 @@ def generate_weekly_template(
     random_seed: int = 1,
     refresh_weeks: int = REFRESH_WEEKS,
 ) -> MvpResult:
-    """Roll the weekly template out on the calendar until every unit is complete."""
+    """Roll the weekly template out on the calendar until every unit is complete.
+
+    A week is solved against the slots its calendar really has, so a holiday week moves its
+    lessons onto the school days. A week without any school day gets no placements.
+    """
     origin_monday = snapshot.origin - timedelta(days=snapshot.origin.weekday())
     target_week = (target_finish - origin_monday).days // 7
     calendar = _calendar(snapshot, periods)
     calendar_periods = tuple(calendar.values())
+    open_slots: dict[int, set[SlotKey]] = defaultdict(set)
+    for school_date, start, end in calendar:
+        open_slots[(school_date - origin_monday).days // 7].add((school_date.weekday(), start, end))
     remaining = {
         assignment.assignment_id: residual_minutes(snapshot, assignment.assignment_id)
         for assignment in snapshot.assignments
@@ -423,6 +646,7 @@ def generate_weekly_template(
     solves = []
     template: Template | None = None
     solved_units: frozenset[int] = frozenset()
+    solved_available: frozenset[SlotKey] = frozenset()
     previous: frozenset[Placement] = frozenset()
     changes = 0
     weeks_with_dates = [(day - origin_monday).days // 7 for day, _start, _end in calendar]
@@ -433,13 +657,17 @@ def generate_weekly_template(
     solved_week = last_lesson_week = week = first_week
     while remaining and week <= last_calendar_week:
         monday = origin_monday + timedelta(weeks=week)
+        available = frozenset(open_slots.get(week, ()))
         ready = frozenset(
             unit_id
             for unit_id in remaining
             if all(source not in remaining for source in predecessors[unit_id])
         )
-        if ready and (
-            template is None or ready != solved_units or week - solved_week >= refresh_weeks
+        if ready and available and (
+            template is None
+            or ready != solved_units
+            or available != solved_available
+            or week - solved_week >= refresh_weeks
         ):
             template = build_weekly_template(
                 snapshot,
@@ -447,7 +675,7 @@ def generate_weekly_template(
                 remaining={unit_id: remaining[unit_id] for unit_id in ready},
                 weeks_left=max(1, target_week - week + 1),
                 previous=previous,
-                ticks=RESOLVE_TICKS if template is not None else FIRST_SOLVE_TICKS,
+                available=available,
                 time_limit_seconds=time_limit_seconds,
                 random_seed=random_seed,
             )
@@ -459,12 +687,13 @@ def generate_weekly_template(
                     variables=template.variables,
                     shortfall=template.shortfall,
                     seconds=template.seconds,
+                    cut_rounds=template.cut_rounds,
                 )
             solves.append(template)
             changes += len(template.placements - previous)
             previous = template.placements
-            solved_units, solved_week = ready, week
-        if template is not None:
+            solved_units, solved_week, solved_available = ready, week, available
+        if template is not None and available:
             for unit_id, weekday, start, end in sorted(
                 template.placements, key=lambda row: (row[1], row[2], row[0])
             ):
@@ -491,6 +720,7 @@ def generate_weekly_template(
         "template_statuses": dict(Counter(t.status for t in solves)),
         "largest_model_variables": max((t.variables for t in solves), default=0),
         "solve_seconds": round(sum(t.seconds for t in solves), 1),
+        "cut_rounds": sum(t.cut_rounds for t in solves),
         "shortfall_lessons_in_templates": sum(t.shortfall for t in solves),
         "template_changes": changes,
         "skipped_placements": dict(skipped),
