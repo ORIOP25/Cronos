@@ -9,6 +9,7 @@ Pode utilizar Excel ou Google Sheets.
 O sistema aceita vírgula ou ponto e vírgula como separador.
 O sistema aceita UTF-8 com ou sem BOM.
 Cada ficheiro pode ter até 1 MB.
+Depois de remover um ficheiro selecionado, pode selecionar o mesmo ficheiro novamente.
 
 ## Modelos oficiais
 

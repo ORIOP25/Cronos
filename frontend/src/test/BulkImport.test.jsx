@@ -391,6 +391,20 @@ describe('BulkImport', () => {
     await waitFor(() => expect(mocks.commit).toHaveBeenCalledWith({ rooms: file }))
   })
 
+  it('allows selecting the same file after removing it', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    const input = screen.getByLabelText('Selecionar ficheiro CSV de salas')
+    const file = new File(['x'], 'salas.csv', { type: 'text/csv' })
+    await user.upload(input, file)
+    await user.click(within(cardFor('Salas')).getByRole('button', { name: 'Remover' }))
+    expect(input.files).toHaveLength(0)
+    await user.upload(input, file)
+    expect(screen.getByText(/salas.csv/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Verificar ficheiros' }))
+    expect(mocks.validate).toHaveBeenCalledWith({ rooms: file })
+  })
+
   it('shows feedback when preparing a model fails', async () => {
     const user = userEvent.setup()
     mocks.download.mockRejectedValueOnce(new Error('offline'))

@@ -1,4 +1,5 @@
 import { fireEvent, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import Timesheets from '../pages/Timesheets'
 import { renderWithRouter } from './testUtils'
@@ -52,5 +53,28 @@ describe('Timesheets compact controls', () => {
     expect(screen.queryByRole('button', { name: 'Aprovar', exact: true })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Reabrir', exact: true })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Ver em Horários' })).toBeEnabled()
+  })
+
+  it('shows a retry action instead of an empty grid when the week fails', async () => {
+    const refetch = vi.fn()
+    hooks.week.mockReturnValue({ data: [], isError: true, refetch })
+    renderWithRouter(<Timesheets initialWeekStart="2026-10-12" />)
+    expect(screen.getByText('Não foi possível carregar os dados da semana.')).toBeInTheDocument()
+    expect(screen.queryByText('Grelha semanal')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Tentar novamente' }))
+    expect(refetch).toHaveBeenCalledOnce()
+  })
+
+  it('filters teachers by name and selects a matching teacher', async () => {
+    const user = userEvent.setup()
+    renderWithRouter(<Timesheets initialWeekStart="2026-10-12" />)
+    await user.type(screen.getByLabelText('Pesquisar professor'), 'bruno')
+    expect(screen.queryByRole('button', { name: /Ana/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Bruno/ })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Bruno' })).toBeInTheDocument()
+    await user.clear(screen.getByLabelText('Pesquisar professor'))
+    await user.type(screen.getByLabelText('Pesquisar professor'), 'inexistente')
+    expect(screen.getByText('Nenhum professor encontrado.')).toBeInTheDocument()
+    expect(screen.queryByText('Grelha semanal')).not.toBeInTheDocument()
   })
 })
