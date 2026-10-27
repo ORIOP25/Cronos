@@ -211,6 +211,7 @@ describe('Foundation', () => {
     expect(screen.getByText('Data preferencial de fim:')).toBeInTheDocument()
     expect(screen.getByText('2026-06-30')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('checkbox', { name: /confirmo que revi/i }))
+    expect(screen.getByRole('button', { name: /^ativar escola$/i })).toHaveClass('btn-primary')
     fireEvent.click(screen.getByRole('button', { name: /^ativar escola$/i }))
     await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/foundation/complete', {
       expected_version: expect.any(Number),

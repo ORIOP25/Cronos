@@ -44,6 +44,8 @@ describe('Members', () => {
     expect(screen.queryByRole('button', { name: 'Editar disponibilidade' })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Editar membro' }))
     await screen.findByRole('dialog')
+    expect(screen.getByRole('button', { name: 'Editar disponibilidade' })).toHaveClass('btn-outline-primary')
+    expect(screen.getByRole('button', { name: 'Cancelar', exact: true })).toHaveClass('btn-outline-secondary')
     fireEvent.click(screen.getByRole('button', { name: 'Editar disponibilidade' }))
     expect(await screen.findByText('Disponibilidade — Professor QA (professor 657)')).toBeInTheDocument()
   })

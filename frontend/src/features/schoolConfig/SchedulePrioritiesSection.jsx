@@ -107,15 +107,7 @@ export default function SchedulePrioritiesSection() {
         </div>
       )}
 
-      <div className="d-flex flex-wrap gap-2 mt-4">
-        <button
-          className="btn btn-primary"
-          type="button"
-          disabled={updateMutation.isPending}
-          onClick={save}
-        >
-          Guardar prioridades
-        </button>
+      <div className="d-flex justify-content-end flex-wrap gap-2 mt-4" role="group" aria-label="Ações das prioridades">
         <button
           className="btn btn-outline-secondary"
           type="button"
@@ -123,6 +115,14 @@ export default function SchedulePrioritiesSection() {
           onClick={resetRecommended}
         >
           Repor valores recomendados
+        </button>
+        <button
+          className="btn btn-primary"
+          type="button"
+          disabled={updateMutation.isPending}
+          onClick={save}
+        >
+          Guardar prioridades
         </button>
       </div>
     </section>

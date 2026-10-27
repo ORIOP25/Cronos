@@ -113,6 +113,14 @@ describe('Schedule priorities configuration', () => {
     expect(explanation).toHaveAttribute('open')
   })
 
+  it('groups reset and save at the end of the form, with save last', async () => {
+    renderWithProviders(<SchoolConfig />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Prioridades do horário' }))
+    const actions = await screen.findByRole('group', { name: 'Ações das prioridades' })
+    expect(within(actions).getAllByRole('button').map((button) => button.textContent.trim())).toEqual(['Repor valores recomendados', 'Guardar prioridades'])
+    expect(actions).toHaveClass('justify-content-end')
+  })
+
   it('shows the warnings as discreet secondary text after the impact lines, only where they exist', async () => {
     renderWithProviders(<SchoolConfig />)
     fireEvent.click(screen.getByRole('tab', { name: 'Prioridades do horário' }))

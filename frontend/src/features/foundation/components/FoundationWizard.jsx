@@ -507,7 +507,7 @@ export function FoundationWizard() {
               </CButton>
             ) : (
               <CButton
-                color="success"
+                color="primary"
                 disabled={isBlocked || !confirmed}
                 onClick={handleCompleteActivation}
               >

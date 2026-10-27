@@ -150,7 +150,7 @@ const MemberModal = ({ visible, member, subjects, onClose, onSave, isSaving, err
           <div className="mb-3"><FeedbackBanner tone="warning">Confirme primeiro o acesso deste membro para o poder editar.</FeedbackBanner></div>
         )}
         {member && <fieldset disabled={isSaving} className="member-management mb-4" aria-label="Gestão do membro">
-          {onAvailability && <CButton color="secondary" variant="outline" onClick={onAvailability} disabled={isSaving}>Editar disponibilidade</CButton>}
+          {onAvailability && <CButton color="primary" variant="outline" onClick={onAvailability} disabled={isSaving}>Editar disponibilidade</CButton>}
           {actions}
         </fieldset>}
         <fieldset disabled={!canEdit} className="d-grid gap-3">
