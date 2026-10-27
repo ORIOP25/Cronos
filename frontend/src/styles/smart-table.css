@@ -13,7 +13,7 @@
   .zen-table--selectable thead .selection-column { padding: 0; }
   .zen-table--selectable .selection-column { width: auto; }
   .zen-table--selectable .selection-column__label { display: inline; font-size: .8rem; text-transform: none; letter-spacing: normal; }
-  .zen-table--selectable tbody tr { position: relative; padding-left: 56px; }
+  .zen-table.zen-table--selectable tbody tr { position: relative; padding-left: 56px; }
   .zen-table--selectable tbody .selection-column { position: absolute; top: 8px; left: 8px; width: 44px; padding: 0; }
   .zen-table--selectable tbody .selection-column::before { display: none; }
 }

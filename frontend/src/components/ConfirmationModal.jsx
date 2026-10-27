@@ -1,3 +1,4 @@
+import { useId } from 'react'
 import {
   CModal,
   CModalHeader,
@@ -80,4 +81,3 @@ const ConfirmationModal = ({
 }
 
 export default ConfirmationModal
-import { useId } from 'react'

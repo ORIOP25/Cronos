@@ -33,6 +33,7 @@ test('removes selected subjects with one confirmation', async ({ page }, testInf
       await page.screenshot({ path: testInfo.outputPath(`bulk-selection-${width}.png`), fullPage: true })
       await toolbar.getByRole('button', { name: /remover selecionados/i }).click()
       const dialog = page.getByRole('dialog', { name: 'Remover selecionados', exact: true })
+      await expect(dialog).toHaveCSS('opacity', '1')
       await expect(dialog.getByRole('list', { name: 'Registos selecionados' }).getByRole('listitem')).toHaveCount(2)
       await expect(dialog.getByRole('button', { name: 'Cancelar', exact: true })).toHaveClass(/btn-outline-secondary/)
       await expect(dialog.getByRole('button', { name: 'Remover', exact: true })).toHaveCSS('background-color', 'rgb(143, 45, 11)')
@@ -42,6 +43,7 @@ test('removes selected subjects with one confirmation', async ({ page }, testInf
         expect(accessibility.violations).toEqual([])
       }
       await dialog.getByRole('button', { name: 'Cancelar', exact: true }).click()
+      await expect(dialog).toBeHidden()
       await expect(page.getByRole('checkbox', { name: `Selecionar ${names[0]}` })).toBeChecked()
     }
     await page.getByRole('button', { name: /remover selecionados/i }).click()

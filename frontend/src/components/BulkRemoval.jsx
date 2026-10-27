@@ -1,11 +1,11 @@
 import CIcon from '@coreui/icons-react'
-import { cilTrash } from '@coreui/icons'
+import { cilTrash, cilX } from '@coreui/icons'
 import ConfirmationModal from './ConfirmationModal'
 import FeedbackBanner from './FeedbackBanner'
 
 export function BulkSelectionCheckbox({ label, checked, mixed = false, disabled, onChange, children }) {
   return (
-    <label className="bulk-selection" title={label} onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
+    <label className="bulk-selection" title={label} onClick={(event) => event.stopPropagation()}>
       <input
         type="checkbox"
         className="form-check-input"
@@ -14,6 +14,7 @@ export function BulkSelectionCheckbox({ label, checked, mixed = false, disabled,
         ref={(input) => { if (input) input.indeterminate = mixed }}
         disabled={disabled}
         onChange={onChange}
+        onKeyDown={(event) => event.stopPropagation()}
       />
       {children}
     </label>
@@ -33,9 +34,11 @@ export function BulkRemovalActions({ bulk, message }) {
         <section className="bulk-selection-toolbar" aria-label="Ações da seleção">
           <output className="fw-semibold" aria-live="polite">{count} {count === 1 ? 'selecionado' : 'selecionados'}</output>
           <div className="d-flex flex-wrap justify-content-end gap-2">
-            <button type="button" className="btn btn-outline-secondary btn-sm" disabled={bulk.pending} onClick={clearSelection}>Limpar seleção</button>
-            <button type="button" className="btn btn-outline-danger btn-sm" disabled={bulk.pending} onClick={() => bulk.setConfirming(true)}>
-              <CIcon icon={cilTrash} className="me-2" aria-hidden="true" />Remover selecionados
+            <button type="button" className="btn btn-outline-secondary btn-sm" aria-label="Limpar seleção" title="Limpar seleção" disabled={bulk.pending} onClick={clearSelection}>
+              <CIcon icon={cilX} aria-hidden="true" />
+            </button>
+            <button type="button" className="btn btn-outline-danger btn-sm" aria-label="Remover selecionados" disabled={bulk.pending} onClick={() => bulk.setConfirming(true)}>
+              <CIcon icon={cilTrash} className="me-2" aria-hidden="true" />Remover
             </button>
           </div>
         </section>

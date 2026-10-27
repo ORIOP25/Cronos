@@ -51,6 +51,7 @@
 .table .bulk-selected { --cui-table-bg: var(--cronos-surface-muted); }
 .bulk-selection-toolbar { position: sticky; top: 16px; z-index: 10; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 12px 0; margin-bottom: 16px; border-bottom: 1px solid var(--cronos-border); background: var(--cronos-bg); }
 .bulk-selection-toolbar > div { margin-left: auto; }
+.bulk-selection-toolbar .btn { min-width: 44px; min-height: 44px; }
 .bulk-removal-records { list-style: none; padding: 0; margin: 16px 0 0; }
 .bulk-removal-records > li { padding: 10px 0; border-top: 1px solid var(--cronos-border); overflow-wrap: anywhere; }
 @media (max-width: 991px) { .bulk-selection-toolbar { top: 76px; } }
