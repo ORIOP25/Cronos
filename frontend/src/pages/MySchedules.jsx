@@ -318,7 +318,7 @@ function MySchedules() {
           </div>
         </CCardHeader>
         <CCardBody>
-          <div className="d-flex gap-2 align-items-center justify-content-end flex-wrap mb-3" role="group" aria-label="Navegar entre semanas">
+          <fieldset className="d-flex gap-2 align-items-center justify-content-end flex-wrap mb-3 border-0 p-0" aria-label="Navegar entre semanas">
             <CButton color="secondary" variant="outline" size="sm" onClick={handlePrevWeek}>
               <CIcon icon={cilArrowLeft} className="me-1" />
               Semana anterior
@@ -330,7 +330,7 @@ function MySchedules() {
               Próxima semana
               <CIcon icon={cilArrowRight} className="ms-1" />
             </CButton>
-          </div>
+          </fieldset>
           <div className="small text-muted mb-3">
             Limite de navegação: {minWeekStart ? `de ${formatDate(minWeekStart)} ` : ''}até {formatDate(hardEndDate)}.
           </div>
