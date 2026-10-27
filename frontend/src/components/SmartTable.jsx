@@ -9,7 +9,7 @@ import { getApiErrorMessage, isApiErrorBlock } from '../utils/apiErrors'
 import { useAttemptScope } from '../hooks/useAttemptScope'
 import StatePanel from './StatePanel'
 import FeedbackBanner from './FeedbackBanner'
-import { BulkRemovalActions } from './BulkRemoval'
+import { BulkRemovalActions, BulkSelectionCheckbox } from './BulkRemoval'
 import { useBulkRemoval } from '../hooks/useBulkRemoval'
 
 const RowActions = ({
@@ -72,6 +72,7 @@ const SmartTable = ({
   getRowLabel,
   emptyAction,
   deleteMessage,
+  bulkDeleteMessage = deleteMessage,
   allowEdit = true,
   allowDelete = true,
   readOnly = false,
@@ -114,8 +115,11 @@ const SmartTable = ({
   }
 
   const activateRow = (event, item) => {
-    if (!isClickable || !['Enter', ' '].includes(event.key)) return
-    event.preventDefault()
+    if (!isClickable || event.target.closest('input, label, button, a, select, textarea')) return
+    if (event.type === 'keydown') {
+      if (!['Enter', ' '].includes(event.key)) return
+      event.preventDefault()
+    }
     onRowClick(item)
   }
   
@@ -134,12 +138,16 @@ const SmartTable = ({
 
   return (
     <>
-      {bulkEnabled && <><label className="me-3"><input type="checkbox" aria-label="Selecionar todos" checked={bulk.available.length === data.length} onChange={bulk.toggleAll} disabled={bulk.pending} /> Selecionar todos</label><BulkRemovalActions bulk={bulk} message={typeof deleteMessage === 'function' ? bulk.available.map((item) => `${item.name}: ${deleteMessage(item)}`) : deleteMessage} /></>}
+      {bulkEnabled && <BulkRemovalActions bulk={bulk} message={bulkDeleteMessage} />}
       <CCard className="border-0 shadow-sm"><CCardBody className="p-0 zen-reveal">
-        <table className="zen-table">
+        <table className={`zen-table${bulkEnabled ? ' zen-table--selectable' : ''}`}>
           <thead>
             <tr>
-              {bulkEnabled && <th aria-label="Seleção" />}
+              {bulkEnabled && <th className="selection-column" aria-label="Seleção">
+                <BulkSelectionCheckbox label="Selecionar todos" checked={bulk.available.length === data.length} mixed={bulk.available.length > 0 && bulk.available.length < data.length} onChange={bulk.toggleAll} disabled={bulk.pending}>
+                  <span className="selection-column__label">Selecionar todos</span>
+                </BulkSelectionCheckbox>
+              </th>}
               {columns.map((col) => (
                 <th key={col.key || col.label} style={col._style}>
                   {col.label}
@@ -152,13 +160,13 @@ const SmartTable = ({
             {data.map((item, rowIndex) => (
               <tr 
                 key={item.id || rowIndex}
-                onClick={isClickable ? () => onRowClick(item) : undefined}
+                onClick={isClickable ? (event) => activateRow(event, item) : undefined}
                 onKeyDown={isClickable ? (event) => activateRow(event, item) : undefined}
                 tabIndex={isClickable ? 0 : undefined}
                 aria-label={isClickable ? getRowLabel?.(item) : undefined}
-                className={isClickable ? 'zen-table-row-interactive' : undefined}
+                className={`${isClickable ? 'zen-table-row-interactive' : ''} ${bulk.available.some((selected) => selected.id === item.id) ? 'bulk-selected' : ''}`.trim()}
               >
-                {bulkEnabled && <td><input type="checkbox" aria-label={`Selecionar ${getRowLabel?.(item) ?? item.name ?? item.id}`} checked={bulk.selected.includes(item.id)} onChange={() => bulk.toggle(item.id)} onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()} disabled={bulk.pending} /></td>}
+                {bulkEnabled && <td className="selection-column"><BulkSelectionCheckbox label={`Selecionar ${getRowLabel?.(item) ?? item.name ?? item.id}`} checked={bulk.selected.includes(item.id)} onChange={() => bulk.toggle(item.id)} disabled={bulk.pending} /></td>}
                 {columns.map((col) => (
                   <td key={col.key || col.label} data-label={col.label}>
                     {col.render ? col.render(item) : item[col.key]}

@@ -21,7 +21,7 @@ import {
   useDeleteRoom,
 } from '../features/catalog/data'
 
-const ROOM_DELETE_MESSAGE = 'Remover esta sala? As regras de configuração que a usam serão retiradas e o histórico de horários será preservado. Se estiver no horário atual, a remoção é bloqueada.'
+const ROOM_DELETE_MESSAGE = 'As regras de configuração que a usam serão retiradas e o histórico de horários será preservado. Se estiver no horário atual, a remoção é bloqueada.'
 
 const removeRoomMessage = (room) => {
   const classNames = (room.home_classes ?? []).map((turma) => turma.name)
@@ -115,7 +115,8 @@ const Rooms = ({ readOnly = false, allowedActions }) => {
             allowEdit={canUpdate}
             allowDelete={canDelete}
             getRowLabel={(room) => room.name}
-            deleteMessage={removeRoomMessage}
+            deleteMessage={(room) => `Remover esta sala? ${removeRoomMessage(room)}`}
+            bulkDeleteMessage={removeRoomMessage}
           />
 
       <GenericModalForm

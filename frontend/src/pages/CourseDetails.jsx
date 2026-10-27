@@ -11,7 +11,7 @@ import {
 } from '@coreui/icons'
 import { toast } from 'react-hot-toast'
 import FeedbackBanner from '../components/FeedbackBanner'
-import { BulkRemovalActions } from '../components/BulkRemoval'
+import { BulkRemovalActions, BulkSelectionCheckbox } from '../components/BulkRemoval'
 import { useBulkRemoval } from '../hooks/useBulkRemoval'
 import GenericModalForm from '../components/GenericModalForm'
 import ClassInCourseForm from '../components/Forms/ClassInCourseForm'
@@ -38,8 +38,9 @@ const ClassRow = ({ cls, onNavigate, onEdit, onDelete, bulk, navigationDisabled 
   const yearLabel = `${cls.start_year}/${cls.end_year}`
 
   return (
-    <div className="compact-row d-flex justify-content-between align-items-center gap-3 flex-wrap">
-          {canDelete && <input type="checkbox" aria-label={`Selecionar ${cls.name}`} checked={bulk.selected.includes(cls.id)} onChange={() => bulk.toggle(cls.id)} disabled={bulk.pending} />}
+    <div className={`compact-row d-flex justify-content-between align-items-center gap-3 flex-wrap${bulk.selected.includes(cls.id) ? ' bulk-selected' : ''}`}>
+          <div className="d-flex align-items-center gap-2 bulk-record-label">
+          {canDelete && <BulkSelectionCheckbox label={`Selecionar ${cls.name}`} checked={bulk.selected.includes(cls.id)} onChange={() => bulk.toggle(cls.id)} disabled={bulk.pending} />}
           <div>
             <button
               type="button"
@@ -51,6 +52,7 @@ const ClassRow = ({ cls, onNavigate, onEdit, onDelete, bulk, navigationDisabled 
               <h6 className="mb-0 fw-bold">{cls.name}</h6>
             </button>
             <small className="d-block text-muted">{formatGradeLevel(cls.grade_level)} · {yearLabel} · {cls.size} alunos</small>
+          </div>
           </div>
           <div className="d-flex align-items-center gap-1">
             {canEdit && <CButton
@@ -364,6 +366,9 @@ const CourseDetails = ({ courseIdOverride, readOnly = false, allowedActions, nav
         <CCol lg={12}>
           <CCard className="border-0 shadow-sm h-100">
             <CCardHeader className="bg-transparent d-flex align-items-center gap-2">
+              {canDelete && (course.classes || []).length > 0 && (
+                <BulkSelectionCheckbox label="Selecionar todas as turmas" checked={bulk.available.length === course.classes.length} mixed={bulk.available.length > 0 && bulk.available.length < course.classes.length} onChange={bulk.toggleAll} disabled={bulk.pending} />
+              )}
               <CIcon icon={cilPeople} className="text-success" />
               <strong>Turmas</strong>
               <CButton
@@ -379,10 +384,7 @@ const CourseDetails = ({ courseIdOverride, readOnly = false, allowedActions, nav
               </CButton>
             </CCardHeader>
             <CCardBody>
-              {canDelete && (course.classes || []).length > 0 && <>
-                <label className="me-3"><input type="checkbox" aria-label="Selecionar todas as turmas" checked={bulk.available.length === course.classes.length} onChange={bulk.toggleAll} disabled={bulk.pending} /> Selecionar todas</label>
-                <BulkRemovalActions bulk={bulk} message="As associações serão retiradas e o histórico preservado. Turmas no horário atual podem estar bloqueadas." />
-              </>}
+              {canDelete && <BulkRemovalActions bulk={bulk} message="As associações serão retiradas e o histórico preservado. Turmas no horário atual podem estar bloqueadas." />}
               {(course.classes || []).length === 0 ? (
                 <div className="text-muted text-center mb-0">
                   <p className="mb-0">Nenhuma turma criada para este curso.</p>

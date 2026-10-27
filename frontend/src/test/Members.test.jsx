@@ -290,7 +290,7 @@ it('only allows removable members to be selected for bulk removal', async () => 
   fireEvent.click(screen.getByRole('checkbox', { name: 'Selecionar Ana' }))
   expect(screen.getByRole('checkbox', { name: 'Selecionar Bia' })).toBeDisabled()
   fireEvent.click(screen.getByRole('button', { name: /remover selecionados/i }))
-  fireEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Remover' }))
   await waitFor(() => expect(removeMock).toHaveBeenCalledWith(4))
   expect(removeMock).not.toHaveBeenCalledWith(5)
 })

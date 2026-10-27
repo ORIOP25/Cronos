@@ -86,6 +86,7 @@ Bulk removal lets administrators select visible courses, classes, subjects, room
 It asks for one confirmation, then calls the existing removal action for each selected record.
 The operation reports individual failures and keeps those records selected. Successful removals do not roll back.
 Room confirmations include the effects on fixed-room assignments. Changing organization clears the selection and feedback.
+`BulkRemoval.jsx` owns the shared selection controls, contextual actions, confirmation list and collapsible failure details. The select-all control stays available in the mobile table layout. `useBulkRemoval` keeps removal state and execution separate from presentation.
 
 Route guards move through loading, signed-out, organization selection, member error, or authorized states.
 Contact submission moves through questionnaire steps, pending, error, and success states.
