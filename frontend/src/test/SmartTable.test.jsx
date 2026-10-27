@@ -14,6 +14,19 @@ describe('SmartTable', () => {
     resetClerkState()
   })
 
+  it('does not open a row when its native controls receive clicks or keyboard input', () => {
+    const row = { id: 1, name: 'A' }
+    const open = vi.fn()
+    render(<SmartTable columns={[{ key: 'note', label: 'Nota', render: () => <input aria-label="Nota da linha" /> }]} data={[row]} onRowClick={open} getRowLabel={(item) => `Abrir ${item.name}`} />)
+    const input = screen.getByRole('textbox', { name: 'Nota da linha' })
+    fireEvent.click(input)
+    fireEvent.keyDown(input, { key: ' ' })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(open).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('row', { name: 'Abrir A' }))
+    expect(open).toHaveBeenCalledExactlyOnceWith(row)
+  })
+
   it('ignores a removal that resolves after the organization changed', async () => {
     let resolveDelete
     const onDelete = vi.fn(() => new Promise((resolve) => { resolveDelete = resolve }))

@@ -115,8 +115,11 @@ const SmartTable = ({
   }
 
   const activateRow = (event, item) => {
-    if (!isClickable || !['Enter', ' '].includes(event.key)) return
-    event.preventDefault()
+    if (!isClickable || event.target.closest('input, label, button, a, select, textarea')) return
+    if (event.type === 'keydown') {
+      if (!['Enter', ' '].includes(event.key)) return
+      event.preventDefault()
+    }
     onRowClick(item)
   }
   
@@ -157,11 +160,11 @@ const SmartTable = ({
             {data.map((item, rowIndex) => (
               <tr 
                 key={item.id || rowIndex}
-                onClick={isClickable ? () => onRowClick(item) : undefined}
+                onClick={isClickable ? (event) => activateRow(event, item) : undefined}
                 onKeyDown={isClickable ? (event) => activateRow(event, item) : undefined}
                 tabIndex={isClickable ? 0 : undefined}
                 aria-label={isClickable ? getRowLabel?.(item) : undefined}
-                className={`${isClickable ? 'zen-table-row-interactive' : ''} ${bulkEnabled && bulk.selected.includes(item.id) ? 'bulk-selected' : ''}`.trim() || undefined}
+                className={`${isClickable ? 'zen-table-row-interactive' : ''} ${bulk.available.some((selected) => selected.id === item.id) ? 'bulk-selected' : ''}`.trim()}
               >
                 {bulkEnabled && <td className="selection-column"><BulkSelectionCheckbox label={`Selecionar ${getRowLabel?.(item) ?? item.name ?? item.id}`} checked={bulk.selected.includes(item.id)} onChange={() => bulk.toggle(item.id)} disabled={bulk.pending} /></td>}
                 {columns.map((col) => (

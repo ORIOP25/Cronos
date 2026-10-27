@@ -10,7 +10,8 @@ vi.mock('../features/catalog/data', () => ({
 }))
 it('removes selected courses after confirmation', async () => {
   renderWithRouter(<Courses />)
-  fireEvent.click(screen.getByRole('checkbox', { name: 'Selecionar Curso A' }))
+  fireEvent.click(screen.getByTitle('Selecionar Curso A'))
+  expect(screen.getByRole('checkbox', { name: 'Selecionar Curso A' })).toBeChecked()
   fireEvent.click(screen.getByRole('button', { name: /remover selecionados/i }))
   expect(remove).not.toHaveBeenCalled()
   fireEvent.click(screen.getByRole('button', { name: 'Remover' }))

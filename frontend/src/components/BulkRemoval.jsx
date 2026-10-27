@@ -5,7 +5,7 @@ import FeedbackBanner from './FeedbackBanner'
 
 export function BulkSelectionCheckbox({ label, checked, mixed = false, disabled, onChange, children }) {
   return (
-    <label className="bulk-selection" title={label} onClick={(event) => event.stopPropagation()}>
+    <label className="bulk-selection" title={label}>
       <input
         type="checkbox"
         className="form-check-input"
@@ -14,7 +14,6 @@ export function BulkSelectionCheckbox({ label, checked, mixed = false, disabled,
         ref={(input) => { if (input) input.indeterminate = mixed }}
         disabled={disabled}
         onChange={onChange}
-        onKeyDown={(event) => event.stopPropagation()}
       />
       {children}
     </label>
