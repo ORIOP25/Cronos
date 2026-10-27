@@ -14,35 +14,74 @@ test.beforeEach(async ({ page }) => {
 test('compact imports and priorities fit mobile, tablet and desktop', async ({ page }, testInfo) => {
   await seedMinimalSchedulerInputs(page)
   await generateAndApproveThroughUi(page)
+  await goTo(page, '/imports')
   for (const width of [375, 768, 1440]) {
     await page.setViewportSize({ width, height: 1000 })
-    await goTo(page, '/imports')
     await expect(page.getByRole('heading', { name: 'Importar dados' })).toBeVisible()
     await expect(page.locator('.import-resource')).toHaveCount(8)
     await expect(page.locator('.import-resource details[open]')).toHaveCount(0)
     await expect(page.getByLabel('Selecionar ficheiro CSV de salas')).toBeVisible()
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
     await page.screenshot({ path: testInfo.outputPath(`imports-${width}.png`), fullPage: true })
-
-    await goTo(page, '/config')
-    await page.getByRole('tab', { name: 'Prioridades do horário' }).click()
+  }
+  await goTo(page, '/config')
+  await page.getByRole('tab', { name: 'Prioridades do horário' }).click()
+  for (const width of [375, 768, 1440]) {
+    await page.setViewportSize({ width, height: 1000 })
     await expect(page.getByRole('radiogroup')).toHaveCount(10)
+    const selectedPriority = page.locator('.priority-levels input:checked + label').first()
+    const selectedColors = await selectedPriority.evaluate((element) => {
+      const style = getComputedStyle(element)
+      return { border: style.borderColor, background: style.backgroundColor }
+    })
+    expect(selectedColors.border).toBe(selectedColors.background)
+    const titleGap = await page.locator('.priority-row legend').first().evaluate((element) => {
+      const range = document.createRange()
+      range.selectNodeContents(element)
+      return range.getBoundingClientRect().top - element.closest('fieldset').getBoundingClientRect().top
+    })
+    expect(titleGap).toBeGreaterThanOrEqual(16)
+    const actions = page.getByRole('group', { name: 'Ações das prioridades' })
+    await expect(actions).toHaveCSS('justify-content', 'flex-end')
     await expect(page.locator('.priority-row details[open]')).toHaveCount(0)
     await page.locator('.priority-row summary').first().click()
     await expect(page.locator('.priority-row details[open]')).toHaveCount(1)
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
     await page.screenshot({ path: testInfo.outputPath(`priorities-${width}.png`), fullPage: true })
-    await goTo(page, '/dashboard')
+    await page.locator('.priority-row summary').first().click()
+  }
+  await expect(page.locator('.priority-list')).toBeVisible()
+  const accessibility = await new AxeBuilder({ page }).include('.priority-list').withTags(['wcag2a', 'wcag2aa']).analyze()
+  expect(accessibility.violations).toEqual([])
+  await goTo(page, '/dashboard')
+  for (const width of [375, 768, 1440]) {
+    await page.setViewportSize({ width, height: 1000 })
     await expect(page.getByTestId('schedule-health')).toBeVisible()
     expect(await page.getByTestId('class-progress-row').count()).toBeLessThanOrEqual(5)
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
     await page.screenshot({ path: testInfo.outputPath(`dashboard-${width}.png`), fullPage: true })
   }
+})
+
+test('priority controls retain Cronos colors while saving', async ({ page }) => {
   await goTo(page, '/config')
   await page.getByRole('tab', { name: 'Prioridades do horário' }).click()
-  await expect(page.locator('.priority-list')).toBeVisible()
-  const accessibility = await new AxeBuilder({ page }).include('.priority-list').withTags(['wcag2a', 'wcag2aa']).analyze()
-  expect(accessibility.violations).toEqual([])
+  const radio = page.locator('.priority-levels input:not(:checked)').first()
+  const label = page.locator('.priority-levels input:not(:checked) + label').first()
+  const normalColor = await label.evaluate((element) => getComputedStyle(element).color)
+  let pendingRoute
+  const endpoint = '**/school/settings/schedule-priorities'
+  await page.route(endpoint, (route) => { pendingRoute = route })
+  try {
+    await page.getByRole('button', { name: 'Guardar prioridades', exact: true }).click()
+    await expect(radio).toBeDisabled()
+    await expect(label).toHaveCSS('color', normalColor)
+    await expect(label).toHaveCSS('border-color', normalColor)
+  } finally {
+    if (pendingRoute) await pendingRoute.continue()
+    await page.unroute(endpoint)
+  }
+  await expect(page.getByRole('status').filter({ hasText: 'Prioridades guardadas.' })).toBeVisible()
 })
 
 test('a room creates and selects its type in context while retaining its draft', async ({ page }) => {
@@ -142,6 +181,12 @@ test('the team screen exposes the school-presence rule and its CSV model without
   await teacherRow.getByRole('button', { name: 'Editar membro', exact: true }).click()
   const availabilityButton = page.getByRole('button', { name: 'Editar disponibilidade', exact: true })
   await expect(availabilityButton).toBeVisible({ timeout: 30_000 })
+  await expect(availabilityButton).toHaveClass(/btn-outline-primary/)
+  const memberDialog = page.getByRole('dialog')
+  await expect(memberDialog.getByRole('button', { name: 'Cancelar', exact: true })).toHaveClass(/btn-outline-secondary/)
+  const actionColor = await availabilityButton.evaluate((element) => getComputedStyle(element).color)
+  const primaryBackground = await memberDialog.getByRole('button', { name: 'Guardar', exact: true }).evaluate((element) => getComputedStyle(element).backgroundColor)
+  expect(actionColor).toBe(primaryBackground)
   const presenceRequest = page.waitForResponse((response) => (
     response.url().includes('/presence')
     && response.request().method() === 'GET'

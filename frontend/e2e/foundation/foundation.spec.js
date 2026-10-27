@@ -1,5 +1,6 @@
 import { createClerkClient } from '@clerk/backend'
 import { expect, test } from '@playwright/test'
+import AxeBuilder from '@axe-core/playwright'
 import {
   attachRuntimeGuards,
   expectNoAppCrash,
@@ -10,7 +11,7 @@ import { cleanupFreshFounder, createFreshFounder } from '../utils/fresh-founder.
 test.describe.configure({ mode: 'serial' })
 
 test.describe('Foundation — canonical activation', () => {
-  test('validates and activates the complete foundation snapshot', async ({ page }) => {
+  test('validates and activates the complete foundation snapshot', async ({ page }, testInfo) => {
     test.setTimeout(120_000)
     const secretKey = process.env.CLERK_SECRET_KEY
     if (!secretKey) throw new Error('CLERK_SECRET_KEY is required for foundation E2E.')
@@ -71,6 +72,17 @@ test.describe('Foundation — canonical activation', () => {
     await expect(confirmation).not.toBeChecked()
     await expect(page.getByRole('button', { name: /^Ativar Escola$/i })).toBeDisabled()
     await confirmation.check()
+    const activation = page.getByRole('button', { name: /^Ativar Escola$/i })
+    await expect(activation).toBeEnabled()
+    await expect(activation).toHaveClass(/btn-primary/)
+    const accessibility = await new AxeBuilder({ page }).include('button.btn-primary').withTags(['wcag2a', 'wcag2aa']).analyze()
+    expect(accessibility.violations).toEqual([])
+    for (const width of [375, 768, 1440]) {
+      await page.setViewportSize({ width, height: 1000 })
+      await expect(activation).toBeVisible()
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+      await page.screenshot({ path: testInfo.outputPath(`foundation-activation-${width}.png`), fullPage: true })
+    }
 
     const completeResponse = page.waitForResponse((response) => (
       response.url().includes('/api/v1/foundation/complete') &&

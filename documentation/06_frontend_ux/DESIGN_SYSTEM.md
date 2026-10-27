@@ -55,6 +55,12 @@ Cronos employs a warm, authoritative visual identity designed for educational tr
 - Dashboard lists show a compact overview. Users can expand class progress or conflict details without losing access to entries.
 - The team table has one edit entry per member. The editor groups profile, availability and permitted access actions.
 - Room forms create and select room types in context. Existing type management returns to the same room draft.
+- Primary actions use the shared primary button theme, including activation. Contextual edit actions use the outlined primary variant.
+- Cancellation retains its secondary variant. Primary button selection, hover and keyboard focus use Cronos colors.
+- Place reset and save actions at the lower right, with the primary save action last.
+- Course classes and class assignments use divided rows. Teacher progress and class module progress use native compact disclosures.
+- Progress editing exposes module controls automatically. Optional proposal analysis starts closed; required warnings and approval controls remain visible.
+- Weekly review uses selectable teacher rows with `aria-pressed`; filters keep their visible label associations.
 - Authenticated application tokens live in `frontend/src/index.css`.
 - Canonical shared tokens live in `frontend/src/styles/brand.tokens.css`.
 - Marketing-specific tokens live in `frontend/src/features/marketing/styles/`.

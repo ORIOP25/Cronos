@@ -32,6 +32,8 @@
 .compact-disclosure[open] > summary::after { content: '−'; }
 .compact-disclosure > summary:focus-visible { outline: 2px solid var(--cronos-accent); outline-offset: 4px; }
 .compact-disclosure > summary > :first-child { min-width: 0; }
+.compact-disclosure > summary .d-flex { flex-wrap: wrap; }
+.compact-disclosure > summary { overflow-wrap: anywhere; }
 .compact-disclosure__body { padding-top: 16px; }
 .page-toolbar { display: flex; align-items: end; flex-wrap: wrap; gap: 16px; margin-bottom: 24px; }
 .teacher-list-row { display: block; width: 100%; padding: 14px 12px; border: 0; border-bottom: 1px solid var(--cronos-border); background: transparent; color: var(--cronos-ink); text-align: left; }
