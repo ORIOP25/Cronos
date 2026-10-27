@@ -31,7 +31,7 @@ vi.mock('../features/catalog/data', () => ({
 }))
 
 vi.mock('../components/TeacherAvailabilityModal', () => ({
-  default: ({ teacher }) => <div role="dialog">Disponibilidade — {teacher.name} (professor {teacher.id})</div>,
+  default: ({ teacher, onClose }) => <div role="dialog">Disponibilidade — {teacher.name} (professor {teacher.id})<button onClick={onClose}>Fechar disponibilidade</button></div>,
 }))
 
 describe('Members', () => {
@@ -92,6 +92,33 @@ describe('Members', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: 'Reenviar convite' }))
     fireEvent.click(within(dialog).getByRole('button', { name: 'Guardar' }))
     await waitFor(() => expect(updateMock).toHaveBeenCalledWith(expect.objectContaining({ organization_display_name: 'Ana editada', lock_version: 2 })))
+  })
+
+  it('keeps the original edit version when another change preceded the access action', async () => {
+    const member = { id: 4, organization_display_name: 'Ana', email: 'ana@example.test', lock_version: 1,
+      capabilities: ['teacher'], access_status: 'pending_invite', lifecycle_status: 'active',
+      actions: { can_edit: true, can_resend_invite: true } }
+    useMembersMock.mockReturnValue({ data: { items: [member] }, isLoading: false })
+    resendMock.mockReturnValue({ error: null, isPending: false, mutate: (_id, options) => options.onSuccess({ ...member, organization_display_name: 'Beatriz', lock_version: 3 }) })
+    renderWithRouter(<Members />)
+    fireEvent.click(screen.getByRole('button', { name: 'Editar membro' }))
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Reenviar convite' }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Guardar' }))
+    await waitFor(() => expect(updateMock).toHaveBeenCalledWith(expect.objectContaining({ lock_version: 1 })))
+  })
+
+  it('returns from availability with the unsaved member draft intact', async () => {
+    const member = { id: 4, teacher_id: 7, organization_display_name: 'Ana', email: 'ana@example.test', lock_version: 1,
+      capabilities: ['teacher'], access_status: 'none', lifecycle_status: 'active', actions: { can_edit: true } }
+    useMembersMock.mockReturnValue({ data: { items: [member] }, isLoading: false })
+    renderWithRouter(<Members />)
+    fireEvent.click(screen.getByRole('button', { name: 'Editar membro' }))
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.change(within(dialog).getByLabelText('Nome'), { target: { value: 'Ana editada' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Editar disponibilidade' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Fechar disponibilidade' }))
+    expect(await screen.findByLabelText('Nome')).toHaveValue('Ana editada')
   })
 
   it('closes the member editor after confirmed removal', async () => {

@@ -140,7 +140,9 @@ describe('Dashboard', () => {
     }]
     renderWithRouter(<><Dashboard /><LocationDisplay /></>)
     await userEvent.click(screen.getByText('Blocos em conflito (1)'))
-    expect(screen.getByText(/TAS 10.*Matemática.*Nuno Ramos.*42/)).toBeInTheDocument()
+    const conflict = screen.getByText('TAS 10 · Matemática')
+    expect(conflict.tagName).toBe('STRONG')
+    expect(conflict.closest('li')).toHaveTextContent('Nuno Ramos · Bloco 42')
     await userEvent.click(screen.getByRole('link', { name: /Abrir semana.*42/ }))
     expect(screen.getByTestId('location-display')).toHaveTextContent('/schedules?teacherId=7&weekStart=2026-10-12')
   })

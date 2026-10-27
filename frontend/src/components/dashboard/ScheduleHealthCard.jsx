@@ -65,7 +65,8 @@ export default function ScheduleHealthCard({ health, isLoading }) {
                 <ul className="context-list" aria-label="Blocos em conflito" tabIndex={0}>
                   {health.conflicting_lessons.map((lesson) => (
                     <li key={lesson.lesson_id} className="mb-2">
-                      <span>{lesson.class_name} · {lesson.subject_name} · {lesson.teacher_name} · Bloco {lesson.lesson_id}</span>
+                      <strong className="d-block">{lesson.class_name} · {lesson.subject_name}</strong>
+                      <span className="d-block text-muted">{lesson.teacher_name} · Bloco {lesson.lesson_id}</span>
                       <div>
                         {formatDate(lesson.school_date)} · {new Date(lesson.starts_at).toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Lisbon' })}
                         {'–'}{new Date(lesson.ends_at).toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Lisbon' })}

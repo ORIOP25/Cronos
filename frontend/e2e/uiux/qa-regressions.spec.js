@@ -12,6 +12,8 @@ test.beforeEach(async ({ page }) => {
 })
 
 test('compact imports and priorities fit mobile, tablet and desktop', async ({ page }, testInfo) => {
+  await seedMinimalSchedulerInputs(page)
+  await generateAndApproveThroughUi(page)
   for (const width of [375, 768, 1440]) {
     await page.setViewportSize({ width, height: 1000 })
     await goTo(page, '/imports')
@@ -30,7 +32,15 @@ test('compact imports and priorities fit mobile, tablet and desktop', async ({ p
     await expect(page.locator('.priority-row details[open]')).toHaveCount(1)
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
     await page.screenshot({ path: testInfo.outputPath(`priorities-${width}.png`), fullPage: true })
+    await goTo(page, '/dashboard')
+    await expect(page.getByTestId('schedule-health')).toBeVisible()
+    expect(await page.getByTestId('class-progress-row').count()).toBeLessThanOrEqual(5)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+    await page.screenshot({ path: testInfo.outputPath(`dashboard-${width}.png`), fullPage: true })
   }
+  await goTo(page, '/config')
+  await page.getByRole('tab', { name: 'Prioridades do horário' }).click()
+  await expect(page.locator('.priority-list')).toBeVisible()
   const accessibility = await new AxeBuilder({ page }).include('.priority-list').withTags(['wcag2a', 'wcag2aa']).analyze()
   expect(accessibility.violations).toEqual([])
 })

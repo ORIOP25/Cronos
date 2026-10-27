@@ -138,7 +138,7 @@ const MemberModal = ({ visible, member, subjects, onClose, onSave, isSaving, err
   }
 
   return (
-    <CModal visible={visible} onClose={isSaving ? undefined : onClose} keyboard={!isSaving} backdrop={isSaving ? 'static' : true} alignment="center" size="lg" className="app-modal" data-tutorial-target="member-form">
+    <CModal visible={visible} onClose={isSaving || !visible ? undefined : onClose} keyboard={!isSaving} backdrop={isSaving ? 'static' : true} alignment="center" size="lg" className="app-modal" data-tutorial-target="member-form">
       <CModalHeader>
         <CModalTitle>{member ? 'Editar membro' : 'Adicionar membro'}</CModalTitle>
       </CModalHeader>
@@ -334,7 +334,8 @@ const Members = ({ readOnly = false, allowedActions }) => {
 
   const managedMember = data?.items?.find((member) => member.id === selectedMember?.id) ?? selectedMember
   const actionSucceeded = (message) => (member) => {
-    setActionVersion(member.lock_version)
+    // Only our own next revision can advance the draft's concurrency token.
+    setActionVersion((current) => member.lock_version === (current ?? selectedMember.lock_version) + 1 ? member.lock_version : current)
     toast.success(message)
   }
   const memberActions = (member) => !isTutorial && member && <>
