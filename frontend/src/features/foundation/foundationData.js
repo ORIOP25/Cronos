@@ -6,6 +6,7 @@ import { invalidatePreparationQueries } from '../readiness/data'
 
 const FOUNDATION_STATUS_ROOT = 'foundation-status'
 const FOUNDATION_DRAFT_ROOT = 'foundation-draft'
+export const FOUNDATION_COMPLETE_ROOT = 'foundation-complete'
 
 export function useFoundationStatus() {
   const orgId = useOrganization().organization?.id
@@ -43,6 +44,7 @@ export function useCompleteFoundation() {
   const orgId = useOrganization().organization?.id
   const queryClient = useQueryClient()
   return useMutation({
+    mutationKey: orgQueryKey(FOUNDATION_COMPLETE_ROOT, orgId),
     mutationFn: (payload) => apiClient.post('/foundation/complete', payload),
     onSuccess: () => Promise.all([
       queryClient.invalidateQueries({ queryKey: orgQueryKey(FOUNDATION_STATUS_ROOT, orgId) }),
