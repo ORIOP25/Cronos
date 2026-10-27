@@ -79,6 +79,6 @@ it('removes selected classes after one confirmation', async () => {
   fireEvent.click(screen.getByRole('checkbox', { name: 'Selecionar 10.º A' }))
   fireEvent.click(screen.getByRole('checkbox', { name: 'Selecionar 10.º B' }))
   fireEvent.click(screen.getByRole('button', { name: /remover selecionados/i }))
-  fireEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Remover' }))
   await waitFor(() => expect(removeClassAsync).toHaveBeenCalledTimes(2))
 })

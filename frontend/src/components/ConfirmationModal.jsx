@@ -29,10 +29,12 @@ const ConfirmationModal = ({
   pendingText = TXT.SAVING,
 }) => {
   const isSlowRequest = useSlowRequest(isLoading)
+  const titleId = useId()
 
   return (
     <CModal
       className="confirmation-modal"
+      aria-labelledby={titleId}
       visible={visible}
       onClose={() => { if (!isLoading) onClose?.() }}
       alignment="center"
@@ -41,15 +43,15 @@ const ConfirmationModal = ({
       keyboard={!isLoading}
     >
       <CModalHeader>
-        <CModalTitle className="d-flex align-items-center gap-2">
-          <CIcon icon={cilWarning} className="text-warning" />
+        <CModalTitle id={titleId} className="d-flex align-items-center gap-2">
+          <CIcon icon={cilWarning} className="text-warning" aria-hidden="true" />
           {title}
         </CModalTitle>
       </CModalHeader>
       <CModalBody>
-        <p className="confirmation-modal__message">
+        <div className="confirmation-modal__message">
           {message}
-        </p>
+        </div>
         {isLoading && (
           <p className="small text-muted mb-0 mt-2" role="status" aria-live="polite">
             {isSlowRequest
@@ -78,3 +80,4 @@ const ConfirmationModal = ({
 }
 
 export default ConfirmationModal
+import { useId } from 'react'

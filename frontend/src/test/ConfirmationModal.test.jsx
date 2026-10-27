@@ -24,6 +24,7 @@ describe('ConfirmationModal', () => {
   it('mostra título e mensagem padrão', () => {
     render(<ConfirmationModal {...defaultProps} />)
     expect(screen.getByText('Confirmar Remoção')).toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: 'Confirmar Remoção' })).toBeInTheDocument()
     expect(screen.getByText(/Tem a certeza/)).toBeInTheDocument()
   })
 

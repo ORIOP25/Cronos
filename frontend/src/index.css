@@ -635,6 +635,28 @@ textarea {
   --cui-btn-focus-shadow-rgb: 92, 61, 46;
 }
 
+.btn-danger, .btn-outline-danger {
+  --cui-btn-border-color: var(--cronos-danger);
+  --cui-btn-hover-color: var(--cronos-surface);
+  --cui-btn-hover-bg: color-mix(in srgb, var(--cronos-danger) 85%, var(--cronos-ink));
+  --cui-btn-hover-border-color: var(--cui-btn-hover-bg);
+  --cui-btn-active-color: var(--cronos-surface);
+  --cui-btn-active-bg: var(--cui-btn-hover-bg);
+  --cui-btn-active-border-color: var(--cui-btn-hover-bg);
+  --cui-btn-focus-box-shadow: 0 0 0 .25rem var(--color-focus-ring);
+  --cui-btn-disabled-border-color: var(--rs-disabled);
+}
+.btn-danger {
+  --cui-btn-color: var(--cronos-surface);
+  --cui-btn-bg: var(--cronos-danger);
+  --cui-btn-disabled-color: var(--cronos-surface);
+  --cui-btn-disabled-bg: var(--rs-disabled);
+}
+.btn-outline-danger {
+  --cui-btn-color: var(--cronos-danger);
+  --cui-btn-disabled-color: var(--rs-disabled);
+}
+
 .btn-success {
   --cui-btn-color: var(--cronos-surface);
   --cui-btn-hover-color: var(--cronos-surface);

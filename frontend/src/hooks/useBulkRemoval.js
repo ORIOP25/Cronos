@@ -26,6 +26,7 @@ export function useBulkRemoval(items, onDelete) {
   const available = items.filter((item) => selected.includes(item.id))
   const toggle = (id) => setSelected((previous) => previous.includes(id) ? previous.filter((value) => value !== id) : [...previous, id])
   const toggleAll = () => setSelected(() => available.length === items.length ? [] : items.map((item) => item.id))
+  const clearSelection = () => setSelected([])
   const remove = async () => {
     const attempt = attemptScope.capture()
     const startedGeneration = generation.current
@@ -50,6 +51,6 @@ export function useBulkRemoval(items, onDelete) {
       if (succeeded.length) toast.success(`${succeeded.length} registo(s) removido(s) ou arquivado(s).`)
     }
   }
-  return { selected, available, confirming, setConfirming, pending, failures, toggle, toggleAll, remove }
+  return { selected, available, confirming, setConfirming, pending, failures, toggle, toggleAll, clearSelection, remove }
 }
 

@@ -13,7 +13,7 @@ it('removes selected courses after confirmation', async () => {
   fireEvent.click(screen.getByRole('checkbox', { name: 'Selecionar Curso A' }))
   fireEvent.click(screen.getByRole('button', { name: /remover selecionados/i }))
   expect(remove).not.toHaveBeenCalled()
-  fireEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Remover' }))
   await waitFor(() => expect(remove).toHaveBeenCalledWith(1))
   expect(remove).not.toHaveBeenCalledWith(2)
 })
