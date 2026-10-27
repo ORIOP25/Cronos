@@ -1,4 +1,4 @@
-import { test } from '@playwright/test'
+import { expect, test } from '@playwright/test'
 import {
   attachRuntimeGuards,
   clickSidebarRoute,
@@ -35,7 +35,7 @@ async function ensureFoundationComplete(page) {
 }
 
 test.describe('Real stack smoke', () => {
-  test('admin can complete Foundation and click every admin sidebar route', async ({ page }) => {
+  test('admin can complete Foundation and click every admin sidebar route', async ({ page }, testInfo) => {
     attachRuntimeGuards(page)
     await loginAsAdminReal(page)
     await ensureFoundationComplete(page)
@@ -55,10 +55,16 @@ test.describe('Real stack smoke', () => {
     ]) {
       await clickSidebarRoute(page, path)
       await expectNoAppCrash(page)
+      await expect(page.locator('.app-main .spinner-border')).toHaveCount(0)
+      for (const width of [375, 768, 1440]) {
+        await page.setViewportSize({ width, height: 1000 })
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+        await page.screenshot({ path: testInfo.outputPath(`${path.slice(1)}-${width}.png`), fullPage: true })
+      }
     }
   })
 
-  test('teacher can click every teacher sidebar route', async ({ page }) => {
+  test('teacher can click every teacher sidebar route', async ({ page }, testInfo) => {
     attachRuntimeGuards(page)
     await loginAsTeacherReal(page)
     await goTo(page, '/my-availability')
@@ -67,6 +73,12 @@ test.describe('Real stack smoke', () => {
     for (const path of ['/my-availability', '/my-schedules', '/my-progress']) {
       await clickSidebarRoute(page, path)
       await expectNoAppCrash(page)
+      await expect(page.locator('.app-main .spinner-border')).toHaveCount(0)
+      for (const width of [375, 768, 1440]) {
+        await page.setViewportSize({ width, height: 1000 })
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+        await page.screenshot({ path: testInfo.outputPath(`${path.slice(1)}-${width}.png`), fullPage: true })
+      }
     }
   })
 })

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Navigate, Outlet, useLocation } from 'react-router-dom'
 import { CSpinner } from '@coreui/react'
-import { useQueryClient } from '@tanstack/react-query'
+import { useIsMutating, useQueryClient } from '@tanstack/react-query'
 import {
   OrganizationSwitcher,
   RedirectToTasks,
@@ -13,6 +13,8 @@ import {
   useSession,
 } from '@clerk/react'
 import { CURRENT_LEGAL_VERSIONS } from './features/legal/data'
+import { FOUNDATION_COMPLETE_ROOT } from './features/foundation/foundationData'
+import { orgQueryKey } from './features/queryKeys'
 import { useOnboardingCompletion } from './features/onboarding/useOnboardingCompletion'
 import { recoverOrganizationSession } from './features/members/recoverOrganizationSession'
 import apiClient from './apiClient'
@@ -23,6 +25,7 @@ import {
   getMemberRoute,
   hasMemberCapability,
   isFoundationComplete,
+  ROUTE_DASHBOARD,
   ROUTE_FOUNDATION_WAITING,
   ROUTE_SCHOOL_CONFIG,
 } from './roleAccess'
@@ -202,6 +205,9 @@ function useOrganizationGuardState() {
 
 function MemberGate({ children, capability, requireTeacherId = false, redirectToMemberRoute = false, allowUncompletedFoundation = false, foundationWizard = false }) {
   const state = useOrganizationGuardState()
+  const foundationCompletionPending = useIsMutating({
+    mutationKey: orgQueryKey(FOUNDATION_COMPLETE_ROOT, state.organization?.id),
+  }) > 0
   const { data: member, isLoading: memberLoading, isError, error, refetch } = state.member
   if (!state.isLoaded || !state.sessionLoaded) return <PageLoader />
   if (state.session?.currentTask) return <RedirectToTasks />
@@ -228,11 +234,12 @@ function MemberGate({ children, capability, requireTeacherId = false, redirectTo
   if (redirectToMemberRoute) return <Navigate to={getMemberRoute(member)} replace />
 
   // Foundation wizard: only the founder of an incomplete organization runs it.
-  // A completed organization continues at school configuration, never in the wizard.
+  // Keep an activation in progress on its dashboard destination while caches reconcile.
+  // Revisiting the wizard after completion opens school configuration.
   if (foundationWizard) {
     if (isFoundationComplete(member)) {
       return hasMemberCapability(member, 'admin')
-        ? <Navigate to={ROUTE_SCHOOL_CONFIG} replace />
+        ? <Navigate to={foundationCompletionPending ? ROUTE_DASHBOARD : ROUTE_SCHOOL_CONFIG} replace />
         : <Navigate to={getDefaultRouteForMember(member)} replace />
     }
     const canRunWizard = hasMemberCapability(member, 'admin') && member.can_manage_foundation === true
@@ -243,6 +250,7 @@ function MemberGate({ children, capability, requireTeacherId = false, redirectTo
 
   // Foundation gate: incomplete organizations have no operational routes.
   if (!allowUncompletedFoundation && !isFoundationComplete(member)) {
+    if (foundationCompletionPending && hasMemberCapability(member, 'admin')) return <PageLoader />
     return <Navigate to={getFoundationLandingRoute(member)} replace />
   }
 

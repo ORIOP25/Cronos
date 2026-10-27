@@ -283,9 +283,10 @@ function MySchedules() {
   return (
     <div className="p-4">
       {pageHeader}
-      <div className="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
-        <div></div>
-        <div className="d-flex gap-2 align-items-center flex-wrap">
+      <CCard className="border-0 shadow-sm mb-4" role="region" aria-label="Horário semanal">
+        <CCardHeader className="bg-light border-0 d-flex justify-content-between align-items-center flex-wrap gap-3">
+          <div className="d-flex gap-2 align-items-center flex-wrap">
+          <div className="fw-semibold">Semana: {formatWeekRange(weekStart)}</div>
           {horizon?.active_generation_id ? (
             <CBadge color="success" className="px-3 py-2">
               Horário publicado
@@ -295,13 +296,8 @@ function MySchedules() {
               Ainda sem horário publicado
             </CBadge>
           )}
-        </div>
-      </div>
-
-      <CCard className="border-0 shadow-sm mb-4">
-        <CCardHeader className="bg-light border-0 d-flex justify-content-between align-items-center flex-wrap gap-2">
-          <div className="fw-semibold">Semana: {formatWeekRange(weekStart)}</div>
-          <div className="d-flex gap-2 align-items-center">
+          </div>
+          <div className="d-flex gap-2 align-items-center flex-wrap">
             {timesheet && timesheet.status === 'SUBMITTED' && (
               <CBadge color="info" className="me-2 px-3 py-2">Semana Submetida</CBadge>
             )}
@@ -319,7 +315,10 @@ function MySchedules() {
               {submitMutation.isPending ? <CSpinner size="sm" className="me-1" /> : <CIcon icon={cilCalendar} className="me-1" />}
               Submeter Semana
             </CButton>
-
+          </div>
+        </CCardHeader>
+        <CCardBody>
+          <fieldset className="d-flex gap-2 align-items-center justify-content-end flex-wrap mb-3 border-0 p-0" aria-label="Navegar entre semanas">
             <CButton color="secondary" variant="outline" size="sm" onClick={handlePrevWeek}>
               <CIcon icon={cilArrowLeft} className="me-1" />
               Semana anterior
@@ -331,9 +330,7 @@ function MySchedules() {
               Próxima semana
               <CIcon icon={cilArrowRight} className="ms-1" />
             </CButton>
-          </div>
-        </CCardHeader>
-        <CCardBody>
+          </fieldset>
           <div className="small text-muted mb-3">
             Limite de navegação: {minWeekStart ? `de ${formatDate(minWeekStart)} ` : ''}até {formatDate(hardEndDate)}.
           </div>

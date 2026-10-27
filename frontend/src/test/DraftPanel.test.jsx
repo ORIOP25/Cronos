@@ -50,6 +50,22 @@ describe('DraftPanel', () => {
     }))
   })
 
+  it('keeps priority analysis collapsed while warnings and approval controls remain visible', () => {
+    render(<DraftPanel draft={{ ...proposal, metrics: { ...proposal.metrics, excess_days: 2, priorities_followed: false, priority_summary: { proposal: { teacher_gaps: 60 } } } }} onApprove={vi.fn()} onReject={vi.fn()} />)
+    const summary = screen.getByText('Análise das prioridades')
+    expect(summary.closest('details')).not.toHaveAttribute('open')
+    expect(screen.getByRole('table', { name: 'Resumo das prioridades do horário' })).not.toBeVisible()
+    expect(screen.getByTestId('priority-fallback-warning')).toBeVisible()
+    expect(screen.getByTestId('deadline-excess-warning')).toBeVisible()
+    expect(screen.getByTestId('quality-certification')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Aprovar' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Rejeitar' })).toBeEnabled()
+    fireEvent.click(summary)
+    expect(screen.getByRole('table', { name: 'Resumo das prioridades do horário' })).toBeVisible()
+    fireEvent.click(summary)
+    expect(summary.closest('details')).not.toHaveAttribute('open')
+  })
+
   it('renders the proposal summary without fetching the diff detail', () => {
     const onApprove = vi.fn()
     render(
@@ -296,6 +312,7 @@ describe('DraftPanel', () => {
       />
     )
 
+    fireEvent.click(screen.getByText('Análise das prioridades'))
     const table = screen.getByRole('table', { name: 'Resumo das prioridades do horário' })
     expect(within(table).getByRole('columnheader', { name: 'Horário publicado' })).toBeInTheDocument()
     expect(screen.getByText(
@@ -341,6 +358,7 @@ describe('DraftPanel', () => {
       />
     )
 
+    fireEvent.click(screen.getByText('Análise das prioridades'))
     const table = screen.getByRole('table', { name: 'Resumo das prioridades do horário' })
     expect(within(table).queryByRole('columnheader', { name: 'Horário publicado' })).not.toBeInTheDocument()
     expect(within(table).getAllByRole('row')).toHaveLength(12)

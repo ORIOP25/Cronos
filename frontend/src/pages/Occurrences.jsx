@@ -1132,8 +1132,7 @@ const Occurrences = ({
       <PageHeader preTitle="Operações" title="Faltas e Ocorrências" />
 
       {/* Filtros globais */}
-      <CCard className="border-0 shadow-sm mb-4">
-        <CCardBody>
+      <div className="mb-4">
           <CRow className="g-3 align-items-end">
             <CCol md={4}>
               <CFormLabel htmlFor="classFilterOcc">Turma</CFormLabel>
@@ -1172,8 +1171,7 @@ const Occurrences = ({
               </FeedbackBanner>
             </div>
           )}
-        </CCardBody>
-      </CCard>
+      </div>
 
       {/* Tabs */}
       <CTabs activeItemKey={activeTab} onChange={handleTabChange}>

@@ -30,15 +30,13 @@ import {
 import Breadcrumbs from '../components/Breadcrumbs'
 
 // ==========================================
-//  HELPER: Card de turma (grade_level agrupado)
+//  HELPER: Linha de turma (grade_level agrupado)
 // ==========================================
-const ClassCard = ({ cls, onNavigate, onEdit, onDelete, navigationDisabled = false, canEdit = true, canDelete = true }) => {
+const ClassRow = ({ cls, onNavigate, onEdit, onDelete, navigationDisabled = false, canEdit = true, canDelete = true }) => {
   const yearLabel = `${cls.start_year}/${cls.end_year}`
 
   return (
-    <CCard className="border h-100 shadow-sm class-card">
-      <CCardBody className="d-flex flex-column">
-        <div className="d-flex justify-content-between align-items-start mb-2">
+    <div className="compact-row d-flex justify-content-between align-items-center gap-3 flex-wrap">
           <div>
             <button
               type="button"
@@ -49,14 +47,9 @@ const ClassCard = ({ cls, onNavigate, onEdit, onDelete, navigationDisabled = fal
             >
               <h6 className="mb-0 fw-bold">{cls.name}</h6>
             </button>
-            <small className="text-muted">{formatGradeLevel(cls.grade_level)}</small>
+            <small className="d-block text-muted">{formatGradeLevel(cls.grade_level)} · {yearLabel} · {cls.size} alunos</small>
           </div>
-          <CBadge color="primary" shape="rounded-pill">{yearLabel}</CBadge>
-        </div>
-        <div className="d-flex align-items-center gap-2 mt-auto text-muted" style={{ fontSize: '0.85rem' }}>
-          <CIcon icon={cilPeople} size="sm" />
-          <span>{cls.size} alunos</span>
-          <div className="ms-auto d-flex align-items-center gap-1">
+          <div className="d-flex align-items-center gap-1">
             {canEdit && <CButton
               size="sm"
               color="light"
@@ -77,9 +70,7 @@ const ClassCard = ({ cls, onNavigate, onEdit, onDelete, navigationDisabled = fal
               <CIcon icon={cilTrash} size="sm" />
             </CButton>}
           </div>
-        </div>
-      </CCardBody>
-    </CCard>
+    </div>
   )
 }
 
@@ -386,10 +377,7 @@ const CourseDetails = ({ courseIdOverride, readOnly = false, allowedActions, nav
             <CCardBody>
               {(course.classes || []).length === 0 ? (
                 <div className="text-muted text-center mb-0">
-                  <p className="mb-3">Nenhuma turma criada para este curso.</p>
-                  <CButton color="primary" variant="outline" onClick={handleOpenCreateClass} disabled={!canCreateClass} data-tutorial-target="new-class">
-                    <CIcon icon={cilPlus} className="me-1" /> Criar primeira turma
-                  </CButton>
+                  <p className="mb-0">Nenhuma turma criada para este curso.</p>
                 </div>
               ) : (
                 sortedGrades.map(grade => (
@@ -397,10 +385,10 @@ const CourseDetails = ({ courseIdOverride, readOnly = false, allowedActions, nav
                     <h6 className="text-muted fw-bold mb-3 text-uppercase" style={{ fontSize: '0.8rem', letterSpacing: '0.5px' }}>
                       {grade}.º Ano
                     </h6>
-                    <CRow className="g-3">
+                    <div className="compact-list">
                       {classGroups[grade].map(cls => (
-                        <CCol sm={6} md={4} key={cls.id}>
-                          <ClassCard
+                          <ClassRow
+                            key={cls.id}
                             cls={cls}
                             onNavigate={handleClassClick}
                             onEdit={handleOpenEditClass}
@@ -409,9 +397,8 @@ const CourseDetails = ({ courseIdOverride, readOnly = false, allowedActions, nav
                             canEdit={canUpdateClass}
                             canDelete={canDelete}
                           />
-                        </CCol>
                       ))}
-                    </CRow>
+                    </div>
                   </div>
                 ))
               )}

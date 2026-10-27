@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import MySchedules from '../pages/MySchedules'
 
@@ -44,6 +44,23 @@ vi.mock('../features/scheduling/data', () => ({
 
 describe('MySchedules query-key failures', () => {
   beforeEach(() => { state.sameWeekError = false })
+
+  it('groups publication and weekly actions while keeping navigation separate from submission', () => {
+    render(<MySchedules />)
+    const week = screen.getByRole('region', { name: 'Horário semanal' })
+    expect(within(week).getByText('Horário publicado')).toBeVisible()
+    const navigation = within(week).getByRole('group', { name: 'Navegar entre semanas' })
+    expect(within(navigation).getAllByRole('button')).toHaveLength(3)
+    expect(within(navigation).queryByRole('button', { name: 'Submeter Semana' })).not.toBeInTheDocument()
+    expect(within(week).getByRole('button', { name: 'Submeter Semana' })).toBeVisible()
+  })
+
+  it('retains the lower horizon bound after regrouping the week controls', () => {
+    render(<MySchedules />)
+    fireEvent.click(screen.getByRole('button', { name: 'Semana anterior' }))
+    expect(screen.getByText('Semanas antes de 04/05/2026 estão bloqueadas.')).toBeVisible()
+    expect(screen.getByTestId('week-grid')).toHaveTextContent('week-a')
+  })
 
   it('does not show week A data when navigating to failing week B', () => {
     render(<MySchedules />)

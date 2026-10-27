@@ -159,6 +159,20 @@ describe('ClassSubjects', () => {
     deleteJointMock.mockReturnValue(mutationMock())
   })
 
+  it('groups compact subject rows without hiding assignment or module controls', () => {
+    renderWithRouter(<ClassSubjects courseIdOverride="9" classIdOverride="11" />)
+    const list = screen.getByRole('list', { name: 'Disciplinas da turma' })
+    const rows = within(list).getAllByRole('listitem')
+    expect(rows).toHaveLength(2)
+    expect(within(rows[0]).getByRole('combobox', { name: 'Professor de Português' })).toBeEnabled()
+    expect(within(rows[0]).getByRole('button', { name: 'Remover Português' })).toBeEnabled()
+    const modules = within(rows[0]).getByRole('button', { name: 'Módulos: 1 de 2 · 25 h' })
+    expect(modules).toHaveAttribute('aria-expanded', 'false')
+    fireEvent.click(modules)
+    expect(within(rows[0]).getByRole('checkbox', { name: 'M1 Módulo 1 · 25 h' })).toBeChecked()
+    expect(within(rows[0]).getByRole('button', { name: 'Dar em conjunto com…' })).toBeEnabled()
+  })
+
   it('keeps a competency block beside the assignment without a toast', async () => {
     const error = {
       response: { status: 422, data: { detail: { code: 'teacher_competency_missing' } } },
@@ -222,12 +236,12 @@ describe('ClassSubjects', () => {
     const sectionHeader = screen.getByText('Disciplinas e Professores').closest('.card-header')
     expect(sectionHeader.querySelector('.badge')).not.toBeInTheDocument()
     expect(container.querySelector('.card-header')).toHaveTextContent('Disciplinas e Professores')
-    expect(container.querySelectorAll('.card-body > .row > .col-md-2')).toHaveLength(2)
+    expect(container.querySelectorAll('.compact-row > .row > .col-md-2')).toHaveLength(2)
 
     unmount()
     const readOnlyRender = renderWithRouter(<ClassSubjects courseIdOverride="9" classIdOverride="11" readOnly />)
     expect(screen.queryByRole('button', { name: 'Remover Português' })).not.toBeInTheDocument()
-    expect(readOnlyRender.container.querySelectorAll('.card-body > .row > .col-md-2')).toHaveLength(0)
+    expect(readOnlyRender.container.querySelectorAll('.compact-row > .row > .col-md-2')).toHaveLength(0)
   })
 
   it('shows the module summary and expands a labelled checklist', () => {

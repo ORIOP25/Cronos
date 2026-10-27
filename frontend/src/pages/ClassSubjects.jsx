@@ -108,8 +108,7 @@ const SubjectRow = ({
   }
 
   return (
-    <CCard className="mb-2 border shadow-sm">
-      <CCardBody className="py-2 px-3">
+    <li className="compact-row">
         <div className="row align-items-center g-2">
           {/* Info da Disciplina */}
           <div className="col-12 col-md-5">
@@ -271,8 +270,7 @@ const SubjectRow = ({
             )
           )}
         </div>
-      </CCardBody>
-    </CCard>
+    </li>
   )
 }
 
@@ -913,7 +911,8 @@ const ClassSubjects = ({ courseIdOverride, classIdOverride, navigationDisabled =
               </CButton>
             </div>
           ) : (
-            classSubjects.subjects.map(subject => (
+            <ul className="compact-list list-unstyled mb-0" aria-label="Disciplinas da turma">
+            {classSubjects.subjects.map(subject => (
               <SubjectRow
                 key={subject.id}
                 subject={subject}
@@ -931,7 +930,8 @@ const ClassSubjects = ({ courseIdOverride, classIdOverride, navigationDisabled =
                 teacherError={teacherBlock?.subjectId === subject.subject_id ? teacherBlock.message : ''}
                 modulesError={moduleBlock?.subjectId === subject.subject_id ? moduleBlock.message : ''}
               />
-            ))
+            ))}
+            </ul>
           )}
         </CCardBody>
       </CCard>

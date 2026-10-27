@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useLocation } from 'react-router-dom'
 
@@ -86,6 +86,14 @@ describe('PreparationDashboard tutorial entry points', () => {
 
     expect(screen.getAllByTestId(/^preparation-level-/)).toHaveLength(6)
     expect(screen.getByRole('button', { name: /gerar horário/i })).toBeDisabled()
+  })
+
+  it('shows each completed prerequisite once while retaining its navigation link', () => {
+    renderWithRouter(<PreparationDashboard bases={completeBases} />)
+    for (const level of screen.getAllByTestId(/^preparation-level-/)) {
+      expect(within(level).getAllByText(/Concluído/)).toHaveLength(1)
+      expect(within(level).getByRole('link', { name: 'Ver' })).toHaveAttribute('href', '/config')
+    }
   })
 
   it('renders teachers before teacher assignments', () => {

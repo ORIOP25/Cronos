@@ -66,6 +66,16 @@ describe('SchoolConfig internship flows', () => {
     expect(screen.getByRole('button', { name: /guardar fluxo/i })).toBeInTheDocument()
   })
 
+  it('keeps event controls visible and calendar guidance optional', async () => {
+    renderWithProviders(<CalendarSection />)
+    await screen.findByText('Estágio 10A')
+    expect(screen.getByLabelText('Nome do evento')).toBeVisible()
+    const guidance = screen.getByText('Como funciona o calendário').closest('details')
+    expect(guidance).not.toHaveAttribute('open')
+    fireEvent.click(screen.getByText('Como funciona o calendário'))
+    expect(guidance).toHaveAttribute('open')
+  })
+
   it('marks flows from previous school years as read-only', async () => {
     apiClient.get.mockImplementation((url) => {
       if (url === '/school/calendar-events/') {

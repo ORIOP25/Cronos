@@ -607,11 +607,14 @@ textarea {
    BUTTON OVERRIDES
    =========================== */
 .btn-primary {
+  --cui-btn-color: var(--cronos-surface);
   --cui-btn-bg: var(--rs-primary);
   --cui-btn-border-color: var(--rs-primary);
   --cui-btn-hover-bg: var(--rs-primary-hover);
+  --cui-btn-hover-color: var(--cronos-surface);
   --cui-btn-hover-border-color: var(--rs-primary-hover);
   --cui-btn-active-bg: var(--rs-primary-active);
+  --cui-btn-active-color: var(--cronos-surface);
   --cui-btn-active-border-color: var(--rs-primary-active);
   --cui-btn-disabled-bg: var(--rs-disabled);
   --cui-btn-disabled-border-color: var(--rs-disabled);
@@ -622,12 +625,20 @@ textarea {
   --cui-btn-color: var(--rs-primary);
   --cui-btn-border-color: var(--rs-primary);
   --cui-btn-hover-bg: var(--rs-primary);
+  --cui-btn-hover-color: var(--cronos-surface);
   --cui-btn-hover-border-color: var(--rs-primary);
   --cui-btn-active-bg: var(--rs-primary-hover);
+  --cui-btn-active-color: var(--cronos-surface);
+  --cui-btn-active-border-color: var(--rs-primary-hover);
+  --cui-btn-disabled-color: var(--rs-primary);
+  --cui-btn-disabled-border-color: var(--rs-primary);
   --cui-btn-focus-shadow-rgb: 92, 61, 46;
 }
 
 .btn-success {
+  --cui-btn-color: var(--cronos-surface);
+  --cui-btn-hover-color: var(--cronos-surface);
+  --cui-btn-active-color: var(--cronos-surface);
   --cui-btn-bg: var(--rs-teal);
   --cui-btn-border-color: var(--rs-teal);
   --cui-btn-hover-bg: var(--rs-teal-hover);

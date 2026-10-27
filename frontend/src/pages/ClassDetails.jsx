@@ -169,8 +169,9 @@ const SubjectCard = ({ subject, isEditing, editMap, onChangeHours }) => {
   const pct = Math.round(subject.overall_percentage)
 
   return (
-    <CCard className="border shadow-sm mb-3">
-      <CCardHeader className="bg-transparent py-2">
+    <details className="compact-disclosure" open={isEditing || undefined}>
+      <summary>
+        <div className="flex-grow-1">
         <div className="d-flex justify-content-between align-items-center">
           <div className="d-flex align-items-center gap-2">
             <CIcon icon={cilBook} className="text-info" size="sm" />
@@ -193,8 +194,9 @@ const SubjectCard = ({ subject, isEditing, editMap, onChangeHours }) => {
         <CProgress thin className="mt-2">
           <CProgressBar value={Math.min(pct, 100)} style={{ width: `${Math.min(pct, 100)}%`, backgroundColor: getProgressColor(pct) }} />
         </CProgress>
-      </CCardHeader>
-      <CCardBody className="py-1 px-3">
+        </div>
+      </summary>
+      <div className="compact-disclosure__body">
         {[...subject.modules]
           .sort((a, b) => a.order - b.order)
           .map(mod => (
@@ -211,8 +213,8 @@ const SubjectCard = ({ subject, isEditing, editMap, onChangeHours }) => {
             Nenhum módulo selecionado para esta turma.
           </p>
         )}
-      </CCardBody>
-    </CCard>
+      </div>
+    </details>
   )
 }
 
@@ -710,6 +712,7 @@ const ClassDetails = () => {
                   {globalStats.completedHours} de {globalStats.totalHours} horas · {globalStats.completedModules} de {globalStats.totalModules} módulos concluídos
                 </small>
               </div>
+              <div className="compact-list">
               {[...classData.subjects]
                 .sort((a, b) => a.name.localeCompare(b.name))
                 .map(subject => (
@@ -721,6 +724,7 @@ const ClassDetails = () => {
                     onChangeHours={handleChangeHours}
                   />
                 ))}
+              </div>
             </>
           )}
         </CCardBody>

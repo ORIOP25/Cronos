@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import React from 'react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
-import { renderWithProviders, renderWithRouter } from './testUtils'
+import { createTestQueryClient, renderWithProviders, renderWithRouter } from './testUtils'
 import { setClerkState, resetClerkState } from './setup'
 import {
   RequireAdmin,
@@ -91,7 +91,7 @@ vi.mock('../features/legal/data', async (importOriginal) => ({
   }),
 }))
 
-function renderGuard(ui, initialEntries = ['/protected']) {
+function renderGuard(ui, initialEntries = ['/protected'], options = {}) {
   return renderWithRouter(
     <Routes>
       <Route path="/protected" element={ui} />
@@ -102,7 +102,7 @@ function renderGuard(ui, initialEntries = ['/protected']) {
       <Route path="/config" element={<div data-testid="config-route">Config</div>} />
       <Route path="/login" element={<div data-testid="login-route">Login</div>} />
     </Routes>,
-    { initialEntries },
+    { ...options, initialEntries },
   )
 }
 
@@ -334,6 +334,46 @@ describe('RequireFoundationAdmin', () => {
     renderGuard(<RequireFoundationAdmin><div>Wizard</div></RequireFoundationAdmin>)
     expect(screen.getByTestId('config-route')).toBeInTheDocument()
     expect(screen.queryByText('Wizard')).toBeNull()
+  })
+
+  it.each([[1, 'dashboard-route'], [2, 'config-route']])(
+    'uses the activation destination only for the organization being completed (%s)',
+    async (organizationId, destination) => {
+      const queryClient = createTestQueryClient()
+      let finishCompletion
+      const completion = queryClient.getMutationCache().build(queryClient, {
+        mutationKey: ['foundation-complete', organizationId],
+        mutationFn: () => new Promise((resolve) => { finishCompletion = resolve }),
+      }).execute({})
+      await waitFor(() => expect(finishCompletion).toBeTypeOf('function'))
+      memberState.value = { ...memberState.value, foundation_status: 'COMPLETED' }
+      try {
+        renderGuard(<RequireFoundationAdmin><div>Wizard</div></RequireFoundationAdmin>, ['/protected'], { queryClient })
+        expect(screen.getByTestId(destination)).toBeInTheDocument()
+      } finally {
+        finishCompletion({})
+        await completion
+      }
+    },
+  )
+
+  it('waits on the dashboard route while activation refreshes an incomplete member', async () => {
+    const queryClient = createTestQueryClient()
+    let finishCompletion
+    const completion = queryClient.getMutationCache().build(queryClient, {
+      mutationKey: ['foundation-complete', 1],
+      mutationFn: () => new Promise((resolve) => { finishCompletion = resolve }),
+    }).execute({})
+    await waitFor(() => expect(finishCompletion).toBeTypeOf('function'))
+    try {
+      renderGuard(<RequireAdmin><div>Dashboard content</div></RequireAdmin>, ['/protected'], { queryClient })
+      expect(screen.queryByTestId('foundation-route')).not.toBeInTheDocument()
+      expect(screen.queryByText('Dashboard content')).not.toBeInTheDocument()
+      expect(screen.getByRole('status')).toBeInTheDocument()
+    } finally {
+      finishCompletion({})
+      await completion
+    }
   })
 
   it('redirects a teacher away from /foundation to the teacher default', () => {

@@ -148,7 +148,7 @@ test.describe('Joint lessons — shared modules', () => {
     // marks M1..M4 and M6; the four common modules are the only joint ones.
     await goTo(page, `/courses/${joint.courseId}/classes/${classA.id}/subjects`)
     await expectRouteReady(page, `/courses/${joint.courseId}/classes/${classA.id}/subjects`)
-    const subjectCard = page.locator('.card', { hasText: 'E2E Joint Subject' }).first()
+    const subjectCard = page.getByRole('list', { name: 'Disciplinas da turma' }).getByRole('listitem').filter({ hasText: 'E2E Joint Subject' })
     await subjectCard.getByRole('button', { name: /Dar em conjunto com/ }).click()
     const dialog = page.getByRole('dialog')
     await expect(dialog.getByText('Aula conjunta · E2E Joint Subject')).toBeVisible()

@@ -112,11 +112,10 @@ const Timesheets = ({ initialWeekStart, readOnly = false, allowedActions, naviga
       <PageHeader preTitle="Operações" title="Fecho Semanal" />
 
       {/* Filters */}
-      <CCard className="border-0 shadow-sm mb-4">
-        <CCardBody className="d-flex gap-3 align-items-end flex-wrap">
+      <div className="page-toolbar">
           <div style={{ minWidth: '220px' }}>
-            <label className="form-label text-muted small fw-semibold mb-1">Filtrar por Estado</label>
-            <CFormSelect value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+            <label htmlFor="timesheet-status-filter" className="form-label text-muted small fw-semibold mb-1">Filtrar por Estado</label>
+            <CFormSelect id="timesheet-status-filter" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
               <option value="ALL">Todos</option>
               <option value="OPEN">Em Aberto</option>
               <option value="SUBMITTED">Pendentes de Aprovação</option>
@@ -125,11 +124,10 @@ const Timesheets = ({ initialWeekStart, readOnly = false, allowedActions, naviga
           </div>
 
           <div className="ms-auto">
-            <label className="form-label text-muted small fw-semibold mb-1 d-block">Semana</label>
+            <span className="form-label text-muted small fw-semibold mb-1 d-block">Semana</span>
             <WeekNavigator value={weekFilter} onChange={setWeekFilter} />
           </div>
-        </CCardBody>
-      </CCard>
+      </div>
 
       {statusActionError && (
         <div className="mb-4"><FeedbackBanner tone="danger">{statusActionError}</FeedbackBanner></div>

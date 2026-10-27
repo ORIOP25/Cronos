@@ -96,6 +96,8 @@ Mobile debt cards show the class, subject, teacher, gaps, and duration without a
 Dashboard debt values use the same duration formatter and debt tab as the occurrence page.
 Published schedule conflicts require attention. An expandable schedule health list identifies affected blocks and links to each teacher week.
 Class progress keeps its existing filters and starts with a compact preview. The expansion control exposes the full filtered list.
+Teacher progress starts with collapsed class disclosures. Class module details open automatically while editing progress.
+Proposal priority analysis is optional disclosure content. Generation warnings and approval actions stay outside that disclosure.
 Generation job polling keeps the last known job state and retries a transient poll failure on the fixed interval. The indicator shows the inline error meanwhile. Polling stops on a terminal status or a permanent client error. See [scheduling data hooks](../../frontend/src/features/scheduling/data.js).
 Rejecting a draft refreshes the active organization's status, current-draft, diff, and preparation caches without invalidating the published `weekSchedule`. Another organization's caches stay untouched, and the pending-draft prevalidation warning clears once the preparation query refetches.
 The Horários grid can preview the pending proposal in read-only mode. The "Horário publicado / Proposta pendente" toggle appears only when the proposal is not stale and the user can generate. The preview adds `proposal_id` to the week query and disables lesson logging. The mode is held in memory, so approval or rejection returns the grid to the published week.
