@@ -16,6 +16,7 @@ test('removes selected subjects with one confirmation', async ({ page }, testInf
     for (const name of names) created.push(await apiRequest(page, 'POST', '/subjects/', { name, room_type_id: roomType, modules: [] }))
     await goTo(page, '/subjects')
     await expect(page.getByRole('button', { name: /remover selecionados/i })).toHaveCount(0)
+    await expect(page.getByRole('checkbox', { name: 'Selecionar todos', exact: true })).toHaveCSS('border-color', 'rgb(103, 88, 76)')
     await page.getByRole('checkbox', { name: `Selecionar ${names[0]}` }).check()
     await page.getByRole('checkbox', { name: `Selecionar ${names[1]}` }).check()
     const toolbar = page.getByRole('region', { name: 'Ações da seleção' })
@@ -28,6 +29,7 @@ test('removes selected subjects with one confirmation', async ({ page }, testInf
     for (const width of [375, 768, 1440]) {
       await page.setViewportSize({ width, height: 1000 })
       await expect(page.getByRole('checkbox', { name: 'Selecionar todos', exact: true })).toBeVisible()
+      await expect(page.getByRole('columnheader', { name: 'Disciplina', exact: true })).toHaveCount(1)
       await expect(toolbar).toBeInViewport()
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
       await page.screenshot({ path: testInfo.outputPath(`bulk-selection-${width}.png`), fullPage: true })

@@ -39,7 +39,7 @@
 .teacher-list-row[aria-pressed='true'] { background: var(--cronos-surface-muted); box-shadow: inset 3px 0 var(--cronos-accent); }
 .teacher-list-row:hover { background: var(--cronos-surface-muted); }
 .bulk-selection { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-width: 44px; min-height: 44px; margin: 0; cursor: pointer; }
-.bulk-selection .form-check-input { float: none; width: 18px; height: 18px; margin: 0; border-color: var(--cronos-border-strong); cursor: inherit; }
+.bulk-selection .form-check-input { float: none; width: 18px; height: 18px; margin: 0; border-color: var(--cronos-ink-muted); cursor: inherit; }
 .bulk-selection .form-check-input:checked, .bulk-selection .form-check-input:indeterminate { background-color: var(--cronos-ink); border-color: var(--cronos-ink); }
 .bulk-selection .form-check-input:focus { border-color: var(--cronos-accent); box-shadow: 0 0 0 .2rem var(--color-focus-ring); }
 .selection-column { width: 64px; text-align: left; }

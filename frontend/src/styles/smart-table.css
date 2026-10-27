@@ -9,7 +9,7 @@
   .zen-table .zen-table-action-trigger { opacity: 1; }
   .zen-table--selectable thead { position: static; width: auto; height: auto; overflow: visible; clip: auto; }
   .zen-table--selectable thead tr { display: flex; }
-  .zen-table--selectable thead th:not(.selection-column) { display: none; }
+  .zen-table--selectable thead th:not(.selection-column) { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); border: 0; }
   .zen-table--selectable thead .selection-column { padding: 0; }
   .zen-table--selectable .selection-column { width: auto; }
   .zen-table--selectable .selection-column__label { display: inline; font-size: .8rem; text-transform: none; letter-spacing: normal; }
