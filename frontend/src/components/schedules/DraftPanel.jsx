@@ -114,6 +114,8 @@ const DraftPanel = ({ draft, onApprove, onReject, isApproving, isRejecting, allo
           )}
 
           {prioritySummary?.proposal && (
+            <details className="context-details mb-3">
+              <summary>Análise das prioridades</summary>
             <div className="table-responsive mb-3" data-testid="priority-summary">
               <table className="table table-sm align-middle" aria-label="Resumo das prioridades do horário">
                 <thead>
@@ -136,6 +138,7 @@ const DraftPanel = ({ draft, onApprove, onReject, isApproving, isRejecting, allo
                 </tbody>
               </table>
             </div>
+            </details>
           )}
 
           {metrics.priorities_followed === false && (
