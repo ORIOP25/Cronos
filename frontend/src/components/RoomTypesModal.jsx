@@ -90,7 +90,7 @@ const RoomTypesTable = ({ roomTypes, onEdit, onRemove }) => (
  * Janela "Tipos de sala" da página Salas. Lista os tipos da escola e cria,
  * renomeia ou remove. O tipo Normal é fixo.
  */
-const RoomTypesModal = ({ onClose }) => {
+const RoomTypesModal = ({ onClose, embedded = false }) => {
   const { data: roomTypes = [], isLoading, isError, error, refetch } = useRoomTypes()
   const createMutation = useCreateRoomType()
   const updateMutation = useUpdateRoomType()
@@ -175,12 +175,7 @@ const RoomTypesModal = ({ onClose }) => {
     content = <RoomTypesTable roomTypes={roomTypes} onEdit={startEdit} onRemove={setRemoving} />
   }
 
-  return (
-    <CModal visible alignment="center" scrollable size="lg" onClose={onClose} aria-labelledby="room-types-title">
-      <CModalHeader onClose={onClose}>
-        <CModalTitle id="room-types-title">Tipos de sala</CModalTitle>
-      </CModalHeader>
-      <CModalBody>
+  const body = <>
         <CForm onSubmit={handleSubmit} className="mb-4">
           <CFormInput
             id="room-type-name"
@@ -213,8 +208,6 @@ const RoomTypesModal = ({ onClose }) => {
 
         {listError && <div className="mb-3"><FeedbackBanner tone="danger">{listError}</FeedbackBanner></div>}
         {content}
-      </CModalBody>
-
       <ConfirmationModal
         visible={removing !== null}
         onClose={() => setRemoving(null)}
@@ -222,6 +215,22 @@ const RoomTypesModal = ({ onClose }) => {
         message={`Remover o tipo ${removing?.name ?? ''}? Se uma sala ou disciplina ativa o usar, a remoção fica bloqueada.`}
         isLoading={deleteMutation.isPending}
       />
+    </>
+
+  if (embedded) return <section aria-labelledby="room-types-title">
+    <div className="d-flex align-items-center justify-content-between gap-3 mb-3">
+      <h3 id="room-types-title" className="h5 mb-0">Tipos de sala</h3>
+      <CButton type="button" color="secondary" variant="ghost" disabled={isSaving || deleteMutation.isPending} onClick={onClose}>Voltar à sala</CButton>
+    </div>
+    {body}
+  </section>
+
+  return (
+    <CModal visible alignment="center" scrollable size="lg" onClose={onClose} aria-labelledby="room-types-title">
+      <CModalHeader onClose={onClose}>
+        <CModalTitle id="room-types-title">Tipos de sala</CModalTitle>
+      </CModalHeader>
+      <CModalBody>{body}</CModalBody>
     </CModal>
   )
 }

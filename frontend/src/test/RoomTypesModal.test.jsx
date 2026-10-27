@@ -135,13 +135,18 @@ describe('RoomTypesModal', () => {
     expect(apiClient.post).not.toHaveBeenCalled()
   })
 
-  it('opens from the Rooms page with the admin button', async () => {
+  it('manages existing types inside the room form and returns without losing the room draft', async () => {
     apiClient.get.mockImplementation((url) => Promise.resolve(url === '/rooms/' ? [] : [NORMAL, WORKSHOP]))
     renderWithRouter(<Rooms />)
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Tipos de sala' }))
+    expect(screen.queryByRole('button', { name: 'Tipos de sala' })).not.toBeInTheDocument()
+    fireEvent.click(await screen.findByRole('button', { name: 'Nova Sala' }))
+    fireEvent.change(screen.getByLabelText('Nome da Sala'), { target: { value: 'Sala rascunho' } })
+    fireEvent.click(await screen.findByRole('button', { name: 'Gerir tipos existentes' }))
 
-    expect(await screen.findByRole('dialog', { name: 'Tipos de sala' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Tipos de sala' })).toBeInTheDocument()
     expect(await screen.findByRole('cell', { name: 'Oficina' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Voltar à sala' }))
+    expect(screen.getByLabelText('Nome da Sala')).toHaveValue('Sala rascunho')
   })
 })

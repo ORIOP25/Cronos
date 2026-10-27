@@ -241,7 +241,7 @@ test('an all-impossible class blocks generation until a neutral grid is copied o
 
       const downloadPromise = page.waitForEvent('download')
       await page
-        .locator('.card')
+        .locator('.import-resource')
         .filter({ hasText: TEACHER_AVAILABILITY_LABEL })
         .getByRole('button', { name: 'Descarregar modelo' })
         .click()

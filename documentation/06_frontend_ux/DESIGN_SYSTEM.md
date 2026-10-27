@@ -48,6 +48,13 @@ Cronos employs a warm, authoritative visual identity designed for educational tr
 - The banner shows a decorative icon, readable text, and an optional adjacent action.
 
 ## Contracts and Invariants
+
+- Use compact rows for related settings and import resources. Separate rows with a divider instead of repeated cards.
+- Keep essential controls visible. Put longer instructions and impact explanations inside native `details` elements.
+- Keep disclosure summaries keyboard accessible and preserve visible focus indicators.
+- Dashboard lists show a compact overview. Users can expand class progress or conflict details without losing access to entries.
+- The team table has one edit entry per member. The editor groups profile, availability and permitted access actions.
+- Room forms create and select room types in context. Existing type management returns to the same room draft.
 - Authenticated application tokens live in `frontend/src/index.css`.
 - Canonical shared tokens live in `frontend/src/styles/brand.tokens.css`.
 - Marketing-specific tokens live in `frontend/src/features/marketing/styles/`.

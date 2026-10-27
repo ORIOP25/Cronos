@@ -23,7 +23,7 @@ test.describe('Dashboard — canonical modes', () => {
     const payload = await (await dashboardResponse).json()
     expect(['PREPARATION', 'OPERATIONAL']).toContain(payload.mode)
     const preparation = page.getByTestId('preparation-dashboard')
-    const operational = page.getByRole('heading', { name: /Painel de Controlo Operacional/i }).first()
+    const operational = page.getByTestId('schedule-health')
     expect((await preparation.count()) + (await operational.count())).toBe(1)
     if (payload.mode === 'PREPARATION') {
       await expect(preparation).toBeVisible()

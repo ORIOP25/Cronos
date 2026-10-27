@@ -11,6 +11,68 @@ test.beforeEach(async ({ page }) => {
   await loginAsAdminReal(page)
 })
 
+test('compact imports and priorities fit mobile, tablet and desktop', async ({ page }, testInfo) => {
+  await seedMinimalSchedulerInputs(page)
+  await generateAndApproveThroughUi(page)
+  for (const width of [375, 768, 1440]) {
+    await page.setViewportSize({ width, height: 1000 })
+    await goTo(page, '/imports')
+    await expect(page.getByRole('heading', { name: 'Importar dados' })).toBeVisible()
+    await expect(page.locator('.import-resource')).toHaveCount(8)
+    await expect(page.locator('.import-resource details[open]')).toHaveCount(0)
+    await expect(page.getByLabel('Selecionar ficheiro CSV de salas')).toBeVisible()
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+    await page.screenshot({ path: testInfo.outputPath(`imports-${width}.png`), fullPage: true })
+
+    await goTo(page, '/config')
+    await page.getByRole('tab', { name: 'Prioridades do horário' }).click()
+    await expect(page.getByRole('radiogroup')).toHaveCount(10)
+    await expect(page.locator('.priority-row details[open]')).toHaveCount(0)
+    await page.locator('.priority-row summary').first().click()
+    await expect(page.locator('.priority-row details[open]')).toHaveCount(1)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+    await page.screenshot({ path: testInfo.outputPath(`priorities-${width}.png`), fullPage: true })
+    await goTo(page, '/dashboard')
+    await expect(page.getByTestId('schedule-health')).toBeVisible()
+    expect(await page.getByTestId('class-progress-row').count()).toBeLessThanOrEqual(5)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+    await page.screenshot({ path: testInfo.outputPath(`dashboard-${width}.png`), fullPage: true })
+  }
+  await goTo(page, '/config')
+  await page.getByRole('tab', { name: 'Prioridades do horário' }).click()
+  await expect(page.locator('.priority-list')).toBeVisible()
+  const accessibility = await new AxeBuilder({ page }).include('.priority-list').withTags(['wcag2a', 'wcag2aa']).analyze()
+  expect(accessibility.violations).toEqual([])
+})
+
+test('a room creates and selects its type in context while retaining its draft', async ({ page }) => {
+  const typeName = `Tipo UX ${Date.now()}`
+  let createdType
+  try {
+    await goTo(page, '/rooms')
+    await expect(page.getByRole('button', { name: 'Tipos de sala', exact: true })).toHaveCount(0)
+    await page.getByRole('button', { name: 'Nova Sala', exact: true }).click()
+    const dialog = page.getByRole('dialog')
+    await dialog.getByLabel('Nome da Sala', { exact: true }).fill('Sala rascunho UX')
+    await dialog.getByRole('button', { name: 'Adicionar tipo', exact: true }).click()
+    await dialog.getByLabel('Nome do novo tipo').fill(typeName)
+    const created = page.waitForResponse((response) => response.url().endsWith('/room-types/') && response.request().method() === 'POST')
+    await dialog.getByRole('button', { name: 'Criar tipo', exact: true }).click()
+    const response = await created
+    expect(response.status()).toBe(201)
+    createdType = await response.json()
+    await expect(dialog.getByLabel('Tipo de Sala', { exact: true })).toHaveValue(String(createdType.id))
+    await dialog.getByRole('button', { name: 'Gerir tipos existentes' }).click()
+    await expect(dialog.getByRole('cell', { name: typeName, exact: true })).toBeVisible()
+    await dialog.getByRole('button', { name: 'Voltar à sala' }).click()
+    await expect(dialog.getByLabel('Nome da Sala', { exact: true })).toHaveValue('Sala rascunho UX')
+    await expect(dialog.getByLabel('Tipo de Sala', { exact: true })).toHaveValue(String(createdType.id))
+    await dialog.getByRole('button', { name: 'Cancelar', exact: true }).click()
+  } finally {
+    if (createdType) await apiRequest(page, 'DELETE', `/room-types/${createdType.id}`)
+  }
+})
+
 test('all CSV models download actual files with feedback visible in the viewport', async ({ page }) => {
   await page.setViewportSize({ width: 451, height: 900 })
   await goTo(page, '/imports')
@@ -76,7 +138,9 @@ test('the team screen exposes the school-presence rule and its CSV model without
   // The prepared E2E teacher is the active member with a teacher profile. The
   // button is the only way the direction reaches the presence rule, so opening
   // it against the real API is the observable journey under test.
-  const availabilityButton = page.getByRole('button', { name: 'Editar disponibilidade', exact: true }).first()
+  const teacherRow = page.getByRole('row').filter({ hasText: 'Professor' }).first()
+  await teacherRow.getByRole('button', { name: 'Editar membro', exact: true }).click()
+  const availabilityButton = page.getByRole('button', { name: 'Editar disponibilidade', exact: true })
   await expect(availabilityButton).toBeVisible({ timeout: 30_000 })
   const presenceRequest = page.waitForResponse((response) => (
     response.url().includes('/presence')
@@ -100,11 +164,12 @@ test('the team screen exposes the school-presence rule and its CSV model without
 
   // Read-only: close without saving or editing any field.
   await dialog.getByRole('button', { name: 'Fechar', exact: true }).click()
-  await expect(dialog).toBeHidden()
+  await expect(page.getByRole('heading', { name: /Disponibilidade —/ })).toBeHidden()
+  await expect(page.getByRole('heading', { name: 'Editar membro' })).toBeVisible()
 
   await goTo(page, '/imports')
   await expect(page.getByRole('heading', { name: 'Importar dados' })).toBeVisible()
-  const presenceCard = page.locator('.card').filter({ hasText: 'Presença dos professores' })
+  const presenceCard = page.locator('.import-resource').filter({ hasText: 'Presença dos professores' })
   await expect(presenceCard).toBeVisible()
   await expect(presenceCard.getByRole('button', { name: 'Descarregar modelo' })).toBeVisible()
 })

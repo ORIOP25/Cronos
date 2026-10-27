@@ -86,14 +86,16 @@ Route guards move through loading, signed-out, organization selection, member er
 Contact submission moves through questionnaire steps, pending, error, and success states.
 Foundation moves through ten validated steps, draft persistence, conflict, and completion states.
 Availability keeps persisted server data separate from a local paint draft.
-The team action opens administrative availability with the member's teacher identifier.
+The member editor opens administrative availability with the member's teacher identifier and preserves its profile draft on return.
+Successful access actions update the editor's optimistic version without discarding edited fields. Removal closes the editor.
 Occurrence links include their school date. Availability queries keep each date's grid in a separate cache entry.
 Unknown teacher links show an explicit error instead of an unidentified grid.
 Course creation includes a filled initial class draft. Incomplete edited drafts block submission and retain their values.
 Import downloads show preparation on the selected model and success or failure through a visible toast.
 Mobile debt cards show the class, subject, teacher, gaps, and duration without a wide table.
 Dashboard debt values use the same duration formatter and debt tab as the occurrence page.
-Published schedule conflicts require attention. Schedule health identifies the affected blocks and links to each teacher week.
+Published schedule conflicts require attention. An expandable schedule health list identifies affected blocks and links to each teacher week.
+Class progress keeps its existing filters and starts with a compact preview. The expansion control exposes the full filtered list.
 Generation job polling keeps the last known job state and retries a transient poll failure on the fixed interval. The indicator shows the inline error meanwhile. Polling stops on a terminal status or a permanent client error. See [scheduling data hooks](../../frontend/src/features/scheduling/data.js).
 Rejecting a draft refreshes the active organization's status, current-draft, diff, and preparation caches without invalidating the published `weekSchedule`. Another organization's caches stay untouched, and the pending-draft prevalidation warning clears once the preparation query refetches.
 The Horários grid can preview the pending proposal in read-only mode. The "Horário publicado / Proposta pendente" toggle appears only when the proposal is not stale and the user can generate. The preview adds `proposal_id` to the week query and disables lesson logging. The mode is held in memory, so approval or rejection returns the grid to the published week.

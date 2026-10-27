@@ -2,9 +2,14 @@ import { render, screen, fireEvent } from '@testing-library/react'
 import { beforeEach, describe, it, expect, vi } from 'vitest'
 import RoomForm from '../components/Forms/RoomForm'
 
-const { useRoomTypesMock } = vi.hoisted(() => ({ useRoomTypesMock: vi.fn() }))
+const { useRoomTypesMock, createType } = vi.hoisted(() => ({ useRoomTypesMock: vi.fn(), createType: vi.fn() }))
 
-vi.mock('../features/catalog/data', () => ({ useRoomTypes: useRoomTypesMock }))
+vi.mock('../features/catalog/data', () => ({
+  useRoomTypes: useRoomTypesMock,
+  useCreateRoomType: () => ({ mutateAsync: createType, isPending: false }),
+  useUpdateRoomType: () => ({ isPending: false }),
+  useDeleteRoomType: () => ({ isPending: false }),
+}))
 
 const roomTypes = [
   { id: 11, name: 'Normal', is_normal: true },
@@ -20,7 +25,46 @@ const defaultProps = {
 
 describe('RoomForm', () => {
   beforeEach(() => {
+    createType.mockReset().mockResolvedValue({ id: 37, name: 'Artes' })
     useRoomTypesMock.mockReturnValue({ data: roomTypes, isLoading: false, isError: false, refetch: vi.fn() })
+  })
+
+  it('creates and selects a type inside the room form without submitting the room', async () => {
+    const onSubmit = vi.fn()
+    render(<RoomForm {...defaultProps} onSubmit={onSubmit} />)
+    fireEvent.change(screen.getByLabelText(/nome da sala/i), { target: { value: 'Sala Artes' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Adicionar tipo' }))
+    fireEvent.change(screen.getByLabelText('Nome do novo tipo'), { target: { value: 'Artes' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Criar tipo' }))
+    expect(await screen.findByRole('option', { name: 'Artes' })).toBeInTheDocument()
+    expect(screen.getByLabelText(/tipo de sala/i)).toHaveValue('37')
+    expect(createType).toHaveBeenCalledWith({ name: 'Artes' })
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(screen.getByLabelText(/nome da sala/i)).toHaveValue('Sala Artes')
+  })
+
+  it('keeps a refused type name and the room draft for correction', async () => {
+    createType.mockRejectedValue({ response: { status: 409, data: { detail: { code: 'room_type_name_taken' } } } })
+    const onSubmit = vi.fn()
+    render(<RoomForm {...defaultProps} onSubmit={onSubmit} />)
+    fireEvent.change(screen.getByLabelText(/nome da sala/i), { target: { value: 'Sala Artes' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Adicionar tipo' }))
+    fireEvent.change(screen.getByLabelText('Nome do novo tipo'), { target: { value: 'Artes' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Criar tipo' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Já existe um tipo de sala com este nome.')
+    expect(screen.getByLabelText('Nome do novo tipo')).toHaveValue('Artes')
+    expect(screen.getByLabelText(/nome da sala/i)).toHaveValue('Sala Artes')
+    expect(onSubmit).not.toHaveBeenCalled()
+  })
+
+  it('submits the visible Normal type if the selected type was removed', () => {
+    const onSubmit = vi.fn()
+    const view = render(<RoomForm {...defaultProps} initialData={{ name: 'Sala X', room_type: roomTypes[1], capacity: 25 }} onSubmit={onSubmit} />)
+    useRoomTypesMock.mockReturnValue({ data: [roomTypes[0]], isLoading: false, isError: false, refetch: vi.fn() })
+    view.rerender(<RoomForm {...defaultProps} initialData={{ name: 'Sala X', room_type: roomTypes[1], capacity: 25 }} onSubmit={onSubmit} />)
+    expect(screen.getByLabelText(/tipo de sala/i)).toHaveValue('11')
+    fireEvent.click(screen.getByRole('button', { name: 'Atualizar Sala' }))
+    expect(onSubmit).toHaveBeenCalledWith({ name: 'Sala X', room_type_id: 11, capacity: 25 })
   })
 
   it('renderiza campos principais com valores iniciais validos', () => {
