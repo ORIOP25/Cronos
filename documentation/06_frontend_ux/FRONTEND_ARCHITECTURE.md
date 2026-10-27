@@ -82,6 +82,11 @@ React Query manages server state while component state handles form and view sta
 
 ## States and Transitions
 
+Bulk removal lets administrators select visible courses, classes, subjects, rooms, or eligible members.
+It asks for one confirmation, then calls the existing removal action for each selected record.
+The operation reports individual failures and keeps those records selected. Successful removals do not roll back.
+Room confirmations include the effects on fixed-room assignments. Changing organization clears the selection and feedback.
+
 Route guards move through loading, signed-out, organization selection, member error, or authorized states.
 Contact submission moves through questionnaire steps, pending, error, and success states.
 Foundation moves through ten validated steps, draft persistence, conflict, and completion states.
