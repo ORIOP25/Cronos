@@ -15,6 +15,7 @@ import { useAttemptScope } from '../hooks/useAttemptScope'
 import { 
   useCourses,
   useCreateCourse,
+  useDeleteCourse,
 } from '../features/catalog/data'
 
 const Courses = () => {
@@ -24,6 +25,7 @@ const Courses = () => {
   // 1. Hooks de Dados
   const { data: courses, isLoading, isError, error, refetch } = useCourses()
   const createMutation = useCreateCourse()
+  const deleteMutation = useDeleteCourse()
   const attemptScope = useAttemptScope()
 
   // 2. Colunas da Tabela
@@ -81,6 +83,8 @@ const Courses = () => {
             isError={isError}
             error={error}
             onRetry={() => refetch()}
+            onDelete={(id) => deleteMutation.mutateAsync(id)}
+            deleteMessage="As associações de configuração serão retiradas e o histórico preservado. Remova primeiro as turmas atuais."
             onRowClick={handleRowClick}
             getRowLabel={(course) => course.name}
           />

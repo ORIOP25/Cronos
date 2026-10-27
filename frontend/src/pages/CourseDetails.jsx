@@ -11,6 +11,8 @@ import {
 } from '@coreui/icons'
 import { toast } from 'react-hot-toast'
 import FeedbackBanner from '../components/FeedbackBanner'
+import { BulkRemovalActions } from '../components/BulkRemoval'
+import { useBulkRemoval } from '../hooks/useBulkRemoval'
 import GenericModalForm from '../components/GenericModalForm'
 import ClassInCourseForm from '../components/Forms/ClassInCourseForm'
 import ConfirmationModal from '../components/ConfirmationModal'
@@ -32,11 +34,12 @@ import Breadcrumbs from '../components/Breadcrumbs'
 // ==========================================
 //  HELPER: Linha de turma (grade_level agrupado)
 // ==========================================
-const ClassRow = ({ cls, onNavigate, onEdit, onDelete, navigationDisabled = false, canEdit = true, canDelete = true }) => {
+const ClassRow = ({ cls, onNavigate, onEdit, onDelete, bulk, navigationDisabled = false, canEdit = true, canDelete = true }) => {
   const yearLabel = `${cls.start_year}/${cls.end_year}`
 
   return (
     <div className="compact-row d-flex justify-content-between align-items-center gap-3 flex-wrap">
+          {canDelete && <input type="checkbox" aria-label={`Selecionar ${cls.name}`} checked={bulk.selected.includes(cls.id)} onChange={() => bulk.toggle(cls.id)} disabled={bulk.pending} />}
           <div>
             <button
               type="button"
@@ -95,6 +98,7 @@ const CourseDetails = ({ courseIdOverride, readOnly = false, allowedActions, nav
   const updateCourseClass = useUpdateCourseClass()
   const deleteCourseClass = useDeleteCourseClass()
   const attemptScope = useAttemptScope()
+  const bulk = useBulkRemoval(canDelete ? (course?.classes || []) : [], (classId) => deleteCourseClass.mutateAsync({ courseId, classId }))
 
   // --- STATE: Edição do header ---
   const [editingHeader, setEditingHeader] = useState(false)
@@ -375,6 +379,10 @@ const CourseDetails = ({ courseIdOverride, readOnly = false, allowedActions, nav
               </CButton>
             </CCardHeader>
             <CCardBody>
+              {canDelete && (course.classes || []).length > 0 && <>
+                <label className="me-3"><input type="checkbox" aria-label="Selecionar todas as turmas" checked={bulk.available.length === course.classes.length} onChange={bulk.toggleAll} disabled={bulk.pending} /> Selecionar todas</label>
+                <BulkRemovalActions bulk={bulk} message="As associações serão retiradas e o histórico preservado. Turmas no horário atual podem estar bloqueadas." />
+              </>}
               {(course.classes || []).length === 0 ? (
                 <div className="text-muted text-center mb-0">
                   <p className="mb-0">Nenhuma turma criada para este curso.</p>
@@ -390,6 +398,7 @@ const CourseDetails = ({ courseIdOverride, readOnly = false, allowedActions, nav
                           <ClassRow
                             key={cls.id}
                             cls={cls}
+                            bulk={bulk}
                             onNavigate={handleClassClick}
                             onEdit={handleOpenEditClass}
                             onDelete={handleDeleteClass}

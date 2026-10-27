@@ -20,6 +20,8 @@ import CIcon from '@coreui/icons-react'
 import { cilActionUndo, cilPencil, cilPlus, cilReload, cilTrash } from '@coreui/icons'
 import PageHeader from '../components/PageHeader'
 import FeedbackBanner from '../components/FeedbackBanner'
+import { BulkRemovalActions } from '../components/BulkRemoval'
+import { useBulkRemoval } from '../hooks/useBulkRemoval'
 import { getApiErrorMessage, isApiErrorTransient } from '../utils/apiErrors'
 import { useAttemptScope } from '../hooks/useAttemptScope'
 import {
@@ -281,6 +283,9 @@ const Members = ({ readOnly = false, allowedActions }) => {
     })
   }, [data?.items, search, statusFilter])
 
+  const removableMembers = canCreate ? members.filter((member) => member.actions?.can_remove).map((member) => ({ ...member, name: member.organization_display_name })) : []
+  const bulk = useBulkRemoval(removableMembers, (id) => removeMember.mutateAsync(id))
+
   const openModal = (member = null) => {
     if (member && !canUpdate) return
     if (!member && !canCreate) return
@@ -396,11 +401,12 @@ const Members = ({ readOnly = false, allowedActions }) => {
           Professor não encontrado. Abra a disponibilidade através da equipa.
         </FeedbackBanner></div>
       )}
+      {canCreate && <BulkRemovalActions bulk={bulk} message="Os membros com histórico serão arquivados; os restantes poderão ser removidos definitivamente. O acesso será removido." />}
       <div className="table-responsive">
         <table className="table align-middle">
-          <thead><tr><th>Nome</th><th>Email</th><th>Tipo</th><th>Estado</th><th>Competências</th><th className="text-end">Ações</th></tr></thead>
+          <thead><tr>{canCreate && <th><input type="checkbox" aria-label="Selecionar todos os membros disponíveis" checked={removableMembers.length > 0 && bulk.available.length === removableMembers.length} onChange={bulk.toggleAll} disabled={!removableMembers.length || bulk.pending} /></th>}<th>Nome</th><th>Email</th><th>Tipo</th><th>Estado</th><th>Competências</th><th className="text-end">Ações</th></tr></thead>
           <tbody>
-            {isLoading && <tr><td colSpan="6"><CSpinner size="sm" /> A carregar equipa...</td></tr>}
+            {isLoading && <tr><td colSpan={canCreate ? 7 : 6}><CSpinner size="sm" /> A carregar equipa...</td></tr>}
             {!isLoading && members.map((member) => {
               const [accessLabel, accessColor] = accessLabels[member.access_status] ?? [member.access_status, 'secondary']
               const [lifecycleLabel, lifecycleColor] = lifecycleLabels[member.lifecycle_status] ?? [member.lifecycle_status, 'secondary']
@@ -410,6 +416,7 @@ const Members = ({ readOnly = false, allowedActions }) => {
                 : null
               return (
                 <tr key={member.id}>
+                  {canCreate && <td><input type="checkbox" aria-label={`Selecionar ${member.organization_display_name}`} checked={bulk.selected.includes(member.id)} onChange={() => bulk.toggle(member.id)} disabled={!member.actions?.can_remove || bulk.pending} /></td>}
                   <td className="fw-semibold">{member.organization_display_name}</td>
                   <td>{member.email}</td>
                   <td>

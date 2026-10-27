@@ -1,10 +1,10 @@
-import { fireEvent, screen, within } from '@testing-library/react'
+import { fireEvent, screen, within, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useLocation } from 'react-router-dom'
 import CourseDetails from '../pages/CourseDetails'
 import { renderWithRouter } from './testUtils'
 
-const { courseQuery, removeClass } = vi.hoisted(() => ({ courseQuery: vi.fn(), removeClass: vi.fn() }))
+const { courseQuery, removeClass, removeClassAsync } = vi.hoisted(() => ({ courseQuery: vi.fn(), removeClass: vi.fn(), removeClassAsync: vi.fn().mockResolvedValue({}) }))
 vi.mock('../features/catalog/data', () => {
   const mutation = () => ({ isPending: false, mutate: vi.fn(), reset: vi.fn() })
   return {
@@ -13,7 +13,7 @@ vi.mock('../features/catalog/data', () => {
     useDeleteCourse: mutation,
     useCreateCourseClass: mutation,
     useUpdateCourseClass: mutation,
-    useDeleteCourseClass: () => ({ isPending: false, mutate: removeClass }),
+    useDeleteCourseClass: () => ({ isPending: false, mutate: removeClass, mutateAsync: removeClassAsync }),
   }
 })
 
@@ -71,4 +71,14 @@ describe('CourseDetails compact class list', () => {
     expect(screen.queryByRole('button', { name: 'Editar 10.º A' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Remover 10.º A' })).not.toBeInTheDocument()
   })
+})
+
+it('removes selected classes after one confirmation', async () => {
+  courseQuery.mockReturnValue({ data: { id: 7, name: 'Informática', classes: [classroom, { ...classroom, id: 12, name: '10.º B' }] }, isLoading: false })
+  renderCourse()
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Selecionar 10.º A' }))
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Selecionar 10.º B' }))
+  fireEvent.click(screen.getByRole('button', { name: /remover selecionados/i }))
+  fireEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
+  await waitFor(() => expect(removeClassAsync).toHaveBeenCalledTimes(2))
 })

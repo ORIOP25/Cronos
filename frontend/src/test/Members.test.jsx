@@ -282,3 +282,15 @@ describe('Members', () => {
     expect(screen.queryByText(/Mín\./)).not.toBeInTheDocument()
   })
 })
+
+it('only allows removable members to be selected for bulk removal', async () => {
+  const member = { id: 4, organization_display_name: 'Ana', email: 'ana@example.test', capabilities: [], access_status: 'none', lifecycle_status: 'active', actions: { can_remove: true } }
+  useMembersMock.mockReturnValue({ data: { items: [member, { ...member, id: 5, organization_display_name: 'Bia', actions: { can_remove: false } }] }, isLoading: false })
+  renderWithRouter(<Members />)
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Selecionar Ana' }))
+  expect(screen.getByRole('checkbox', { name: 'Selecionar Bia' })).toBeDisabled()
+  fireEvent.click(screen.getByRole('button', { name: /remover selecionados/i }))
+  fireEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
+  await waitFor(() => expect(removeMock).toHaveBeenCalledWith(4))
+  expect(removeMock).not.toHaveBeenCalledWith(5)
+})

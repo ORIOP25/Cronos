@@ -9,6 +9,8 @@ import { getApiErrorMessage, isApiErrorBlock } from '../utils/apiErrors'
 import { useAttemptScope } from '../hooks/useAttemptScope'
 import StatePanel from './StatePanel'
 import FeedbackBanner from './FeedbackBanner'
+import { BulkRemovalActions } from './BulkRemoval'
+import { useBulkRemoval } from '../hooks/useBulkRemoval'
 
 const RowActions = ({
   item,
@@ -79,6 +81,8 @@ const SmartTable = ({
   const [isDeleting, setIsDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState('')
   const attemptScope = useAttemptScope()
+  const bulkEnabled = allowDelete && typeof onDelete === 'function'
+  const bulk = useBulkRemoval(bulkEnabled ? (data || []) : [], onDelete)
 
   const handleDeleteConfirm = async () => {
     if (!deleteTarget || !onDelete) return
@@ -130,10 +134,12 @@ const SmartTable = ({
 
   return (
     <>
+      {bulkEnabled && <><label className="me-3"><input type="checkbox" aria-label="Selecionar todos" checked={bulk.available.length === data.length} onChange={bulk.toggleAll} disabled={bulk.pending} /> Selecionar todos</label><BulkRemovalActions bulk={bulk} message={typeof deleteMessage === 'function' ? bulk.available.map((item) => `${item.name}: ${deleteMessage(item)}`) : deleteMessage} /></>}
       <CCard className="border-0 shadow-sm"><CCardBody className="p-0 zen-reveal">
         <table className="zen-table">
           <thead>
             <tr>
+              {bulkEnabled && <th aria-label="Seleção" />}
               {columns.map((col) => (
                 <th key={col.key || col.label} style={col._style}>
                   {col.label}
@@ -152,6 +158,7 @@ const SmartTable = ({
                 aria-label={isClickable ? getRowLabel?.(item) : undefined}
                 className={isClickable ? 'zen-table-row-interactive' : undefined}
               >
+                {bulkEnabled && <td><input type="checkbox" aria-label={`Selecionar ${getRowLabel?.(item) ?? item.name ?? item.id}`} checked={bulk.selected.includes(item.id)} onChange={() => bulk.toggle(item.id)} onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()} disabled={bulk.pending} /></td>}
                 {columns.map((col) => (
                   <td key={col.key || col.label} data-label={col.label}>
                     {col.render ? col.render(item) : item[col.key]}
