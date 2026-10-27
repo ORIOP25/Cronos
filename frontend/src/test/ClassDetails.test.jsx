@@ -132,6 +132,31 @@ describe('ClassDetails composition', () => {
     expect(screen.getByText('Sem professor')).toBeInTheDocument()
   })
 
+  it('keeps module details collapsed until requested and opens them while editing progress', () => {
+    const mutation = createMutationState()
+    hooks.updateProgress.mockReturnValue(mutation)
+    renderClassDetails()
+    const progressCard = screen.getByText('Progresso por Disciplina').closest('.card')
+    const zeta = within(progressCard).getByText('Zeta').closest('details')
+    expect(zeta).not.toBeNull()
+    expect(zeta).not.toHaveAttribute('open')
+    expect(within(zeta).getByText('Módulo 1')).not.toBeVisible()
+    fireEvent.click(zeta.querySelector('summary'))
+    expect(within(zeta).getByText('Módulo 1')).toBeVisible()
+    fireEvent.click(zeta.querySelector('summary'))
+    expect(zeta).not.toHaveAttribute('open')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Editar Progresso' }))
+    expect(zeta).toHaveAttribute('open')
+    const hours = within(zeta).getAllByRole('spinbutton')
+    expect(hours).toHaveLength(2)
+    expect(hours[0]).toHaveValue(null)
+    expect(hours[1]).toHaveValue(25)
+    fireEvent.change(hours[0], { target: { value: '10' } })
+    fireEvent.click(within(progressCard).getByRole('button', { name: 'Guardar' }))
+    expect(mutation.mutate).toHaveBeenCalledWith({ classId: 11, progress: [{ module_id: 21, hours_completed: 10 }] }, expect.any(Object))
+  })
+
   it('saves the header with the course and class from the route', () => {
     const mutation = createMutationState()
     hooks.updateClass.mockReturnValue(mutation)
