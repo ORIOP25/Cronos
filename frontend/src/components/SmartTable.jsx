@@ -72,6 +72,7 @@ const SmartTable = ({
   getRowLabel,
   emptyAction,
   deleteMessage,
+  bulkDeleteMessage = deleteMessage,
   allowEdit = true,
   allowDelete = true,
   readOnly = false,
@@ -134,7 +135,7 @@ const SmartTable = ({
 
   return (
     <>
-      {bulkEnabled && <BulkRemovalActions bulk={bulk} message={deleteMessage} />}
+      {bulkEnabled && <BulkRemovalActions bulk={bulk} message={bulkDeleteMessage} />}
       <CCard className="border-0 shadow-sm"><CCardBody className="p-0 zen-reveal">
         <table className={`zen-table${bulkEnabled ? ' zen-table--selectable' : ''}`}>
           <thead>

@@ -635,6 +635,20 @@ textarea {
   --cui-btn-focus-shadow-rgb: 92, 61, 46;
 }
 
+.btn-outline-secondary {
+  --cui-btn-color: var(--cronos-ink-muted);
+  --cui-btn-border-color: var(--cronos-ink-muted);
+  --cui-btn-hover-color: var(--cronos-ink);
+  --cui-btn-hover-bg: var(--cronos-surface-muted);
+  --cui-btn-hover-border-color: var(--cronos-ink-muted);
+  --cui-btn-active-color: var(--cronos-ink);
+  --cui-btn-active-bg: var(--cronos-surface-muted);
+  --cui-btn-active-border-color: var(--cronos-ink-muted);
+  --cui-btn-focus-box-shadow: 0 0 0 .25rem var(--color-focus-ring);
+  --cui-btn-disabled-color: var(--rs-disabled);
+  --cui-btn-disabled-border-color: var(--rs-disabled);
+}
+
 .btn-danger, .btn-outline-danger {
   --cui-btn-border-color: var(--cronos-danger);
   --cui-btn-hover-color: var(--cronos-surface);

@@ -34,6 +34,17 @@ it('lists the selected records and preserves the selection when confirmation is 
   expect(remove).not.toHaveBeenCalled()
 })
 
+it('uses bulk guidance without changing the individual removal warning', () => {
+  render(<SmartTable columns={[{ key: 'name', label: 'Nome' }]} data={[{ id: 1, name: 'A' }]} actions onDelete={vi.fn()} deleteMessage="Remover esta disciplina?" bulkDeleteMessage="O histórico será preservado." />)
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Selecionar A' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Remover selecionados' }))
+  expect(within(screen.getByRole('dialog')).getByText('O histórico será preservado.')).toBeVisible()
+  expect(within(screen.getByRole('dialog')).queryByText('Remover esta disciplina?')).not.toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Remover A' }))
+  expect(within(screen.getByRole('dialog')).getByText('Remover esta disciplina?')).toBeVisible()
+})
+
 it('removes selected records after one confirmation and identifies failures', async () => {
   const remove = vi.fn().mockImplementation((id) => id === 2 ? Promise.reject(new Error('blocked')) : Promise.resolve())
   render(<SmartTable columns={[{ key: 'name', label: 'Nome' }]} data={[{ id: 1, name: 'A' }, { id: 2, name: 'B' }, { id: 3, name: 'C' }]} actions onDelete={remove} />)

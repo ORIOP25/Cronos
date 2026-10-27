@@ -114,6 +114,7 @@ const Subjects = ({ readOnly = false, allowedActions }) => {
             readOnly={readOnly}
             getRowLabel={(subject) => subject.name}
             deleteMessage="Remover esta disciplina? As associações a turmas e cursos serão retiradas e o histórico de horários e progresso será preservado. Se estiver no horário atual, a remoção é bloqueada."
+            bulkDeleteMessage="As associações a turmas e cursos serão retiradas e o histórico de horários e progresso será preservado. Se estiver no horário atual, a remoção é bloqueada."
           />
 
       {/* MODAL COM WIZARD (Opção A: Criação com módulos) */}
