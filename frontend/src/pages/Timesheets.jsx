@@ -4,7 +4,7 @@ import PageHeader from '../components/PageHeader'
 import { useNavigate } from 'react-router-dom'
 import {
   CCard, CCardBody, CBadge, CSpinner, CButton,
-  CFormSelect, CRow, CCol,
+  CFormInput, CFormSelect, CRow, CCol,
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import { cilCheckCircle, cilActionUndo, cilPeople, cilExternalLink } from '@coreui/icons'
@@ -29,6 +29,7 @@ const Timesheets = ({ initialWeekStart, readOnly = false, allowedActions, naviga
   const navigate = useNavigate()
   const [weekFilter, setWeekFilter] = useState(() => initialWeekStart || toWeekMonday(new Date()))
   const [statusFilter, setStatusFilter] = useState('ALL')
+  const [teacherSearch, setTeacherSearch] = useState('')
   const [requestedTeacherId, setRequestedTeacherId] = useState(null)
   const [modalSlot, setModalSlot] = useState(null)
   const [statusActionError, setStatusActionError] = useState('')
@@ -41,11 +42,14 @@ const Timesheets = ({ initialWeekStart, readOnly = false, allowedActions, naviga
     isLoading: loadingTimesheets,
     isError: timesheetsError,
   } = useTimesheets(weekFilter || undefined, statusParam)
+  const filteredTimesheets = useMemo(() => timesheets.filter((item) =>
+    (item.teacher_name || 'Professor por identificar').toLocaleLowerCase('pt-PT').includes(teacherSearch.trim().toLocaleLowerCase('pt-PT')),
+  ), [timesheets, teacherSearch])
   const selectedTeacher = useMemo(
-    () => timesheets.find((item) => item.teacher_id === requestedTeacherId)
-      ?? timesheets[0]
+    () => filteredTimesheets.find((item) => item.teacher_id === requestedTeacherId)
+      ?? filteredTimesheets[0]
       ?? null,
-    [requestedTeacherId, timesheets],
+    [requestedTeacherId, filteredTimesheets],
   )
   const weekLabel = formatWeekRange(weekFilter)
   const selectedTeacherId = selectedTeacher?.teacher_id ?? null
@@ -56,6 +60,9 @@ const Timesheets = ({ initialWeekStart, readOnly = false, allowedActions, naviga
   const {
     data: weekSlots = [],
     isLoading: loadingWeek,
+    isError: weekError,
+    isFetching: fetchingWeek,
+    refetch: refetchWeek,
   } = useWeekSchedule(null, selectedTeacherId, weekFilter)
 
   const updateMutation = useUpdateTimesheetStatus()
@@ -147,9 +154,12 @@ const Timesheets = ({ initialWeekStart, readOnly = false, allowedActions, naviga
                 <CIcon icon={cilPeople} className="text-primary" />
                 <span className="fw-semibold">Professores</span>
                 <CBadge color="light" className="ms-auto text-dark">
-                  {timesheets.length}
+                  {filteredTimesheets.length}
                 </CBadge>
               </div>
+
+              <label htmlFor="timesheet-teacher-search" className="form-label">Pesquisar professor</label>
+              <CFormInput id="timesheet-teacher-search" type="search" value={teacherSearch} onChange={(event) => setTeacherSearch(event.target.value)} className="mb-3" />
 
               {loadingTimesheets && (
                 <div className="text-center p-3">
@@ -160,9 +170,12 @@ const Timesheets = ({ initialWeekStart, readOnly = false, allowedActions, naviga
               {!loadingTimesheets && timesheets.length === 0 && (
                 <FeedbackBanner tone="info">Nenhum professor com timesheet nesta semana.</FeedbackBanner>
               )}
+              {!loadingTimesheets && timesheets.length > 0 && filteredTimesheets.length === 0 && (
+                <FeedbackBanner tone="info">Nenhum professor encontrado.</FeedbackBanner>
+              )}
 
               <div style={{ maxHeight: '70vh', overflowY: 'auto' }}>
-                {timesheets.map((ts) => (
+                {filteredTimesheets.map((ts) => (
                   <TeacherCard
                     key={ts.teacher_id}
                     teacher={ts}
@@ -280,7 +293,10 @@ const Timesheets = ({ initialWeekStart, readOnly = false, allowedActions, naviga
                   )}
 
                   {/* WeekGrid */}
-                  <WeekGrid
+                  {weekError ? <FeedbackBanner tone="danger">
+                    Não foi possível carregar os dados da semana.{' '}
+                    <CButton size="sm" color="link" disabled={fetchingWeek} onClick={() => void refetchWeek()}>Tentar novamente</CButton>
+                  </FeedbackBanner> : <WeekGrid
                     slots={weekSlots}
                     isLoading={loadingWeek}
                     baseTimeslots={timeslots}
@@ -289,7 +305,7 @@ const Timesheets = ({ initialWeekStart, readOnly = false, allowedActions, naviga
                     gridTransitionDate={weekGridVersions?.transition_date ?? ''}
                     isOperationalEnabled
                     onOpenOperationalAction={handleOpenSlot}
-                  />
+                  />}
                 </>
               ) : (
                 <div className="text-center p-5 text-muted">

@@ -48,6 +48,8 @@ Routes under `/api/v1/timesheets`: `GET /` (admin list), `GET /me/{week_start_da
 5. An administrator approves or reopens the week.
 6. Progress and debt views read ledger and occurrence data.
 
+The administrator can search the weekly teacher list by name. If the selected teacher's week fails to load, the page shows an error and a retry action instead of an empty grid.
+
 ## Contracts and Invariants
 
 - Timesheet status is `OPEN`, `SUBMITTED`, or `APPROVED`.
