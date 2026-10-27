@@ -50,7 +50,11 @@ from app.scheduler.domain.priorities import (
 )
 from app.scheduler.domain.priority_metrics import typical_lesson_minutes
 from app.scheduler.domain.projection import FutureLesson, project_module_slices
-from app.scheduler.domain.teacher_presence import _lunch_choices_from_intervals
+from app.scheduler.domain.teacher_presence import (
+    _lunch_choices_from_intervals,
+    longest_presence_minutes,
+    presence_minutes_fit,
+)
 from app.scheduler.infrastructure.room_assignment import assign_rooms_by_period
 
 SlotKey = tuple[int, time, time]  # (weekday, start_local, end_local) of a grid slot
@@ -227,6 +231,22 @@ def _minimize(model: cp_model.CpModel, cost_terms, *, ticks: int, seed: int, tim
     return solver, solver.status_name(status), status in (cp_model.OPTIMAL, cp_model.FEASIBLE)
 
 
+def _presence_totals(
+    week: _Week, day_keys: list[SlotKey], rule: TeacherPresenceRule, room: int
+) -> list[int]:
+    """Lesson totals (0 to room) that one teacher day can hold under the presence rule."""
+    slots = [(_minutes(key[1]), _minutes(key[2])) for key in day_keys]
+    longest = longest_presence_minutes(rule, slots, lunch_rule=week.lunch_rule)
+    return [
+        value
+        for value in range(room + 1)
+        if value == 0
+        or presence_minutes_fit(
+            value * week.lesson_minutes, minimum=rule.minimum_minutes, longest=longest
+        )
+    ]
+
+
 def _solve_counts(
     week: _Week,
     targets: Mapping[int, int],
@@ -315,6 +335,11 @@ def _solve_counts(
             rule = week.presence.get(identity)
             if rule is not None and rule.minimum_minutes:
                 model.add(total >= ceil(rule.minimum_minutes / week.lesson_minutes) * on)
+                # A day total must be one that the presence rule can hold (domain fit check).
+                allowed = _presence_totals(week, day_slots[day], rule, room)
+                capped = model.new_int_var(0, room, "")
+                model.add(capped == total)
+                model.add_allowed_assignments([capped], [(value,) for value in allowed])
 
     # A teacher's single-lesson day is forbidden while another of the teacher's units has lessons
     # elsewhere that week and could join that day.
@@ -822,6 +847,8 @@ def generate_weekly_template(
                     shortfall=template.shortfall,
                     seconds=template.seconds,
                     cut_rounds=template.cut_rounds,
+                    count_seconds=template.count_seconds,
+                    day_seconds=template.day_seconds,
                 )
             solves.append(template)
             changes += len(template.placements - previous)
