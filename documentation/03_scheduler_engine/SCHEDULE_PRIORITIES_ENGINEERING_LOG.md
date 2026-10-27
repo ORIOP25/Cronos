@@ -415,6 +415,71 @@ Limitações. A compactação não move uma aula para uma hora ocupada por outra
 - `python -I` ignora o `PYTHONPATH` e não encontra o pacote `app`.
 - O cProfile mede onde está o tempo, mas não quanto dura uma corrida normal.
 
+### Dias curtos e modelo semanal (26–27 de outubro de 2026)
+
+As medições são locais, no contentor de testes do backend. A escola real é a entrada de produção do piloto, lida só em leitura e gerada localmente. Os números são totais da escola. Os comandos estão na [Command Reference](../00_getting_started/COMMAND_REFERENCE.md#verification-by-change-type).
+
+#### Regras do responsável de produto (26 de outubro de 2026)
+
+- Um dia de turma tem 0 aulas ou pelo menos 3. Duas aulas cedo e uma às 17h não podem existir.
+- A grelha de produção não tem a aula das 17h00–18h00. Os intervalos de 10 minutos empurram a aula 8 para as 17h10–18h10, depois do fecho às 18h00.
+- O responsável quer um intervalo de 0 minutos depois da aula das 12h30. A grelha aceita 0 minutos ([`timetable.py`](../../backend/app/scheduler/domain/timetable.py)).
+- A mensagem de erro ao regenerar a grelha foi corrigida em [#199](https://github.com/ORIOP25/Cronos/pull/199).
+
+#### Primeira semana mais fraca
+
+Na escola real, o `main` dá dias de turma com 1 ou 2 aulas: 92 na primeira semana, 41 na segunda, depois 26 e 22.
+Na primeira semana há cerca de 2,8 aulas por dia de turma. Depois há cerca de 4,5. Ao longo do ano, 500 dias de turma têm 1 ou 2 aulas.
+
+#### Tentativas que falharam
+
+- **Tentativa 1: penalização na construção para dias com 1 ou 2 aulas.** Escola real: dias de 1–2 aulas de 500 para 1 380; dias de professor com uma só aula de 31 para 495; fim de 29 de março para 9 de julho.
+  Lição: a construção cronológica não vê que um dia vai acabar curto. Furos e dias com uma só aula nascem de decisões que a construção vê. Um dia com 2 aulas nasce de aulas que nunca chegam a ser colocadas.
+- **Tentativa 2: compactação semanal depois da construção.** Dias de 1–2 aulas. Escola real: 500 para 450 (−10%). Piloto ×1.0: 197 para 192. Mais de 30 000 recusas, porque o professor ou a turma estava ocupado.
+  Lição: o pós-processamento não reorganiza dias num horário cheio.
+
+#### Modelo semanal (ramo de ensaio)
+
+O ramo `spike/weekly-template-mvp` existe no remoto e não foi fundido no `main`.
+O desenho tem duas fases. Primeiro, um modelo CP-SAT de contagem por semana: aulas por unidade por dia da semana. Depois, um modelo de posições por dia da semana, com regras duras de dia. O padrão repete-se pelo calendário e respeita os feriados.
+
+- **Ronda 1, escola real:** dias de 1–2 aulas de 500 para 12; furos dos professores de 490 para 1 721 h; 10 unidades por acabar; 24 minutos. A escola grande (48 turmas) não resolveu dentro do limite de tempo.
+- **Ronda 2:** dois estágios, metas semanais rígidas, regra da cauda e feriados. Um dia curto só existe para acabar as últimas aulas de uma unidade.
+  - Escola real: válida e completa. Dias fora da cauda com 1–2 aulas: 0. Furos dos professores: 130 h. Dias de turma com 1 furo: 807 (`main`: 485). Dias de professor com uma só aula: 101 (`main`: 31). Tempo: 40 min.
+  - Piloto ×1.0: 939 violações; 82 unidades por acabar.
+- **Ronda 3:** solves paralelos por dia da semana, custo exato de dias de professor com uma só aula com regra de junção, e regra exata de presença.
+
+| Escola real | `main` | Ronda 3 |
+| :--- | ---: | ---: |
+| Válido | sim | sim |
+| Dias fora da cauda com 1–2 aulas | 439 | 0 |
+| Furos dos professores (h) | 490 | 47 |
+| Dias de professor com uma só aula | 31 | 2 |
+| Dias de turma com 1 furo | 485 | 1 064 |
+| Última aula | 29 de março | 2 de abril |
+| Tempo | 159 s | 2 158 s |
+| Pico de RSS | 216 MB | 227 MB |
+
+Piloto ×1.0, Ronda 3: 113 unidades por acabar; 12 violações de presença; 75 min. A fase de contagem ocupa 85–88% do tempo.
+
+#### Veredicto
+
+Os fundamentos valem na escola real: a regra do dia de turma e dias de professor muito melhores. Não está pronto para produção. É cerca de 13 vezes mais lento, tem mais dias de turma com 1 furo e fica incompleto ou inválido numa escola grande.
+
+Um porte precisa de:
+
+- um modelo de contagem mais rápido;
+- um caminho válido quando o modelo semanal é inviável;
+- o peso dos furos das turmas, decisão do responsável de produto;
+- proteção das aulas e dos fluxos de atualização;
+- memória do worker na Railway, com processos paralelos.
+
+#### Lições dos ensaios
+
+- Medir na entrada real do responsável de produto, não só na escola do laboratório.
+- Uma aula conjunta grava-se uma linha por turma em [`scheduler_lesson_v1`](../../backend/app/scheduler/infrastructure/models.py), com o mesmo `stable_key` e o mesmo `teaching_unit_key`. Contar furos dessa tabela sem agrupar pela unidade de ensino erra os números. Foi um erro de contagem da coordenação a 26 de outubro.
+- Os dados de produção leem-se a partir do contentor da API, em transação só de leitura, com o contexto do tenant definido. Sem esse contexto, o RLS esconde todas as linhas. Ver [Cloud Operations](../09_ops_observability/CLOUD_OPERATIONS.md#read-only-inspection) e [isolamento de tenant](../08_security_quality/SECURITY_AND_TENANT_ISOLATION.md).
+
 ## Failure Modes
 
 ### Boas decisões
