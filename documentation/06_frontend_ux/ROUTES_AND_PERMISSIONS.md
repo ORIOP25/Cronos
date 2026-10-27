@@ -73,7 +73,7 @@ Routes use `<RequireAuth>`, `<RequireAdmin>`, `<RequireTeacher>`, `<RequireFound
 - A completed Foundation never shows the wizard again.
   An administrator lands on the role default (`/dashboard`), and other members land on their role default route.
   A visit to `/foundation` redirects an administrator to `/config`, the school settings surface.
-  A successful activation continues to `/dashboard`, including when the member cache refreshes before the activation mutation finishes. The pending mutation is scoped to the active organization.
+  A successful activation continues to `/dashboard`, including when the member cache refreshes before the activation mutation finishes. If the status refresh arrives first, the administrator sees a loader until the member cache reconciles instead of returning to the wizard. The pending mutation is scoped to the active organization.
 - `/legal/aceitar` is not a client route.
 - Signed-in root visits use `getMemberRoute`, which resolves the completed role default or the foundation landing route.
 - Public metadata comes from `features/marketing/content/metadata.js`.

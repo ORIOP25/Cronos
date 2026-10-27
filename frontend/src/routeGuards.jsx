@@ -250,6 +250,7 @@ function MemberGate({ children, capability, requireTeacherId = false, redirectTo
 
   // Foundation gate: incomplete organizations have no operational routes.
   if (!allowUncompletedFoundation && !isFoundationComplete(member)) {
+    if (foundationCompletionPending && hasMemberCapability(member, 'admin')) return <PageLoader />
     return <Navigate to={getFoundationLandingRoute(member)} replace />
   }
 

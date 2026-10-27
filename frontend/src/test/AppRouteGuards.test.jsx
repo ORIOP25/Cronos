@@ -357,6 +357,25 @@ describe('RequireFoundationAdmin', () => {
     },
   )
 
+  it('waits on the dashboard route while activation refreshes an incomplete member', async () => {
+    const queryClient = createTestQueryClient()
+    let finishCompletion
+    const completion = queryClient.getMutationCache().build(queryClient, {
+      mutationKey: ['foundation-complete', 1],
+      mutationFn: () => new Promise((resolve) => { finishCompletion = resolve }),
+    }).execute({})
+    await waitFor(() => expect(finishCompletion).toBeTypeOf('function'))
+    try {
+      renderGuard(<RequireAdmin><div>Dashboard content</div></RequireAdmin>, ['/protected'], { queryClient })
+      expect(screen.queryByTestId('foundation-route')).not.toBeInTheDocument()
+      expect(screen.queryByText('Dashboard content')).not.toBeInTheDocument()
+      expect(screen.getByRole('status')).toBeInTheDocument()
+    } finally {
+      finishCompletion({})
+      await completion
+    }
+  })
+
   it('redirects a teacher away from /foundation to the teacher default', () => {
     memberState.value = {
       access_status: 'active',
