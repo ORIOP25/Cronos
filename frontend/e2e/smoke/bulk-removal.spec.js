@@ -44,6 +44,7 @@ test('removes selected subjects with one confirmation', async ({ page }, testInf
       }
       await dialog.getByRole('button', { name: 'Cancelar', exact: true }).click()
       await expect(dialog).toBeHidden()
+      await expect(page.locator('.modal-backdrop')).toHaveCount(0)
       await expect(page.getByRole('checkbox', { name: `Selecionar ${names[0]}` })).toBeChecked()
     }
     await page.getByRole('button', { name: /remover selecionados/i }).click()

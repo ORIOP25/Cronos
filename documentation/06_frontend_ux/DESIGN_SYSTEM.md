@@ -57,7 +57,7 @@ Cronos employs a warm, authoritative visual identity designed for educational tr
 - Room forms create and select room types in context. Existing type management returns to the same room draft.
 - Primary actions use the shared primary button theme, including activation. Contextual edit actions use the outlined primary variant.
 - Cancellation retains its secondary variant. Primary button selection, hover and keyboard focus use Cronos colors.
-- Bulk selection uses the shared checkbox, including its partial-selection state and keyboard focus. Selection actions appear only when records are selected; clearing returns focus to the list.
+- Bulk selection uses the shared checkbox, including its partial-selection state and keyboard focus. Selection actions appear only when records are selected, remain accessible while scrolling and clear back to the list's keyboard focus.
 - Destructive controls use the shared danger theme. Bulk confirmation lists the selected records, keeps removal impacts visible and names the action explicitly.
 - Place reset and save actions at the lower right, with the primary save action last.
 - Course classes and class assignments use divided rows. Teacher progress and class module progress use native compact disclosures.

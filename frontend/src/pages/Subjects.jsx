@@ -22,6 +22,7 @@ import {
 } from '../features/catalog/data'
 
 const NEW_MODULE_WARNING = 'Disciplina atualizada. Os módulos novos não foram marcados nas turmas. Marque-os nas turmas que os vão ter.'
+const SUBJECT_REMOVAL_EFFECTS = 'As associações a turmas e cursos serão retiradas e o histórico de horários e progresso será preservado. Se estiver no horário atual, a remoção é bloqueada.'
 
 const Subjects = ({ readOnly = false, allowedActions }) => {
   const navigate = useNavigate()
@@ -113,8 +114,8 @@ const Subjects = ({ readOnly = false, allowedActions }) => {
             allowDelete={canDelete}
             readOnly={readOnly}
             getRowLabel={(subject) => subject.name}
-            deleteMessage="Remover esta disciplina? As associações a turmas e cursos serão retiradas e o histórico de horários e progresso será preservado. Se estiver no horário atual, a remoção é bloqueada."
-            bulkDeleteMessage="As associações a turmas e cursos serão retiradas e o histórico de horários e progresso será preservado. Se estiver no horário atual, a remoção é bloqueada."
+            deleteMessage={`Remover esta disciplina? ${SUBJECT_REMOVAL_EFFECTS}`}
+            bulkDeleteMessage={SUBJECT_REMOVAL_EFFECTS}
           />
 
       {/* MODAL COM WIZARD (Opção A: Criação com módulos) */}
