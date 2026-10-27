@@ -1,4 +1,4 @@
-import { CCard, CCardBody, CRow, CCol, CFormCheck } from '@coreui/react'
+import { CFormCheck } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import { cilCalendar, cilClock } from '@coreui/icons'
 import { DAY_LABELS } from '../../../constants'
@@ -6,12 +6,29 @@ import { formatTimeOfDay } from '../../../utils/timeOfDay'
 import { normalizeBreakOverrides } from '../foundationModel'
 
 export function SummaryStep({ values, organizationName, confirmed, onConfirmedChange }) {
-  const days = (values.days_of_week || []).map((d) => DAY_LABELS[d] || `Dia ${d}`).join(', ')
+  const days = (values.days_of_week || []).map((day) => DAY_LABELS[day] || `Dia ${day}`).join(', ')
   const overrides = normalizeBreakOverrides(values.break_overrides)
   const adjustments = overrides.length
     ? overrides.map((override) => `após aula ${override.after_slot} (${override.duration_minutes} min)`).join(', ')
     : 'nenhum'
   const flows = (values.internship_flows || []).filter((flow) => flow.name && flow.start_date && flow.end_date)
+  const groups = [
+    { title: 'Período Escolar', icon: cilCalendar, items: [
+      ['Data de Início:', values.school_start_date || '—'],
+      ['Data preferencial de fim:', values.preferred_end_date || '—'],
+      ['Fim do ano letivo:', values.school_hard_end_date || '—'],
+      ['Dias em que o horário não muda:', `${values.repair_stability_window_days ?? 14} dias`],
+      ['Feriados automáticos:', values.automatic_holidays_enabled ? 'Ativados' : 'Desativados'],
+      ['Fluxos de estágio:', flows.length ? flows.map((flow) => `${flow.name} (${flow.start_date} a ${flow.end_date})`).join('; ') : 'Nenhum'],
+    ] },
+    { title: 'Grelha Horária', icon: cilClock, items: [
+      ['Dias de Aulas:', days || 'Nenhum'],
+      ['Horário de Funcionamento:', `${formatTimeOfDay(values.opening_time)} às ${formatTimeOfDay(values.closing_time)}`],
+      ['Duração da aula:', `${values.slot_duration_minutes} min`],
+      ['Pausas entre Aulas:', `Pausa habitual: ${values.break_duration_minutes} min · Ajustes: ${adjustments}`],
+      ['Janela de Almoço:', `${formatTimeOfDay(values.lunch_window_start)} - ${formatTimeOfDay(values.lunch_window_end)} (mín. ${values.lunch_min_duration_minutes} min)`],
+    ] },
+  ]
 
   return (
     <div className="foundation-step-summary">
@@ -19,73 +36,14 @@ export function SummaryStep({ values, organizationName, confirmed, onConfirmedCh
       <p className="text-muted small mb-4">
         Reveja os parâmetros base para <strong>{organizationName}</strong>. Ao clicar em &quot;Ativar Escola&quot;, a fundação será concluída de forma definitiva e irreversível, criando a grelha horária canónica e desbloqueando a fase de preparação.
       </p>
-
-      <CRow className="g-3 mb-4">
-        <CCol md={6}>
-          <CCard className="h-100 border-0 shadow-sm bg-light">
-            <CCardBody>
-              <h6 className="fw-bold text-primary mb-3"><CIcon icon={cilCalendar} className="me-2" aria-hidden="true" />Período Escolar</h6>
-              <div className="small mb-2">
-                <span className="text-muted d-block">Data de Início:</span>
-                <strong>{values.school_start_date || '—'}</strong>
-              </div>
-              <div className="small mb-2">
-                <span className="text-muted d-block">Data preferencial de fim:</span>
-                <strong>{values.preferred_end_date || '—'}</strong>
-              </div>
-              <div className="small mb-2">
-                <span className="text-muted d-block">Fim do ano letivo:</span>
-                <strong>{values.school_hard_end_date || '—'}</strong>
-              </div>
-              <div className="small">
-                <span className="text-muted d-block">Dias em que o horário não muda:</span>
-                <strong>{values.repair_stability_window_days ?? 14} dias</strong>
-              </div>
-              <div className="small mt-2">
-                <span className="text-muted d-block">Feriados automáticos:</span>
-                <strong>{values.automatic_holidays_enabled ? 'Ativados' : 'Desativados'}</strong>
-              </div>
-              <div className="small mt-2">
-                <span className="text-muted d-block">Fluxos de estágio:</span>
-                <strong>
-                  {flows.length
-                    ? flows.map((flow) => `${flow.name} (${flow.start_date} a ${flow.end_date})`).join('; ')
-                    : 'Nenhum'}
-                </strong>
-              </div>
-            </CCardBody>
-          </CCard>
-        </CCol>
-
-        <CCol md={6}>
-          <CCard className="h-100 border-0 shadow-sm bg-light">
-            <CCardBody>
-              <h6 className="fw-bold text-primary mb-3"><CIcon icon={cilClock} className="me-2" aria-hidden="true" />Grelha Horária</h6>
-              <div className="small mb-2">
-                <span className="text-muted d-block">Dias de Aulas:</span>
-                <strong>{days || 'Nenhum'}</strong>
-              </div>
-              <div className="small mb-2">
-                <span className="text-muted d-block">Horário de Funcionamento:</span>
-                <strong>{formatTimeOfDay(values.opening_time)} às {formatTimeOfDay(values.closing_time)}</strong>
-              </div>
-              <div className="small mb-2">
-                <span className="text-muted d-block">Bloco / Intervalo:</span>
-                <strong>{values.slot_duration_minutes} min / {values.break_duration_minutes} min</strong>
-              </div>
-              <div className="small mb-2">
-                <span className="text-muted d-block">Pausas entre Aulas:</span>
-                <strong>Pausa habitual: {values.break_duration_minutes} min · Ajustes: {adjustments}</strong>
-              </div>
-              <div className="small">
-                <span className="text-muted d-block">Janela de Almoço:</span>
-                <strong>{formatTimeOfDay(values.lunch_window_start)} - {formatTimeOfDay(values.lunch_window_end)} (mín. {values.lunch_min_duration_minutes} min)</strong>
-              </div>
-            </CCardBody>
-          </CCard>
-        </CCol>
-      </CRow>
-
+      <div className="row g-4 mb-4">
+        {groups.map((group) => <section key={group.title} className="col-md-6" aria-label={group.title}>
+          <h5 className="h6 fw-bold mb-3"><CIcon icon={group.icon} className="me-2" aria-hidden="true" />{group.title}</h5>
+          <dl className="summary-list">
+            {group.items.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
+          </dl>
+        </section>)}
+      </div>
       <CFormCheck
         id="foundation-confirmation"
         className="mt-3"

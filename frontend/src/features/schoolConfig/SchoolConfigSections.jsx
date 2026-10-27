@@ -348,18 +348,21 @@ export const CalendarSection = () => {
       )}
 
 
-      <CCard className="border-0 shadow-sm mb-4 calendar-event-editor">
-        <CCardHeader className="bg-white fw-bold py-2 calendar-event-editor__header">
+      <section className="mb-4 calendar-event-editor" aria-label="Editar calendário">
+        <h3 className="h6 fw-bold py-2 calendar-event-editor__header">
           <span>
             <CIcon icon={cilCalendar} className="me-2" />
             {editingFlowId ? 'Editar Fluxo de Estágio' : 'Adicionar Evento'}
           </span>
-        </CCardHeader>
-        <CCardBody>
-          <p className="text-muted mb-3">
+        </h3>
+        <div>
+          <details className="context-details mb-3">
+          <summary>Como funciona o calendário</summary>
+          <p className="text-muted mb-0 mt-2">
             Registe uma interrupção específica da escola ou um fluxo de estágio.
             {' '}Os feriados nacionais são atualizados automaticamente através desta opção.
           </p>
+          </details>
           <CRow className="g-3">
             <CCol md={3}>
               <CFormLabel htmlFor="eventName">Nome do evento</CFormLabel>
@@ -466,11 +469,10 @@ export const CalendarSection = () => {
               )}
             </CRow>
           )}
-        </CCardBody>
-      </CCard>
+        </div>
+      </section>
 
-      <CCard className="border-0 shadow-sm mb-4">
-        <CCardBody>
+      <section className="compact-row mb-4" aria-label="Preferência de feriados">
           <CFormCheck
             id="school-automatic-holidays"
             label="Feriados automáticos"
@@ -498,8 +500,7 @@ export const CalendarSection = () => {
           <p className="text-muted small mb-0 mt-2">
             Ativar importa os feriados nacionais e acompanha alterações futuras às datas do período letivo.
           </p>
-        </CCardBody>
-      </CCard>
+      </section>
 
       {eventListContent}
 
@@ -1012,7 +1013,7 @@ const GridChangeImpactPanel = ({ preview, decisions, onDecision, onPropose, isPr
             {decisionTargets.map((target) => {
               const isAvailability = Array.isArray(target.teachers) || Array.isArray(target.classes)
               return (
-                <fieldset key={target.current_timeslot_id} className="border rounded p-3 mb-3">
+                <fieldset key={target.current_timeslot_id} className="compact-row mb-3">
                   <legend className="fs-6 fw-semibold">
                     {isAvailability
                       ? `${DAY_LABELS[target.current.day_of_week]} ${normalizeTimeLabel(target.current.start_time)}-${normalizeTimeLabel(target.current.end_time)}`

@@ -22,6 +22,11 @@
 .btn-check:focus-visible + .btn { box-shadow: 0 0 0 .25rem var(--color-focus-ring); }
 .compact-list { border-top: 1px solid var(--cronos-border); }
 .compact-row, .compact-disclosure { padding: 16px 0; border-bottom: 1px solid var(--cronos-border); }
+.compact-row > legend { padding-top: 16px; }
+.summary-list { margin: 0; }
+.summary-list > div { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--cronos-border); font-size: .875rem; }
+.summary-list dt { color: var(--cronos-ink-muted); font-weight: 400; }
+.summary-list dd { margin: 0; overflow-wrap: anywhere; font-weight: 600; }
 .compact-disclosure > summary { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 44px; color: var(--cronos-ink); cursor: pointer; }
 .compact-disclosure > summary::after { content: '+'; flex: 0 0 auto; color: var(--cronos-ink-muted); }
 .compact-disclosure[open] > summary::after { content: '−'; }

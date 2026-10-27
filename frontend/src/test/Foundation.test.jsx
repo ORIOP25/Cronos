@@ -210,6 +210,8 @@ describe('Foundation', () => {
 
     expect(screen.getByText('Data preferencial de fim:')).toBeInTheDocument()
     expect(screen.getByText('2026-06-30')).toBeInTheDocument()
+    expect(screen.getByText('Duração da aula:').tagName).toBe('DT')
+    expect(screen.queryByText('Bloco / Intervalo:')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('checkbox', { name: /confirmo que revi/i }))
     expect(screen.getByRole('button', { name: /^ativar escola$/i })).toHaveClass('btn-primary')
     fireEvent.click(screen.getByRole('button', { name: /^ativar escola$/i }))

@@ -72,7 +72,7 @@ export function PreparationDashboard({
 
       <CCard className="mb-4 shadow-sm border-0 bg-primary text-white">
         <CCardBody className="p-4">
-          <div className="d-flex justify-content-between align-items-center mb-3">
+          <div className="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-3">
             <div>
               <CBadge
                 color="light"
@@ -89,7 +89,7 @@ export function PreparationDashboard({
                 {cardDescription}
               </p>
             </div>
-            <div className="d-flex gap-2">
+            <div className="d-flex flex-wrap gap-2">
               <CButton
                 color="light"
                 variant="outline"
@@ -120,7 +120,7 @@ export function PreparationDashboard({
       <CCard className="shadow-sm border-0 mb-4">
         <CCardBody className="p-4">
           <h2 className="h5 fw-bold mb-3 text-dark">Passos de preparação</h2>
-          <div className="d-flex flex-column gap-3" data-testid="preparation-levels">
+          <div className="compact-list" data-testid="preparation-levels">
             {steps.map((step, index) => {
               const isPassed = step.status === 'COMPLETE'
               const isCurrentTarget = !isPassed && (index === 0 || steps[index - 1].status === 'COMPLETE')
@@ -129,27 +129,17 @@ export function PreparationDashboard({
                 <div
                   key={step.code}
                   data-testid={`preparation-level-${step.code}`}
-                  className={`p-3 rounded border d-flex justify-content-between align-items-center gap-3 ${
-                    isPassed
-                      ? 'bg-light border-success-subtle'
-                      : isCurrentTarget
-                        ? 'bg-white border-primary shadow-sm'
-                        : 'bg-light text-muted opacity-75'
-                  }`}
+                  className="compact-row d-flex justify-content-between align-items-center flex-wrap gap-3"
                 >
-                  <div className="d-flex align-items-center gap-3">
+                  <div className="d-flex align-items-center flex-wrap gap-3">
                     <span className={`badge rounded-pill ${isPassed ? 'bg-success' : isCurrentTarget ? 'bg-primary' : 'bg-secondary'}`}>
-                      {isPassed ? '✓ Concluído' : isCurrentTarget ? 'A Realizar' : 'Bloqueado'}
+                      {isPassed ? 'Concluído' : isCurrentTarget ? 'A Realizar' : 'Bloqueado'}
                     </span>
                     <div>
                       <h3 className="h6 mb-0 fw-semibold text-dark">{index + 1}. {STEP_LABELS[step.code] || 'Passo de preparação'}</h3>
-                      <small className="text-muted">
-                        {isPassed
-                          ? 'Concluído'
-                          : isCurrentTarget
-                            ? 'Complete este passo para avançar'
-                            : 'Conclua primeiro o passo anterior'}
-                      </small>
+                      {!isPassed && <small className="text-muted">{isCurrentTarget
+                        ? 'Complete este passo para avançar'
+                        : 'Conclua primeiro o passo anterior'}</small>}
                     </div>
                   </div>
                   {isCurrentTarget && <Link to={step.route} className="btn btn-sm btn-primary">Configurar →</Link>}

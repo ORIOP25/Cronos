@@ -86,7 +86,7 @@ export default function MyAvailability({ readOnly = false, allowedActions, warnO
     <div data-tutorial-target="availability-workspace">
       <PageHeader preTitle="Professor" title="Minha Disponibilidade" description="Escolha uma ferramenta e pinte os blocos. Pode usar rato, toque ou teclado." />
       {isNonDefaultPresence(presenceQuery.data) && (
-        <div className="border rounded p-3 mb-3" role="note" aria-label="Regra de presença">
+        <div className="text-muted mb-3" role="note" aria-label="Regra de presença">
           <p className="mb-0">{describePresenceRule(presenceQuery.data)}</p>
         </div>
       )}
