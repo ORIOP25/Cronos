@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
-import { fireEvent, screen, within } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach } from 'vitest'
 import { renderWithRouter } from './testUtils'
 import Members from '../pages/Members'
 
-const { useMembersMock } = vi.hoisted(() => ({ useMembersMock: vi.fn() }))
+const { useMembersMock, resendMock, updateMock, removeMock } = vi.hoisted(() => ({ useMembersMock: vi.fn(), resendMock: vi.fn(), updateMock: vi.fn(), removeMock: vi.fn() }))
 
 vi.mock('../features/members/data', () => {
   const mutation = () => ({
@@ -18,9 +18,9 @@ vi.mock('../features/members/data', () => {
     useMembers: () => useMembersMock(),
     useTeachers: () => ({ data: [] }),
     useCreateMember: mutation,
-    useUpdateMember: mutation,
-    useRemoveMember: mutation,
-    useResendMemberInvitation: mutation,
+    useUpdateMember: () => ({ mutateAsync: updateMock, isPending: false }),
+    useRemoveMember: () => ({ mutateAsync: removeMock, isPending: false }),
+    useResendMemberInvitation: () => resendMock(),
     useRestoreMember: mutation,
     useRetryMemberSync: mutation,
   }
@@ -35,14 +35,17 @@ vi.mock('../components/TeacherAvailabilityModal', () => ({
 }))
 
 describe('Members', () => {
-  it('opens administrative availability with the teacher ID, independently of access', () => {
+  it('opens administrative availability from the member editor, independently of access', async () => {
     useMembersMock.mockReturnValue({ data: { items: [{ id: 684, teacher_id: 657,
       organization_display_name: 'Professor QA', capabilities: ['teacher'],
       access_status: 'none', lifecycle_status: 'active', teacher_access_mode: 'scheduler_only',
     }] }, isLoading: false, isError: false })
     renderWithRouter(<Members />)
+    expect(screen.queryByRole('button', { name: 'Editar disponibilidade' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Editar membro' }))
+    await screen.findByRole('dialog')
     fireEvent.click(screen.getByRole('button', { name: 'Editar disponibilidade' }))
-    expect(screen.getByRole('dialog')).toHaveTextContent('Disponibilidade — Professor QA (professor 657)')
+    expect(await screen.findByText('Disponibilidade — Professor QA (professor 657)')).toBeInTheDocument()
   })
 
   it('explains an unknown teacher link instead of opening an unidentified grid', () => {
@@ -51,6 +54,9 @@ describe('Members', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
   beforeEach(() => {
+    resendMock.mockReturnValue({ error: null, isPending: false, mutate: vi.fn() })
+    updateMock.mockReset().mockResolvedValue({})
+    removeMock.mockReset().mockResolvedValue({})
     useMembersMock.mockReturnValue({
       data: { items: [] },
       error: null,
@@ -58,6 +64,48 @@ describe('Members', () => {
       isLoading: false,
       refetch: vi.fn(),
     })
+  })
+
+  it('shows access action failures inside the member editor', async () => {
+    const member = { id: 4, organization_display_name: 'Ana', email: 'ana@example.test',
+      capabilities: ['teacher'], access_status: 'pending_invite', lifecycle_status: 'active',
+      actions: { can_edit: true, can_resend_invite: true } }
+    useMembersMock.mockReturnValue({ data: { items: [member] }, isLoading: false })
+    resendMock.mockReturnValue({ error: { response: { status: 409, data: { detail: { code: 'member_sync_error' } } } }, isPending: false, mutate: vi.fn() })
+    renderWithRouter(<Members />)
+    fireEvent.click(screen.getByRole('button', { name: 'Editar membro' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByRole('alert')).toHaveTextContent('O acesso ainda está a ser confirmado. Tente novamente dentro de instantes.')
+    expect(within(dialog).getByRole('button', { name: 'Reenviar convite' })).toBeEnabled()
+  })
+
+  it('uses the new version after resending without losing unsaved edits', async () => {
+    const member = { id: 4, organization_display_name: 'Ana', email: 'ana@example.test', lock_version: 1,
+      capabilities: ['teacher'], access_status: 'pending_invite', lifecycle_status: 'active',
+      actions: { can_edit: true, can_resend_invite: true } }
+    useMembersMock.mockReturnValue({ data: { items: [member] }, isLoading: false })
+    resendMock.mockReturnValue({ error: null, isPending: false, mutate: (_id, options) => options.onSuccess({ ...member, lock_version: 2 }) })
+    renderWithRouter(<Members />)
+    fireEvent.click(screen.getByRole('button', { name: 'Editar membro' }))
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.change(within(dialog).getByLabelText('Nome'), { target: { value: 'Ana editada' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Reenviar convite' }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Guardar' }))
+    await waitFor(() => expect(updateMock).toHaveBeenCalledWith(expect.objectContaining({ organization_display_name: 'Ana editada', lock_version: 2 })))
+  })
+
+  it('closes the member editor after confirmed removal', async () => {
+    const member = { id: 4, organization_display_name: 'Ana', email: 'ana@example.test', lock_version: 1,
+      capabilities: ['teacher'], access_status: 'none', lifecycle_status: 'active', remove_effect: 'hard_delete',
+      actions: { can_edit: true, can_remove: true } }
+    useMembersMock.mockReturnValue({ data: { items: [member] }, isLoading: false })
+    renderWithRouter(<Members />)
+    fireEvent.click(screen.getByRole('button', { name: 'Editar membro' }))
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Remover membro' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Remover', exact: true }))
+    await waitFor(() => expect(removeMock).toHaveBeenCalledWith(4))
+    await waitFor(() => expect(screen.queryByRole('heading', { name: 'Editar membro' })).not.toBeInTheDocument())
   })
 
   it('labels the archive filter and lets its visible label toggle it', () => {
@@ -80,7 +128,7 @@ describe('Members', () => {
     expect(within(dialog).getByRole('combobox', { name: 'Acesso do professor' })).toBeEnabled()
   })
 
-  it('keeps action descriptions hoverable when the icon buttons are disabled', () => {
+  it('keeps unavailable access actions out of the team table', () => {
     useMembersMock.mockReturnValue({
       data: {
         items: [{
@@ -107,8 +155,9 @@ describe('Members', () => {
     renderWithRouter(<Members />)
 
     for (const description of ['Reenviar convite', 'Tentar confirmar o acesso novamente', 'Restaurar membro']) {
-      expect(screen.getByTitle(description)).toBeVisible()
+      expect(screen.queryByTitle(description)).not.toBeInTheDocument()
     }
+    expect(screen.getAllByRole('button', { name: 'Editar membro' })).toHaveLength(1)
   })
 
   it('maps provider error categories to local neutral copy', () => {

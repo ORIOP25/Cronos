@@ -1,12 +1,47 @@
 import { useState } from 'react'
+import { toast } from 'react-hot-toast'
 import {
   CForm, CFormFeedback, CRow, CCol, CFormInput, CButton, CModalFooter, CFormSelect
 } from '@coreui/react'
 import { portugueseValidityProps } from '../../utils/formValidity'
-import { useRoomTypes } from '../../features/catalog/data'
+import { useCreateRoomType, useRoomTypes } from '../../features/catalog/data'
+import RoomTypesModal from '../RoomTypesModal'
+import { getRoomTypeErrorMessage, ROOM_TYPE_NAME_MESSAGE } from '../../utils/apiErrors'
+import { useAttemptScope } from '../../hooks/useAttemptScope'
 
 const RoomForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
   const { data: roomTypes = [], isLoading: roomTypesLoading, isError: roomTypesError, refetch } = useRoomTypes()
+  const createType = useCreateRoomType()
+  const attemptScope = useAttemptScope()
+  const [addingType, setAddingType] = useState(false)
+  const [typeName, setTypeName] = useState('')
+  const [typeError, setTypeError] = useState('')
+  const [createdType, setCreatedType] = useState(null)
+  const [managingTypes, setManagingTypes] = useState(false)
+  const availableTypes = createdType && !roomTypes.some((type) => type.id === createdType.id) ? [...roomTypes, createdType] : roomTypes
+
+  const addType = async () => {
+    const name = typeName.trim()
+    if (!name || name.length > 60) {
+      setTypeError(ROOM_TYPE_NAME_MESSAGE)
+      document.getElementById('room-new-type')?.focus()
+      return
+    }
+    const attempt = attemptScope.capture()
+    setTypeError('')
+    try {
+      const roomType = await createType.mutateAsync({ name })
+      if (!attemptScope.isCurrent(attempt)) return
+      setCreatedType(roomType)
+      setFormData((current) => ({ ...current, room_type_id: roomType.id }))
+      setAddingType(false)
+      setTypeName('')
+      toast.success('Tipo de sala criado.')
+    } catch (failure) {
+      if (!attemptScope.isCurrent(attempt)) return
+      setTypeError(getRoomTypeErrorMessage(failure))
+    }
+  }
   const normalRoomType = roomTypes.find((roomType) => roomType.is_normal)
   const roomTypesUnavailable = !roomTypesLoading && (roomTypesError || !normalRoomType)
   const roomTypesErrorMessage = roomTypesError
@@ -20,6 +55,7 @@ const RoomForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
     capacity: initialData?.capacity || 30,
   }))
   const [error, setError] = useState('')
+  const selectedRoomTypeId = availableTypes.find((type) => type.id === Number(formData.room_type_id))?.id ?? normalRoomType?.id ?? ''
 
   const handleChange = (e) => {
     const { name, value } = e.target
@@ -32,7 +68,7 @@ const RoomForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
 
   const handleSubmit = (e) => {
     e.preventDefault()
-    if (roomTypesLoading || roomTypesError || !normalRoomType) return
+    if (roomTypesLoading || roomTypesError || !normalRoomType || createType.isPending || addingType) return
     const name = String(formData.name ?? '').trim()
     if (!name) {
       setError('Nome da sala é obrigatório.')
@@ -42,7 +78,7 @@ const RoomForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
     onSubmit({
       ...formData,
       name,
-      room_type_id: Number(formData.room_type_id || normalRoomType.id),
+      room_type_id: Number(selectedRoomTypeId),
       capacity: Number(formData.capacity),
     })
   }
@@ -52,7 +88,8 @@ const RoomForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
   else if (initialData) submitLabel = 'Atualizar Sala'
 
   return (
-    <CForm onSubmit={handleSubmit}>
+    <>
+    <CForm onSubmit={handleSubmit} className={managingTypes ? 'd-none' : undefined}>
       <CRow className="g-3">
         <CCol md={8}>
           <CFormInput
@@ -91,15 +128,27 @@ const RoomForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
             id="room-type"
             label="Tipo de Sala"
             name="room_type_id"
-            value={String(formData.room_type_id || normalRoomType?.id || '')}
+            value={String(selectedRoomTypeId)}
             onChange={handleChange}
             disabled={roomTypesLoading || roomTypesUnavailable}
             required
             aria-invalid={roomTypesErrorMessage ? 'true' : undefined}
             aria-describedby={roomTypesLoading ? 'room-types-loading' : roomTypesErrorMessage ? 'room-types-error' : undefined}
           >
-            {roomTypes.map((roomType) => <option key={roomType.id} value={roomType.id}>{roomType.name}</option>)}
+            {availableTypes.map((roomType) => <option key={roomType.id} value={roomType.id}>{roomType.name}</option>)}
           </CFormSelect>
+          <div className="d-flex gap-3 mt-1">
+            <CButton type="button" color="link" className="p-0" disabled={isLoading || roomTypesLoading || createType.isPending} onClick={() => setAddingType(true)}>Adicionar tipo</CButton>
+            <CButton type="button" color="link" className="p-0" disabled={isLoading || createType.isPending} onClick={() => { setCreatedType(null); setManagingTypes(true) }}>Gerir tipos existentes</CButton>
+          </div>
+          {addingType && <div className="mt-3">
+            <CFormInput id="room-new-type" label="Nome do novo tipo" value={typeName} autoFocus disabled={createType.isPending} onChange={(event) => { setTypeName(event.target.value); setTypeError('') }} aria-invalid={Boolean(typeError)} aria-describedby={typeError ? 'room-new-type-error' : undefined} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void addType() } }} />
+            {typeError && <div id="room-new-type-error" className="invalid-feedback d-block" role="alert">{typeError}</div>}
+            <div className="d-flex gap-2 mt-2">
+              <CButton type="button" color="primary" disabled={createType.isPending} onClick={() => void addType()}>{createType.isPending ? 'A criar…' : 'Criar tipo'}</CButton>
+              <CButton type="button" color="secondary" variant="ghost" disabled={createType.isPending} onClick={() => { setAddingType(false); setTypeError('') }}>Cancelar tipo</CButton>
+            </div>
+          </div>}
           {roomTypesLoading && <div id="room-types-loading" role="status" aria-live="polite" className="form-text">A carregar tipos de sala…</div>}
           {roomTypesErrorMessage && (
             <div id="room-types-error">
@@ -114,11 +163,13 @@ const RoomForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
         <CButton color="secondary" variant="ghost" onClick={onCancel}>
           Cancelar
         </CButton>
-        <CButton color="primary" type="submit" disabled={isLoading || roomTypesLoading || roomTypesUnavailable}>
+        <CButton color="primary" type="submit" disabled={isLoading || roomTypesLoading || roomTypesUnavailable || createType.isPending || addingType}>
           {submitLabel}
         </CButton>
       </CModalFooter>
     </CForm>
+    {managingTypes && <RoomTypesModal embedded onClose={() => { setManagingTypes(false); document.getElementById('room-type')?.focus() }} />}
+    </>
   )
 }
 

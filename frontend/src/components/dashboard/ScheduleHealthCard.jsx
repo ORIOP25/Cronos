@@ -50,19 +50,19 @@ export default function ScheduleHealthCard({ health, isLoading }) {
                 </div>
               )}
             </div>
-            <div className="row">
+            <div className="dashboard-health-metrics">
               {metrics.map(([label, value, alert]) => (
-                <div key={label} className="col-6 col-md-4 mb-3 text-center">
+                <div key={label} className="dashboard-health-metric">
                   <span className={`text-display d-block dashboard-health-value${alert ? ' text-danger' : ''}`}>{typeof value === 'number' ? value : '—'}</span>
-                  <small className="text-uppercase text-muted">{label}</small>
+                  <small className="text-muted">{label}</small>
                 </div>
               ))}
             </div>
             <div className="small text-muted text-center">{health.blocks_count} blocos no total</div>
             {health.conflicting_lessons?.length > 0 && (
-              <section className="mt-3" aria-labelledby="conflicting-lessons-heading">
-                <h4 id="conflicting-lessons-heading">Blocos em conflito</h4>
-                <ul>
+              <details className="context-details dashboard-conflicts mt-3">
+                <summary>Blocos em conflito ({health.conflicting_lessons.length})</summary>
+                <ul className="context-list" aria-label="Blocos em conflito" tabIndex={0}>
                   {health.conflicting_lessons.map((lesson) => (
                     <li key={lesson.lesson_id} className="mb-2">
                       <span>{lesson.class_name} · {lesson.subject_name} · {lesson.teacher_name} · Bloco {lesson.lesson_id}</span>
@@ -74,7 +74,7 @@ export default function ScheduleHealthCard({ health, isLoading }) {
                     </li>
                   ))}
                 </ul>
-              </section>
+              </details>
             )}
           </>
         )}

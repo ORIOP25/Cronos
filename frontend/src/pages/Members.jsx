@@ -105,7 +105,7 @@ const SubjectPicker = ({ subjects, selected, disabled, onChange }) => {
   )
 }
 
-const MemberModal = ({ visible, member, subjects, onClose, onSave, isSaving, error, competenciesOnly = false }) => {
+const MemberModal = ({ visible, member, subjects, onClose, onSave, isSaving, error, competenciesOnly = false, canEdit = true, actions, onAvailability, actionVersion }) => {
   const [draft, setDraft] = useState(() => member ? {
     organization_display_name: member.organization_display_name ?? '',
     email: member.email ?? '',
@@ -122,7 +122,7 @@ const MemberModal = ({ visible, member, subjects, onClose, onSave, isSaving, err
   const adminRequiresConfirmation = hasAdmin && !adminConfirmed
 
   const submit = () => {
-    if (adminRequiresConfirmation) return
+    if (!canEdit || adminRequiresConfirmation || syncBlocked || isSaving) return
     const payload = {
       organization_display_name: draft.organization_display_name,
       email: draft.email,
@@ -132,13 +132,13 @@ const MemberModal = ({ visible, member, subjects, onClose, onSave, isSaving, err
     if (hasTeacher) payload.teacher_access_mode = hasAdmin ? 'platform' : draft.teacher_access_mode
     if (member) {
       payload.id = member.id
-      payload.lock_version = draft.lock_version
+      payload.lock_version = actionVersion ?? draft.lock_version
     }
     onSave(payload)
   }
 
   return (
-    <CModal visible={visible} onClose={onClose} alignment="center" size="lg" className="app-modal" data-tutorial-target="member-form">
+    <CModal visible={visible} onClose={isSaving ? undefined : onClose} keyboard={!isSaving} backdrop={isSaving ? 'static' : true} alignment="center" size="lg" className="app-modal" data-tutorial-target="member-form">
       <CModalHeader>
         <CModalTitle>{member ? 'Editar membro' : 'Adicionar membro'}</CModalTitle>
       </CModalHeader>
@@ -149,7 +149,11 @@ const MemberModal = ({ visible, member, subjects, onClose, onSave, isSaving, err
         {syncBlocked && (
           <div className="mb-3"><FeedbackBanner tone="warning">Confirme primeiro o acesso deste membro para o poder editar.</FeedbackBanner></div>
         )}
-        <div className="d-grid gap-3">
+        {member && <fieldset disabled={isSaving} className="member-management mb-4" aria-label="Gestão do membro">
+          {onAvailability && <CButton color="secondary" variant="outline" onClick={onAvailability} disabled={isSaving}>Editar disponibilidade</CButton>}
+          {actions}
+        </fieldset>}
+        <fieldset disabled={!canEdit} className="d-grid gap-3">
           <CFormInput id="member-name" label="Nome" value={draft.organization_display_name} onChange={(event) => setDraft({ ...draft, organization_display_name: event.target.value })} disabled={isSaving || syncBlocked || competenciesOnly} />
           <CFormInput id="member-email" label="Email" type="email" value={draft.email} onChange={(event) => setDraft({ ...draft, email: event.target.value })} disabled={isSaving || syncBlocked || member?.access_status === 'active' || competenciesOnly} />
           <CFormSelect
@@ -197,11 +201,11 @@ const MemberModal = ({ visible, member, subjects, onClose, onSave, isSaving, err
               onChange={(event) => setAdminConfirmed(event.target.checked)}
             />
           )}
-        </div>
+        </fieldset>
       </CModalBody>
       <CModalFooter>
         <CButton color="secondary" variant="outline" onClick={onClose} disabled={isSaving}>Cancelar</CButton>
-        <CButton color="primary" onClick={submit} disabled={isSaving || syncBlocked || adminRequiresConfirmation}>
+        <CButton color="primary" onClick={submit} disabled={!canEdit || isSaving || syncBlocked || adminRequiresConfirmation}>
           {isSaving && <CSpinner size="sm" className="me-2" />}Guardar
         </CButton>
       </CModalFooter>
@@ -215,7 +219,7 @@ const ActionButton = ({ title, color = 'secondary', icon, disabled, loading, onC
     <CTooltip content={title} placement="top">
       <span className="member-action-tooltip" title={title} tabIndex={isDisabled ? 0 : undefined}>
         <CButton color={color} variant="ghost" size="sm" onClick={onClick} aria-label={title} disabled={isDisabled} data-tutorial-target={tutorialTarget}>
-          {loading ? <CSpinner size="sm" /> : <CIcon icon={icon} />}
+          {loading ? <CSpinner size="sm" /> : <CIcon icon={icon} />}<span className="ms-1">{title}</span>
         </CButton>
       </span>
     </CTooltip>
@@ -227,6 +231,7 @@ const Members = ({ readOnly = false, allowedActions }) => {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [selectedMember, setSelectedMember] = useState(null)
+  const [actionVersion, setActionVersion] = useState(null)
   const [modalVisible, setModalVisible] = useState(false)
   const [removeTarget, setRemoveTarget] = useState(null)
   const [searchParams, setSearchParams] = useSearchParams()
@@ -280,6 +285,7 @@ const Members = ({ readOnly = false, allowedActions }) => {
     if (member && !canUpdate) return
     if (!member && !canCreate) return
     setSelectedMember(member)
+    setActionVersion(null)
     setModalVisible(true)
   }
 
@@ -305,6 +311,8 @@ const Members = ({ readOnly = false, allowedActions }) => {
     try {
       await removeMember.mutateAsync(removeTarget.id)
       if (!attemptScope.isCurrent(attempt)) return
+      setModalVisible(false)
+      setSelectedMember(null)
       toast.success(removeTarget.remove_effect === 'hard_delete' ? 'Membro removido.' : 'Membro arquivado.')
     } catch (error) {
       if (!attemptScope.isCurrent(attempt)) return
@@ -324,18 +332,32 @@ const Members = ({ readOnly = false, allowedActions }) => {
     if (isApiErrorTransient(error)) toast.error(getApiErrorMessage(error))
   }
 
+  const managedMember = data?.items?.find((member) => member.id === selectedMember?.id) ?? selectedMember
+  const actionSucceeded = (message) => (member) => {
+    setActionVersion(member.lock_version)
+    toast.success(message)
+  }
+  const memberActions = (member) => !isTutorial && member && <>
+    {member.actions?.can_resend_invite && <ActionButton title="Reenviar convite" icon={cilReload} loading={resendInvitation.isPending} onClick={() => resendInvitation.mutate(member.id, attemptScope.guard({ onSuccess: actionSucceeded('Convite reenviado.'), onError: handleActionError }))} />}
+    {member.actions?.can_retry_sync && <ActionButton title="Tentar confirmar o acesso novamente" icon={cilReload} color="warning" loading={retrySync.isPending} onClick={() => retrySync.mutate(member.id, attemptScope.guard({ onSuccess: actionSucceeded('Acesso confirmado.'), onError: handleActionError }))} />}
+    {member.actions?.can_restore && <ActionButton title="Restaurar membro" icon={cilActionUndo} color="success" loading={restoreMember.isPending} onClick={() => restoreMember.mutate({ id: member.id, payload: restorePayloadFromMember(member) }, attemptScope.guard({ onSuccess: actionSucceeded('Membro restaurado.'), onError: handleActionError }))} />}
+    {member.actions?.can_remove && <ActionButton title="Remover membro" icon={cilTrash} color="danger" loading={removeMember.isPending} onClick={() => setRemoveTarget(member)} />}
+  </>
+
   return (
     <div className="p-4">
       <PageHeader preTitle="Gestão" title="Equipa" />
       <div className="d-flex justify-content-between align-items-center mb-4 gap-3 flex-wrap">
         <div className="d-flex gap-2 flex-wrap">
           <CFormInput
+            aria-label="Pesquisar equipa"
             value={search}
             placeholder="Pesquisar por nome ou email"
             onChange={(event) => setSearch(event.target.value)}
             style={{ minWidth: 260 }}
           />
           <CFormSelect
+            aria-label="Filtrar equipa por estado"
             value={statusFilter}
             onChange={(event) => setStatusFilter(event.target.value)}
             style={{ minWidth: 220 }}
@@ -421,17 +443,7 @@ const Members = ({ readOnly = false, allowedActions }) => {
                       : '-'}
                   </td>
                   <td className="text-end">
-                    {member.teacher_id && member.lifecycle_status === 'active' && (
-                      <CButton size="sm" color="secondary" variant="outline" disabled={!canUpdate}
-                        onClick={() => setSearchParams({ teacher_id: String(member.teacher_id), panel: 'availability' })}>
-                        Editar disponibilidade
-                      </CButton>
-                    )}
-                    <ActionButton title="Editar membro" icon={cilPencil} disabled={!member.actions?.can_edit || !canUpdate} onClick={() => openModal(member)} tutorialTarget={`edit-member-${member.id}`} />
-                    <ActionButton title="Reenviar convite" icon={cilReload} disabled={isTutorial || !member.actions?.can_resend_invite} loading={resendInvitation.isPending} onClick={() => resendInvitation.mutate(member.id, attemptScope.guard({ onSuccess: () => toast.success('Convite reenviado.'), onError: handleActionError }))} />
-                    <ActionButton title="Tentar confirmar o acesso novamente" icon={cilReload} color="warning" disabled={isTutorial || !member.actions?.can_retry_sync} loading={retrySync.isPending} onClick={() => retrySync.mutate(member.id, attemptScope.guard({ onSuccess: () => toast.success('Acesso confirmado.'), onError: handleActionError }))} />
-                    <ActionButton title="Restaurar membro" icon={cilActionUndo} color="success" disabled={isTutorial || !member.actions?.can_restore} loading={restoreMember.isPending} onClick={() => restoreMember.mutate({ id: member.id, payload: restorePayloadFromMember(member) }, attemptScope.guard({ onSuccess: () => toast.success('Membro restaurado.'), onError: handleActionError }))} />
-                    <ActionButton title="Remover membro" icon={cilTrash} color="danger" disabled={isTutorial || !member.actions?.can_remove} loading={removeMember.isPending} onClick={() => setRemoveTarget(member)} />
+                    <CButton color="secondary" variant="ghost" size="sm" aria-label="Editar membro" disabled={!canUpdate} onClick={() => openModal(member)} data-tutorial-target={`edit-member-${member.id}`}><CIcon icon={cilPencil} /></CButton>
                   </td>
                 </tr>
               )
@@ -469,13 +481,19 @@ const Members = ({ readOnly = false, allowedActions }) => {
       )}
         <MemberModal
         key={`${modalVisible ? 'open' : 'closed'}-${selectedMember?.id ?? 'new'}`}
-        visible={modalVisible}
-        member={selectedMember}
+        visible={modalVisible && !showAvailability && !removeTarget}
+        member={managedMember}
         subjects={subjects}
         onClose={() => setModalVisible(false)}
         onSave={save}
-        isSaving={activeMutation.isPending}
-          error={activeMutation.error}
+        isSaving={activeMutation.isPending || resendInvitation.isPending || retrySync.isPending || restoreMember.isPending}
+        actionVersion={actionVersion}
+        canEdit={!managedMember || Boolean(managedMember.actions?.can_edit)}
+        actions={memberActions(managedMember)}
+        onAvailability={canUpdate && !isTutorial && managedMember?.teacher_id && managedMember.lifecycle_status === 'active'
+          ? () => setSearchParams({ teacher_id: String(managedMember.teacher_id), panel: 'availability' })
+          : undefined}
+          error={activeMutation.error || actionErrorSource}
           competenciesOnly={isTutorial}
       />
     </div>

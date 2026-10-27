@@ -139,9 +139,37 @@ describe('Dashboard', () => {
       starts_at: '2026-10-14T08:00:00Z', ends_at: '2026-10-14T08:50:00Z',
     }]
     renderWithRouter(<><Dashboard /><LocationDisplay /></>)
+    await userEvent.click(screen.getByText('Blocos em conflito (1)'))
     expect(screen.getByText(/TAS 10.*Matemática.*Nuno Ramos.*42/)).toBeInTheDocument()
     await userEvent.click(screen.getByRole('link', { name: /Abrir semana.*42/ }))
     expect(screen.getByTestId('location-display')).toHaveTextContent('/schedules?teacherId=7&weekStart=2026-10-12')
+  })
+
+  it('keeps long conflict lists collapsed and lets the user open and close them', async () => {
+    useDashboard().data.schedule_health.conflicting_lessons = Array.from({ length: 30 }, (_, i) => ({
+      lesson_id: i, teacher_id: 7, teacher_name: 'Ana', class_name: '10 A', subject_name: 'Português',
+      school_date: '2026-10-14', starts_at: '2026-10-14T08:00:00Z', ends_at: '2026-10-14T08:50:00Z',
+    }))
+    renderWithRouter(<Dashboard />)
+    const toggle = screen.getByText('Blocos em conflito (30)')
+    expect(toggle.closest('details')).not.toHaveAttribute('open')
+    await userEvent.click(toggle)
+    expect(toggle.closest('details')).toHaveAttribute('open')
+    expect(screen.getAllByRole('link', { name: /Abrir semana do bloco/ })).toHaveLength(30)
+    await userEvent.click(toggle)
+    expect(toggle.closest('details')).not.toHaveAttribute('open')
+  })
+
+  it('shows a compact class preview and expands all classes without losing filters', async () => {
+    useDashboard().data.class_progress = Array.from({ length: 18 }, (_, i) => ({
+      class_id: i, course_id: 1, course_name: 'Informática', class_name: `Turma ${i}`, grade_level: 10, overall_percentage: i * 5,
+    }))
+    renderWithRouter(<Dashboard />)
+    expect(screen.getAllByTestId('class-progress-row')).toHaveLength(5)
+    await userEvent.click(screen.getByRole('button', { name: 'Ver todas as turmas (18)' }))
+    expect(screen.getAllByTestId('class-progress-row')).toHaveLength(18)
+    await userEvent.click(screen.getByRole('button', { name: 'Mostrar menos turmas' }))
+    expect(screen.getAllByTestId('class-progress-row')).toHaveLength(5)
   })
 
   it('uses the debt page duration and links to its tab', async () => {

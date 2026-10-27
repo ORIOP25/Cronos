@@ -22,7 +22,7 @@ export default function Dashboard() {
   const header = (
     <PageHeader
       preTitle="Operação Diária"
-      title="Painel de Controlo Operacional"
+      title={user?.firstName ? `Olá, ${user.firstName}` : 'O dia na escola'}
       context={data?.organization_name || undefined}
       description={`Hoje, ${currentDate}.`}
     />
@@ -84,11 +84,13 @@ export default function Dashboard() {
       <div className="mb-4">
         <AlertBar alerts={data?.alerts} health={data?.schedule_health} isLoading={isLoading} />
       </div>
-      <div className="mb-4">
+      <div className="dashboard-overview-grid mb-4">
+      <div>
         <ScheduleHealthCard health={data?.schedule_health} isLoading={isLoading} />
       </div>
-      <div className="mb-4">
+      <div>
         <ClassProgressOverview progress={data?.class_progress} isLoading={isLoading} />
+      </div>
       </div>
       <div className="dashboard-secondary-grid mb-4">
         <DebtSummaryCard debts={data?.debts} isLoading={isLoading} />

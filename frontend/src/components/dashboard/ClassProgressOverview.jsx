@@ -8,6 +8,7 @@ export default function ClassProgressOverview({ progress, isLoading }) {
   const navigate = useNavigate()
   const [courseId, setCourseId] = useState('all')
   const [band, setBand] = useState('all')
+  const [expanded, setExpanded] = useState(false)
   const courses = useMemo(() => [...new Map((progress ?? []).map((item) => [item.course_id, item.course_name || 'Curso sem nome'])).entries()], [progress])
   const filteredProgress = useMemo(() => (progress ?? []).filter((item) => {
     const percentage = Number(item.overall_percentage ?? 0)
@@ -26,11 +27,14 @@ export default function ClassProgressOverview({ progress, isLoading }) {
             <label>Curso<select value={courseId} onChange={(event) => setCourseId(event.target.value)}><option value="all">Todos</option>{courses.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select></label>
             <label>Faixa de progresso<select value={band} onChange={(event) => setBand(event.target.value)}><option value="all">Todas</option><option value="low">0% a 49%</option><option value="medium">50% a 79%</option><option value="high">80% a 100%</option></select></label>
           </div>
-          {!filteredProgress.length ? <p className="text-center text-muted py-4 mb-0">Não há turmas nesta seleção.</p> : filteredProgress.map((item) => <button key={item.class_id} type="button" data-testid="class-progress-row" className="dashboard-progress-row" onClick={() => navigate(`/courses/${item.course_id}/classes/${item.class_id}`)}>
+          <div id="dashboard-class-list" className={expanded ? 'dashboard-class-list is-expanded' : 'dashboard-class-list'}>
+          {!filteredProgress.length ? <p className="text-center text-muted py-4 mb-0">Não há turmas nesta seleção.</p> : (expanded ? filteredProgress : filteredProgress.slice(0, 5)).map((item) => <button key={item.class_id} type="button" data-testid="class-progress-row" className="dashboard-progress-row" onClick={() => navigate(`/courses/${item.course_id}/classes/${item.class_id}`)}>
             <div className="text-start flex-grow-1 text-truncate"><strong className="d-block text-truncate">{item.class_name}</strong><small className="text-muted">{item.course_name || '—'} · {formatGradeLevel(item.grade_level)}</small></div>
             <div className="dashboard-progress-track" aria-hidden="true"><span style={{ width: `${Math.min(item.overall_percentage, 100)}%` }} /></div>
             <strong aria-label={`${item.overall_percentage}% concluído`}>{item.overall_percentage}%</strong>
           </button>)}
+          </div>
+          {filteredProgress.length > 5 && <button className="btn btn-link px-0 mt-2" type="button" aria-expanded={expanded} aria-controls="dashboard-class-list" onClick={() => setExpanded(!expanded)}>{expanded ? 'Mostrar menos turmas' : `Ver todas as turmas (${filteredProgress.length})`}</button>}
         </>}
       </div>
     </div>

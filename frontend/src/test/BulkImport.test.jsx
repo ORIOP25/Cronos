@@ -50,8 +50,18 @@ describe('BulkImport', () => {
   }
 
   function cardFor(label) {
-    return screen.getByText(label).closest('.card')
+    return screen.getByText(label).closest('.import-resource')
   }
+
+  it('keeps file inputs visible and resource guidance collapsed until requested', async () => {
+    renderPage()
+    const row = cardFor('Salas')
+    const guidance = within(row).getByText('Como preencher').closest('details')
+    expect(guidance).not.toHaveAttribute('open')
+    expect(within(row).getByLabelText('Selecionar ficheiro CSV de salas')).toBeVisible()
+    await userEvent.click(within(row).getByText('Como preencher'))
+    expect(guidance).toHaveAttribute('open')
+  })
 
   it('presents plain-language instructions without technical implementation terms', () => {
     renderPage()
@@ -59,7 +69,7 @@ describe('BulkImport', () => {
     expect(screen.getByRole('heading', { name: 'Importar dados' })).toBeInTheDocument()
     expect(
       screen.getByText(
-        'Adicione várias salas, disciplinas, cursos, turmas e professores e atualize a disponibilidade das turmas, a disponibilidade dos professores e a presença dos professores de uma só vez.',
+        'Descarregue um modelo, preencha e escolha os ficheiros a importar.',
       ),
     ).toBeInTheDocument()
     expect(screen.getByText('Descarregue o modelo da secção pretendida.')).toBeInTheDocument()

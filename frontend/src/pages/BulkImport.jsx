@@ -5,9 +5,6 @@ import {
   CAlert,
   CBadge,
   CButton,
-  CCard,
-  CCardBody,
-  CCardHeader,
   CFormInput,
   CSpinner,
 } from '@coreui/react'
@@ -92,6 +89,7 @@ const BulkImport = () => {
   const selectFile = (resource, file) => {
     setLocalError('')
     setValidation(null)
+    if (!file) document.getElementById(`import-${resource}`).value = ''
     setFiles((current) => {
       const next = { ...current }
       if (file) next[resource] = file
@@ -149,11 +147,11 @@ const BulkImport = () => {
       <PageHeader
         preTitle="Administração"
         title="Importar dados"
-        description="Adicione várias salas, disciplinas, cursos, turmas e professores e atualize a disponibilidade das turmas, a disponibilidade dos professores e a presença dos professores de uma só vez."
+        description="Descarregue um modelo, preencha e escolha os ficheiros a importar."
       />
 
-      <section className="mb-4" aria-labelledby="import-steps-title">
-        <h2 id="import-steps-title" className="h5">Como preparar os ficheiros</h2>
+      <details className="context-details mb-4">
+        <summary>Como preparar os ficheiros</summary>
         <ol className="mb-2">
           <li>Descarregue o modelo da secção pretendida.</li>
           <li>Preencha as linhas sem alterar os títulos das colunas.</li>
@@ -162,18 +160,17 @@ const BulkImport = () => {
         <p className="small text-muted mb-0">
           Pode utilizar Excel ou Google Sheets. São aceites ficheiros separados por vírgulas ou ponto e vírgula, até 1 MB cada.
         </p>
-      </section>
+      </details>
 
       {localError && <div className="mb-3"><FeedbackBanner tone="warning">{localError}</FeedbackBanner></div>}
 
-      <div className="row g-3">
+      <section className="import-resources" aria-label="Ficheiros a importar">
         {IMPORT_RESOURCES.map((resource) => {
           const file = files[resource.key]
           return (
-            <div className="col-12 col-xl-6" key={resource.key}>
-              <CCard className="h-100">
-                <CCardHeader className="d-flex justify-content-between align-items-center gap-2">
-                  <span>{resource.label}</span>
+            <div className="import-resource" key={resource.key}>
+                <div className="import-resource__heading">
+                  <h2 className="h6 mb-0">{resource.label}</h2>
                   <CButton
                     color="link"
                     size="sm"
@@ -186,12 +183,9 @@ const BulkImport = () => {
                       'Descarregar modelo'
                     )}
                   </CButton>
-                </CCardHeader>
-                <CCardBody>
-                  <ul className="small text-muted ps-3 mb-3">
-                    {resource.instructions.map((instruction) => <li key={instruction}>{instruction}</li>)}
-                  </ul>
-                  <label className="form-label" htmlFor={`import-${resource.key}`}>
+                </div>
+                <div className="import-resource__file">
+                  <label className="visually-hidden" htmlFor={`import-${resource.key}`}>
                     Selecionar ficheiro CSV de {resource.label.toLowerCase()}
                   </label>
                   <CFormInput
@@ -209,12 +203,17 @@ const BulkImport = () => {
                       </CButton>
                     </div>
                   )}
-                </CCardBody>
-              </CCard>
+                </div>
+                <details className="context-details import-resource__guidance">
+                  <summary>Como preencher</summary>
+                  <ul className="small text-muted ps-3 mt-2 mb-0">
+                    {resource.instructions.map((instruction) => <li key={instruction}>{instruction}</li>)}
+                  </ul>
+                </details>
             </div>
           )
         })}
-      </div>
+      </section>
 
       <div className="d-flex flex-wrap gap-2 align-items-center mt-4">
         <CButton
@@ -224,9 +223,9 @@ const BulkImport = () => {
         >
           {validateMutation.isPending ? <><CSpinner size="sm" className="me-2" />A verificar…</> : 'Verificar ficheiros'}
         </CButton>
-        <CButton color="success" disabled={!validation?.can_commit || commitMutation.isPending} onClick={() => void commit()}>
+        {validation?.can_commit && <CButton color="success" disabled={validateMutation.isPending || commitMutation.isPending} onClick={() => void commit()}>
           {commitMutation.isPending ? <><CSpinner size="sm" className="me-2" />A importar…</> : 'Confirmar importação'}
-        </CButton>
+        </CButton>}
         {issues.length > 0 && (
           <CButton
             color="secondary"

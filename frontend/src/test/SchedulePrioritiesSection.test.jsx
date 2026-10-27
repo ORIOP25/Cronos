@@ -102,6 +102,17 @@ describe('Schedule priorities configuration', () => {
     expect(screen.queryByText(/Turnos \(manhã ou tarde\)/)).not.toBeInTheDocument()
   })
 
+  it('keeps levels visible while the detailed impacts are collapsed', async () => {
+    renderWithProviders(<SchoolConfig />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Prioridades do horário' }))
+    const fieldset = (await screen.findByText(CRITERIA[0])).closest('fieldset')
+    const explanation = within(fieldset).getByText('O que muda?').closest('details')
+    expect(explanation).not.toHaveAttribute('open')
+    expect(within(fieldset).getByRole('radio', { name: 'Importante' })).toBeChecked()
+    fireEvent.click(within(fieldset).getByText('O que muda?'))
+    expect(explanation).toHaveAttribute('open')
+  })
+
   it('shows the warnings as discreet secondary text after the impact lines, only where they exist', async () => {
     renderWithProviders(<SchoolConfig />)
     fireEvent.click(screen.getByRole('tab', { name: 'Prioridades do horário' }))
