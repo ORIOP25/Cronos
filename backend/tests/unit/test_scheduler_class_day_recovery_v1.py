@@ -123,3 +123,59 @@ def test_repair_keeps_class_one_from_two_internal_gap_hours_on_monday():
 
     assert candidate is not None
     assert monday_internal_gap_minutes(snapshot, candidate) <= 60
+
+
+def necessary_afternoon_school():
+    """Monday: class 1 keeps its lessons at 9h and 10h, and assignment 3 is missing.
+
+    Teacher 3 is Evitar at 11h and free at 11h and 14h only. The Evitar skip refuses 11h in the
+    strict pass, so the remaining hour is necessary at 14h. 14h would leave the class two gap
+    hours; 11h is the valid position next to its lessons. Repair must keep the class day compact.
+    """
+    assignments = tuple(
+        Assignment(
+            identity,
+            (1,),
+            identity,
+            identity,
+            frozenset({100 + identity}),
+            (ModuleRequirement(identity * 10, 1, 60),),
+        )
+        for identity in range(1, 4)
+    )
+    snapshot = PlanningSnapshot(
+        strategy=SchedulingStrategy.ADAPTIVE_RECOVERY,
+        origin=MONDAY,
+        preferred_end_date=MONDAY,
+        hard_end_date=MONDAY,
+        timezone_name=TZ,
+        grid_slots=tuple(GridSlot(0, time(hour), time(hour + 1)) for hour in HOURS),
+        assignments=assignments,
+        executed_minutes={},
+        blocked_dates=frozenset(),
+        unavailable=tuple(
+            Unavailability(UnavailableResource.TEACHER, 3, window(MONDAY, hour))
+            for hour in (12, 13, 15)
+        ),
+        soft_unavailable=(Unavailability(UnavailableResource.TEACHER, 3, window(MONDAY, 11)),),
+        lunch_rule=None,
+        baseline_lessons=(published_lesson(1, 9), published_lesson(2, 10)),
+    )
+    periods = tuple(window(MONDAY, hour) for hour in HOURS)
+    return snapshot, periods
+
+
+def test_necessary_lesson_takes_the_valid_position_beside_class_lessons():
+    snapshot, periods = necessary_afternoon_school()
+
+    candidate = construct_recovery(
+        snapshot,
+        periods,
+        deadline=monotonic() + 60,
+        weights=PriorityWeights(dict(DEFAULT_LEVELS)),
+    )
+
+    assert candidate is not None
+    hour_of = {row.assignment_id: row.period.start_local.hour for row in candidate.lessons}
+    assert hour_of[3] == 11
+    assert monday_internal_gap_minutes(snapshot, candidate) <= 60

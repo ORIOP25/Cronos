@@ -50,6 +50,7 @@ from app.scheduler.infrastructure.construction_support import (
     _scarcity,
     _slots_by_day,
     class_day_excess_option_value,
+    class_day_gap_refused,
 )
 from app.scheduler.infrastructure.constructive import _select_period, strict_window_periods
 from app.scheduler.infrastructure.placement_model import _build_candidate
@@ -508,6 +509,22 @@ class _RecoveryPass:
         valid = validate_candidate(self.snapshot, candidate).valid
         return (candidate if valid else None), self._ledger.refused
 
+    def admits_class_days(self, assignment, period) -> bool:
+        """Owner rule: no weighted lesson adds a second gap hour to a class day.
+
+        A necessary lesson is admitted regardless of value, so the rule must hold before
+        that check. The final fill pass and the unweighted route keep their existing rules.
+        """
+        if self.weights is None or self.fill:
+            return True
+        return not class_day_gap_refused(
+            self.occupancy,
+            assignment,
+            period,
+            self.slots_by_day.get(period.school_date.weekday(), ()),
+            self.snapshot.lunch_rule,
+        )
+
     def period_options(self, period):
         options = [
             (row, rooms)
@@ -515,6 +532,7 @@ class _RecoveryPass:
             if self.remaining[row.assignment_id] > 0
             and self.ready(row.assignment_id, period)
             and (rooms := self.free_rooms(row, period))
+            and self.admits_class_days(row, period)
             and (
                 not self.strict or self._ledger.allows(row, period, evitar_kinds=self.evitar_kinds)
             )

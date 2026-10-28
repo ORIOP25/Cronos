@@ -47,3 +47,20 @@ def class_day_excess_value(
         after = class_day_excess_minutes(_gap_minutes((*intervals, interval), slots, lunch_rule))
         removed += before - after
     return CLASS_DAY_EXCESS_UNIT * removed
+
+
+def class_day_gap_worsened(
+    class_intervals: Iterable[Sequence[tuple[int, int]]],
+    interval: tuple[int, int],
+    slots: Sequence,
+    lunch_rule,
+) -> bool:
+    """True when a lesson at ``interval`` adds excess gap minutes to any class day it joins.
+
+    A day that already has excess gap may still receive a lesson that shrinks it.
+    """
+    return any(
+        class_day_excess_minutes(_gap_minutes((*intervals, interval), slots, lunch_rule))
+        > class_day_excess_minutes(_gap_minutes(intervals, slots, lunch_rule))
+        for intervals in class_intervals
+    )
