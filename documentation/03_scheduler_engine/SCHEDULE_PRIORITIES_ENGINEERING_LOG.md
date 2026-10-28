@@ -462,13 +462,35 @@ O desenho tem duas fases. Primeiro, um modelo CP-SAT de contagem por semana: aul
 
 Piloto ×1.0, Ronda 3: 113 unidades por acabar; 12 violações de presença; 75 min. A fase de contagem ocupa 85–88% do tempo.
 
+- **Ronda 4 (28 de outubro de 2026), só tempo.** Fasquia do responsável de produto: no máximo +50% do tempo do `main`.
+  - A fase de contagem parte de um plano guloso determinístico. O plano enche primeiro cada dia de turma e de professor até 3 aulas, depois equilibra e repara.
+  - O CP-SAT recebe esse plano como dica, com orçamento curto. Se o CP-SAT não devolve solução, fica o plano.
+  - Commit `2335383b` no ramo de ensaio.
+
+| Escola real, mesmo dia e mesma máquina | `main` | Ronda 3 | Ronda 4 |
+| :--- | ---: | ---: | ---: |
+| Válido e completo | sim | sim | sim |
+| Dias fora da cauda com 1–2 aulas | 439 | 0 | 0 |
+| Dias de turma com 2+ furos | 0 | 0 | 0 |
+| Dias de turma com 1 furo | 485 | 1 064 | 1 062 |
+| Furos dos professores (h) | 490 | 47 | 43 |
+| Dias de professor com uma só aula | 31 | 2 | 21 |
+| Última aula | 29 de março | 2 de abril | 2 de abril |
+| Tempo | 176 s | 2 158 s | 176 s |
+| Pico de RSS | 216 MB | 227 MB | 221 MB |
+
+A medição do `main` foi repetida no mesmo dia (176 s; 159 s noutro dia). A Ronda 4 dá o mesmo resumo em duas corridas (determinística).
+O plano guloso sozinho demora 14 s, mas a última aula passa para 12 de abril. O piloto não foi medido nesta ronda.
+
+O tempo de produção mede-se em `scheduler_job_v1`, do arranque ao fim do trabalho. As gerações completas de 26–27 de outubro correram 103–134 s no worker, com cerca de 1 s de fila. A proposta foi criada no mesmo segundo.
+
 #### Veredicto
 
-Os fundamentos valem na escola real: a regra do dia de turma e dias de professor muito melhores. Não está pronto para produção. É cerca de 13 vezes mais lento, tem mais dias de turma com 1 furo e fica incompleto ou inválido numa escola grande.
+Os fundamentos valem na escola real: a regra do dia de turma e dias de professor muito melhores. Na Ronda 4 o tempo iguala o do `main`. Não está pronto para produção: tem mais dias de turma com 1 furo e não foi provado numa escola grande.
 
 Um porte precisa de:
 
-- um modelo de contagem mais rápido;
+- uma prova na escola grande do laboratório (piloto ×1.0);
 - um caminho válido quando o modelo semanal é inviável;
 - o peso dos furos das turmas, decisão do responsável de produto;
 - proteção das aulas e dos fluxos de atualização;
