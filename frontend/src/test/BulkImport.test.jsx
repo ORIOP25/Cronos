@@ -27,6 +27,25 @@ vi.mock('../features/imports/data', async () => {
 })
 
 describe('BulkImport', () => {
+  it.each(['replace', 'remove', 'failure'])('ignores validation after a file selection change: %s', async change => {
+    let finish
+    mocks.validate.mockImplementationOnce(() => new Promise((resolve, reject) => {
+      finish = result => change === 'failure'
+        ? reject({ response: { data: { detail: { context: { issues: [{ severity: 'error', message: 'Seleção antiga' }] } } } } })
+        : resolve(result)
+    }))
+    const user = userEvent.setup()
+    renderPage()
+    const input = screen.getByLabelText('Selecionar ficheiro CSV de salas')
+    await user.upload(input, new File(['old'], 'old.csv', { type: 'text/csv' }))
+    await user.click(screen.getByRole('button', { name: 'Verificar ficheiros' }))
+    if (change === 'replace') await user.upload(input, new File(['new'], 'new.csv', { type: 'text/csv' }))
+    else await user.click(screen.getByRole('button', { name: 'Remover' }))
+    await act(async () => finish({ can_commit: true, preview: { counts: { rooms: 1 }, items: [] }, issues: [] }))
+    expect(screen.queryByRole('button', { name: 'Confirmar importação' })).not.toBeInTheDocument()
+    expect(screen.queryByText('Salas: 1')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Seleção antiga|Não foi possível verificar/)).not.toBeInTheDocument()
+  })
   afterEach(resetClerkState)
   beforeEach(() => {
     mocks.validate.mockReset()

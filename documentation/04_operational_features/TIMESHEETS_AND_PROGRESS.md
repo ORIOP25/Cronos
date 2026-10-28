@@ -49,6 +49,10 @@ Routes under `/api/v1/timesheets`: `GET /` (admin list), `GET /me/{week_start_da
 6. Progress and debt views read ledger and occurrence data.
 
 The administrator can search the weekly teacher list by name. If the selected teacher's week fails to load, the page shows an error and a retry action instead of an empty grid.
+The dashboard shortcut `/timesheets?status=submitted` opens pending approvals across all weeks.
+Each row shows its week. Selecting a row loads that teacher's week, including past weeks.
+The administrator can disable “Todas as semanas pendentes” or use the week navigator to review one week.
+Submitting, approving, and reopening a week invalidate the active organization's dashboard and timesheet lists.
 
 ## Contracts and Invariants
 

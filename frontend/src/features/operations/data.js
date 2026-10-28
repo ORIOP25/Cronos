@@ -164,7 +164,7 @@ export const useSubmitMyTimesheet = () => {
     },
     onSuccess: (_, weekStartDate) => {
       void queryClient.invalidateQueries({ queryKey: orgQueryKey('my-timesheet', orgId, weekStartDate) })
-      void invalidateOrgQueries(queryClient, orgId, ['weekSchedule'])
+      void invalidateOrgQueries(queryClient, orgId, ['weekSchedule', 'timesheets', 'dashboard'])
     },
   })
 }
@@ -194,7 +194,7 @@ export const useUpdateTimesheetStatus = () => {
       return apiClient.patch(`/timesheets/${timesheetId}/status`, { status })
     },
     onSuccess: () => {
-      void invalidateOrgQueries(queryClient, orgId, ['timesheets', 'my-timesheet'])
+      void invalidateOrgQueries(queryClient, orgId, ['timesheets', 'my-timesheet', 'dashboard'])
       void queryClient.refetchQueries({ queryKey: orgQueryKey('weekSchedule', orgId), type: 'active' })
     },
   })

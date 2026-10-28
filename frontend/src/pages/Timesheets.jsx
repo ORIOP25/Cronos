@@ -1,10 +1,10 @@
 import { useState, useMemo } from 'react'
 import { toast } from 'react-hot-toast'
 import PageHeader from '../components/PageHeader'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   CCard, CCardBody, CBadge, CSpinner, CButton,
-  CFormInput, CFormSelect, CRow, CCol,
+  CFormInput, CFormSelect, CFormCheck, CRow, CCol,
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import { cilCheckCircle, cilActionUndo, cilPeople, cilExternalLink } from '@coreui/icons'
@@ -27,35 +27,40 @@ import WeekNavigator from '../components/WeekNavigator'
 
 const Timesheets = ({ initialWeekStart, readOnly = false, allowedActions, navigationDisabled = false, referenceDate } = {}) => {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const requestedStatus = searchParams.get('status')?.toUpperCase()
   const [weekFilter, setWeekFilter] = useState(() => initialWeekStart || toWeekMonday(new Date()))
-  const [statusFilter, setStatusFilter] = useState('ALL')
+  const [statusFilter, setStatusFilter] = useState(() => ['OPEN', 'SUBMITTED', 'APPROVED'].includes(requestedStatus) ? requestedStatus : 'ALL')
+  const [allPendingWeeks, setAllPendingWeeks] = useState(() => requestedStatus === 'SUBMITTED')
   const [teacherSearch, setTeacherSearch] = useState('')
-  const [requestedTeacherId, setRequestedTeacherId] = useState(null)
+  const [requestedRowKey, setRequestedRowKey] = useState(null)
   const [modalSlot, setModalSlot] = useState(null)
   const [statusActionError, setStatusActionError] = useState('')
   const [showReopenConfirm, setShowReopenConfirm] = useState(false)
   const canManageWeek = !readOnly && !Array.isArray(allowedActions)
 
   const statusParam = statusFilter === 'ALL' ? undefined : statusFilter
+  const showAllPendingWeeks = statusFilter === 'SUBMITTED' && allPendingWeeks
   const {
     data: timesheets = [],
     isLoading: loadingTimesheets,
     isError: timesheetsError,
-  } = useTimesheets(weekFilter || undefined, statusParam)
+  } = useTimesheets(showAllPendingWeeks ? undefined : weekFilter, statusParam)
   const filteredTimesheets = useMemo(() => timesheets.filter((item) =>
     (item.teacher_name || 'Professor por identificar').toLocaleLowerCase('pt-PT').includes(teacherSearch.trim().toLocaleLowerCase('pt-PT')),
   ), [timesheets, teacherSearch])
   const selectedTeacher = useMemo(
-    () => filteredTimesheets.find((item) => item.teacher_id === requestedTeacherId)
+    () => filteredTimesheets.find((item) => `${item.teacher_id}:${item.week_start_date}` === requestedRowKey)
       ?? filteredTimesheets[0]
       ?? null,
-    [requestedTeacherId, filteredTimesheets],
+    [requestedRowKey, filteredTimesheets],
   )
-  const weekLabel = formatWeekRange(weekFilter)
+  const selectedWeek = showAllPendingWeeks ? selectedTeacher?.week_start_date || weekFilter : weekFilter
+  const weekLabel = formatWeekRange(selectedWeek)
   const selectedTeacherId = selectedTeacher?.teacher_id ?? null
 
   const { data: timeslots = [] } = useTimeslots()
-  const { data: weekGridVersions } = useWeekGridVersions(weekFilter)
+  const { data: weekGridVersions } = useWeekGridVersions(selectedWeek)
 
   const {
     data: weekSlots = [],
@@ -63,7 +68,7 @@ const Timesheets = ({ initialWeekStart, readOnly = false, allowedActions, naviga
     isError: weekError,
     isFetching: fetchingWeek,
     refetch: refetchWeek,
-  } = useWeekSchedule(null, selectedTeacherId, weekFilter)
+  } = useWeekSchedule(null, selectedTeacherId, selectedWeek)
 
   const updateMutation = useUpdateTimesheetStatus()
   const attemptScope = useAttemptScope()
@@ -108,8 +113,8 @@ const Timesheets = ({ initialWeekStart, readOnly = false, allowedActions, naviga
   }
 
   const handleNavigateToSchedules = () => {
-    if (!selectedTeacherId || !weekFilter) return
-    navigate(`/schedules?teacherId=${selectedTeacherId}&weekStart=${weekFilter}`)
+    if (!selectedTeacherId || !selectedWeek) return
+    navigate(`/schedules?teacherId=${selectedTeacherId}&weekStart=${selectedWeek}`)
   }
 
 
@@ -130,9 +135,15 @@ const Timesheets = ({ initialWeekStart, readOnly = false, allowedActions, naviga
             </CFormSelect>
           </div>
 
+          {statusFilter === 'SUBMITTED' && <CFormCheck
+            id="timesheet-all-pending-weeks"
+            label="Todas as semanas pendentes"
+            checked={allPendingWeeks}
+            onChange={(event) => { setWeekFilter(selectedWeek); setAllPendingWeeks(event.target.checked) }}
+          />}
           <div className="ms-auto">
             <span className="form-label text-muted small fw-semibold mb-1 d-block">Semana</span>
-            <WeekNavigator value={weekFilter} onChange={setWeekFilter} />
+            <WeekNavigator value={selectedWeek} onChange={(week) => { setWeekFilter(week); setAllPendingWeeks(false) }} />
           </div>
       </div>
 
@@ -168,7 +179,7 @@ const Timesheets = ({ initialWeekStart, readOnly = false, allowedActions, naviga
               )}
 
               {!loadingTimesheets && timesheets.length === 0 && (
-                <FeedbackBanner tone="info">Nenhum professor com timesheet nesta semana.</FeedbackBanner>
+                <FeedbackBanner tone="info">{showAllPendingWeeks ? 'Nenhuma semana pendente de aprovação.' : 'Nenhum professor com timesheet nesta semana.'}</FeedbackBanner>
               )}
               {!loadingTimesheets && timesheets.length > 0 && filteredTimesheets.length === 0 && (
                 <FeedbackBanner tone="info">Nenhum professor encontrado.</FeedbackBanner>
@@ -177,10 +188,11 @@ const Timesheets = ({ initialWeekStart, readOnly = false, allowedActions, naviga
               <div style={{ maxHeight: '70vh', overflowY: 'auto' }}>
                 {filteredTimesheets.map((ts) => (
                   <TeacherCard
-                    key={ts.teacher_id}
+                    key={`${ts.teacher_id}:${ts.week_start_date}`}
                     teacher={ts}
-                    isSelected={ts.teacher_id === selectedTeacherId}
-                    onClick={() => setRequestedTeacherId(ts.teacher_id)}
+                    showWeek={showAllPendingWeeks}
+                    isSelected={ts === selectedTeacher}
+                    onClick={() => setRequestedRowKey(`${ts.teacher_id}:${ts.week_start_date}`)}
                   />
                 ))}
               </div>
@@ -300,7 +312,7 @@ const Timesheets = ({ initialWeekStart, readOnly = false, allowedActions, naviga
                     slots={weekSlots}
                     isLoading={loadingWeek}
                     baseTimeslots={timeslots}
-                    weekStart={weekFilter}
+                    weekStart={selectedWeek}
                     dayGrids={weekGridVersions?.days ?? null}
                     gridTransitionDate={weekGridVersions?.transition_date ?? ''}
                     isOperationalEnabled

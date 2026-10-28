@@ -29,10 +29,42 @@ describe('Timesheets compact controls', () => {
     hooks.week.mockReset().mockReturnValue({ data: [], isLoading: false })
   })
 
+  it('opens pending weeks from the dashboard and distinguishes the same teacher across weeks', async () => {
+    hooks.timesheets.mockReturnValue({ data: [
+      { ...teachers[0], week_start_date: '2026-09-07' },
+      { ...teachers[0], id: 3, week_start_date: '2026-09-14' },
+    ] })
+    renderWithRouter(<Timesheets />, { initialEntries: ['/timesheets?status=submitted'] })
+    expect(screen.getByLabelText('Filtrar por Estado')).toHaveValue('SUBMITTED')
+    expect(hooks.timesheets).toHaveBeenLastCalledWith(undefined, 'SUBMITTED')
+    expect(hooks.week).toHaveBeenLastCalledWith(null, 7, '2026-09-07')
+    const rows = screen.getAllByRole('button', { name: /Ana/ })
+    expect(rows[0]).toHaveTextContent(/07/)
+    expect(rows[1]).toHaveTextContent(/14/)
+    await userEvent.click(rows[1])
+    expect(rows[0]).toHaveAttribute('aria-pressed', 'false')
+    expect(rows[1]).toHaveAttribute('aria-pressed', 'true')
+    expect(hooks.week).toHaveBeenLastCalledWith(null, 7, '2026-09-14')
+    await userEvent.click(screen.getByLabelText('Todas as semanas pendentes'))
+    expect(hooks.timesheets).toHaveBeenLastCalledWith('2026-09-14', 'SUBMITTED')
+  })
+
   it('associates the status filter with its visible label and preserves server filtering', () => {
     renderWithRouter(<Timesheets initialWeekStart="2026-10-12" />)
     fireEvent.change(screen.getByLabelText('Filtrar por Estado'), { target: { value: 'SUBMITTED' } })
     expect(hooks.timesheets).toHaveBeenLastCalledWith('2026-10-12', 'SUBMITTED')
+  })
+
+  it('ignores an unknown status and keeps the selected weekly view', () => {
+    renderWithRouter(<Timesheets initialWeekStart="2026-10-12" />, { initialEntries: ['/timesheets?status=unknown'] })
+    expect(screen.getByLabelText('Filtrar por Estado')).toHaveValue('ALL')
+    expect(hooks.timesheets).toHaveBeenLastCalledWith('2026-10-12', undefined)
+  })
+
+  it('shows an explicit empty state when no week is pending', () => {
+    hooks.timesheets.mockReturnValue({ data: [] })
+    renderWithRouter(<Timesheets />, { initialEntries: ['/timesheets?status=submitted'] })
+    expect(screen.getByText('Nenhuma semana pendente de aprovação.')).toBeInTheDocument()
   })
 
   it('announces the selected teacher and keeps counts readable when changing rows', () => {

@@ -1,7 +1,8 @@
 import { CBadge } from '@coreui/react'
 import { getTimesheetStatus } from '../../utils/presentation'
+import { formatWeekRange } from '../../utils/formatUtils'
 
-const TeacherCard = ({ teacher, isSelected = false, onClick }) => {
+const TeacherCard = ({ teacher, isSelected = false, onClick, showWeek = false }) => {
   const status = getTimesheetStatus(teacher.status)
   const registered = teacher.registered_slots ?? 0
   const total = teacher.total_slots ?? 0
@@ -21,13 +22,14 @@ const TeacherCard = ({ teacher, isSelected = false, onClick }) => {
           {status.label}
         </CBadge>
       </div>
-      <div className="text-muted" style={{ fontSize: '0.78rem' }}>
+      {showWeek && <div className="small text-muted">{formatWeekRange(teacher.week_start_date)}</div>}
+      {!showWeek && <div className="text-muted" style={{ fontSize: '0.78rem' }}>
         {total > 0 ? (
           <strong>{registered}</strong>
         ) : (
           <span>—</span>
         )}/{total} registadas
-      </div>
+      </div>}
     </button>
   )
 }
