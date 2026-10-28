@@ -99,6 +99,23 @@ describe('E2E Clerk login helper', () => {
     expect(mocks.signIn).toHaveBeenCalledWith({ page, emailAddress: ADMIN_EMAIL })
   })
 
+  it('activates the test organization on a public page before entering a guarded route', async () => {
+    window.Clerk = fakeClerk({ email: ADMIN_EMAIL, organizationId: 'org_previous' })
+    window.Clerk.session = {}
+    const page = makePage()
+    page.goto.mockImplementation(async url => {
+      if (!url.endsWith('/privacidade') && window.Clerk.organization.id !== ORG_ID) {
+        throw new Error('The previous organization cannot access this test database')
+      }
+    })
+
+    await loginAsAdminReal(page)
+
+    expect(page.goto.mock.calls[0][0]).toMatch(/\/privacidade$/)
+    expect(window.Clerk.setActive).toHaveBeenCalledWith({ organization: ORG_ID })
+    expect(page.goto.mock.calls[1][0]).toMatch(/\/dashboard$/)
+  })
+
   it('waits for the reloaded Clerk session before activating the organization', async () => {
     window.Clerk = fakeClerk({ email: 'other+clerk_test@example.com', organizationId: null })
     mocks.signIn.mockImplementation(async () => {

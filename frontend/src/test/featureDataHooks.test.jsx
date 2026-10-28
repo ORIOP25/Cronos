@@ -39,6 +39,8 @@ import {
   useSaveTeacherPresence,
   useTeacherPresence,
   useTimesheets,
+  useSubmitMyTimesheet,
+  useUpdateTimesheetStatus,
   useUpdateOccurrence,
 } from '../features/operations/data'
 import {
@@ -88,6 +90,17 @@ function createHarness() {
 }
 
 describe('vertical feature data hooks', () => {
+  it.each(['submit', 'APPROVED', 'OPEN'])('refreshes dashboard and weekly lists after %s', async action => {
+    const { queryClient, wrapper } = createHarness()
+    const keys = [['dashboard', 'org-a'], ['timesheets', 'org-a'], ['dashboard', 'org-b']]
+    keys.forEach(key => queryClient.setQueryData(key, []))
+    const useAction = action === 'submit' ? useSubmitMyTimesheet : useUpdateTimesheetStatus
+    const mutation = renderHook(() => useAction(), { wrapper })
+    await act(() => mutation.result.current.mutateAsync(action === 'submit' ? '2026-09-07' : { timesheetId: 1, status: action }))
+    expect(queryClient.getQueryState(keys[0]).isInvalidated).toBe(true)
+    expect(queryClient.getQueryState(keys[1]).isInvalidated).toBe(true)
+    expect(queryClient.getQueryState(keys[2]).isInvalidated).toBe(false)
+  })
   it('separates generation prevalidation by strategy and sends it to the API', async () => {
     const { queryClient, wrapper } = createHarness()
     const hook = renderHook(() => usePrevalidation({ strategy: 'ADAPTIVE_REPAIR' }), { wrapper })

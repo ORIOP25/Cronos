@@ -57,8 +57,10 @@ const BulkImport = () => {
     return IMPORT_RESOURCES.some((item) => item.key === candidate) ? candidate : 'rooms'
   }, [location.search])
   const initialInput = useRef(null)
+  const validationVersion = useRef(0)
   const [files, setFiles] = useState({})
   const [validation, setValidation] = useState(null)
+  const [validationError, setValidationError] = useState(null)
   const [localError, setLocalError] = useState('')
   const [downloadingResource, setDownloadingResource] = useState('')
   const validateMutation = useValidateBulkImport()
@@ -87,8 +89,10 @@ const BulkImport = () => {
   }, [])
 
   const selectFile = (resource, file) => {
+    validationVersion.current += 1
     setLocalError('')
     setValidation(null)
+    setValidationError(null)
     if (!file) document.getElementById(`import-${resource}`).value = ''
     setFiles((current) => {
       const next = { ...current }
@@ -105,10 +109,16 @@ const BulkImport = () => {
     }
     setLocalError('')
     const attempt = attemptScope.capture()
+    const version = ++validationVersion.current
+    setValidation(null)
+    setValidationError(null)
     try {
-      setValidation(await validateMutation.mutateAsync(files))
+      const result = await validateMutation.mutateAsync(files)
+      if (!attemptScope.isCurrent(attempt) || version !== validationVersion.current) return
+      setValidation(result)
     } catch (error) {
-      if (!attemptScope.isCurrent(attempt)) return
+      if (!attemptScope.isCurrent(attempt) || version !== validationVersion.current) return
+      setValidationError(error)
       toast.error(getApiErrorMessage(error, 'Não foi possível verificar os ficheiros. Tente novamente.'))
     }
   }
@@ -128,7 +138,7 @@ const BulkImport = () => {
     }
   }
 
-  const serverErrorContext = errorContext(validateMutation.error || commitMutation.error)
+  const serverErrorContext = errorContext(validationError || commitMutation.error)
   const issues = validation?.issues || serverErrorContext.issues || []
   const errors = issues.filter((issue) => issue.severity === 'error')
   const warnings = issues.filter((issue) => issue.severity === 'warning')

@@ -98,6 +98,8 @@ Occurrence links include their school date. Availability queries keep each date'
 Unknown teacher links show an explicit error instead of an unidentified grid.
 Course creation includes a filled initial class draft. Incomplete edited drafts block submission and retain their values.
 Import downloads show preparation on the selected model and success or failure through a visible toast.
+Import validation results belong to the file selection and attempt scope that started them. Changes to files discard older responses.
+Weekly submission and status mutations invalidate the active organization's dashboard and timesheet queries.
 Mobile debt cards show the class, subject, teacher, gaps, and duration without a wide table.
 Dashboard debt values use the same duration formatter and debt tab as the occurrence page.
 Published schedule conflicts require attention. An expandable schedule health list identifies affected blocks and links to each teacher week.

@@ -40,7 +40,7 @@ Read [Members and Access](../02_domain_model/MEMBERS_AND_ACCESS.md).
 | `/members` | `Members.jsx` | Admin | Team member management (`Equipa`) |
 | `/rooms` | `Rooms.jsx` | Admin | Room catalog management |
 | `/absences` | `Occurrences.jsx` | Admin | Occurrence and substitution management |
-| `/timesheets` | `Timesheets.jsx` | Admin | Weekly timesheet review |
+| `/timesheets` | `Timesheets.jsx` | Admin | Weekly timesheet review; `?status=submitted` opens pending approvals across weeks |
 | `/my-schedules` | `MySchedules.jsx` | Teacher | Personal schedule, logs, and week submission |
 | `/my-availability` | `MyAvailability.jsx` | Teacher | Teacher availability grid |
 | `/my-progress` | `MyProgress.jsx` | Teacher | Teacher assigned class progress |
