@@ -508,21 +508,58 @@ Uma variante com feriados arredondados deu 370 dias de turma com 1 furo, com a �
 Na escola do laboratório o modelo semanal falha. Com a carga completa não coloca nenhuma aula (o `main` termina em 316 s). Com as horas a 55% fica incompleto: 5 módulos por acabar, 10 violações e 196 dias com 2+ furos.
 A causa está no avanço semana a semana: depois de um dia sem solução, o modelo reutiliza o padrão anterior e não recupera. A Ronda 4 já falhava nessa escola: 232 unidades por acabar e 482 violações.
 
+- **Ronda 6 (28 de outubro de 2026): carga completa de cerca de 1 050 h por turma.** O responsável de produto fixou esta carga como a única que conta: uma turma de Ensino Profissional tem cerca de 1 050 h por ano letivo.
+  - Causa da falha: a etapa de contagens só verificava totais por recurso. Uma unidade podia pedir mais aulas do que as vagas comuns à turma e ao professor, e o dia ficava sem solução.
+  - Correções: o modelo por dia passou a aceitar aulas por colocar (falta penalizada) e deixou de falhar a semana; as rondas de corte foram retiradas; a etapa de contagens passou a verificar a presença do professor.
+  - Commits `31c211f6` e `16e35aa0` no ramo de ensaio.
+- **Ronda 7 (28 de outubro de 2026): aulas em falta e atualizações.** As aulas que sobram foram entregues à reconstrução do gerador atual (`construct_recovery`). O modelo semanal ganhou um caminho de atualização no laboratório. Commits `ebeab635`, `28820cd6` e `f9872ed6`.
+
+| Escola do laboratório, `pilot@1.0`, sem faltas | `main` | Modelo semanal |
+| :--- | ---: | ---: |
+| Aulas colocadas | 43 152 | 42 994 (faltam 158) |
+| Violações | 0 | 128 |
+| Última aula | 8 de junho | 15 de junho |
+| Dias de turma com 1 furo | 551 | 734 |
+| Dias de turma com 2+ furos | 2 | 9 |
+| Dias fora da cauda com 1–2 aulas | 134 | 0 |
+| Furos dos professores (h) | 2 156 | 3 178 |
+| Dias de professor com uma só aula | 69 | 305 |
+| Tempo | 323 s | 422–466 s |
+
+A reconstrução do gerador atual não completa o modelo semanal. Com as aulas semanais fixas, o modelo exato de colocação (`solve_placement`) também dá inviável. Com as aulas do `main` fixas até 1 de junho dá completo, por isso o modelo exato não está a falhar sem razão.
+
+Atualizações com faltas na mesma escola, todas a 1 de fevereiro de 2027, com o passado protegido. Os valores contam de 1 de fevereiro em diante.
+
+- Caso passado: três professores faltam a semana de 11 a 15 de janeiro. As aulas em falta deixam de estar protegidas e voltam a ser procura.
+  - O validador exige que as aulas protegidas de cada unidade formem um prefixo do progresso do módulo. Por isso, as aulas seguintes da mesma unidade antes de 1 de fevereiro também voltam a ser procura.
+  - No `main` são 88 aulas em falta mais 159 seguintes.
+- Caso futuro: um professor fica Impossível de 1 a 12 de março (65 aulas).
+
+| Atualização | `main` passado | Semanal passado | `main` futuro | Semanal futuro |
+| :--- | ---: | ---: | ---: | ---: |
+| Aulas por colocar | 0 | 607 | 0 | 333 |
+| Violações | 0 | 394 | 0 | 238 |
+| Aulas publicadas que mudam de hora | 0 (125 só de sala) | 10 815 | 67 (57 só de sala) | 10 930 |
+| Dias de turma com 2+ furos (publicado → depois) | 1 → 4 | 6 → 85 | 1 → 15 | 6 → 46 |
+| Furos dos professores (h, publicado → depois) | 619 → 662 | 1 497 → 2 693 | 619 → 637 | 1 497 → 2 589 |
+| Tempo | 366 s | 333 s | 360 s | 270 s |
+
+Cada atualização correu duas vezes com o mesmo resumo (determinística). O modelo semanal muda até uma semana sem alterações: guarda só 60% das aulas publicadas dessa semana. A causa provável, não verificada, são as metas semanais recalculadas a partir da procura restante.
+
 #### Veredicto
 
-Os fundamentos valem na escola real. A Ronda 5 melhora o fim do ano, os furos dos professores e as horas de furo das turmas, em tempo próximo do `main`. Não está pronto para produção, porque falha na escola do laboratório.
+O modelo semanal foi arquivado por decisão do responsável de produto a 28 de outubro de 2026. O ramo `spike/weekly-template-mvp` fica guardado e não é integrado no `main`.
 
-Um porte precisa de:
+Com cerca de 1 050 h por turma, o modelo semanal não completa o ano e desfaz o horário publicado nas atualizações. O gerador atual completa o ano e repõe as faltas sem mover aulas publicadas além das que a falta obriga.
 
-- uma recuperação quando uma semana não tem solução, por exemplo com o gerador atual nessas semanas, provada na escola do laboratório;
-- um caminho válido quando o modelo semanal é inviável;
-- o peso dos furos das turmas, decisão do responsável de produto;
-- proteção das aulas e dos fluxos de atualização;
-- memória do worker na Railway, com processos paralelos.
+Pontos abertos no gerador atual, medidos na escola do laboratório:
+
+- 134 dias fora da cauda com 1–2 aulas (cerca de 3 por turma por ano);
+- a atualização do caso futuro cria 14 dias de turma com 2+ furos, que a regra proíbe.
 
 #### Lições dos ensaios
 
-- Medir na entrada real do responsável de produto, não só na escola do laboratório.
+- Medir na carga anual real: cerca de 1 050 h por turma, na escola do laboratório `pilot@1.0`. Os dados atuais da escola real (420 h por turma) são um caso leve e não chegam para decidir.
 - Uma aula conjunta grava-se uma linha por turma em [`scheduler_lesson_v1`](../../backend/app/scheduler/infrastructure/models.py), com o mesmo `stable_key` e o mesmo `teaching_unit_key`. Contar furos dessa tabela sem agrupar pela unidade de ensino erra os números. Foi um erro de contagem da coordenação a 26 de outubro.
 - Os dados de produção leem-se a partir do contentor da API, em transação só de leitura, com o contexto do tenant definido. Sem esse contexto, o RLS esconde todas as linhas. Ver [Cloud Operations](../09_ops_observability/CLOUD_OPERATIONS.md#read-only-inspection) e [isolamento de tenant](../08_security_quality/SECURITY_AND_TENANT_ISOLATION.md).
 
