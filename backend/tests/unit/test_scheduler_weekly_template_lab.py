@@ -7,7 +7,8 @@ materialized candidate checked by the independent validator.
 
 from collections import Counter, defaultdict
 from dataclasses import replace
-from datetime import date, time, timedelta
+from datetime import UTC, date, datetime, time, timedelta
+from zoneinfo import ZoneInfo
 
 from app.scheduler.domain.calendar import normalize_period
 from app.scheduler.domain.candidate import (
@@ -27,12 +28,14 @@ from app.scheduler.domain.candidate_validation import (
 from app.scheduler.domain.projection import ModuleRequirement
 from app.scheduler.lab import weekly_template
 from app.scheduler.lab.weekly_template import (
+    Template,
     _costs,
     _solve_day,
     _spread_counts,
     _week_inputs,
     build_weekly_template,
     generate_weekly_template,
+    update_weekly_template,
 )
 
 TIMEZONE = "Europe/Lisbon"
@@ -447,3 +450,149 @@ def test_rollout_resolves_the_template_before_it_places_more_lessons_than_a_unit
     )
 
     assert result.stats["template_solves"] == 2
+
+
+def test_leftover_fill_completes_units_a_rollout_leaves_unplaced(monkeypatch):
+    # A rollout that places no lesson hands every unit's demand to the leftover fill.
+    monkeypatch.setattr(
+        weekly_template,
+        "build_weekly_template",
+        lambda *args, **kwargs: Template(frozenset(), 0, 0, 0.0),
+    )
+    snapshot = _snapshot()
+
+    result = generate_weekly_template(snapshot, _periods(), target_finish=LAST_DAY)
+
+    assert result.status == "COMPLETE"
+    assert [v.code for v in validate_candidate(snapshot, result.candidate).violations] == []
+    assert result.candidate is not None
+    assert sum(row.credit_minutes for row in result.candidate.lessons) == len(UNITS) * UNIT_MINUTES
+
+
+def test_leftover_fill_keeps_the_weekly_lessons_where_they_are():
+    snapshot = _snapshot()
+    periods = _periods()
+    first, second = SLOTS[0][0], SLOTS[1][0]
+    weekly = [
+        next(p for p in periods if p.school_date == ORIGIN and p.start_local == start)
+        for start in (first, second)
+    ]
+    placed = {1: [(period, LESSON_MINUTES) for period in weekly]}
+    remaining = {
+        1: UNIT_MINUTES - 2 * LESSON_MINUTES,
+        **{unit.assignment_id: UNIT_MINUTES for unit in UNITS if unit.assignment_id != 1},
+    }
+    partial = weekly_template._materialize(snapshot, placed, remaining)
+
+    filled = weekly_template._fill_leftover(snapshot, periods, partial, time_limit_seconds=60)
+
+    assert filled is not None
+    assert [v.code for v in validate_candidate(snapshot, filled).violations] == []
+    kept = {
+        (row.period.school_date, row.period.start_local)
+        for row in filled.lessons
+        if row.assignment_id == 1
+    }
+    assert {(ORIGIN, first), (ORIGIN, second)} <= kept
+    assert sum(row.credit_minutes for row in filled.lessons) == len(UNITS) * UNIT_MINUTES
+
+
+UPDATE_DAY = ORIGIN + timedelta(weeks=2)
+
+
+def _published():
+    return generate_weekly_template(_snapshot(), _periods(), target_finish=LAST_DAY).candidate
+
+
+def _update_snapshot(published, *, missed=(), unavailable=()):
+    """Update at UPDATE_DAY: published lessons before it are protected, except the missed ones."""
+    protected = tuple(
+        row
+        for row in published.lessons
+        if row.period.school_date < UPDATE_DAY and row.lesson_id not in missed
+    )
+    now = datetime.combine(UPDATE_DAY, time(0), tzinfo=ZoneInfo(TIMEZONE)).astimezone(UTC)
+    school_dates = {period.school_date for period in _periods()}
+    return replace(
+        _snapshot(unavailable),
+        strategy=SchedulingStrategy.ADAPTIVE_RECOVERY,
+        baseline_lessons=published.lessons,
+        protected_lessons=protected,
+        protected_dates=frozenset(day for day in school_dates if day < UPDATE_DAY),
+        now_utc=now,
+    )
+
+
+def test_update_keeps_the_protected_past_and_plans_only_from_the_update_date():
+    published = _published()
+    snapshot = _update_snapshot(published)
+
+    result = update_weekly_template(snapshot, _periods(), published)
+
+    assert result.status == "COMPLETE"
+    assert [v.code for v in validate_candidate(snapshot, result.candidate).violations] == []
+    protected = set(snapshot.protected_lessons)
+    assert protected <= set(result.candidate.lessons)
+    assert all(
+        row.period.school_date >= UPDATE_DAY
+        for row in result.candidate.lessons
+        if row not in protected
+    )
+
+
+def test_update_places_a_missed_lesson_on_or_after_the_update_date():
+    published = _published()
+    before = [
+        row
+        for row in published.lessons
+        if row.assignment_id == 1 and row.period.school_date < UPDATE_DAY
+    ]
+    missed = max(before, key=lambda row: row.period.start_utc)
+    snapshot = _update_snapshot(published, missed=(missed.lesson_id,))
+
+    result = update_weekly_template(snapshot, _periods(), published)
+
+    assert result.status == "COMPLETE"
+    assert [v.code for v in validate_candidate(snapshot, result.candidate).violations] == []
+    protected_ids = {row.lesson_id for row in snapshot.protected_lessons}
+    debt = [
+        row
+        for row in result.candidate.lessons
+        if row.assignment_id == 1 and row.lesson_id not in protected_ids
+    ]
+    # The missed lesson is one of the unit's lessons before the update; the rest stay protected.
+    assert (
+        sum(row.credit_minutes for row in debt) == UNIT_MINUTES - (len(before) - 1) * LESSON_MINUTES
+    )
+    assert min(row.period.school_date for row in debt) >= UPDATE_DAY
+
+
+def test_update_keeps_the_published_lessons_of_a_week_that_a_change_does_not_touch():
+    published = _published()
+    week_three = ORIGIN + timedelta(weeks=3)
+    blocked = tuple(
+        Unavailability(
+            UnavailableResource.TEACHER,
+            TEACHER_1,
+            normalize_period(week_three + timedelta(days=day), start, end, TIMEZONE),
+        )
+        for day in range(5)
+        for start, end in SLOTS
+    )
+    snapshot = _update_snapshot(published, unavailable=blocked)
+
+    result = update_weekly_template(snapshot, _periods(), published)
+
+    assert result.status == "COMPLETE"
+    assert [v.code for v in validate_candidate(snapshot, result.candidate).violations] == []
+    week_two = range(0, 7)
+    published_week_two = {
+        (row.assignment_id, row.period.school_date, row.period.start_local)
+        for row in published.lessons
+        if (row.period.school_date - UPDATE_DAY).days in week_two
+    }
+    updated = {
+        (row.assignment_id, row.period.school_date, row.period.start_local)
+        for row in result.candidate.lessons
+    }
+    assert published_week_two <= updated

@@ -22,7 +22,7 @@ import time as clock
 from collections import Counter, defaultdict
 from collections.abc import Iterable, Mapping
 from concurrent.futures import ProcessPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime, time, timedelta
 from functools import cache
 from math import ceil
@@ -59,6 +59,8 @@ from app.scheduler.domain.teacher_presence import (
     longest_presence_minutes,
     presence_minutes_fit,
 )
+from app.scheduler.infrastructure.placement_model import _module_completed
+from app.scheduler.infrastructure.recovery_construction import construct_recovery
 from app.scheduler.infrastructure.room_assignment import assign_rooms_by_period
 
 SlotKey = tuple[int, time, time]  # (weekday, start_local, end_local) of a grid slot
@@ -974,6 +976,26 @@ def _targets(
     return targets, frozenset(tail)
 
 
+def _published_hints(
+    snapshot: PlanningSnapshot, published: CandidateSchedule, origin_monday: date
+) -> dict[int, frozenset[Placement]]:
+    """The published lessons that are still open, as the stability hint of each school week."""
+    hints: dict[int, set[Placement]] = defaultdict(set)
+    for row in published.lessons:
+        if is_physically_protected(snapshot, row.period):
+            continue
+        week = (row.period.school_date - origin_monday).days // 7
+        hints[week].add(
+            (
+                row.assignment_id,
+                row.period.school_date.weekday(),
+                row.period.start_local,
+                row.period.end_local,
+            )
+        )
+    return {week: frozenset(rows) for week, rows in hints.items()}
+
+
 def _calendar(
     snapshot: PlanningSnapshot, periods: Iterable[Period]
 ) -> dict[tuple[date, time, time], Period]:
@@ -1040,7 +1062,54 @@ def generate_weekly_template(
     A week is solved against the slots its calendar really has, so a holiday week moves its
     lessons onto the school days. A week without any school day gets no placements.
     """
+    return _roll_out(
+        snapshot,
+        periods,
+        target_finish=target_finish,
+        published=None,
+        time_limit_seconds=time_limit_seconds,
+        random_seed=random_seed,
+    )
+
+
+def update_weekly_template(
+    snapshot: PlanningSnapshot,
+    periods: Iterable[Period],
+    published: CandidateSchedule,
+    *,
+    time_limit_seconds: float = 600.0,
+    random_seed: int = 1,
+) -> MvpResult:
+    """Update a published weekly schedule: protected lessons stay, the rest is rolled out again.
+
+    ``snapshot.protected_lessons`` and the protected dates fix the past. Demand that is left (missed
+    lessons and the unplanned future) rolls out from the first unprotected week. Each week's template
+    takes the published lessons of that week as its stability hint, so a week the change does not
+    touch keeps its lessons.
+    """
+    return _roll_out(
+        snapshot,
+        periods,
+        target_finish=max(row.period.school_date for row in published.lessons),
+        published=published,
+        time_limit_seconds=time_limit_seconds,
+        random_seed=random_seed,
+    )
+
+
+def _roll_out(
+    snapshot: PlanningSnapshot,
+    periods: Iterable[Period],
+    *,
+    target_finish: date,
+    published: CandidateSchedule | None,
+    time_limit_seconds: float,
+    random_seed: int,
+) -> MvpResult:
+    """The rollout shared by generation (``published`` None) and update."""
+    periods = tuple(periods)
     origin_monday = snapshot.origin - timedelta(days=snapshot.origin.weekday())
+    hints = None if published is None else _published_hints(snapshot, published, origin_monday)
     target_week = (target_finish - origin_monday).days // 7 - TARGET_LEAD_WEEKS
     calendar = _calendar(snapshot, periods)
     calendar_periods = tuple(calendar.values())
@@ -1096,7 +1165,7 @@ def generate_weekly_template(
                 calendar_periods,
                 remaining={unit_id: remaining[unit_id] for unit_id in ready},
                 weeks_left=max(1, target_week - week + 1),
-                previous=previous,
+                previous=previous if hints is None else hints.get(week, frozenset()),
                 available=available,
                 time_limit_seconds=time_limit_seconds,
                 random_seed=random_seed,
@@ -1126,9 +1195,15 @@ def generate_weekly_template(
                     del remaining[unit_id]
         week += 1
 
+    rollout_unfinished = len(remaining)
     candidate = _materialize(snapshot, placed, remaining)
+    if remaining:
+        filled = _fill_leftover(snapshot, periods, candidate, time_limit_seconds=time_limit_seconds)
+        if filled is not None:
+            candidate, remaining = filled, {}
     stats = {
         "template_solves": len(solves),
+        "rollout_units_unfinished": rollout_unfinished,
         "largest_model_variables": max((t.variables for t in solves), default=0),
         "solve_seconds": round(sum(t.seconds for t in solves), 1),
         "count_seconds": round(sum(t.count_seconds for t in solves), 1),
@@ -1149,8 +1224,14 @@ def _materialize(
     placed: Mapping[int, list[tuple[Period, int]]],
     remaining: Mapping[int, int],
 ) -> CandidateSchedule:
-    """Lessons with identities and module slices, then the production room pass."""
-    used_ids: set[int] = set()
+    """Lessons with identities and module slices, then the production room pass.
+
+    The protected lessons stay in the candidate: their identities and module progress are taken as
+    given, so new lessons continue each module after them.
+    """
+    used_ids: set[int] = {row.lesson_id for row in snapshot.protected_lessons} | set(
+        snapshot.reserved_lesson_ids
+    )
     lessons: list[ScheduledLesson] = []
     for unit_id in sorted(placed):
         unit = snapshot.assignment_for(unit_id)
@@ -1170,7 +1251,7 @@ def _materialize(
         ]
         slices = project_module_slices(
             unit.modules,
-            completed_minutes=snapshot.executed_for(unit_id),
+            completed_minutes=_module_completed(snapshot, unit_id),
             lessons=future,
             require_complete=unit_id not in remaining,
         )
@@ -1185,4 +1266,30 @@ def _materialize(
                     tuple(row for row in slices if row.lesson_id == lesson_id),
                 )
             )
-    return assign_rooms_by_period(snapshot, CandidateSchedule(tuple(lessons)))
+    combined = CandidateSchedule((*snapshot.protected_lessons, *lessons))
+    return assign_rooms_by_period(snapshot, combined)
+
+
+def _fill_leftover(
+    snapshot: PlanningSnapshot,
+    periods: Iterable[Period],
+    candidate: CandidateSchedule,
+    *,
+    time_limit_seconds: float,
+) -> CandidateSchedule | None:
+    """Place the demand the rollout left with the engine's recovery fill.
+
+    The rollout's lessons become the published baseline of ``construct_recovery``: each one keeps
+    its place when it is still valid, and the missing credit goes to the earliest free capacity.
+    """
+    protected = {row.lesson_id for row in snapshot.protected_lessons}
+    planning = replace(
+        snapshot,
+        baseline_lessons=tuple(row for row in candidate.lessons if row.lesson_id not in protected),
+    )
+    return construct_recovery(
+        planning,
+        tuple(periods),
+        deadline=clock.monotonic() + time_limit_seconds,
+        weights=snapshot.priority_weights,
+    )
