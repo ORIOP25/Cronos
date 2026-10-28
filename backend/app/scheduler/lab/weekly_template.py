@@ -1013,6 +1013,20 @@ def _refusal(
     return None
 
 
+def _overplaces(template: Template, remaining: Mapping[int, int], lesson_minutes: int) -> bool:
+    """True when the template holds more slots for a unit than the unit has lessons left.
+
+    Such a slot would be dropped inside the week, which takes a lesson out of a teacher or class
+    day the template had built, so the rollout solves again first.
+    """
+    placed = Counter(unit_id for unit_id, _weekday, _start, _end in template.placements)
+    return any(
+        count > ceil(remaining[unit_id] / lesson_minutes)
+        for unit_id, count in placed.items()
+        if unit_id in remaining
+    )
+
+
 def generate_weekly_template(
     snapshot: PlanningSnapshot,
     periods: Iterable[Period],
@@ -1038,6 +1052,7 @@ def generate_weekly_template(
         for assignment in snapshot.assignments
     }
     remaining = {unit_id: minutes for unit_id, minutes in remaining.items() if minutes > 0}
+    lesson_minutes = typical_lesson_minutes(snapshot.grid_slots)
     predecessors: dict[int, list[int]] = defaultdict(list)
     for source, target in snapshot.precedences:
         predecessors[target].append(source)
@@ -1073,6 +1088,7 @@ def generate_weekly_template(
                 or ready != solved_units
                 or available != solved_available
                 or week - solved_week >= REFRESH_WEEKS
+                or _overplaces(template, remaining, lesson_minutes)
             )
         ):
             template = build_weekly_template(

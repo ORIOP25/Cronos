@@ -6,6 +6,7 @@ materialized candidate checked by the independent validator.
 """
 
 from collections import Counter, defaultdict
+from dataclasses import replace
 from datetime import date, time, timedelta
 
 from app.scheduler.domain.calendar import normalize_period
@@ -430,3 +431,19 @@ def test_stage_a_teacher_day_counts_only_the_slots_the_teacher_can_use():
         count for (unit, day), count in counts.items() if day == 0 and TEACHER_OF[unit] == TEACHER_1
     )
     assert monday_lessons == 0
+
+
+def test_rollout_resolves_the_template_before_it_places_more_lessons_than_a_unit_has_left(
+    monkeypatch,
+):
+    # Unit 1 has three lessons left and two weeks to finish. Its template places two a week, so in
+    # the second week one of its template slots is past its last lesson: the rollout solves again
+    # at the start of that week instead of dropping the slot inside the week.
+    monkeypatch.setattr(weekly_template, "REFRESH_WEEKS", 100)
+    snapshot = replace(_snapshot(), executed_minutes={1: {1: UNIT_MINUTES - 3 * LESSON_MINUTES}})
+
+    result = generate_weekly_template(
+        snapshot, _periods(), target_finish=ORIGIN + timedelta(weeks=2)
+    )
+
+    assert result.stats["template_solves"] == 2
