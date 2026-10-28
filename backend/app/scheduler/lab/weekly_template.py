@@ -1,7 +1,9 @@
-"""Lab MVP2 of a weekly-template timetable: two CP-SAT stages rolled out on real dates.
+"""Lab MVP3 of a weekly-template timetable: two stages rolled out on real dates.
 
-Stage A chooses how many lessons each unit gets on each weekday of one week: one small integer
-model. Stage B places one weekday's lessons into slots: one independent model per day. A day that
+Stage A chooses how many lessons each unit gets on each weekday of one week. A greedy plan packs
+the lessons and repairs the class and teacher rules; a small CP-SAT count model then improves it
+from that plan as a hint, within a tick budget, and falls back to the plan if it finds nothing.
+Stage B places one weekday's lessons into slots: one independent model per day. A day that
 stage B cannot place sends a cut back to stage A: one lesson fewer for the busiest class that day.
 A class day holds zero lessons or at least three, except a tail: one or two lessons that finish
 the last remaining lessons of their units. A class has at most one internal gap slot per day.
@@ -21,6 +23,7 @@ from collections.abc import Iterable, Mapping
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
+from functools import cache
 from math import ceil
 
 from ortools.sat.python import cp_model
@@ -61,15 +64,17 @@ SlotKey = tuple[int, time, time]  # (weekday, start_local, end_local) of a grid 
 Placement = tuple[int, int, time, time]  # (assignment_id, weekday, start_local, end_local)
 TEACHER = UnavailableResource.TEACHER
 CLASS = UnavailableResource.CLASS
+SOLVED_STATUSES = ("OPTIMAL", "FEASIBLE")
 # One lesson short of its weekly target costs more than every preference and gap together, so the
 # target is a hard equality whenever the rules allow it. A shortfall is reported, never hidden.
 SHORTFALL_WEIGHT = 10**9
-SOLVED_STATUSES = ("OPTIMAL", "FEASIBLE")
 # Deterministic solver budgets (CP-SAT ticks are not seconds).
-COUNT_TICKS = 40
-DAY_TICKS = 5
+COUNT_TICKS = 2
+DAY_TICKS = 3
 MAX_CUT_ROUNDS = 5
 TAIL_LESSONS = 2
+# A class day holds zero lessons or at least this many, unless it is a tail day.
+MIN_DAY_LESSONS = 3
 
 
 @dataclass(frozen=True)
@@ -247,10 +252,194 @@ def _presence_totals(
     ]
 
 
+def _capacity(week: _Week, kind: UnavailableResource, identity: int, day: int) -> int:
+    """Most lessons a resource can hold on a day, leaving a lunch slot free when it must."""
+    usable = [
+        key for key in week.slots if key[0] == day and (kind, identity, key) not in week.blocked
+    ]
+    lunch_keys = week.lunch.get(day, frozenset())
+    if week.lunch_rule is None or (kind is TEACHER and identity in week.dispensed):
+        return len(usable)
+    if not lunch_keys:
+        return 0
+    plain = sum(1 for key in usable if key not in lunch_keys)
+    lunch_free = sum(1 for key in usable if key in lunch_keys)
+    return plain + min(lunch_free, len(lunch_keys) - 1)
+
+
+def _open_slots(week: _Week, unit: Assignment, day: int) -> int:
+    """Grid slots of one weekday that none of the unit's resources blocks."""
+    resources = _resources(unit)
+    return sum(
+        1
+        for key in week.slots
+        if key[0] == day
+        and not any((kind, identity, key) in week.blocked for kind, identity in resources)
+    )
+
+
+def _total(members) -> int:
+    return sum(count for _unit, count in members)
+
+
+def _remove(members, amount: int, eligible) -> int:
+    """Take ``amount`` lessons from the eligible rows, busiest unit first, lowest id on ties."""
+    taken = 0
+    ordered = sorted(
+        (row for row in members if row[1] and eligible(row[0])),
+        key=lambda row: (-row[1], row[0]),
+    )
+    for row in ordered:
+        if taken == amount:
+            break
+        step = min(row[1], amount - taken)
+        row[1] -= step
+        taken += step
+    return taken
+
+
+def _settle_class(week: _Week, members, cap: int | None) -> bool:
+    """Class day: at most the cut, regular lessons need three or more, tail lessons at most two."""
+    removed = 0
+    if cap is not None and _total(members) > cap:
+        removed += _remove(members, _total(members) - cap, lambda unit_id: True)
+    regular = sum(count for unit_id, count in members if unit_id not in week.tail and count)
+    if regular and _total(members) < MIN_DAY_LESSONS:
+        removed += _remove(members, regular, lambda unit_id: unit_id not in week.tail)
+    elif not regular and _total(members) > TAIL_LESSONS:
+        removed += _remove(members, _total(members) - TAIL_LESSONS, lambda unit_id: True)
+    return removed > 0
+
+
+def _settle_teacher(week: _Week, members, teacher_id: int, day: int, day_keys) -> bool:
+    """Teacher day: the total must be one that the presence rule can hold (zero always can)."""
+    rule = week.presence.get(teacher_id)
+    if rule is None or not rule.minimum_minutes:
+        return False
+    total = _total(members)
+    allowed = _presence_totals(week, day_keys, rule, _capacity(week, TEACHER, teacher_id, day))
+    if total in allowed:
+        return False
+    keep = max(value for value in allowed if value < total)
+    return _remove(members, total - keep, lambda unit_id: True) > 0
+
+
+def _settle_day(week: _Week, rows, day: int, cuts: Mapping[tuple[int, int], int]) -> bool:
+    """One sweep over the class and teacher groups of one weekday. True when it removed a lesson."""
+    removed = False
+    day_keys = [key for key in week.slots if key[0] == day]
+    class_ids = {class_id for unit_id, count in rows if count for class_id in week.units[unit_id].class_ids}
+    for class_id in sorted(class_ids):
+        members = [row for row in rows if row[1] and class_id in week.units[row[0]].class_ids]
+        removed |= _settle_class(week, members, cuts.get((class_id, day)))
+    teacher_ids = {week.units[unit_id].teacher_id for unit_id, count in rows if count}
+    for teacher_id in sorted(teacher_ids):
+        members = [row for row in rows if row[1] and week.units[row[0]].teacher_id == teacher_id]
+        removed |= _settle_teacher(week, members, teacher_id, day, day_keys)
+    return removed
+
+
+def _settle(
+    week: _Week,
+    counts: Mapping[tuple[int, int], int],
+    cuts: Mapping[tuple[int, int], int],
+    days,
+) -> dict[tuple[int, int], int]:
+    """Remove lessons, never add, until every weekday obeys the class and teacher rules."""
+    settled: dict[tuple[int, int], int] = {}
+    for day in days:
+        rows = [
+            [unit_id, count]
+            for (unit_id, weekday), count in counts.items()
+            if weekday == day and count
+        ]
+        while _settle_day(week, rows, day, cuts):
+            pass
+        settled.update({(unit_id, day): count for unit_id, count in rows if count})
+    return settled
+
+
+def _spread_counts(
+    week: _Week,
+    targets: Mapping[int, int],
+    cuts: Mapping[tuple[int, int], int],
+) -> tuple[dict[tuple[int, int], int], int]:
+    """Stage A plan without a solver: lessons per (unit, weekday), and the shortfall they leave.
+
+    Each lesson goes to the weekday where its teacher and classes first reach the minimum day
+    size, then to the least loaded one, so every day fills to three before any day grows. The
+    class and teacher rules are then repaired by removing lessons only. Removed lessons are the
+    shortfall that stage B and the next weeks absorb. The plan is the hint for the count model.
+    """
+    days = sorted({key[0] for key in week.slots})
+    room_sets = {week.units[unit_id].eligible_room_ids for unit_id in targets}
+    room_slots = {day: sum(1 for key in week.slots if key[0] == day) for day in days}
+    previous = Counter((unit_id, day) for unit_id, day, _start, _end in week.previous)
+    counts: Counter = Counter()
+    load: Counter = Counter()
+    room_load: Counter = Counter()
+
+    @cache
+    def capacity(kind: UnavailableResource, identity: int, day: int) -> int:
+        return _capacity(week, kind, identity, day)
+
+    def pressure(unit: Assignment, day: int) -> int:
+        return sum(load[(kind, identity, day)] for kind, identity in _resources(unit))
+
+    def filled(unit: Assignment, day: int) -> int:
+        return sum(min(load[(kind, identity, day)], MIN_DAY_LESSONS) for kind, identity in _resources(unit))
+
+    def fits(unit: Assignment, day: int, open_count: int) -> bool:
+        if counts[(unit.assignment_id, day)] >= open_count:
+            return False
+        for kind, identity in _resources(unit):
+            if load[(kind, identity, day)] >= capacity(kind, identity, day):
+                return False
+        for class_id in unit.class_ids:
+            if (class_id, day) in cuts and load[(CLASS, class_id, day)] >= cuts[(class_id, day)]:
+                return False
+        return all(
+            room_load[(room_set, day)] < len(room_set) * room_slots[day]
+            for room_set in room_sets
+            if unit.eligible_room_ids <= room_set
+        )
+
+    def place(unit: Assignment, day: int) -> None:
+        counts[(unit.assignment_id, day)] += 1
+        for kind, identity in _resources(unit):
+            load[(kind, identity, day)] += 1
+        for room_set in room_sets:
+            if unit.eligible_room_ids <= room_set:
+                room_load[(room_set, day)] += 1
+
+    for unit_id in sorted(targets, key=lambda unit_id: (-targets[unit_id], unit_id)):
+        unit = week.units[unit_id]
+        open_count = {day: _open_slots(week, unit, day) for day in days}
+        for _ in range(targets[unit_id]):
+            options = [day for day in days if fits(unit, day, open_count[day])]
+            if not options:
+                break
+            place(
+                unit,
+                min(
+                    options,
+                    key=lambda day: (
+                        -filled(unit, day),
+                        pressure(unit, day),
+                        -previous[(unit_id, day)],
+                        day,
+                    ),
+                ),
+            )
+    settled = _settle(week, counts, cuts, days)
+    return settled, sum(targets.values()) - sum(settled.values())
+
+
 def _solve_counts(
     week: _Week,
     targets: Mapping[int, int],
     cuts: Mapping[tuple[int, int], int],
+    hint: Mapping[tuple[int, int], int],
     *,
     seed: int,
     time_limit: float,
@@ -258,18 +447,6 @@ def _solve_counts(
     """Stage A: lessons per (unit, weekday). Returns counts, status, variables and shortfall."""
     days = sorted({key[0] for key in week.slots})
     day_slots = {day: [key for key in week.slots if key[0] == day] for day in days}
-
-    def capacity(kind: UnavailableResource, identity: int, day: int) -> int:
-        """Most lessons a resource can hold on a day, leaving a lunch slot free when it must."""
-        usable = [key for key in day_slots[day] if (kind, identity, key) not in week.blocked]
-        lunch_keys = week.lunch.get(day, frozenset())
-        if week.lunch_rule is None or (kind is TEACHER and identity in week.dispensed):
-            return len(usable)
-        if not lunch_keys:
-            return 0
-        plain = sum(1 for key in usable if key not in lunch_keys)
-        lunch_free = sum(1 for key in usable if key in lunch_keys)
-        return plain + min(lunch_free, len(lunch_keys) - 1)
 
     model = cp_model.CpModel()
     counts: dict[tuple[int, int], cp_model.IntVar] = {}
@@ -292,6 +469,7 @@ def _solve_counts(
             if allowed:
                 var = model.new_int_var(0, allowed, "")
                 counts[(unit_id, day)] = var
+                model.add_hint(var, hint.get((unit_id, day), 0))
                 row.append(var)
                 for kind, identity in _resources(unit):
                     members[(kind, identity, day)].append((unit_id, var))
@@ -308,7 +486,7 @@ def _solve_counts(
     teacher_days: list[tuple[int, int, cp_model.IntVar, frozenset[int]]] = []
     for (kind, identity, day), rows in members.items():
         total = sum(var for _unit, var in rows)
-        room = capacity(kind, identity, day)
+        room = _capacity(week, kind, identity, day)
         model.add(total <= room)
         if kind is CLASS:
             # A day holds zero lessons or at least three. Tail units may stand alone on a short day.
@@ -598,22 +776,16 @@ def _busiest_class_cut(week: _Week, counts: Mapping[int, int], weekday: int) -> 
     return class_id, weekday, totals[class_id] - 1
 
 
-def build_weekly_template(
+def _week_inputs(
     snapshot: PlanningSnapshot,
     periods: Iterable[Period],
     *,
     remaining: Mapping[int, int],
     weeks_left: int,
-    previous: frozenset[Placement] = frozenset(),
-    available: frozenset[SlotKey] | None = None,
-    time_limit_seconds: float = 600.0,
-    random_seed: int = 1,
-) -> Template:
-    """Solve one weekly pattern for the given units (remaining minutes per unit).
-
-    ``available`` limits the slots a week really has (None means every grid slot).
-    """
-    started = clock.perf_counter()
+    previous: frozenset[Placement],
+    available: frozenset[SlotKey] | None,
+) -> tuple[_Week, dict[int, int]]:
+    """What the stages read for one week, and the weekly lesson target of each unit."""
     grid = sorted({(row.day_of_week, row.start_local, row.end_local) for row in snapshot.grid_slots})
     slots = tuple(key for key in grid if available is None or key in available)
     occurrences = Counter(_slot_of(period) for period in periods)
@@ -634,24 +806,48 @@ def build_weekly_template(
         tail=tail,
         previous=previous,
     )
+    return week, targets
+
+
+def build_weekly_template(
+    snapshot: PlanningSnapshot,
+    periods: Iterable[Period],
+    *,
+    remaining: Mapping[int, int],
+    weeks_left: int,
+    previous: frozenset[Placement] = frozenset(),
+    available: frozenset[SlotKey] | None = None,
+    time_limit_seconds: float = 600.0,
+    random_seed: int = 1,
+) -> Template:
+    """Solve one weekly pattern for the given units (remaining minutes per unit).
+
+    ``available`` limits the slots a week really has (None means every grid slot).
+    """
+    started = clock.perf_counter()
+    week, targets = _week_inputs(
+        snapshot,
+        periods,
+        remaining=remaining,
+        weeks_left=weeks_left,
+        previous=previous,
+        available=available,
+    )
 
     cuts: dict[tuple[int, int], int] = {}
     day_cache: dict[tuple[int, tuple[tuple[int, int], ...]], tuple] = {}
     variables = 0
-    statuses: list[str] = []
     count_seconds = day_seconds = 0.0
     for cut_round in range(MAX_CUT_ROUNDS + 1):
         began = clock.perf_counter()
-        counts, count_status, count_variables, shortfall = _solve_counts(
-            week, targets, cuts, seed=random_seed, time_limit=time_limit_seconds
+        planned, planned_shortfall = _spread_counts(week, targets, cuts)
+        counts, _count_status, count_variables, shortfall = _solve_counts(
+            week, targets, cuts, planned, seed=random_seed, time_limit=time_limit_seconds
         )
-        count_seconds += clock.perf_counter() - began
-        variables = max(variables, count_variables)
         if counts is None:
-            return Template(
-                frozenset(), count_status, variables, sum(targets.values()),
-                clock.perf_counter() - started, cut_round, count_seconds, day_seconds,
-            )
+            counts, shortfall = planned, planned_shortfall
+        variables = max(variables, count_variables)
+        count_seconds += clock.perf_counter() - began
         plan = {}
         for weekday in sorted({day for _unit, day in counts}):
             day_counts = {unit_id: count for (unit_id, day), count in counts.items() if day == weekday}
@@ -669,20 +865,17 @@ def build_weekly_template(
         placements: set[Placement] = set()
         failed: list[int] = []
         for weekday, (day_counts, key) in plan.items():
-            rows, day_status, day_variables = day_cache[key]
+            rows, _day_status, day_variables = day_cache[key]
             variables = max(variables, day_variables)
-            statuses.append(day_status)
             if rows is None:
                 failed.append(weekday)
                 cut = _busiest_class_cut(week, day_counts, weekday)
                 cuts[cut[0], cut[1]] = min(cuts.get((cut[0], cut[1]), cut[2]), cut[2])
             else:
                 placements.update(rows)
-        statuses.append(count_status)
         if not failed:
-            status = "OPTIMAL" if all(s == "OPTIMAL" for s in statuses) else "FEASIBLE"
             return Template(
-                frozenset(placements), status, variables, shortfall,
+                frozenset(placements), "FEASIBLE", variables, shortfall,
                 clock.perf_counter() - started, cut_round, count_seconds, day_seconds,
             )
     return Template(

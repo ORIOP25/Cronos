@@ -26,6 +26,8 @@ from app.scheduler.domain.candidate_validation import (
 from app.scheduler.domain.projection import ModuleRequirement
 from app.scheduler.lab.weekly_template import (
     _costs,
+    _spread_counts,
+    _week_inputs,
     build_weekly_template,
     generate_weekly_template,
 )
@@ -243,6 +245,47 @@ def test_holiday_week_moves_its_lessons_onto_school_days():
 
         assert result.stats["skipped_placements"].get("no_school_date", 0) == 0, holiday
         assert all(lesson.period.school_date != holiday for lesson in result.candidate.lessons)
+
+
+def _stage_a_counts(snapshot, remaining):
+    """Stage A counts for one full week, with the class and teacher repairs applied."""
+    week, targets = _week_inputs(
+        snapshot,
+        _periods(),
+        remaining=remaining,
+        weeks_left=WEEKS,
+        previous=frozenset(),
+        available=None,
+    )
+    counts, _shortfall = _spread_counts(week, targets, {})
+    return counts
+
+
+def test_stage_a_class_days_hold_zero_or_three_lessons():
+    counts = _stage_a_counts(_snapshot(), {unit.assignment_id: UNIT_MINUTES for unit in UNITS})
+
+    assert counts
+    for class_id in (CLASS_1, CLASS_2):
+        for weekday in range(5):
+            total = sum(
+                count
+                for (unit, day), count in counts.items()
+                if day == weekday and class_id in CLASSES_OF[unit]
+            )
+            assert total == 0 or total >= 3, (class_id, weekday, total)
+
+
+def test_stage_a_teacher_days_hold_a_total_the_presence_rule_allows():
+    presence = (TeacherPresenceRule(TEACHER_1, True, 180, 60),)
+    counts = _stage_a_counts(_snapshot(presence=presence), {unit.assignment_id: UNIT_MINUTES for unit in UNITS})
+
+    for weekday in range(5):
+        total = sum(
+            count
+            for (unit, day), count in counts.items()
+            if day == weekday and TEACHER_OF[unit] == TEACHER_1
+        )
+        assert total == 0 or total >= 3, (weekday, total)
 
 
 def _teacher_day_counts(placements):
