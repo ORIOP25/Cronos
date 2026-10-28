@@ -80,6 +80,7 @@ This address matches the owned Docker stack's IPv4 binding and avoids other proc
 The runner supplies `http://localhost:5173` for an external stack.
 
 After sign-in, the E2E helper waits for the loaded Clerk session and expected identity before activating the organization.
+The helper selects the organization on `/privacidade`, which stays public for signed-in users, before opening an authenticated route.
 This prevents organization activation during a sign-in navigation while the browser reloads Clerk.
 
 ## CI gates

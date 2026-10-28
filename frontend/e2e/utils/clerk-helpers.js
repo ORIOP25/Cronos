@@ -102,7 +102,8 @@ async function loginReal(page, emailEnvironmentVariable) {
   await expect.poll(
     () => observeClerkSignIn(async () => {
       await setupClerkTestingToken({ page })
-      await page.goto(E2E_BASE_URL)
+      // This public route stays public for signed-in users while the test selects its organization.
+      await page.goto(`${E2E_BASE_URL}/privacidade`)
       await page.waitForFunction(() => window.Clerk?.loaded)
       const active = await page.evaluate(() => ({
         email: window.Clerk?.user?.primaryEmailAddress?.emailAddress,
