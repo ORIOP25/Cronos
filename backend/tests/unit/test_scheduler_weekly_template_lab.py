@@ -24,8 +24,10 @@ from app.scheduler.domain.candidate_validation import (
     validate_candidate,
 )
 from app.scheduler.domain.projection import ModuleRequirement
+from app.scheduler.lab import weekly_template
 from app.scheduler.lab.weekly_template import (
     _costs,
+    _solve_day,
     _spread_counts,
     _week_inputs,
     build_weekly_template,
@@ -214,9 +216,9 @@ def test_short_class_days_hold_only_units_finishing_their_last_lessons():
 
 def test_stage_b_keeps_class_gaps_at_most_one_on_a_restricted_week():
     blocked_slot = (2, SLOTS[1][0], SLOTS[1][1])
-    available = frozenset(
-        (weekday, start, end) for weekday in range(5) for start, end in SLOTS
-    ) - {blocked_slot}
+    available = frozenset((weekday, start, end) for weekday in range(5) for start, end in SLOTS) - {
+        blocked_slot
+    }
     template = build_weekly_template(
         _snapshot(),
         _periods(),
@@ -257,7 +259,7 @@ def _stage_a_counts(snapshot, remaining):
         previous=frozenset(),
         available=None,
     )
-    counts, _shortfall = _spread_counts(week, targets, {})
+    counts = _spread_counts(week, targets)
     return counts
 
 
@@ -277,7 +279,9 @@ def test_stage_a_class_days_hold_zero_or_three_lessons():
 
 def test_stage_a_teacher_days_hold_a_total_the_presence_rule_allows():
     presence = (TeacherPresenceRule(TEACHER_1, True, 180, 60),)
-    counts = _stage_a_counts(_snapshot(presence=presence), {unit.assignment_id: UNIT_MINUTES for unit in UNITS})
+    counts = _stage_a_counts(
+        _snapshot(presence=presence), {unit.assignment_id: UNIT_MINUTES for unit in UNITS}
+    )
 
     for weekday in range(5):
         total = sum(
@@ -350,3 +354,79 @@ def test_stage_b_teacher_presence_rule_rejects_a_split_below_the_minimum():
     assert ValidationViolationCode.TEACHER_PRESENCE_VIOLATION not in {
         violation.code for violation in report.violations
     }
+
+
+def test_stage_b_places_as_many_lessons_as_the_day_allows_instead_of_failing():
+    # Lunch keeps one slot empty, so a unit asking for eight lessons on Monday can place six.
+    week, _targets = _week_inputs(
+        _snapshot(),
+        _periods(),
+        remaining={1: 2 * UNIT_MINUTES},
+        weeks_left=WEEKS,
+        previous=frozenset(),
+        available=None,
+    )
+
+    rows, _status, _variables = _solve_day(week, 0, {1: len(SLOTS) + 1}, seed=1, time_limit=60)
+
+    assert len(rows) == len(SLOTS) - 1
+
+
+def test_stage_b_keeps_a_class_day_at_zero_or_three_lessons_when_it_cannot_place_them_all():
+    # Teacher 1 is free only at 9:00 and 10:10 on Mondays, so unit 1 can place two lessons at most.
+    # Two regular lessons would be a class day of one or two lessons, so the day places none.
+    teacher_blocks = [
+        Unavailability(
+            UnavailableResource.TEACHER,
+            TEACHER_1,
+            normalize_period(ORIGIN + timedelta(weeks=week), start, end, TIMEZONE),
+        )
+        for week in range(WEEKS)
+        for start, end in SLOTS[2:]
+    ]
+    week, _targets = _week_inputs(
+        _snapshot(teacher_blocks),
+        _periods(),
+        remaining={1: 2 * UNIT_MINUTES},
+        weeks_left=WEEKS,
+        previous=frozenset(),
+        available=None,
+    )
+
+    rows, _status, _variables = _solve_day(week, 0, {1: 2}, seed=1, time_limit=60)
+
+    assert rows == []
+
+
+def test_rollout_resolves_the_template_again_after_each_refresh_period(monkeypatch):
+    monkeypatch.setattr(weekly_template, "REFRESH_WEEKS", 1)
+    frequent = generate_weekly_template(_snapshot(), _periods(), target_finish=LAST_DAY)
+    monkeypatch.setattr(weekly_template, "REFRESH_WEEKS", 100)
+    rare = generate_weekly_template(_snapshot(), _periods(), target_finish=LAST_DAY)
+
+    assert frequent.stats["template_solves"] > rare.stats["template_solves"]
+
+
+def test_stage_a_teacher_day_counts_only_the_slots_the_teacher_can_use():
+    # Teacher 1 can use only 9:00, 13:40 and 14:50 on Mondays. Lunch splits three lessons in those
+    # slots into presences that are too short, so the teacher takes no lesson that Monday, although
+    # three lessons would meet the presence rule on the full grid.
+    teacher_blocks = [
+        Unavailability(
+            UnavailableResource.TEACHER,
+            TEACHER_1,
+            normalize_period(ORIGIN + timedelta(weeks=week), start, end, TIMEZONE),
+        )
+        for week in range(WEEKS)
+        for start, end in (SLOTS[1], SLOTS[2], SLOTS[3], SLOTS[6])
+    ]
+    presence = (TeacherPresenceRule(TEACHER_1, True, 180, 60),)
+    counts = _stage_a_counts(
+        _snapshot(teacher_blocks, presence),
+        {unit.assignment_id: UNIT_MINUTES for unit in UNITS},
+    )
+
+    monday_lessons = sum(
+        count for (unit, day), count in counts.items() if day == 0 and TEACHER_OF[unit] == TEACHER_1
+    )
+    assert monday_lessons == 0
