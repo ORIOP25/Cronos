@@ -91,7 +91,7 @@ const Timesheets = ({ initialWeekStart, readOnly = false, allowedActions, naviga
 
   const handleApprove = () => {
     if (selectedTeacher && selectedTeacher.status === 'SUBMITTED') {
-      handleUpdateStatus(selectedTeacher.id, 'APPROVED')
+      void handleUpdateStatus(selectedTeacher.id, 'APPROVED')
     }
   }
 
@@ -104,7 +104,7 @@ const Timesheets = ({ initialWeekStart, readOnly = false, allowedActions, naviga
   const handleConfirmReopen = () => {
     setShowReopenConfirm(false)
     if (selectedTeacher) {
-      handleUpdateStatus(selectedTeacher.id, 'OPEN')
+      void handleUpdateStatus(selectedTeacher.id, 'OPEN')
     }
   }
 
