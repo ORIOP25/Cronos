@@ -1086,6 +1086,7 @@ def update_weekly_template(
     periods: Iterable[Period],
     published: CandidateSchedule,
     *,
+    target_finish: date | None = None,
     time_limit_seconds: float = 600.0,
     random_seed: int = 1,
 ) -> MvpResult:
@@ -1094,12 +1095,13 @@ def update_weekly_template(
     ``snapshot.protected_lessons`` and the protected dates fix the past. Demand that is left (missed
     lessons and the unplanned future) rolls out from the first unprotected week. Each week's template
     takes the published lessons of that week as its stability hint, so a week the change does not
-    touch keeps its lessons.
+    touch keeps its lessons. ``target_finish`` is the pacing the published schedule was built with;
+    by default the published finish.
     """
     return _roll_out(
         snapshot,
         periods,
-        target_finish=max(row.period.school_date for row in published.lessons),
+        target_finish=target_finish or max(row.period.school_date for row in published.lessons),
         published=published,
         time_limit_seconds=time_limit_seconds,
         random_seed=random_seed,

@@ -621,3 +621,12 @@ def test_update_prices_a_moved_lesson_at_the_update_stability_level():
 
     assert generation.costs["moved_lesson"] == _costs(snapshot)["weekly_stability"] * LESSON_MINUTES
     assert update.costs["moved_lesson"] == _costs(snapshot)["update_stability"]
+
+
+def test_update_paces_the_rollout_to_the_target_finish_it_is_given():
+    published = _published()
+    snapshot = _update_snapshot(published)
+
+    result = update_weekly_template(snapshot, _periods(), published, target_finish=LAST_DAY)
+
+    assert result.stats["target_week"] == (LAST_DAY - ORIGIN).days // 7 - 1
