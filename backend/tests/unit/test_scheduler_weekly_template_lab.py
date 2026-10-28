@@ -315,6 +315,19 @@ def test_teacher_single_lesson_day_costs_more_than_one_teacher_gap_hour():
     assert single_day > one_gap_hour
 
 
+def test_class_gap_day_costs_at_least_twenty_teacher_gap_hours():
+    costs = _costs(_snapshot())
+    one_gap_hour = costs["teacher_gaps"] * 60
+
+    assert costs["class_gap_day"] >= 20 * one_gap_hour
+
+
+def test_rollout_aims_one_week_before_the_target_finish_week():
+    result = generate_weekly_template(_snapshot(), _periods(), target_finish=LAST_DAY)
+
+    assert result.stats["target_week"] == (LAST_DAY - ORIGIN).days // 7 - 1
+
+
 def test_stage_b_teacher_presence_rule_rejects_a_split_below_the_minimum():
     # The teacher is blocked at 9:00, 14:50 and 16:00 on every day, so the only 3-lesson day
     # (10:10, 11:20, 13:40) splits around lunch into 2 + 1 lessons, below the 3-hour minimum.

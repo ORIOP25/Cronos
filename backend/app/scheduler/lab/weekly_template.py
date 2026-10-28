@@ -75,6 +75,10 @@ MAX_CUT_ROUNDS = 5
 TAIL_LESSONS = 2
 # A class day holds zero lessons or at least this many, unless it is a tail day.
 MIN_DAY_LESSONS = 3
+# Times the class-gap day cost above one teacher gap hour (round 4 priced them equal).
+CLASS_GAP_WEIGHT = 20
+# The rollout paces units to finish this many weeks before the target week.
+TARGET_LEAD_WEEKS = 1
 
 
 @dataclass(frozen=True)
@@ -156,9 +160,13 @@ def _costs(snapshot: PlanningSnapshot) -> dict[str, int]:
             "weekly_stability",
         )
     }
-    # At equal levels one class 1-gap day costs one teacher gap hour (owner, round 2).
+    # At equal levels one class 1-gap day costs one teacher gap hour (owner, round 2); the lab
+    # prices it CLASS_GAP_WEIGHT times that so classes compact before teachers.
     costs["class_gap_day"] = (
-        PRIORITY_MULTIPLIERS[weights.class_gaps] * UNIT_COSTS["teacher_gaps"] * 60
+        PRIORITY_MULTIPLIERS[weights.class_gaps]
+        * UNIT_COSTS["teacher_gaps"]
+        * 60
+        * CLASS_GAP_WEIGHT
     )
     return costs
 
@@ -979,7 +987,7 @@ def generate_weekly_template(
     lessons onto the school days. A week without any school day gets no placements.
     """
     origin_monday = snapshot.origin - timedelta(days=snapshot.origin.weekday())
-    target_week = (target_finish - origin_monday).days // 7
+    target_week = (target_finish - origin_monday).days // 7 - TARGET_LEAD_WEEKS
     calendar = _calendar(snapshot, periods)
     calendar_periods = tuple(calendar.values())
     open_slots: dict[int, set[SlotKey]] = defaultdict(set)
