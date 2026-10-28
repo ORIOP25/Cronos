@@ -163,6 +163,7 @@ def _costs(snapshot: PlanningSnapshot) -> dict[str, int]:
             "teacher_preferences",
             "class_preferences",
             "weekly_stability",
+            "update_stability",
         )
     }
     # At equal levels one class 1-gap day costs one teacher gap hour (owner, round 2); the lab
@@ -594,7 +595,7 @@ def _solve_counts(
         moved = model.new_int_var(0, len(week.slots), "")
         model.add(moved >= var - previous_counts[(unit_id, day)])
         model.add(moved >= previous_counts[(unit_id, day)] - var)
-        cost_terms.append((moved, week.costs["weekly_stability"] * week.lesson_minutes))
+        cost_terms.append((moved, week.costs["moved_lesson"]))
 
     solver, _status, solved = _minimize(
         model,
@@ -765,7 +766,7 @@ def _solve_day(
         if kept:
             moved = model.new_int_var(0, len(kept), "")
             model.add(moved >= len(kept) - sum(kept))
-            cost_terms.append((moved, week.costs["weekly_stability"] * week.lesson_minutes))
+            cost_terms.append((moved, week.costs["moved_lesson"]))
 
     for members in on.values():
         if len(members) > 1:
@@ -851,6 +852,7 @@ def _week_inputs(
     weeks_left: int,
     previous: frozenset[Placement],
     available: frozenset[SlotKey] | None,
+    update: bool = False,
 ) -> tuple[_Week, dict[int, int]]:
     """What the stages read for one week, and the weekly lesson target of each unit."""
     grid = sorted(
@@ -860,6 +862,11 @@ def _week_inputs(
     occurrences = Counter(_slot_of(period) for period in periods)
     lesson_minutes = typical_lesson_minutes(snapshot.grid_slots)
     costs = _costs(snapshot)
+    # Moving a lesson of a published schedule costs the owner's update stability; a rollout's own
+    # moves between weeks cost the weekly stability.
+    costs["moved_lesson"] = (
+        costs["update_stability"] if update else costs["weekly_stability"] * lesson_minutes
+    )
     targets, tail = _targets(remaining, lesson_minutes, weeks_left)
     week = _Week(
         slots=slots,
@@ -888,6 +895,7 @@ def build_weekly_template(
     available: frozenset[SlotKey] | None = None,
     time_limit_seconds: float = 600.0,
     random_seed: int = 1,
+    update: bool = False,
 ) -> Template:
     """Solve one weekly pattern for the given units (remaining minutes per unit).
 
@@ -902,6 +910,7 @@ def build_weekly_template(
         weeks_left=weeks_left,
         previous=previous,
         available=available,
+        update=update,
     )
     began = clock.perf_counter()
     planned = _spread_counts(week, targets)
@@ -1169,6 +1178,7 @@ def _roll_out(
                 available=available,
                 time_limit_seconds=time_limit_seconds,
                 random_seed=random_seed,
+                update=published is not None,
             )
             solves.append(template)
             changes += len(template.placements - previous)

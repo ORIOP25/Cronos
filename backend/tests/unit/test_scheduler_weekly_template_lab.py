@@ -596,3 +596,28 @@ def test_update_keeps_the_published_lessons_of_a_week_that_a_change_does_not_tou
         for row in result.candidate.lessons
     }
     assert published_week_two <= updated
+
+
+def test_update_prices_a_moved_lesson_at_the_update_stability_level():
+    snapshot = _snapshot()
+    remaining = {unit.assignment_id: UNIT_MINUTES for unit in UNITS}
+    generation, _ = _week_inputs(
+        snapshot,
+        _periods(),
+        remaining=remaining,
+        weeks_left=WEEKS,
+        previous=frozenset(),
+        available=None,
+    )
+    update, _ = _week_inputs(
+        snapshot,
+        _periods(),
+        remaining=remaining,
+        weeks_left=WEEKS,
+        previous=frozenset(),
+        available=None,
+        update=True,
+    )
+
+    assert generation.costs["moved_lesson"] == _costs(snapshot)["weekly_stability"] * LESSON_MINUTES
+    assert update.costs["moved_lesson"] == _costs(snapshot)["update_stability"]
