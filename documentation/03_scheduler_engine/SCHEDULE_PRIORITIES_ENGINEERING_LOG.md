@@ -484,13 +484,37 @@ O plano guloso sozinho demora 14 s, mas a última aula passa para 12 de abril. O
 
 O tempo de produção mede-se em `scheduler_job_v1`, do arranque ao fim do trabalho. As gerações completas de 26–27 de outubro correram 103–134 s no worker, com cerca de 1 s de fila. A proposta foi criada no mesmo segundo.
 
+- **Ronda 5 (28 de outubro de 2026): furos das turmas e fim do ano.** Pedido do responsável de produto: reduzir os dias de turma com 1 furo e a data da última aula.
+  - O custo de furo de turma no modelo por dia passou a pesar 20 vezes mais.
+  - As metas semanais apontam para uma semana mais cedo.
+  - Commit `06571981` no ramo de ensaio.
+
+| Escola real, mesmo dia e mesma máquina | `main` | Ronda 5 |
+| :--- | ---: | ---: |
+| Válido e completo | sim | sim |
+| Dias fora da cauda com 1–2 aulas | 439 | 0 |
+| Dias de turma com 2+ furos | 0 | 0 |
+| Dias de turma com 1 furo | 485 | 677 |
+| Horas de furo das turmas | 879 | 677 |
+| Furos dos professores (h) | 490 | 29 |
+| Dias de professor com uma só aula | 31 | 21 |
+| Última aula | 29 de março | 25 de março |
+| Tempo | 151 s | 182 s |
+| Pico de RSS | 215 MB | 223 MB |
+
+Por turma, 41 das 48 acabam as suas aulas mais tarde (8 dias em média), embora a escola acabe mais cedo. As turmas saem 36 minutos mais tarde em média.
+Uma variante com feriados arredondados deu 370 dias de turma com 1 furo, com a última aula a 2 de abril. Não foi validada nem guardada.
+
+Na escola do laboratório o modelo semanal falha. Com a carga completa não coloca nenhuma aula (o `main` termina em 316 s). Com as horas a 55% fica incompleto: 5 módulos por acabar, 10 violações e 196 dias com 2+ furos.
+A causa está no avanço semana a semana: depois de um dia sem solução, o modelo reutiliza o padrão anterior e não recupera. A Ronda 4 já falhava nessa escola: 232 unidades por acabar e 482 violações.
+
 #### Veredicto
 
-Os fundamentos valem na escola real: a regra do dia de turma e dias de professor muito melhores. Na Ronda 4 o tempo iguala o do `main`. Não está pronto para produção: tem mais dias de turma com 1 furo e não foi provado numa escola grande.
+Os fundamentos valem na escola real. A Ronda 5 melhora o fim do ano, os furos dos professores e as horas de furo das turmas, em tempo próximo do `main`. Não está pronto para produção, porque falha na escola do laboratório.
 
 Um porte precisa de:
 
-- uma prova na escola grande do laboratório (piloto ×1.0);
+- uma recuperação quando uma semana não tem solução, por exemplo com o gerador atual nessas semanas, provada na escola do laboratório;
 - um caminho válido quando o modelo semanal é inviável;
 - o peso dos furos das turmas, decisão do responsável de produto;
 - proteção das aulas e dos fluxos de atualização;
