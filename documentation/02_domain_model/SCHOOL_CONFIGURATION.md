@@ -57,6 +57,8 @@ Saving changed priorities invalidates a pending proposal. Saving identical value
 - The school-year start, preferred end, and hard end persist together before scheduler audit events flush the transaction.
 - Calendar changes preserve `start <= preferred <= hard end` without an invalid intermediate write.
 - `repair_stability_window_days` stays between 0 and 60.
+- An unset `repair_stability_window_days` (no settings row or a null value) means `DEFAULT_REPAIR_WINDOW_DAYS` in [`task_keys.py`](../../backend/app/core/task_keys.py). The planning snapshot, the readiness fingerprint, and the grid change use the same value.
+- No published lesson inside the stability window changes, and no lesson is inserted there. The one exception is a module-selection change, which removes that assignment's excess future lessons (D12 in the [Class Module Selection Tech Spec](CLASS_MODULE_SELECTION_TECH_SPEC.md)). A school that needs changes there lowers the window. A generation that only fits by changing the window fails. Progress credit or open debt that the window cannot absorb fails before the search, with `PROTECTED_LESSON_EXCEEDS_CURRICULUM` or `DEBT_EXCEEDS_RECOVERY_CAPACITY` in [`snapshot.py`](../../backend/app/scheduler/infrastructure/snapshot.py).
 - `automatic_holidays_enabled` refreshes national holidays for the school period.
 - Lunch start and end must appear together.
 - Lunch end must follow lunch start.
