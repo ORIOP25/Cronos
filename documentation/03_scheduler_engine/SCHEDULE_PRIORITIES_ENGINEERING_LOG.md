@@ -612,6 +612,8 @@ Dos 9 testes que falhavam com 14 dias, 8 tinham todas as aulas dentro da janela 
 
 O último caso era um defeito real: a dívida só podia ser reservada dentro da janela, e o trabalho falhava com um `ValueError` interno ao gravar a proposta. A regra pura está em `unreservable_debt_assignments` ([`capacity.py`](../../backend/app/scheduler/domain/capacity.py)). O `TypeError` vinha só do auxiliar de teste, que não encontrava proposta.
 
+Resolução (29 de outubro de 2026): retirar um módulo passa a anular a dívida aberta dele (D13 em [Class Module Selection](../02_domain_model/CLASS_MODULE_SELECTION_TECH_SPEC.md)). A atualização seguinte deixa de recusar esse caso com `DEBT_EXCEEDS_RECOVERY_CAPACITY`. O guarda continua para outra dívida que não cabe na janela.
+
 ## Failure Modes
 
 ### Boas decisões

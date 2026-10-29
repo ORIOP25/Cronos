@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models, schemas
 from app.core.exceptions import AppError
-from app.scheduler.domain.debt import DebtOrigin
+from app.scheduler.domain.debt import DebtOrigin, debt_to_annul_for_retired_modules
 from app.scheduler.domain.demand import ExecutionEntry, ModuleCredit, frontier_credit
 from app.scheduler.domain.lesson_time import execution_allowed
 from app.scheduler.domain.projection import ModuleRequirement
@@ -48,9 +48,12 @@ from app.scheduler.infrastructure.operations import (
     reverse_lesson_execution,
 )
 from app.scheduler.infrastructure.progress import (
+    load_active_version_id,
+    load_open_debt,
     load_planning_requirements,
     record_debt,
     record_execution,
+    release_excess_reservations,
     revise_debt,
 )
 
@@ -60,6 +63,8 @@ OCCURRENCE_WITHOUT_LESSON = "Ocorrência sem aula publicada."
 
 DEBT_ORIGIN = "occurrence-debt:{occurrence_id}"
 DEBT_LIKE = "occurrence-debt:%"
+RETIRED_MODULE_ORIGIN = "module-retired:{module_ids}"
+RETIRED_MODULE_REASON = "Módulo retirado da turma: dívida anulada."
 
 OP_STATE_OPEN = "OPEN_PENDING"
 OP_STATE_GAP = "DECIDED_GAP"
@@ -1582,6 +1587,142 @@ async def _cancel_debt_claim(
             author_id=membership_id,
             reason=reason,
             recorded_at=now_utc,
+        )
+
+
+async def _lesson_by_debt_origin(
+    db: AsyncSession, organization_id: int, assignment_ids: Sequence[int]
+) -> dict[str, int]:
+    """Debt origin text -> the lesson that origin was raised on, for these assignments."""
+    lesson_ids = select(SchedulerLessonV1.id).where(
+        SchedulerLessonV1.organization_id == organization_id,
+        SchedulerLessonV1.assignment_id.in_(assignment_ids),
+    )
+    logs = await db.execute(
+        select(SchedulerLessonLogV1.id, SchedulerLessonLogV1.lesson_id).where(
+            SchedulerLessonLogV1.organization_id == organization_id,
+            SchedulerLessonLogV1.lesson_id.in_(lesson_ids),
+        )
+    )
+    origins = {
+        DEBT_ORIGIN.format(occurrence_id=log_id): lesson_id for log_id, lesson_id in logs.all()
+    }
+    lessons = await db.scalars(lesson_ids)
+    origins.update(
+        {LESSON_OCCURRENCE_ORIGIN.format(lesson_id=lesson_id): lesson_id for lesson_id in lessons}
+    )
+    return origins
+
+
+async def _retired_minutes_by_lesson(
+    db: AsyncSession,
+    organization_id: int,
+    lesson_ids: Iterable[int],
+    module_ids: Sequence[int],
+) -> dict[int, int]:
+    rows = await db.execute(
+        select(SchedulerLessonSliceV1.lesson_id, func.sum(SchedulerLessonSliceV1.minutes))
+        .where(
+            SchedulerLessonSliceV1.organization_id == organization_id,
+            SchedulerLessonSliceV1.lesson_id.in_(lesson_ids),
+            SchedulerLessonSliceV1.module_id.in_(module_ids),
+        )
+        .group_by(SchedulerLessonSliceV1.lesson_id)
+    )
+    return {lesson_id: int(minutes) for lesson_id, minutes in rows.all()}
+
+
+async def annul_retired_module_debt(
+    db: AsyncSession,
+    organization_id: int,
+    class_id: int,
+    subject_id: int,
+    retired_module_ids: Sequence[int],
+    *,
+    membership_id: int | None,
+) -> None:
+    """Annul the open debt that lies in modules retired from one class and subject.
+
+    Each claim loses only the minutes of its lesson that belong to the retired
+    modules, and never more than it still owes. The annulment is an audited
+    negative revision, so re-marking the module later cannot bring the debt back.
+    """
+    context = await _active_context(db, organization_id)
+    if context is None:
+        return
+    year, _, _ = context
+    assignment_ids = (
+        await db.scalars(
+            select(CurricularAssignment.id).where(
+                CurricularAssignment.organization_id == organization_id,
+                CurricularAssignment.school_year_id == year.id,
+                CurricularAssignment.class_id == class_id,
+                CurricularAssignment.subject_id == subject_id,
+            )
+        )
+    ).all()
+    if not assignment_ids:
+        return
+    open_by_claim, claim_assignments = await load_open_debt(db, organization_id, assignment_ids)
+    if not open_by_claim:
+        return
+
+    debts = (
+        await db.scalars(
+            select(CurricularDebt).where(
+                CurricularDebt.organization_id == organization_id,
+                CurricularDebt.id.in_(list(open_by_claim)),
+            )
+        )
+    ).all()
+    origin_lessons = await _lesson_by_debt_origin(db, organization_id, assignment_ids)
+    lesson_by_claim = {
+        debt.id: origin_lessons[debt.origin] for debt in debts if debt.origin in origin_lessons
+    }
+    retired_by_lesson = await _retired_minutes_by_lesson(
+        db, organization_id, list(lesson_by_claim.values()), retired_module_ids
+    )
+    retired_by_claim = {
+        claim_id: retired_by_lesson.get(lesson_id, 0)
+        for claim_id, lesson_id in lesson_by_claim.items()
+    }
+    annulled = debt_to_annul_for_retired_modules(open_by_claim, retired_by_claim)
+    if not annulled:
+        return
+
+    origin = RETIRED_MODULE_ORIGIN.format(
+        module_ids="+".join(str(module_id) for module_id in sorted(retired_module_ids))
+    )
+    now_utc = datetime.now(UTC)
+    for claim_id, minutes in annulled.items():
+        revision = 1 + await db.scalar(
+            select(func.count())
+            .select_from(CurricularDebtRevision)
+            .where(
+                CurricularDebtRevision.debt_id == claim_id,
+                CurricularDebtRevision.origin == origin,
+            )
+        )
+        await revise_debt(
+            db,
+            organization_id,
+            year.id,
+            claim_id,
+            origin=origin,
+            revision=revision,
+            delta_minutes=-minutes,
+            author_id=membership_id,
+            reason=RETIRED_MODULE_REASON,
+            recorded_at=now_utc,
+        )
+
+    open_after = {
+        claim_id: minutes - annulled.get(claim_id, 0) for claim_id, minutes in open_by_claim.items()
+    }
+    active_version_id = await load_active_version_id(db, organization_id, year.id)
+    for assignment_id in set(claim_assignments.values()):
+        await release_excess_reservations(
+            db, organization_id, year.id, assignment_id, active_version_id, open_after
         )
 
 

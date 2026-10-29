@@ -9,6 +9,7 @@ from sqlalchemy.orm import joinedload, selectinload
 
 from app import models, schemas
 from app.core.exceptions import AppError
+from app.scheduler.infrastructure.occurrences import annul_retired_module_debt
 from app.scheduler.infrastructure.operations import (
     adjust_class_progress,
     class_progress_map,
@@ -1112,6 +1113,17 @@ async def update_class_subject(
                     code="JOINT_MODULE_LOCKED",
                     detail="Retire primeiro este módulo da aula conjunta.",
                 )
+        # Annul before the selection changes: the debt check reads the live selection.
+        retired_module_ids = sorted(set(current_module_ids) - set(next_module_ids))
+        if retired_module_ids:
+            await annul_retired_module_debt(
+                db,
+                organization_id,
+                class_id,
+                subject_id,
+                retired_module_ids,
+                membership_id=changed_by_membership_id,
+            )
         await _replace_link_modules(db, organization_id, link.id, next_module_ids)
 
     # 6. Aplicar alterações ao professor

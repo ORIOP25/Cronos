@@ -61,7 +61,8 @@ Um módulo desmarcado com sumários deixaria créditos sem requisito, e o motor 
 
 ### Decisões de produto fechadas
 
-O responsável de produto aprovou estas decisões em 14 de outubro de 2026.
+O responsável de produto aprovou D01 a D12 em 14 de outubro de 2026.
+D13 foi aprovada depois, em 29 de outubro de 2026.
 
 | ID | Decisão | Requisito |
 | :--- | :--- | :--- |
@@ -77,6 +78,7 @@ O responsável de produto aprovou estas decisões em 14 de outubro de 2026.
 | D10 | O progresso conta só os módulos marcados. | Progresso da turma, progresso do professor e painel inicial. |
 | D11 | Voltar a marcar um módulo retoma o histórico. | As horas já registadas voltam a contar. |
 | D12 | Numa alteração de seleção, ajustar ou remover aulas FUTURAS excedentárias, mesmo dentro da janela de estabilidade. | Preservar todas as aulas passadas e todo o histórico registado (sumários, faltas e créditos). A estabilidade das atribuições inalteradas mantém-se. |
+| D13 | A dívida aberta de um módulo retirado é anulada e não fica nada por recuperar. | Revisão negativa auditada da dívida. Não se apagam dívidas, sumários, faltas nem créditos. Voltar a marcar o módulo não repõe a dívida anulada. Ver [Dívida de um módulo retirado](#dívida-de-um-módulo-retirado). |
 
 ### Âmbito
 
@@ -218,7 +220,7 @@ Regras de validação de `module_ids`:
 ### Fluxo de gravação
 
 1. O administrador clica num módulo. O frontend envia a lista completa de `module_ids`.
-2. O serviço valida a lista e substitui as linhas de `class_subject_module`.
+2. O serviço valida a lista. Se algum módulo sai, anula a dívida aberta dele (D13). Depois substitui as linhas de `class_subject_module`.
 3. O serviço chama `record_scheduler_change` com `entity_type="CLASS_SUBJECT_ASSIGNMENT"` e `operation=UPDATE`.
 4. `_class_subject_snapshot` inclui `module_ids` ordenados, para o registo de alterações.
 5. A resposta devolve a lista atualizada. O frontend atualiza a cache e invalida as consultas afetadas.
@@ -269,6 +271,29 @@ def close_retired_modules(
 A função devolve também os minutos executados, limitados aos módulos que ficam.
 Um módulo concluído não recebe créditos novos nem aulas futuras.
 `frontier_credit` e `project_module_slices` já saltam módulos concluídos.
+
+#### Dívida de um módulo retirado
+
+Ao gravar a seleção, o serviço anula a dívida aberta dos módulos que saem.
+A regra pura é `debt_to_annul_for_retired_modules` em [`debt.py`](../../backend/app/scheduler/domain/debt.py).
+Cada dívida perde o menor valor entre a dívida em aberto e os minutos da sua aula de origem que pertencem aos módulos retirados.
+
+| Caso | Resultado |
+| :--- | :--- |
+| Aula só de módulos retirados | Anula-se a dívida em aberto, até aos minutos da aula. |
+| Aula com módulos retirados e módulos marcados | Anulam-se só os minutos do módulo retirado. |
+| Dívida já liquidada em parte | Anula-se só o valor ainda em aberto. |
+| Aula sem módulos retirados, ou dívida sem aula de origem | Fica igual. |
+
+A anulação não depende dos créditos de execução.
+Cada anulação é uma `CurricularDebtRevision` negativa, com origem `module-retired:{ids}`, motivo "Módulo retirado da turma: dívida anulada." e o administrador que gravou como autor.
+Nenhuma linha de dívida, sumário, falta, crédito ou liquidação se apaga.
+As reservas de recuperação acima da dívida em aberto são reduzidas ou apagadas em `release_excess_reservations`, logo na gravação.
+
+Voltar a marcar o módulo não repõe a dívida anulada.
+As horas que faltam do módulo voltam como procura planeada normal.
+A atualização seguinte não falha por dívida de um módulo retirado.
+O guarda `DEBT_EXCEEDS_RECOVERY_CAPACITY` continua para outra dívida que não cabe na janela.
 
 #### Leitores dos requisitos
 
@@ -372,6 +397,7 @@ Ao atualizar uma disciplina existente com um módulo novo (sem `id`), mostre um 
 - Um módulo marcado pertence à disciplina da ligação.
 - A seleção nunca apaga histórico de execução.
 - Um módulo retirado com histórico fica concluído para o planeamento. Não recebe créditos novos.
+- Retirar um módulo anula a dívida aberta dele. Voltar a marcá-lo não repõe essa dívida (D13).
 - A reprodução do histórico usa sempre os minutos do catálogo.
 - Uma ligação ativa sem módulos marcados nunca chega ao solver.
 - O progresso conta só os módulos marcados.
@@ -393,6 +419,7 @@ Ao atualizar uma disciplina existente com um módulo novo (sem `id`), mostre um 
 | Módulo de outra organização | `404 resource_not_found`. |
 | Disciplina da turma sem módulos marcados | `BLOCKER` na pré-validação. A geração devolve `CLASS_SUBJECT_WITHOUT_MODULES`. |
 | Créditos de um módulo retirado | O carregador fecha o módulo. O motor não falha. |
+| Dívida aberta de um módulo retirado | Anulada na gravação. A atualização seguinte não falha por ela. |
 | Rede falha durante a gravação | Toast de erro. A lista volta ao estado do servidor. |
 
 ## Plano de implementação
@@ -415,6 +442,7 @@ Em `backend/tests/unit/test_scheduler_progress_domain.py` ou num ficheiro novo d
 - Um módulo retirado com minutos fica concluído nesses minutos.
 - Um módulo retirado sem minutos sai, e o mapa de minutos perde a chave.
 - `frontier_credit` sobre a visão de planeamento nunca credita um módulo retirado.
+- `debt_to_annul_for_retired_modules` anula só a dívida das aulas dos módulos retirados, sem passar o valor em aberto (`test_scheduler_debt_domain.py`).
 
 ### Servidor e motor (integração)
 
@@ -438,6 +466,10 @@ Em `backend/tests/unit/test_scheduler_progress_domain.py` ou num ficheiro novo d
 | A fingerprint muda quando a seleção muda. | `test_scheduler_fingerprint_service.py` |
 | O progresso da turma e do professor mostra só os módulos marcados. | `test_module_progress.py` |
 | Alterar a seleção com aulas futuras dentro da janela de estabilidade: as futuras excedentárias saem, as passadas e o histórico ficam (D12). | `test_scheduler_v1_class_module_selection.py` |
+| Retirar um módulo com dívida aberta anula essa dívida, e a atualização seguinte aprova (D13). | `test_scheduler_v1_class_module_selection.py` |
+| Retirar um módulo liberta as reservas de recuperação da dívida anulada (D13). | `test_scheduler_v1_class_module_selection.py` |
+| Voltar a marcar um módulo retirado não repõe a dívida anulada (D13). | `test_scheduler_v1_class_module_selection.py` |
+| Retirar um módulo não altera a dívida aberta de outro módulo (D13). | `test_scheduler_v1_class_module_selection.py` |
 | Uma aula passada que não caiba no currículo selecionado falha com `PROTECTED_LESSON_EXCEEDS_CURRICULUM`. | `test_scheduler_v1_class_module_selection.py` |
 | As atribuições inalteradas mantêm a janela de estabilidade. | `test_scheduler_lunch_stability_snapshot.py` |
 
@@ -477,6 +509,7 @@ Verificação manual depois do PR 2:
 
 - Entre desmarcar e gerar, o horário publicado mantém as aulas antigas do módulo. Os sumários dessas aulas creditam o módulo marcado seguinte.
 - O fecho de um módulo retirado depende dos minutos executados. Uma correção de um sumário antigo altera esse valor na geração seguinte.
+- A dívida anulada ao retirar um módulo não volta ao voltar a marcá-lo. Não há caminho automático para a repor.
 - A FK não garante que o módulo pertence à disciplina da ligação. O serviço é o único ponto de escrita.
 - Reordenar módulos de uma disciplina muda `sequence`. Este comportamento já existe hoje.
 
