@@ -1514,26 +1514,15 @@ async def _load_baseline(
                 history_unavailable.append(
                     Unavailability(resource_type, resource_id, lesson.period)
                 )
-        # A future lesson that the configuration rules out leaves the baseline even
-        # inside the window: the window forbids new lessons, not removals.
-        window_unavailable = tuple(
-            row for row in unavailable if row.period.school_date in protected_dates
-        )
-        released = frozenset(
-            lesson.lesson_id
-            for lesson in baseline
-            if is_released_from_window(
-                lesson,
-                assignments[lesson.assignment_id],
+        baseline = _reproject_baseline(
+            _without_released_lessons(
+                baseline,
+                assignments,
                 now_utc=now_utc,
                 protected_dates=protected_dates,
-                blocked_dates=calendar.blocked_dates,
-                class_blocked_dates=calendar.class_blocked_dates,
-                unavailable=window_unavailable,
-            )
-        )
-        baseline = _reproject_baseline(
-            tuple(lesson for lesson in baseline if lesson.lesson_id not in released),
+                calendar=calendar,
+                unavailable=unavailable,
+            ),
             assignments,
             executed,
             now_utc=now_utc,
@@ -1618,6 +1607,37 @@ async def split_version_history(
     # Manual ledger corrections change future demand. A hypothetical future
     # lesson covered by those minutes was never operational history.
     return (*history, *consumed), (*protected, *future)
+
+
+def _without_released_lessons(
+    lessons: Sequence[ScheduledLesson],
+    assignments: Mapping[int, Assignment],
+    *,
+    now_utc: datetime,
+    protected_dates: frozenset[date],
+    calendar: _CalendarData,
+    unavailable: tuple[Unavailability, ...],
+) -> tuple[ScheduledLesson, ...]:
+    """Drop the future lessons the configuration rules out, even inside the window.
+
+    The window forbids new lessons, not removals.
+    """
+    window_unavailable = tuple(
+        row for row in unavailable if row.period.school_date in protected_dates
+    )
+    return tuple(
+        lesson
+        for lesson in lessons
+        if not is_released_from_window(
+            lesson,
+            assignments[lesson.assignment_id],
+            now_utc=now_utc,
+            protected_dates=protected_dates,
+            blocked_dates=calendar.blocked_dates,
+            class_blocked_dates=calendar.class_blocked_dates,
+            unavailable=window_unavailable,
+        )
+    )
 
 
 def _reproject_baseline(
