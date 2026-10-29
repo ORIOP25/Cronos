@@ -29,7 +29,7 @@ export default function Dashboard() {
 
   if (isError) {
     return (
-      <div>
+      <div className="p-4">
         {header}
         <StatePanel
           state="error"
@@ -42,7 +42,7 @@ export default function Dashboard() {
 
   if (isLoading && !data) {
     return (
-      <div>
+      <div className="p-4">
         {header}
         <StatePanel
           state="loading"
@@ -78,7 +78,7 @@ export default function Dashboard() {
   }
 
   return (
-    <div>
+    <div className="p-4">
       {header}
       <div className="mb-4">
         <AlertBar alerts={data?.alerts} health={data?.schedule_health} isLoading={isLoading} />
