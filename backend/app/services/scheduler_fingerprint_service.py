@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models
@@ -544,11 +544,7 @@ class SchedulerFingerprintService:
                     models.SchoolCalendarEvent.organization_id == organization_id,
                     models.SchoolCalendarEvent.end_date >= school_year.start_date,
                     models.SchoolCalendarEvent.start_date <= school_year.hard_end_date,
-                    or_(
-                        models.SchoolCalendarEvent.school_year_start_year.is_(None),
-                        models.SchoolCalendarEvent.school_year_start_year
-                        == school_year.start_date.year,
-                    ),
+                    models.SchoolCalendarEvent.applies_to_school_year(school_year.start_date.year),
                 )
             )
         ).all()

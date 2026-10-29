@@ -638,7 +638,7 @@ async def _load_calendar(
         )
     _reject_overlapping_slots(timeslots)
     slots = tuple(GridSlot(row.day_of_week, row.start_time, row.end_time) for row in timeslots)
-    blocked, class_blocked = await _load_blocked_dates(db, organization_id)
+    blocked, class_blocked = await _load_blocked_dates(db, organization_id, year.start_date.year)
     limit = (
         year.preferred_end_date
         if strategy is SchedulingStrategy.COMPLETE_GENERATION
@@ -786,13 +786,14 @@ def _reject_overlapping_slots(timeslots: Sequence[models.Timeslot]) -> None:
 
 
 async def _load_blocked_dates(
-    db: AsyncSession, organization_id: int
+    db: AsyncSession, organization_id: int, school_year_start_year: int
 ) -> tuple[frozenset[date], Mapping[int, frozenset[date]]]:
-    """Split calendar events into school-wide blocks and per-class flow blocks."""
+    """Split the events of the school year into school-wide blocks and per-class flow blocks."""
     events = (
         await db.scalars(
             select(models.SchoolCalendarEvent).where(
-                models.SchoolCalendarEvent.organization_id == organization_id
+                models.SchoolCalendarEvent.organization_id == organization_id,
+                models.SchoolCalendarEvent.applies_to_school_year(school_year_start_year),
             )
         )
     ).all()

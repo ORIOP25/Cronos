@@ -67,6 +67,7 @@ Saving changed priorities invalidates a pending proposal. Saving identical value
 - A room type name is unique per school ignoring case and accents.
 - A room type in use by an active room or subject cannot be removed; one kept only by archived objects is archived and restored by creating the same name.
 - Calendar events use `national_holiday`, `school_break`, `exam_period`, `other`, or `internship_flow`.
+- A calendar event with a `school_year_start_year` other than the planned school year blocks no day and no class in the planning snapshot or the generation fingerprint. Events without a school year apply to every year.
 - Only an `internship_flow` event can link classes.
 - Internship impact previews reference published v1 `lesson_id` values and protect completed execution.
 - Applying an internship flow withdraws affected lessons durably through `SchedulerLessonLogV1.withdrawn_at`.
