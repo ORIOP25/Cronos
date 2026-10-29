@@ -178,6 +178,16 @@ async def seed_generatable_school(
     return seed
 
 
+async def set_stability_window(db_session, seed: V1Seed, days: int | None) -> None:
+    """Store the school's stability window. Without a row the 14-day default applies."""
+    db_session.add(
+        models.OrganizationSettings(
+            organization_id=seed.organization.id, repair_stability_window_days=days
+        )
+    )
+    await db_session.flush()
+
+
 @dataclass
 class JointSeed:
     base: V1Seed
@@ -371,14 +381,12 @@ def lesson_interval(school_date: date, hour: int, minutes: int = 60) -> tuple[da
 MOMENT = datetime(2026, 9, 1, 8, 0, tzinfo=UTC)
 
 
-async def run_generation(
+async def run_job(
     db_session, monkeypatch, seed: V1Seed, *, key: str, now: datetime = MOMENT
 ) -> None:
-    """Generate and approve one proposal through the real v1 worker."""
+    """Enqueue one generation job and drain the queue through the real v1 worker."""
     from app import scheduler_v1_worker as worker
     from app.scheduler.infrastructure.jobs import enqueue_generation
-    from app.scheduler.infrastructure.proposals import approve_proposal
-    from app.scheduler.infrastructure.queries import current_proposal
     from tests._support.db_fixtures import TestingSessionLocal, test_engine
 
     await enqueue_generation(
@@ -395,6 +403,16 @@ async def run_generation(
     monkeypatch.setattr(worker, "RECOVERY_ASSESSMENT_SECONDS", 0.0)
     await worker.process_next_jobs()
     await db_session.refresh(seed.state)
+
+
+async def run_generation(
+    db_session, monkeypatch, seed: V1Seed, *, key: str, now: datetime = MOMENT
+) -> None:
+    """Generate and approve one proposal through the real v1 worker."""
+    from app.scheduler.infrastructure.proposals import approve_proposal
+    from app.scheduler.infrastructure.queries import current_proposal
+
+    await run_job(db_session, monkeypatch, seed, key=key, now=now)
     proposal = await current_proposal(db_session, seed.organization.id)
     await approve_proposal(
         db_session,

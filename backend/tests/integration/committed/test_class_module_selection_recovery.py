@@ -25,6 +25,7 @@ from tests._support.scheduler_v1 import (
     run_generation,
     seed_generatable_school,
     seed_published_baseline,
+    set_stability_window,
 )
 
 pytestmark = pytest.mark.postgresql
@@ -180,6 +181,8 @@ async def test_unmark_and_remark_an_earlier_module_after_later_progress(db_sessi
     )
     second = await _add_second_selected_module(db_session, seed, minutes=50)
     await db_session.commit()
+    # The scenario tests re-marking a module, not the stability window.
+    await set_stability_window(db_session, seed, 0)
     await seed_published_baseline(db_session, seed)
 
     # The later module B has executed hours before A is unmarked.

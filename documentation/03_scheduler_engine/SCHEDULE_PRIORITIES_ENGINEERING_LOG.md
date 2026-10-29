@@ -598,9 +598,19 @@ Ensaio de um terceiro candidato: refazer só as turmas e os professores do event
 
 Fixar só os professores (modo turma) dá candidatos inválidos no caso 5. O resultado repete-se em duas corridas. Veredicto: não integrar. As turmas e os professores ligados a um evento grande cobrem quase toda a escola, por isso a reconstrução local não muda menos que a reconstrução completa.
 
+Tempo no servidor (29 de outubro de 2026, autorizado pelo responsável de produto): a escola do laboratório `pilot@1.0` correu só em memória no contentor `worker` do Railway, sem escrita na base de dados. A primeira geração demorou 223 s e a atualização sem eventos de 1 de outubro demorou 395 s, com pico de memória do contentor de cerca de 620 MB de 8 000 MB. As duas ficaram completas, com fim a 8 de junho. O limite de um trabalho é 900 s (`SCHEDULER_V1_JOB_TIMEOUT_SECONDS`). O tempo não inclui ler o snapshot da base de dados nem gravar a proposta.
+
 #### Janela de estabilidade sem valor
 
-Sem valor configurado, o snapshot usa uma janela de 0 dias ([`snapshot.py`](../../backend/app/scheduler/infrastructure/snapshot.py), `_stability_window`). A impressão digital de prontidão e a mudança de grelha usam 14 dias ([`task_keys.py`](../../backend/app/core/task_keys.py)). Os testes de integração não configuram a janela, por isso correm com 0 dias. Com os 14 dias por omissão, 9 testes falham: as regenerações depois de mudar a configuração, a redução manual de progresso e a remoção de módulos. Em dois casos o snapshot lança um `ValueError` ou um `TypeError`, em vez de um erro de configuração. A correção ficou por fazer.
+Sem valor configurado, o snapshot usava uma janela de 0 dias. A impressão digital de prontidão e a mudança de grelha usavam 14 dias ([`task_keys.py`](../../backend/app/core/task_keys.py)). Agora o snapshot usa o mesmo valor por omissão (`_stability_window` em [`snapshot.py`](../../backend/app/scheduler/infrastructure/snapshot.py)).
+
+Dos 9 testes que falhavam com 14 dias, 8 tinham todas as aulas dentro da janela e testavam outra coisa. Passam a configurar a janela a 0. Testes novos fixam o comportamento com 14 dias:
+
+- Um feriado sobre uma aula dentro da janela não a move. A geração falha e o horário publicado fica igual.
+- Um crédito manual que só caberia tirando aulas da janela é recusado com `PROTECTED_LESSON_EXCEEDS_CURRICULUM`. A mensagem passa a referir a janela, e não só as aulas passadas.
+- Uma falta num módulo retirado, quando as aulas restantes da disciplina estão todas dentro da janela, é recusada com `DEBT_EXCEEDS_RECOVERY_CAPACITY`.
+
+O último caso era um defeito real: a dívida só podia ser reservada dentro da janela, e o trabalho falhava com um `ValueError` interno ao gravar a proposta. A regra pura está em `unreservable_debt_assignments` ([`capacity.py`](../../backend/app/scheduler/domain/capacity.py)). O `TypeError` vinha só do auxiliar de teste, que não encontrava proposta.
 
 ## Failure Modes
 

@@ -20,6 +20,7 @@ from sqlalchemy import Row, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models
+from app.core.task_keys import DEFAULT_REPAIR_WINDOW_DAYS, resolve_repair_window_days
 from app.scheduler.domain.calendar import (
     INTERNSHIP_FLOW_EVENT_TYPE,
     Period,
@@ -44,6 +45,7 @@ from app.scheduler.domain.candidate import (
     UnavailableResource,
     split_consumed_lessons,
 )
+from app.scheduler.domain.capacity import unreservable_debt_assignments
 from app.scheduler.domain.constraint_policy import (
     SchoolConstraintPolicy,
     assess_room_eligibility,
@@ -359,6 +361,18 @@ async def load_snapshot(
             "INVALID_PROTECTED_STATE",
             "O horário publicado é inconsistente com o progresso registado.",
         ) from exc
+    unreservable = unreservable_debt_assignments(snapshot)
+    if unreservable:
+        raise SnapshotConfigurationError(
+            "DEBT_EXCEEDS_RECOVERY_CAPACITY",
+            "Há horas em dívida que só poderiam ser recuperadas dentro da janela de estabilidade. "
+            "Reduza a janela de estabilidade ou ajuste o progresso da turma.",
+            public_context={
+                "assignment_ids": sorted(
+                    {payer for unit_id in unreservable for payer in unit_accounting[unit_id]}
+                )
+            },
+        )
     digest_payload = snapshot_to_dict(snapshot)
     # The clock and the derived windows are search parameters, not data: the
     # digest must stay stable between queueing and claiming the same revisions.
@@ -594,13 +608,14 @@ async def _stability_window(db: AsyncSession, organization_id: int) -> int:
             models.OrganizationSettings.organization_id == organization_id
         )
     )
-    if settings is None or settings.repair_stability_window_days is None:
-        return 0
-    if settings.repair_stability_window_days < 0:
+    if settings is None:
+        return DEFAULT_REPAIR_WINDOW_DAYS
+    configured = settings.repair_stability_window_days
+    if configured is not None and configured < 0:
         raise SnapshotConfigurationError(
             "INVALID_STABILITY_WINDOW", "A janela de estabilidade é inválida."
         )
-    return settings.repair_stability_window_days
+    return resolve_repair_window_days(settings)
 
 
 def _stability_protected_dates(
@@ -1636,7 +1651,8 @@ def _reproject_baseline(
         if fixed_credit > residual:
             raise SnapshotConfigurationError(
                 "PROTECTED_LESSON_EXCEEDS_CURRICULUM",
-                "Existem aulas passadas que não cabem no currículo selecionado.",
+                "Existem aulas passadas ou dentro da janela de estabilidade "
+                "que não cabem no currículo selecionado.",
             )
         fitted = [row for row in ordered if row.lesson_id not in releasable_ids]
         credit = fixed_credit

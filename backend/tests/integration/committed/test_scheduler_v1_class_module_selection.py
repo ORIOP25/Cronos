@@ -17,6 +17,7 @@ from app.scheduler.domain.debt import DebtOrigin
 from app.scheduler.domain.demand import ExecutionEntry, ModuleCredit
 from app.scheduler.domain.projection import ModuleRequirement
 from app.scheduler.infrastructure.curriculum import sync_curricular_projection
+from app.scheduler.infrastructure.jobs import enqueue_generation
 from app.scheduler.infrastructure.models import (
     CurricularRequirement,
     SchedulerLessonSliceV1,
@@ -44,6 +45,7 @@ from tests._support.scheduler_v1 import (
     run_generation,
     seed_generatable_school,
     seed_published_baseline,
+    set_stability_window,
 )
 
 pytestmark = pytest.mark.postgresql
@@ -1020,15 +1022,13 @@ async def test_generation_omits_a_retired_module_and_keeps_the_ledger(db_session
     assert executed[seed.assignment.id][seed.module.id] == 50
 
 
-async def test_logged_absence_in_a_retired_module_generates_and_approves(db_session, monkeypatch):
+async def _publish_then_retire_a_after_gap(db_session, seed):
+    """Publish a baseline, log A's second lesson as a GAP, then retire module A.
+
+    Returns module B, the GAP lesson and the id of the published baseline version.
+    """
     from app.scheduler.infrastructure import occurrences as occurrences_v1
 
-    seed = await seed_generatable_school(
-        db_session,
-        clerk_user_id="cms_abs",
-        clerk_org_id="cms_abs_org",
-        module_minutes=100,
-    )
     module_b = await _add_module(db_session, seed, name="B", minutes=100, order=2)
     await _select(db_session, seed, [seed.module.id, module_b.id])
     await db_session.commit()
@@ -1080,6 +1080,45 @@ async def test_logged_absence_in_a_retired_module_generates_and_approves(db_sess
 
     await _select(db_session, seed, [module_b.id])
     await db_session.commit()
+    return module_b, absence, previous_version_id
+
+
+async def test_logged_absence_in_a_retired_module_is_refused_inside_the_default_window(
+    db_session,
+):
+    seed = await seed_generatable_school(
+        db_session,
+        clerk_user_id="cms_abs_window",
+        clerk_org_id="cms_abs_window_org",
+        module_minutes=100,
+    )
+    await _publish_then_retire_a_after_gap(db_session, seed)
+
+    with pytest.raises(SnapshotConfigurationError) as error:
+        await enqueue_generation(
+            db_session,
+            seed.organization.id,
+            idempotency_key="cms-abs-window",
+            requested_by_membership_id=seed.membership.id,
+            now_utc=MOMENT,
+        )
+
+    assert error.value.code == "DEBT_EXCEEDS_RECOVERY_CAPACITY"
+
+
+async def test_logged_absence_in_a_retired_module_generates_and_approves(db_session, monkeypatch):
+    seed = await seed_generatable_school(
+        db_session,
+        clerk_user_id="cms_abs",
+        clerk_org_id="cms_abs_org",
+        module_minutes=100,
+    )
+    # This scenario tests the retired-module history, not the stability window.
+    await set_stability_window(db_session, seed, 0)
+    module_b, absence, previous_version_id = await _publish_then_retire_a_after_gap(
+        db_session, seed
+    )
+
     await run_generation(db_session, monkeypatch, seed, key="cms-absence")
     await db_session.refresh(seed.state)
     new_version_id = int(seed.state.active_schedule_version_id)

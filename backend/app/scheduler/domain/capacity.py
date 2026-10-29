@@ -9,6 +9,7 @@ duplicates are collapsed before any model uses them.
 
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import date
@@ -53,6 +54,47 @@ def residual_minutes(snapshot: PlanningSnapshot, assignment_id: int) -> int:
     executed = sum(snapshot.executed_for(assignment_id).values())
     required = sum(module.required_minutes for module in assignment.modules)
     return required - executed - protected_credit_minutes(snapshot, assignment_id)
+
+
+def _claim_group(snapshot: PlanningSnapshot, claim_id: int) -> tuple[int, int]:
+    """The (unit, class) pair that one debt claim draws its minutes from."""
+    unit_id = snapshot.claim_assignments[claim_id]
+    class_id = snapshot.claim_classes.get(claim_id)
+    if class_id is None:
+        class_id = snapshot.assignment_for(unit_id).class_ids[0]
+    return unit_id, class_id
+
+
+def unreservable_debt_assignments(snapshot: PlanningSnapshot) -> tuple[int, ...]:
+    """Units whose open debt cannot be reserved on the lessons the search still places.
+
+    A necessary condition for ``plan_recovery_allocations``: per (unit, class) the
+    open debt must fit in the unit's unprotected residual plus the minutes its
+    claims already hold as committed reservations on protected lessons. It does
+    not choose lessons, so a unit that passes can still fail the allocation.
+    """
+    if snapshot.active_version_id is None or not snapshot.open_debt_minutes:
+        return ()
+    protected_ids = {lesson.lesson_id for lesson in snapshot.protected_lessons}
+    held_by_claim: Counter[int] = Counter()
+    for row in snapshot.reservations:
+        if row.version_id == snapshot.active_version_id and row.lesson_id in protected_ids:
+            held_by_claim[row.claim_id] += row.minutes
+    owed: Counter[tuple[int, int]] = Counter()
+    held: Counter[tuple[int, int]] = Counter()
+    for claim_id, minutes in snapshot.open_debt_minutes.items():
+        group = _claim_group(snapshot, claim_id)
+        owed[group] += minutes
+        held[group] += held_by_claim[claim_id]
+    return tuple(
+        sorted(
+            {
+                unit_id
+                for (unit_id, class_id), minutes in owed.items()
+                if minutes > residual_minutes(snapshot, unit_id) + held[(unit_id, class_id)]
+            }
+        )
+    )
 
 
 def _overlaps(period: Period, other: Period) -> bool:
