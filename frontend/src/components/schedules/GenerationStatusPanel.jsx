@@ -238,8 +238,8 @@ const GenerationStatusPanel = ({ jobId }) => {
               {' '}
               <span>
                 {presenceNames.length > 0
-                  ? `Não foi possível cumprir as regras de presença. Professores com mínimo de horas: ${presenceNames.join(', ')}. Experimente baixar o mínimo, aumentar o furo máximo ou alargar a disponibilidade.`
-                  : 'Não foi possível cumprir as regras de presença. Experimente baixar o mínimo, aumentar o furo máximo ou alargar a disponibilidade.'}
+                  ? `Não foi possível cumprir as regras de presença. Professores com mínimo de horas: ${presenceNames.join(', ')}. Experimente baixar o mínimo, aumentar o tempo máximo sem aulas ou alargar a disponibilidade.`
+                  : 'Não foi possível cumprir as regras de presença. Experimente baixar o mínimo, aumentar o tempo máximo sem aulas ou alargar a disponibilidade.'}
               </span>{' '}
               <Link to="/members">Abrir Equipa</Link>.
             </>

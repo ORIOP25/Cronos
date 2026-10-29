@@ -430,7 +430,7 @@ const Members = ({ readOnly = false, allowedActions }) => {
                     )}
                     {member.capabilities.includes('teacher') && member.teacher_presence?.minimum_hours != null && (
                       <CBadge color="secondary" className="ms-1">
-                        {`Mín. ${member.teacher_presence.minimum_hours}h · furo ${member.teacher_presence.max_gap_hours}h`}
+                        {`Mín. ${member.teacher_presence.minimum_hours}h · máx. sem aulas: ${member.teacher_presence.max_gap_hours}h`}
                       </CBadge>
                     )}
                   </td>

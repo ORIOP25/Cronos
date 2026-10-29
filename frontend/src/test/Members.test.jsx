@@ -250,7 +250,7 @@ describe('Members', () => {
 
     expect(screen.getByText('Professor')).toBeInTheDocument()
     expect(screen.getByText('Sem almoço')).toBeInTheDocument()
-    expect(screen.getByText('Mín. 3h · furo 1h')).toBeInTheDocument()
+    expect(screen.getByText('Mín. 3h · máx. sem aulas: 1h')).toBeInTheDocument()
   })
 
   it('hides the rule badges for the default rule', () => {

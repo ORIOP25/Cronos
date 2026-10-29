@@ -22,7 +22,7 @@ const describePresenceRule = (presence) => {
   const parts = [`hora de almoço ${presence.lunch_required ? 'obrigatória' : 'dispensada'}`]
   if (presence.minimum_hours != null) {
     parts.push(`mínimo de ${hoursLabel(presence.minimum_hours)} por presença`)
-    parts.push(`furo máximo de ${hoursLabel(presence.max_gap_hours)}`)
+    parts.push(`tempo máximo sem aulas de ${hoursLabel(presence.max_gap_hours)}`)
   }
   return `A direção definiu: ${parts.join('; ')}.`
 }

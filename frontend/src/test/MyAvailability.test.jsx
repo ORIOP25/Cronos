@@ -191,7 +191,7 @@ describe('MyAvailability', () => {
 
     const card = screen.getByRole('note', { name: /regra de presença/i })
     expect(card).toHaveTextContent(
-      'A direção definiu: hora de almoço dispensada; mínimo de 3 horas por presença; furo máximo de 1 hora.',
+      'A direção definiu: hora de almoço dispensada; mínimo de 3 horas por presença; tempo máximo sem aulas de 1 hora.',
     )
     expect(within(card).queryByRole('spinbutton')).not.toBeInTheDocument()
     expect(within(card).queryByRole('textbox')).not.toBeInTheDocument()
@@ -207,7 +207,7 @@ describe('MyAvailability', () => {
     renderWithProviders(<MyAvailability />)
 
     expect(screen.getByRole('note', { name: /regra de presença/i })).toHaveTextContent(
-      'A direção definiu: hora de almoço obrigatória; mínimo de 4 horas por presença; furo máximo de 2 horas.',
+      'A direção definiu: hora de almoço obrigatória; mínimo de 4 horas por presença; tempo máximo sem aulas de 2 horas.',
     )
   })
 
@@ -220,7 +220,7 @@ describe('MyAvailability', () => {
     renderWithProviders(<MyAvailability />)
 
     expect(screen.getByRole('note', { name: /regra de presença/i })).toHaveTextContent(
-      'A direção definiu: hora de almoço obrigatória; mínimo de 1 hora por presença; furo máximo de 1 hora.',
+      'A direção definiu: hora de almoço obrigatória; mínimo de 1 hora por presença; tempo máximo sem aulas de 1 hora.',
     )
   })
 })
