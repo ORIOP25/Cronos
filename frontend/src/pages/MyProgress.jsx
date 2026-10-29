@@ -24,7 +24,7 @@ function SubjectRow({ subject }) {
       <div style={{ flex: 2, minWidth: 0 }}>
         <div
           style={{
-            fontSize: '0.82rem',
+            fontSize: 'var(--cronos-text-body)',
             fontWeight: 600,
             color: 'var(--brand-950)',
             whiteSpace: 'nowrap',
@@ -35,7 +35,7 @@ function SubjectRow({ subject }) {
           <CIcon icon={cilBook} className="me-1" style={{ opacity: 0.6 }} />
           {subject.subject_name}
         </div>
-        <div style={{ fontSize: '0.68rem', color: 'var(--rs-muted)' }}>
+        <div style={{ fontSize: 'var(--cronos-text-small)', color: 'var(--rs-muted)' }}>
           {subject.completed_hours}h / {subject.total_hours}h
         </div>
       </div>
@@ -62,7 +62,7 @@ function SubjectRow({ subject }) {
           </div>
           <span
             style={{
-              fontSize: '0.78rem',
+              fontSize: 'var(--cronos-text-small)',
               fontWeight: 600,
               color: isLow ? 'var(--brand-600)' : 'var(--rs-teal)',
               minWidth: 34,
@@ -91,10 +91,10 @@ function ClassCard({ classData }) {
         <div className="d-flex align-items-center gap-2">
           <CIcon icon={cilEducation} style={{ opacity: 0.7 }} />
           <div>
-            <div className="fw-semibold" style={{ fontSize: '0.95rem' }}>
+            <div className="fw-semibold" style={{ fontSize: 'var(--cronos-text-body)' }}>
               {classData.class_name}
             </div>
-            <div style={{ fontSize: '0.7rem', color: 'var(--rs-muted)' }}>
+            <div style={{ fontSize: 'var(--cronos-text-small)', color: 'var(--rs-muted)' }}>
               {classData.course_name || '—'} · {classData.grade_level}º ano
             </div>
           </div>
@@ -111,7 +111,7 @@ function ClassCard({ classData }) {
               <SubjectRow key={subject.subject_id} subject={subject} />
             ))
           ) : (
-            <div className="text-center py-3 text-muted" style={{ fontSize: '0.85rem' }}>
+            <div className="text-center py-3 text-muted" style={{ fontSize: 'var(--cronos-text-small)' }}>
               Sem disciplinas atribuídas nesta turma.
             </div>
           )}

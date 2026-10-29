@@ -13,6 +13,11 @@
   --cronos-border-strong: rgb(61 43 31 / 30%);
   --cronos-font-display: 'Playfair Display', Georgia, serif;
   --cronos-font-body: 'IBM Plex Sans', Arial, sans-serif;
+  --cronos-text-body: .9375rem;
+  --cronos-text-small: .875rem;
+  --cronos-control-height: 44px;
+  --cronos-space-row: 16px;
+  --cronos-space-actions: 12px;
   --cronos-radius-control: 6px;
   --cronos-radius-panel: 8px;
   --cronos-shadow-panel: 0 12px 32px rgb(61 43 31 / 7%);

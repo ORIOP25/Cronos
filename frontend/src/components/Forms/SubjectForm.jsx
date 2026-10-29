@@ -148,7 +148,7 @@ const SubjectForm = ({ initialData, onSubmit, isLoading, onCancel, readOnly = fa
             {roomTypesErrorMessage && (
               <div id="room-types-error">
                 <CFormFeedback invalid className="d-block" role="alert">{roomTypesErrorMessage}</CFormFeedback>
-                {roomTypesError && <CButton type="button" color="secondary" variant="ghost" size="sm" onClick={() => refetch()}>Tentar novamente</CButton>}
+                {roomTypesError && <CButton type="button" color="secondary" variant="outline" size="sm" onClick={() => refetch()}>Tentar novamente</CButton>}
               </div>
             )}
           </CCol>
@@ -166,7 +166,7 @@ const SubjectForm = ({ initialData, onSubmit, isLoading, onCancel, readOnly = fa
         {modulesInvalid && (
           <CFormFeedback id={MODULES_FEEDBACK_ID} invalid className="d-block" role="alert">{validation.message}</CFormFeedback>
         )}
-        {editingIndex != null && <CButton type="button" color="secondary" variant="ghost" size="sm" onClick={cancelEditing}>Cancelar edição</CButton>}
+        {editingIndex != null && <CButton type="button" color="secondary" variant="outline" size="sm" onClick={cancelEditing}>Cancelar edição</CButton>}
 
         <div className="mt-3 d-grid gap-2">
           {subject.modules.map((module, index) => (
@@ -182,7 +182,7 @@ const SubjectForm = ({ initialData, onSubmit, isLoading, onCancel, readOnly = fa
       </fieldset>
 
       <CModalFooter className="px-0 mt-4 border-0 pb-0">
-        <CButton type="button" color="secondary" variant="ghost" onClick={onCancel}>Cancelar</CButton>
+        <CButton type="button" color="secondary" variant="outline" onClick={onCancel}>Cancelar</CButton>
         {!readOnly && <CButton type="submit" color="primary" disabled={isLoading || roomTypesLoading || roomTypesUnavailable}>{isLoading ? 'A guardar...' : 'Guardar Disciplina'}</CButton>}
       </CModalFooter>
     </CForm>

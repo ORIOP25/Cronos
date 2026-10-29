@@ -9,7 +9,7 @@
 .context-details > summary:focus-visible { outline: 2px solid var(--cronos-accent); outline-offset: 3px; }
 .context-details[open] > summary { color: var(--cronos-ink); }
 .import-resources { border: 1px solid var(--cronos-border); border-radius: var(--cronos-radius-panel); background: var(--cronos-surface); }
-.import-resource { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(240px, 1fr); gap: 0 32px; padding: 18px 24px; }
+.import-resource { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(240px, 1fr); gap: 0 32px; padding: var(--cronos-space-row) 24px; }
 .import-resource + .import-resource { border-top: 1px solid var(--cronos-border); }
 .import-resource__heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .import-resource__heading h2 { font-family: var(--cronos-font-body); }
@@ -18,10 +18,10 @@
 .priority-row { min-width: 0; padding: 0 0 20px; border-bottom: 1px solid var(--cronos-border); }
 .priority-row legend { padding-top: 20px; font-family: var(--cronos-font-body); }
 .priority-levels { display: flex; flex-wrap: wrap; gap: 6px; }
-.priority-levels label { padding: 7px 12px; font-size: .85rem; }
+.priority-levels label { padding: 7px 12px; }
 .btn-check:focus-visible + .btn { box-shadow: 0 0 0 .25rem var(--color-focus-ring); }
 .compact-list { border-top: 1px solid var(--cronos-border); }
-.compact-row, .compact-disclosure { padding: 16px 0; border-bottom: 1px solid var(--cronos-border); }
+.compact-row, .compact-disclosure { padding: var(--cronos-space-row) 0; border-bottom: 1px solid var(--cronos-border); }
 .compact-row > legend { padding-top: 16px; }
 .summary-list { margin: 0; }
 .summary-list > div { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--cronos-border); font-size: .875rem; }
@@ -146,6 +146,42 @@
 .calendar-event-editor__header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 
 .member-action-tooltip { display: inline-flex; }
+
+/* Shared application controls; marketing keeps its own scale. */
+:where(.app-main, .modal, .guided-form-shell) {
+  font-size: var(--cronos-text-body);
+  line-height: 1.5;
+}
+:where(.app-main, .modal, .guided-form-shell) .btn {
+  --cui-btn-font-size: var(--cronos-text-small);
+  --cui-btn-padding-x: 12px;
+  --cui-btn-padding-y: 8px;
+  --cui-btn-border-radius: var(--cronos-radius-control);
+  min-height: var(--cronos-control-height);
+  font-weight: 500;
+  line-height: 1.5;
+}
+:where(.app-main, .modal, .guided-form-shell) .btn:has(> .icon:only-child) {
+  min-width: var(--cronos-control-height);
+  padding: 8px;
+}
+:where(.app-main, .modal, .guided-form-shell) .btn > .icon {
+  width: 16px;
+  height: 16px;
+  vertical-align: -3px;
+}
+:where(.app-main, .modal, .guided-form-shell) .form-label,
+:where(.app-main, .modal, .guided-form-shell) .form-text,
+:where(.app-main, .modal, .guided-form-shell) small,
+:where(.app-main, .modal, .guided-form-shell) .small { font-size: var(--cronos-text-small); }
+:where(.app-main, .modal, .guided-form-shell) .form-label { font-weight: 600; }
+:where(.app-main, .modal, .guided-form-shell) .form-control:not(textarea),
+:where(.app-main, .modal, .guided-form-shell) .form-select {
+  min-height: var(--cronos-control-height);
+  font-size: var(--cronos-text-body);
+}
+:where(.app-main, .modal, .guided-form-shell) .card-header { padding: var(--cronos-space-row) 20px; font-size: 1rem; }
+.form-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: var(--cronos-space-actions); }
 
 .portuguese-date-input { position: relative; }
 .portuguese-date-input .form-control { padding-right: 44px; }

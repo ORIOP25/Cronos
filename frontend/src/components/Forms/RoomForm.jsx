@@ -146,21 +146,21 @@ const RoomForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
             {typeError && <div id="room-new-type-error" className="invalid-feedback d-block" role="alert">{typeError}</div>}
             <div className="d-flex gap-2 mt-2">
               <CButton type="button" color="primary" disabled={createType.isPending} onClick={() => void addType()}>{createType.isPending ? 'A criar…' : 'Criar tipo'}</CButton>
-              <CButton type="button" color="secondary" variant="ghost" disabled={createType.isPending} onClick={() => { setAddingType(false); setTypeError('') }}>Cancelar tipo</CButton>
+              <CButton type="button" color="secondary" variant="outline" disabled={createType.isPending} onClick={() => { setAddingType(false); setTypeError('') }}>Cancelar tipo</CButton>
             </div>
           </div>}
           {roomTypesLoading && <div id="room-types-loading" role="status" aria-live="polite" className="form-text">A carregar tipos de sala…</div>}
           {roomTypesErrorMessage && (
             <div id="room-types-error">
               <CFormFeedback invalid className="d-block" role="alert">{roomTypesErrorMessage}</CFormFeedback>
-              {roomTypesError && <CButton type="button" color="secondary" variant="ghost" size="sm" onClick={() => refetch()}>Tentar novamente</CButton>}
+              {roomTypesError && <CButton type="button" color="secondary" variant="outline" size="sm" onClick={() => refetch()}>Tentar novamente</CButton>}
             </div>
           )}
         </CCol>
       </CRow>
 
       <CModalFooter className="px-0 mt-4 border-0 pb-0">
-        <CButton color="secondary" variant="ghost" onClick={onCancel}>
+        <CButton color="secondary" variant="outline" onClick={onCancel}>
           Cancelar
         </CButton>
         <CButton color="primary" type="submit" disabled={isLoading || roomTypesLoading || roomTypesUnavailable || createType.isPending || addingType}>

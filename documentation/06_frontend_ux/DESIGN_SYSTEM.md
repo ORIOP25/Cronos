@@ -57,6 +57,9 @@ Cronos employs a warm, authoritative visual identity designed for educational tr
 - Room forms create and select room types in context. Existing type management returns to the same room draft.
 - Primary actions use the shared primary button theme, including activation. Contextual edit actions use the outlined primary variant.
 - Cancellation retains its secondary variant. Primary button selection, hover and keyboard focus use Cronos colors.
+- Use outlined secondary buttons for cancellation, back navigation and reset; outlined primary buttons for contextual editing; ghost primary buttons for edit icons in rows. Keep cancel before save. Approval and import confirmation use the primary action theme. Operational state choices retain their semantic colors.
+- Application control sizes, body and supporting text scales, row spacing and action gaps use the shared tokens in `frontend/src/styles/brand.tokens.css` and the scoped rules in `frontend/src/styles/app-components.css`. Compact CoreUI button variants retain the same readable text and minimum target size. Marketing keeps its own hierarchy.
+- Use CoreUI `cilPencil` for editing, `cilTrash` for removal, `cilPlus` for adding records, `cilSave` for saving, `cilCheckCircle` for approval or completion, and `cilArrowLeft`/`cilArrowRight` for directional navigation. Action icons share the same size. Keep table actions visible without hovering.
 - Bulk selection uses the shared checkbox, including its partial-selection state and keyboard focus. Selection actions appear only when records are selected and stay visible while scrolling. Clearing the selection returns keyboard focus to the list.
 - Destructive controls use the shared danger theme. Bulk confirmation lists the selected records, keeps removal impacts visible and names the action explicitly.
 - Place reset and save actions at the lower right, with the primary save action last.

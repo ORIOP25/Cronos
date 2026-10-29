@@ -14,7 +14,7 @@ import {
   CSpinner,
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
-import { cilCheckCircle, cilXCircle, cilActionUndo } from '@coreui/icons'
+import { cilCheckCircle, cilXCircle, cilActionUndo, cilSave } from '@coreui/icons'
 import FeedbackBanner from './FeedbackBanner'
 import { useUpsertLessonLog, useUpdateTimesheetStatus } from '../features/operations/data'
 import { getApiErrorMessage, isApiErrorTransient } from '../utils/apiErrors'
@@ -228,9 +228,8 @@ const LessonLogModal = ({ onClose, slot, isAdmin = false, readOnly = false, allo
               tone="info"
               action={isAdmin && canEditTimesheet && (
                 <CButton
-                  color="warning"
+                  color="secondary" variant="outline"
                   size="sm"
-                  className="text-white"
                   onClick={handleReopenWeek}
                   disabled={!canEditTimesheet || updateTimesheetStatusMutation.isPending}
                 >
@@ -337,7 +336,7 @@ const LessonLogModal = ({ onClose, slot, isAdmin = false, readOnly = false, allo
                   Cancelar
                 </CButton>
                 <CButton
-                  color="warning" size="sm" className="text-white"
+                  color="secondary" variant="outline" size="sm"
                   onClick={handleConfirmReopen}
                   disabled={updateTimesheetStatusMutation.isPending}
                 >
@@ -363,7 +362,7 @@ const LessonLogModal = ({ onClose, slot, isAdmin = false, readOnly = false, allo
                   Cancelar
                 </CButton>
                 <CButton
-                  color="warning" size="sm" className="text-white"
+                  color="secondary" variant="outline" size="sm"
                   onClick={() => { setShowOccurrenceConfirm(false); void handleSubmit('OCCURRENCE') }}
                   disabled={upsertLogMutation.isPending}
                 >
@@ -422,7 +421,7 @@ const LessonLogModal = ({ onClose, slot, isAdmin = false, readOnly = false, allo
               disabled={upsertLogMutation.isPending}
               title="Guardar alterações ao sumário e notas"
             >
-              <CIcon icon={cilCheckCircle} className="me-1" />
+              <CIcon icon={cilSave} className="me-1" />
               Guardar alterações
             </CButton>
           )}

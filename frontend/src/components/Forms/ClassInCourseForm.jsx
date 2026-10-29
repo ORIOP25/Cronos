@@ -154,7 +154,7 @@ const ClassInCourseForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
       {fieldFeedback('date_range')}
 
       <CModalFooter className="px-0 mt-4 border-0 pb-0">
-        <CButton color="secondary" variant="ghost" onClick={onCancel}>
+        <CButton color="secondary" variant="outline" onClick={onCancel}>
           Cancelar
         </CButton>
         <CButton color="primary" type="submit" disabled={isLoading}>

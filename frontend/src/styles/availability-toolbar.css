@@ -1,7 +1,7 @@
 .availability-toolbar { position: sticky; top: 0; z-index: 4; display: flex; align-items: center; gap: 12px; margin-bottom: 16px; padding: 10px 0; background: var(--cronos-bg); }
 .availability-toolbar__tools { display: flex; gap: 6px; flex-wrap: wrap; }
-.availability-tool { display: inline-flex; align-items: center; gap: 7px; min-height: 44px; padding: 7px 10px; border: 1px solid var(--cronos-border); border-radius: 6px; background: var(--cronos-surface); color: var(--cronos-ink); cursor: pointer; font: 500 .84rem var(--cronos-font-body); }
+.availability-tool { display: inline-flex; align-items: center; gap: 7px; min-height: 44px; padding: 7px 10px; border: 1px solid var(--cronos-border); border-radius: 6px; background: var(--cronos-surface); color: var(--cronos-ink); cursor: pointer; font: 500 var(--cronos-text-small) var(--cronos-font-body); }
 .availability-tool.is-selected { border-color: var(--cronos-accent); box-shadow: inset 0 -3px 0 var(--cronos-accent); font-weight: 700; }
 .availability-tool__swatch { width: 14px; height: 14px; border: 1px solid var(--cronos-border-strong); border-radius: 50%; }
-.availability-toolbar__status { margin-left: auto; color: var(--cronos-ink-muted); font-size: .86rem; }
+.availability-toolbar__status { margin-left: auto; color: var(--cronos-ink-muted); font-size: var(--cronos-text-small); }
 @media (max-width: 767px) { .availability-toolbar { align-items: flex-start; flex-direction: column; } .availability-toolbar__status { margin-left: 0; } }

@@ -65,6 +65,15 @@ describe('CourseDetails compact class list', () => {
     expect(screen.getByText('Nenhuma turma criada para este curso.')).toBeInTheDocument()
   })
 
+  it('offers a named cancel action that discards an inline course draft', () => {
+    renderCourse()
+    fireEvent.click(screen.getByRole('button', { name: 'Editar', exact: true }))
+    fireEvent.change(screen.getByLabelText('Nome do Curso'), { target: { value: 'Rascunho' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }))
+    expect(screen.queryByDisplayValue('Rascunho')).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Informática' })).toBeInTheDocument()
+  })
+
   it('preserves read-only and tutorial navigation restrictions', () => {
     renderCourse({ readOnly: true, navigationDisabled: true })
     expect(screen.getByRole('button', { name: 'Abrir turma 10.º A' })).toBeDisabled()

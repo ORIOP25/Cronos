@@ -210,7 +210,7 @@ const CourseForm = ({ onSubmit, isLoading, onCancel }) => {
       </fieldset>
 
       <CModalFooter className="px-0 mt-4 border-0 pb-0">
-        <CButton type="button" color="secondary" variant="ghost" onClick={onCancel}>Cancelar</CButton>
+        <CButton type="button" color="secondary" variant="outline" onClick={onCancel}>Cancelar</CButton>
         <CButton type="submit" color="primary" disabled={isLoading}>
           {isLoading ? 'A gravar...' : 'Criar Curso'}
         </CButton>

@@ -9,7 +9,7 @@ import {
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import {
-  cilArrowLeft, cilBook, cilUserPlus, cilTrash, cilPeople,
+  cilArrowLeft, cilBook, cilPlus, cilTrash, cilPeople,
   cilBookmark, cilCheckCircle, cilWarning, cilLink,
 } from '@coreui/icons'
 import {
@@ -247,7 +247,7 @@ const SubjectRow = ({
               </span>
               {canEditJoint && (
                 <>
-                  <CButton color="secondary" variant="outline" size="sm" onClick={() => onOpenJoint(subject)}>
+                  <CButton color="primary" variant="outline" size="sm" onClick={() => onOpenJoint(subject)}>
                     Editar
                   </CButton>
                   <CButton color="danger" variant="outline" size="sm" onClick={() => onUndoJoint(subject)}>
@@ -817,7 +817,7 @@ const ClassSubjects = ({ courseIdOverride, classIdOverride, navigationDisabled =
         <div className="mb-3"><FeedbackBanner tone="danger">
           <strong>Erro:</strong> {getApiErrorMessage(error, 'Turma não encontrada.')}
         </FeedbackBanner></div>
-        <CButton color="light" onClick={() => { if (!navigationDisabled) navigate(`/courses/${numCourseId}`) }} disabled={navigationDisabled}>
+        <CButton color="secondary" variant="outline" onClick={() => { if (!navigationDisabled) navigate(`/courses/${numCourseId}`) }} disabled={navigationDisabled}>
           <CIcon icon={cilArrowLeft} className="me-1" /> Voltar ao Curso
         </CButton>
       </div>
@@ -887,7 +887,7 @@ const ClassSubjects = ({ courseIdOverride, classIdOverride, navigationDisabled =
               disabled={isUpdating || !canAdd}
               data-tutorial-target="add-class-subject"
             >
-              <CIcon icon={cilUserPlus} className="me-1" />
+              <CIcon icon={cilPlus} className="me-1" />
               Adicionar Disciplina
             </CButton>
           </div>
@@ -906,7 +906,7 @@ const ClassSubjects = ({ courseIdOverride, classIdOverride, navigationDisabled =
               <CIcon icon={cilBook} size="3xl" className="text-muted mb-3" />
               <p className="text-muted mb-3">Nenhuma disciplina associada a esta turma.</p>
               <CButton color="primary" onClick={() => setShowAddModal(true)} disabled={!canAdd} data-tutorial-target="add-class-subject">
-                <CIcon icon={cilUserPlus} className="me-1" />
+                <CIcon icon={cilPlus} className="me-1" />
                 Adicionar Primeira Disciplina
               </CButton>
             </div>
@@ -945,7 +945,7 @@ const ClassSubjects = ({ courseIdOverride, classIdOverride, navigationDisabled =
           {renderAddModalBody()}
         </CModalBody>
         <CModalFooter>
-          <CButton color="secondary" onClick={() => setShowAddModal(false)}>
+          <CButton color="secondary" variant="outline" onClick={() => setShowAddModal(false)}>
             Cancelar
           </CButton>
           <CButton 
