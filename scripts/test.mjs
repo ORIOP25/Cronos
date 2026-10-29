@@ -807,7 +807,7 @@ async function startTestStack(context, { full = false } = {}) {
     await runChecked(compose(['--profile', 'maintenance', 'run', '--rm', 'db-maintenance']), {
       env: composeEnv, label: 'apply test application migrations', environmentFailure: true,
     })
-    await runChecked(compose(['up', '-d', '--wait', 'backend', 'worker', 'beat', 'frontend']), {
+    await runChecked(compose(['up', '-d', '--wait', 'backend', 'worker', 'scheduler-supervisor', 'frontend']), {
       env: composeEnv, label: 'start test application stack', environmentFailure: true,
     })
   }

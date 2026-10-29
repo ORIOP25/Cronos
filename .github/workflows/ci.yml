@@ -328,7 +328,7 @@ jobs:
         run: docker compose -f docker-compose.ci.yml --profile maintenance run --rm db-maintenance
 
       - name: Start full application stack
-        run: docker compose -f docker-compose.ci.yml up -d --wait backend worker beat frontend
+        run: docker compose -f docker-compose.ci.yml up -d --wait backend worker scheduler-supervisor frontend
 
       - name: Prepare E2E Clerk local state
         id: prepare-e2e-clerk-state

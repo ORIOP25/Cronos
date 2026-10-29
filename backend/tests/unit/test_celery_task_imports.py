@@ -103,20 +103,36 @@ def test_each_beat_task_is_registered_by_the_worker_that_consumes_its_queue() ->
                 assert entry["task"] not in registered[module], (entry["task"], module)
 
 
+DEPLOYMENT_FILES = (
+    BACKEND / "railway" / "supervisor.json",
+    BACKEND.parent / "docker-compose.yml",
+    BACKEND.parent / "docker-compose.ci.yml",
+    BACKEND.parent / "docker-compose.test.yml",
+)
+
+
+def _supervisor_command_lines(path: Path) -> list[str]:
+    return [
+        line
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if f"--include={SUPERVISOR_MODULE}" in line
+    ]
+
+
 def test_supervisor_command_uses_the_solo_pool_in_every_deployment_file() -> None:
     """The supervisor is one lightweight task: solo pool, with no prefork child to hold memory."""
-    root = BACKEND.parent
-    deployment_files = [
-        BACKEND / "railway" / "supervisor.json",
-        root / "docker-compose.yml",
-        root / "docker-compose.ci.yml",
-    ]
-    for path in deployment_files:
-        command_lines = [
-            line
-            for line in path.read_text(encoding="utf-8").splitlines()
-            if f"--include={SUPERVISOR_MODULE}" in line
-        ]
+    for path in DEPLOYMENT_FILES:
+        command_lines = _supervisor_command_lines(path)
         assert command_lines, path
         for line in command_lines:
             assert "--pool=solo" in line, (path.name, line)
+
+
+def test_beat_runs_embedded_in_the_supervisor_and_nowhere_else() -> None:
+    """One idle process less: the supervisor publishes the schedule, so no service runs Beat alone."""
+    assert not (BACKEND / "railway" / "beat.json").exists()
+    for path in DEPLOYMENT_FILES:
+        for line in _supervisor_command_lines(path):
+            assert "--beat" in line, (path.name, line)
+        text = path.read_text(encoding="utf-8")
+        assert '"beat",' not in text and "celery_app beat" not in text, path.name

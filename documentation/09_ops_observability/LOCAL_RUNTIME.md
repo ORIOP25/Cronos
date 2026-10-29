@@ -15,7 +15,7 @@ Copy `.env.example` to `.env` and `backend/.env.example` to `backend/.env`.
 
 ## What the System Does
 
-The root `docker-compose.yml` runs PostgreSQL 18, Redis 8.2, API, worker, scheduler supervisor, Beat, and the Nginx SPA.
+The root `docker-compose.yml` runs PostgreSQL 18, Redis 8.2, API, worker, scheduler supervisor with embedded Beat, and the Nginx SPA.
 The `local` target of `frontend/Dockerfile` inherits `ci` and uses `nginx.ci.conf` for Clerk development origins.
 The production image uses `nginx.conf`.
 `docker-compose.dev.yml` overrides only the `frontend` service, replacing it with Vite hot reload; the other services are unchanged.
@@ -38,8 +38,7 @@ This prevents concurrent services from changing production-like schemas during s
 | `db-maintenance` | Maintenance profile | Run Alembic migrations |
 | `backend` | `127.0.0.1:8000` | FastAPI API |
 | `worker` | Internal only | Scheduler v1 generation tasks |
-| `scheduler-supervisor` | Internal only | Recovery-only worker on the `scheduler-supervisor` queue |
-| `beat` | Internal only | Hourly reconciliation, daily maintenance, and 60-second supervision |
+| `scheduler-supervisor` | Internal only | Recovery-only worker on the `scheduler-supervisor` queue; its embedded Beat publishes hourly reconciliation, daily maintenance, and 60-second supervision |
 | `frontend` | `127.0.0.1:5173` | Nginx SPA (`local` target) and `/api/` proxy; Vite with the dev override |
 
 ## Data or Request Flow
@@ -52,8 +51,8 @@ flowchart TD
     API --> Dispatcher[Named task dispatcher]
     Dispatcher -->|scheduler.v1.run_next_job| Redis[(Redis)]
     Redis --> Worker[Celery worker]
-    Redis --> Supervisor[Recovery supervisor]
-    Beat[Celery Beat] --> Redis
+    Redis --> Supervisor[Recovery supervisor + Beat]
+    Supervisor --> Redis
     Worker --> DB
 ```
 
@@ -74,11 +73,11 @@ flowchart TD
 - The API process does not import `app.scheduler_v1_worker` or OR-Tools.
 - The worker process includes `app.scheduler_v1_worker` and owns solver imports.
 - The supervisor process includes `app.scheduler_recovery_worker` and consumes only the `scheduler-supervisor` queue.
-- Beat stores its schedule under `/tmp`.
+- The supervisor's Beat stores its schedule under `/tmp`.
 
 ## States and Transitions
 
-`provision-db` -> `db-maintenance` -> `backend`, `worker`, `scheduler-supervisor`, `beat`, `frontend`.
+`provision-db` -> `db-maintenance` -> `backend`, `worker`, `scheduler-supervisor`, `frontend`.
 
 The development override changes only the frontend service.
 

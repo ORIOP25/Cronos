@@ -19,13 +19,13 @@ This document targets AI agents and operators who diagnose production or verify 
 | Provider | Role | Identifier |
 | :--- | :--- | :--- |
 | GitHub | Source, CI, Deploy check | Repository `ORIOP25/Cronos` |
-| Railway | API, worker, supervisor, Beat, PostgreSQL, Redis | Project `hopeful-enthusiasm`, environment `production` |
+| Railway | API, worker, supervisor with embedded Beat, PostgreSQL, Redis | Project `hopeful-enthusiasm`, environment `production` |
 | Cloudflare | DNS for `cronos.pt`, Pages for the frontend | Apex `cronos.pt`; `www` redirects to the apex |
 | Clerk | Identity, organizations, invitations, webhooks | Development instance for local and CI tests; production instance for `cronos.pt` |
 | Hostinger | Mailbox `contacto@cronos.pt` | MX, SPF, and DKIM records on `cronos.pt` |
 | Resend | Contact form delivery | Sender domain `forms.cronos.pt` |
 
-Railway services: `api` (`api.cronos.pt`), `worker`, `scheduler-supervisor`, `beat`, `Postgres`, `Redis`.
+Railway services: `api` (`api.cronos.pt`), `worker`, `scheduler-supervisor`, `Postgres`, `Redis`. The supervisor also runs Celery Beat.
 `Postgres` runs with `max_connections` 100 from `postgresql.auto.conf`. Changing it needs `ALTER SYSTEM` and a PostgreSQL restart.
 A second Railway project, `cronos-w11-isolated`, exists. Its purpose is undocumented; do not change it.
 
@@ -64,12 +64,10 @@ railway variable list --service api --json | node -e "let d='';process.stdin.on(
 | :--- | :--- | :--- |
 | `backend` (API) | Compose shared environment plus `backend/.env` | Railway `api` variables |
 | `worker`, `scheduler-supervisor` | Compose shared environment plus `backend/.env` | Railway service variables |
-| `beat` | Compose shared environment only | Railway `beat` variables |
 | Frontend | Root `.env` (`VITE_*` build arguments) | Cloudflare Pages build variables |
 
-Locally, Beat does not load `backend/.env`. It only publishes tasks; the workers execute them with their own secrets.
-Beat imports no task module. `backend/app/scheduler_v1_worker.py` imports the member and privacy tasks that the solver worker executes, and the supervisor imports only `backend/app/scheduler_recovery_worker.py`.
-In production, `Settings` validation runs in every process, so all four backend services need the production values.
+Beat runs inside the supervisor and imports no task module. `backend/app/scheduler_v1_worker.py` imports the member and privacy tasks that the solver worker executes, and the supervisor imports only `backend/app/scheduler_recovery_worker.py`.
+In production, `Settings` validation runs in every process, so all three backend services need the production values.
 The [Deployment Runbook](DEPLOYMENT_RUNBOOK.md#secrets-and-environment) lists the required names.
 
 ## Data or Request Flow
@@ -86,8 +84,7 @@ For those, read the service logs:
 | Process | Evidence |
 | :--- | :--- |
 | `worker` | `railway logs --service worker` shows `scheduler_v1_phase_*` events after a generation. |
-| `scheduler-supervisor` | `railway logs --service scheduler-supervisor` shows the `scheduler.v1.supervise` task every 60 seconds. |
-| `beat` | `railway logs --service beat` shows the three periodic schedules being sent. |
+| `scheduler-supervisor` | `railway logs --service scheduler-supervisor` shows the `scheduler.v1.supervise` task every 60 seconds and the `Beat` lines for the three periodic schedules. |
 
 ## Contracts and Invariants
 
