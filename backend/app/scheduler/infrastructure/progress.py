@@ -299,7 +299,7 @@ async def _future_lesson_credits(
     return dict(rows)
 
 
-async def _release_excess_reservations(
+async def release_excess_reservations(
     db: AsyncSession,
     organization_id: int,
     school_year_id: int,
@@ -537,7 +537,7 @@ async def record_execution(
     balances_after = _validate_debt_state(
         modules, updated, debts, revisions, (*prior_settlements, *settlements)
     )
-    await _release_excess_reservations(
+    await release_excess_reservations(
         db,
         organization_id,
         school_year_id,

@@ -66,6 +66,7 @@ Submitting, approving, and reopening a week invalidate the active organization's
 - Reopening returns the week to `OPEN`.
 - [The timesheet service](../../backend/app/services/timesheet_service.py) rejects invalid transitions with a Portuguese message showing the source and target states.
 - Ledger entries require non-zero deltas and unique idempotency keys.
+- Deselecting a module annuls its open debt as a negative debt revision. The claim and its settlements stay, and the open debt total drops by the annulled minutes.
 - A joint lesson counts once per teacher week. The service groups its sibling rows by `(version_id, stable_key)`, so the week has one slot and one teacher-hour.
 - A joint lesson is registered only when every sibling has a lesson log. A missing sibling blocks submission.
 - A joint substitution counts once. Its blocks are grouped by the source lesson identity, so the week does not count one block per member class.

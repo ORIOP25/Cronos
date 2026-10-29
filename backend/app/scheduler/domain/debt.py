@@ -136,6 +136,19 @@ def settlements_for_positive_credit(
     return tuple(selected)
 
 
+def debt_to_annul_for_retired_modules(
+    open_by_claim: Mapping[int, int],
+    retired_minutes_by_claim: Mapping[int, int],
+) -> dict[int, int]:
+    """Open debt that lies in retired modules, per claim; claims with none are omitted."""
+    annulled = {}
+    for claim_id, open_minutes in open_by_claim.items():
+        minutes = min(open_minutes, retired_minutes_by_claim.get(claim_id, 0))
+        if minutes > 0:
+            annulled[claim_id] = minutes
+    return annulled
+
+
 def reconcile_debt(
     claims: Sequence[DebtClaim],
     *,

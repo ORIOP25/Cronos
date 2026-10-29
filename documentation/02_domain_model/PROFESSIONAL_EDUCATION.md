@@ -44,6 +44,7 @@ The selection is stored on the class-subject link, which is keyed by grade level
 | Module selection storage | `backend/app/models.py` (`class_subject_module`); `backend/app/scheduler/infrastructure/models.py` (`CurricularRequirement.planned`) |
 | Module selection read and write | `backend/app/services/class_service.py` |
 | Retired-module rule | `backend/app/scheduler/domain/demand.py` (`close_retired_modules`) |
+| Retired-module debt annulment | `backend/app/scheduler/domain/debt.py` (`debt_to_annul_for_retired_modules`); `backend/app/scheduler/infrastructure/occurrences.py` (`annul_retired_module_debt`) |
 | Curricular projection | `backend/app/scheduler/infrastructure/curriculum.py` |
 | Scheduler v1 curriculum | `backend/app/scheduler/infrastructure/models.py` (`CurricularAssignment`, `CurricularRequirement`, `CurricularExecution`, `CurricularDebt`) |
 | Curriculum UI | `frontend/src/pages/Courses.jsx`, `CourseDetails.jsx`, `ClassDetails.jsx`, `ClassSubjects.jsx` |
@@ -73,6 +74,7 @@ The selection is stored on the class-subject link, which is keyed by grade level
 - Deselecting a module without executed credits deletes its requirement. Deselecting a module with credits keeps `planned = false` and closes it at the executed minutes.
 - Deselecting is always allowed, including the last selected module. Generation then blocks with `CLASS_SUBJECT_WITHOUT_MODULES` until at least one module is selected.
 - Re-selecting a module restores its catalogue minutes and counts its history again.
+- Deselecting a module annuls its open debt, with or without credits. The annulment is an audited negative revision, so re-selecting does not restore it.
 - A joint lesson group has at least two member classes of the same subject, and all member links share one teacher.
 - A joint module is selected on every member class. Deselecting a joint module returns `409 JOINT_MODULE_LOCKED` until it leaves the group.
 - A module or class with executed minutes cannot enter or leave a joint group (`409 JOINT_MODULE_STARTED` or `JOINT_CLASS_STARTED`).
@@ -116,6 +118,7 @@ Planning and progress reads use the live selection, so a change applies before t
 - Curriculum endpoints: `backend/app/api/v1/endpoints/classes.py`, `courses.py`, `subjects.py`
 - Curricular projection: `backend/app/scheduler/infrastructure/curriculum.py`
 - Retired-module rule: `backend/app/scheduler/domain/demand.py`
+- Retired-module debt annulment: `backend/app/scheduler/domain/debt.py`, `backend/app/scheduler/infrastructure/occurrences.py`
 - Tests: `backend/tests/integration/committed/test_module_progress.py`, `backend/tests/integration/committed/test_class_subjects.py`, `backend/tests/integration/committed/test_scheduler_v1_class_module_selection.py`
 
 ## Related Documents
