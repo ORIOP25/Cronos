@@ -45,7 +45,7 @@ from app.scheduler.domain.candidate import (
     UnavailableResource,
     split_consumed_lessons,
 )
-from app.scheduler.domain.capacity import unreservable_debt_assignments
+from app.scheduler.domain.capacity import is_released_from_window, unreservable_debt_assignments
 from app.scheduler.domain.constraint_policy import (
     SchoolConstraintPolicy,
     assess_room_eligibility,
@@ -318,6 +318,8 @@ async def load_snapshot(
         unit_keys=unit_plan.unit_ids,
         class_ids_by_unit=class_ids_by_unit,
         accounting_classes=accounting_classes,
+        calendar=calendar,
+        unavailable=unavailable,
     )
     priority_levels = await db.scalar(
         select(models.OrganizationSettings.schedule_priorities).where(
@@ -1442,6 +1444,8 @@ async def _load_baseline(
     unit_keys: Mapping[str, int] | None = None,
     class_ids_by_unit: Mapping[int, tuple[int, ...]] | None = None,
     accounting_classes: Mapping[int, int] | None = None,
+    calendar: _CalendarData,
+    unavailable: tuple[Unavailability, ...],
 ) -> tuple[
     tuple[ScheduledLesson, ...],
     tuple[ScheduledLesson, ...],
@@ -1510,8 +1514,26 @@ async def _load_baseline(
                 history_unavailable.append(
                     Unavailability(resource_type, resource_id, lesson.period)
                 )
+        # A future lesson that the configuration rules out leaves the baseline even
+        # inside the window: the window forbids new lessons, not removals.
+        window_unavailable = tuple(
+            row for row in unavailable if row.period.school_date in protected_dates
+        )
+        released = frozenset(
+            lesson.lesson_id
+            for lesson in baseline
+            if is_released_from_window(
+                lesson,
+                assignments[lesson.assignment_id],
+                now_utc=now_utc,
+                protected_dates=protected_dates,
+                blocked_dates=calendar.blocked_dates,
+                class_blocked_dates=calendar.class_blocked_dates,
+                unavailable=window_unavailable,
+            )
+        )
         baseline = _reproject_baseline(
-            baseline,
+            tuple(lesson for lesson in baseline if lesson.lesson_id not in released),
             assignments,
             executed,
             now_utc=now_utc,
