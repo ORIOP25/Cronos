@@ -78,12 +78,12 @@ export default function MyAvailability({ readOnly = false, allowedActions, warnO
   }
 
   const queryError = timeslotsQuery.error || availabilityQuery.error
-  if (timeslotsQuery.isLoading || availabilityQuery.isLoading) return <><PageHeader title="Minha Disponibilidade" /><StatePanel state="loading" title="A carregar disponibilidade" description="Estamos a preparar a grelha de disponibilidade." /></>
-  if (queryError) return <><PageHeader title="Minha Disponibilidade" /><StatePanel state="error" title="Não foi possível carregar a grelha" description={mapAvailabilityApiMessage(queryError, 'load')} action={<button type="button" className="btn btn-outline-primary" onClick={() => { void timeslotsQuery.refetch(); void availabilityQuery.refetch() }}>Tentar novamente</button>} /></>
-  if (!timeslots.length) return <><PageHeader title="Minha Disponibilidade" /><StatePanel state="empty" title="A escola ainda não configurou blocos" description="A disponibilidade aparece depois de configurar a grelha horária." /></>
+  if (timeslotsQuery.isLoading || availabilityQuery.isLoading) return <div className="p-4"><PageHeader title="Minha Disponibilidade" /><StatePanel state="loading" title="A carregar disponibilidade" description="Estamos a preparar a grelha de disponibilidade." /></div>
+  if (queryError) return <div className="p-4"><PageHeader title="Minha Disponibilidade" /><StatePanel state="error" title="Não foi possível carregar a grelha" description={mapAvailabilityApiMessage(queryError, 'load')} action={<button type="button" className="btn btn-outline-primary" onClick={() => { void timeslotsQuery.refetch(); void availabilityQuery.refetch() }}>Tentar novamente</button>} /></div>
+  if (!timeslots.length) return <div className="p-4"><PageHeader title="Minha Disponibilidade" /><StatePanel state="empty" title="A escola ainda não configurou blocos" description="A disponibilidade aparece depois de configurar a grelha horária." /></div>
 
   return (
-    <div data-tutorial-target="availability-workspace">
+    <div className="p-4" data-tutorial-target="availability-workspace">
       <PageHeader title="Minha Disponibilidade" description="Escolha uma ferramenta e pinte os blocos. Pode usar rato, toque ou teclado." />
       {isNonDefaultPresence(presenceQuery.data) && (
         <div className="text-muted mb-3" role="note" aria-label="Regra de presença">

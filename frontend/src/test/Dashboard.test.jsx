@@ -97,6 +97,12 @@ describe('Dashboard', () => {
     expect(screen.queryByText('Escola: Escola Exemplo')).not.toBeInTheDocument()
   })
 
+  it('uses the shared page padding so the title lines up with other pages', () => {
+    renderWithRouter(<Dashboard />, { initialEntries: ['/dashboard'] })
+
+    expect(screen.getByRole('heading', { level: 1 }).closest('.p-4')).not.toBeNull()
+  })
+
   it('renders preparation dashboard when first real schedule is not yet approved', () => {
     useDashboard.mockReturnValue({
       data: {
