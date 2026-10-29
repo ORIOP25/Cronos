@@ -130,7 +130,7 @@ snapshot must not count them twice.
 - `backend/app/scheduler/infrastructure/operations.py`
 - `backend/app/models.py`
 - `frontend/src/pages/Occurrences.jsx`
-- Tests: `backend/tests/integration/committed/test_scheduler_v1_occurrences.py`, `backend/tests/integration/committed/test_scheduler_v1_operations.py`, `backend/tests/integration/committed/test_joint_lesson_occurrences.py`, `backend/tests/integration/committed/test_joint_lesson_internship.py`
+- Tests: `backend/tests/integration/committed/test_scheduler_v1_occurrences.py`, `backend/tests/integration/committed/test_scheduler_v1_operations.py`, `backend/tests/integration/committed/test_joint_lesson_occurrences.py`, `backend/tests/integration/committed/test_joint_lesson_internship.py`, `backend/tests/integration/committed/test_internship_flow_scheduling.py`
 
 ## Related Documents
 

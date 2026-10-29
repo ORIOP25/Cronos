@@ -187,26 +187,16 @@ class JointSeed:
     group_id: int
 
 
-async def seed_joint_school(
+async def add_class_sharing_subject(
     db_session,
+    seed: V1Seed,
     *,
-    module_minutes: int = 100,
-    preferred_end_date: date = date(2027, 6, 30),
-) -> JointSeed:
-    """Two classes sharing one subject in a joint group, ready to generate (WBS 3.1.1)."""
-    seed = await seed_generatable_school(
-        db_session, module_minutes=module_minutes, preferred_end_date=preferred_end_date
-    )
-    db_session.add(
-        models.Room(
-            name="Sala Grande",
-            capacity=60,
-            organization_id=seed.organization.id,
-            room_type_id=seed.room.room_type_id,
-        )
-    )
+    name: str,
+    module_minutes: int,
+) -> tuple[models.Class, CurricularAssignment, models.ClassSubjectLink]:
+    """A second class taking the seed's subject and module with the seed's teacher."""
     second_class = models.Class(
-        name="B",
+        name=name,
         size=20,
         start_year=2026,
         end_year=2029,
@@ -249,6 +239,30 @@ async def seed_joint_school(
         )
     )
     await db_session.flush()
+    return second_class, second_assignment, second_link
+
+
+async def seed_joint_school(
+    db_session,
+    *,
+    module_minutes: int = 100,
+    preferred_end_date: date = date(2027, 6, 30),
+) -> JointSeed:
+    """Two classes sharing one subject in a joint group, ready to generate (WBS 3.1.1)."""
+    seed = await seed_generatable_school(
+        db_session, module_minutes=module_minutes, preferred_end_date=preferred_end_date
+    )
+    db_session.add(
+        models.Room(
+            name="Sala Grande",
+            capacity=60,
+            organization_id=seed.organization.id,
+            room_type_id=seed.room.room_type_id,
+        )
+    )
+    second_class, second_assignment, second_link = await add_class_sharing_subject(
+        db_session, seed, name="B", module_minutes=module_minutes
+    )
     first_link = await db_session.scalar(
         select(models.ClassSubjectLink).where(
             models.ClassSubjectLink.organization_id == seed.organization.id,

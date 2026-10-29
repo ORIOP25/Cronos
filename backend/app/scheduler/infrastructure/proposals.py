@@ -915,12 +915,15 @@ async def _repoint_lesson_logs(
         old_id = previous.get(key)
         if old_id is None or old_id == new_id:
             continue
+        # A withdrawn lesson (internship flow) never comes back, so its log stays on
+        # the version that withdrew it instead of following the key to a new lesson.
         result = await db.execute(
             update(SchedulerLessonLogV1)
             .where(
                 SchedulerLessonLogV1.organization_id == organization_id,
                 SchedulerLessonLogV1.school_year_id == school_year_id,
                 SchedulerLessonLogV1.lesson_id == old_id,
+                SchedulerLessonLogV1.withdrawn_at.is_(None),
             )
             .values(lesson_id=new_id)
         )
