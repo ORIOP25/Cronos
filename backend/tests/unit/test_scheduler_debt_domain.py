@@ -9,6 +9,7 @@ from app.scheduler.domain.debt import (
     DebtRevision,
     DebtSettlement,
     RecoveryAllocation,
+    debt_to_annul_for_retired_modules,
     reconcile_debt,
     settlements_for_positive_credit,
 )
@@ -187,3 +188,17 @@ def test_positive_adjustment_with_explicit_origin_only_settles_that_claim():
     assert selected == (DebtSettlement(2, ("adjustment:8", 1), 30),)
     with pytest.raises(ValueError):
         settlements_for_positive_credit(claims, balances, ("adjustment:8", 1), 50, claim_id=3)
+
+
+def test_retiring_a_module_annuls_only_the_open_debt_on_its_lessons():
+    annulled = debt_to_annul_for_retired_modules({1: 50, 2: 90, 3: 50}, {1: 50, 2: 60, 3: 0})
+
+    assert annulled == {1: 50, 2: 60}
+
+
+def test_settled_debt_on_a_retired_lesson_annuls_only_what_is_still_open():
+    assert debt_to_annul_for_retired_modules({1: 20}, {1: 50}) == {1: 20}
+
+
+def test_debt_without_retired_minutes_is_not_annulled():
+    assert debt_to_annul_for_retired_modules({1: 50}, {}) == {}

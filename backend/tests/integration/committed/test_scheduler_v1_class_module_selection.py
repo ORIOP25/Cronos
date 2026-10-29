@@ -17,11 +17,14 @@ from app.scheduler.domain.debt import DebtOrigin
 from app.scheduler.domain.demand import ExecutionEntry, ModuleCredit
 from app.scheduler.domain.projection import ModuleRequirement
 from app.scheduler.infrastructure.curriculum import sync_curricular_projection
-from app.scheduler.infrastructure.jobs import enqueue_generation
 from app.scheduler.infrastructure.models import (
+    CurricularDebt,
+    CurricularDebtRevision,
     CurricularRequirement,
+    SchedulerLessonLogV1,
     SchedulerLessonSliceV1,
     SchedulerLessonV1,
+    SchedulerRecoveryReservationV1,
 )
 from app.scheduler.infrastructure.operations import (
     OperationsError,
@@ -30,6 +33,7 @@ from app.scheduler.infrastructure.operations import (
 )
 from app.scheduler.infrastructure.progress import (
     load_executed_minutes,
+    load_open_debt,
     load_planning_requirements,
     reconcile_assignment_requirements,
     record_debt,
@@ -38,6 +42,7 @@ from app.scheduler.infrastructure.progress import (
     settle_open_debt,
 )
 from app.scheduler.infrastructure.snapshot import SnapshotConfigurationError
+from app.services import class_service
 from tests._support.scheduler_v1 import (
     add_lesson,
     add_version,
@@ -1022,13 +1027,56 @@ async def test_generation_omits_a_retired_module_and_keeps_the_ledger(db_session
     assert executed[seed.assignment.id][seed.module.id] == 50
 
 
+async def _set_class_subject_modules(db_session, seed, module_ids) -> None:
+    """Change the class-subject module selection through the service that the API uses."""
+    await class_service.update_class_subject(
+        db_session,
+        seed.class_.id,
+        seed.subject.id,
+        schemas.ClassSubjectUpdate(module_ids=module_ids),
+        seed.organization.id,
+        changed_by_membership_id=seed.membership.id,
+    )
+    await db_session.commit()
+
+
+async def _mark_gap(db_session, seed, lesson) -> None:
+    """Log one lesson as an absence and decide it as a GAP, which opens debt."""
+    from app.scheduler.infrastructure import occurrences as occurrences_v1
+
+    await record_lesson_log(
+        db_session,
+        seed.organization.id,
+        membership_id=seed.membership.id,
+        lesson_id=lesson.id,
+        status="OCCURRENCE",
+        summary="Falta registada.",
+        notes=None,
+        now_utc=lesson.ends_at,
+        planning_relevant=True,
+    )
+    await db_session.commit()
+
+    items = (await occurrences_v1.list_occurrences(db_session, seed.organization.id))["items"]
+    item = next(row for row in items if row["lesson_db_id"] == lesson.id)
+    await occurrences_v1.update_occurrence(
+        db_session,
+        seed.organization.id,
+        item["id"],
+        schemas.LessonOccurrenceUpdate(
+            status=models.LessonOccurrenceStatus.GAP, version=item["version"]
+        ),
+        decided_by_membership_id=seed.membership.id,
+        now_utc=lesson.ends_at,
+    )
+    await db_session.commit()
+
+
 async def _publish_then_retire_a_after_gap(db_session, seed):
     """Publish a baseline, log A's second lesson as a GAP, then retire module A.
 
     Returns module B, the GAP lesson and the id of the published baseline version.
     """
-    from app.scheduler.infrastructure import occurrences as occurrences_v1
-
     module_b = await _add_module(db_session, seed, name="B", minutes=100, order=2)
     await _select(db_session, seed, [seed.module.id, module_b.id])
     await db_session.commit()
@@ -1052,58 +1100,121 @@ async def _publish_then_retire_a_after_gap(db_session, seed):
     )
     await db_session.commit()
 
-    await record_lesson_log(
-        db_session,
-        seed.organization.id,
-        membership_id=seed.membership.id,
-        lesson_id=absence.id,
-        status="OCCURRENCE",
-        summary="Falta registada.",
-        notes=None,
-        now_utc=absence.ends_at,
-        planning_relevant=True,
-    )
-    await db_session.commit()
-
-    item = (await occurrences_v1.list_occurrences(db_session, seed.organization.id))["items"][0]
-    await occurrences_v1.update_occurrence(
-        db_session,
-        seed.organization.id,
-        item["id"],
-        schemas.LessonOccurrenceUpdate(
-            status=models.LessonOccurrenceStatus.GAP, version=item["version"]
-        ),
-        decided_by_membership_id=seed.membership.id,
-        now_utc=absence.ends_at,
-    )
-    await db_session.commit()
-
-    await _select(db_session, seed, [module_b.id])
-    await db_session.commit()
+    await _mark_gap(db_session, seed, absence)
+    await _set_class_subject_modules(db_session, seed, [module_b.id])
     return module_b, absence, previous_version_id
 
 
-async def test_logged_absence_in_a_retired_module_is_refused_inside_the_default_window(
-    db_session,
+async def test_retiring_a_module_annuls_its_open_debt_and_the_update_approves(
+    db_session, monkeypatch
 ):
     seed = await seed_generatable_school(
         db_session,
-        clerk_user_id="cms_abs_window",
-        clerk_org_id="cms_abs_window_org",
+        clerk_user_id="cms_annul",
+        clerk_org_id="cms_annul_org",
         module_minutes=100,
     )
-    await _publish_then_retire_a_after_gap(db_session, seed)
+    _, absence, previous_version_id = await _publish_then_retire_a_after_gap(db_session, seed)
 
-    with pytest.raises(SnapshotConfigurationError) as error:
-        await enqueue_generation(
-            db_session,
-            seed.organization.id,
-            idempotency_key="cms-abs-window",
-            requested_by_membership_id=seed.membership.id,
-            now_utc=MOMENT,
+    open_minutes, _ = await load_open_debt(db_session, seed.organization.id, [seed.assignment.id])
+    assert open_minutes == {}
+    debt = await db_session.scalar(
+        select(CurricularDebt).where(CurricularDebt.assignment_id == seed.assignment.id)
+    )
+    assert debt.created_minutes == 50
+    revisions = (
+        await db_session.scalars(
+            select(CurricularDebtRevision).where(CurricularDebtRevision.debt_id == debt.id)
         )
+    ).all()
+    assert [row.delta_minutes for row in revisions] == [-50]
+    log = await db_session.scalar(
+        select(SchedulerLessonLogV1).where(SchedulerLessonLogV1.lesson_id == absence.id)
+    )
+    assert log is not None
+    assert log.decision == "GAP"
 
-    assert error.value.code == "DEBT_EXCEEDS_RECOVERY_CAPACITY"
+    await run_generation(db_session, monkeypatch, seed, key="cms-retire-annul")
+    await db_session.refresh(seed.state)
+    assert int(seed.state.active_schedule_version_id) != previous_version_id
+
+
+async def test_retiring_a_module_releases_recovery_planned_for_its_annulled_debt(
+    db_session, monkeypatch
+):
+    seed = await seed_generatable_school(
+        db_session,
+        clerk_user_id="cms_reserved",
+        clerk_org_id="cms_reserved_org",
+        module_minutes=100,
+    )
+    module_b = await _add_module(db_session, seed, name="B", minutes=100, order=2)
+    await _select(db_session, seed, [seed.module.id, module_b.id])
+    await db_session.commit()
+    await seed_published_baseline(db_session, seed)
+    previous_version_id = int(seed.state.active_schedule_version_id)
+    a_lessons = await _lessons_with_module(db_session, seed, previous_version_id, seed.module.id)
+    await _mark_gap(db_session, seed, a_lessons[1])
+    await run_generation(db_session, monkeypatch, seed, key="cms-reserved-before")
+
+    debt = await db_session.scalar(
+        select(CurricularDebt).where(CurricularDebt.assignment_id == seed.assignment.id)
+    )
+    reserved_before = await db_session.scalar(
+        select(func.coalesce(func.sum(SchedulerRecoveryReservationV1.minutes), 0)).where(
+            SchedulerRecoveryReservationV1.debt_id == debt.id
+        )
+    )
+    assert reserved_before == 50
+
+    await _set_class_subject_modules(db_session, seed, [module_b.id])
+
+    reserved_after = await db_session.scalar(
+        select(func.coalesce(func.sum(SchedulerRecoveryReservationV1.minutes), 0)).where(
+            SchedulerRecoveryReservationV1.debt_id == debt.id
+        )
+    )
+    assert reserved_after == 0
+    await run_generation(db_session, monkeypatch, seed, key="cms-reserved-after")
+
+
+async def test_re_marking_a_retired_module_does_not_revive_its_annulled_debt(db_session):
+    seed = await seed_generatable_school(
+        db_session,
+        clerk_user_id="cms_remark",
+        clerk_org_id="cms_remark_org",
+        module_minutes=100,
+    )
+    module_b, _, _ = await _publish_then_retire_a_after_gap(db_session, seed)
+
+    await _set_class_subject_modules(db_session, seed, [seed.module.id, module_b.id])
+
+    open_minutes, _ = await load_open_debt(db_session, seed.organization.id, [seed.assignment.id])
+    assert open_minutes == {}
+
+
+async def test_retiring_a_module_leaves_the_open_debt_of_another_module(db_session):
+    seed = await seed_generatable_school(
+        db_session,
+        clerk_user_id="cms_other",
+        clerk_org_id="cms_other_org",
+        module_minutes=100,
+    )
+    module_b = await _add_module(db_session, seed, name="B", minutes=100, order=2)
+    await _select(db_session, seed, [seed.module.id, module_b.id])
+    await db_session.commit()
+    await seed_published_baseline(db_session, seed)
+    version_id = int(seed.state.active_schedule_version_id)
+
+    lesson_b = await _first_lesson_with_module(db_session, seed, version_id, module_b.id)
+    await _mark_gap(db_session, seed, lesson_b)
+    open_before, _ = await load_open_debt(db_session, seed.organization.id, [seed.assignment.id])
+    assert sum(open_before.values()) == 50
+
+    await _set_class_subject_modules(db_session, seed, [module_b.id])
+
+    open_after, _ = await load_open_debt(db_session, seed.organization.id, [seed.assignment.id])
+    assert open_after == open_before
 
 
 async def test_logged_absence_in_a_retired_module_generates_and_approves(db_session, monkeypatch):
