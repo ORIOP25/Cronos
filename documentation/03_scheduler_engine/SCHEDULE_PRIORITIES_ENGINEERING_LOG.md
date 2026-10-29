@@ -582,8 +582,8 @@ Doze casos de atualização a meio do ano na escola do laboratório `pilot@1.0` 
 - O fluxo de estágio deixa a turma sem aulas durante o fluxo. A turma parceira perde 30 aulas conjuntas e recupera-as todas. Dois defeitos encontrados foram corrigidos no #213 e no #214.
 - Nos casos 5, 9 e 11 ganha a reconstrução: muda cerca de 60% das células visíveis (mediana por professor 57%), mas acaba a tempo. A reparação acaba a 20 de julho (caso 5) e a 23 de junho (caso 9), e no caso 11 não completa: um professor com regra de presença fica com 60 minutos que não formam um dia válido.
 - No caso 12 a reparação ganha em todos os passos. Uma primeira corrida mostrou reconstruções sem eventos; a causa era o ensaio, que levava o `source_lesson_id` para o passo seguinte.
-- Cada atualização troca 150 a 800 aulas de sala, sem mudar hora, disciplina nem professor. Segue a regra de salas de 18 de outubro: sala da turma e mesma sala no dia antes da sala publicada ([`room_assignment.py`](../../backend/app/scheduler/infrastructure/room_assignment.py)).
-- No caso 10 a janela de estabilidade impede repor as faltas em horas livres das duas semanas seguintes. Com a janela aberta só para inserções, o fim passa de 2 de julho para 15 de junho, com as mesmas 91 inserções e nenhuma aula publicada movida. A decisão é do responsável de produto.
+- Cada atualização troca 150 a 800 aulas de sala, sem mudar hora, disciplina nem professor. Segue a regra de salas de 18 de outubro: sala da turma e mesma sala no dia antes da sala publicada ([`room_assignment.py`](../../backend/app/scheduler/infrastructure/room_assignment.py)). O responsável de produto confirmou esta regra a 29 de outubro de 2026.
+- No caso 10 a janela de estabilidade impede repor as faltas em horas livres das duas semanas seguintes. Com a janela aberta só para inserções, o fim passa de 2 de julho para 15 de junho, com as mesmas 91 inserções e nenhuma aula publicada movida. O responsável de produto recusou a 29 de outubro de 2026: nada muda dentro da janela, e a escola escolhe a duração da janela.
 
 #### Reconstrução local
 
