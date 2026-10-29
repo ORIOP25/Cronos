@@ -23,6 +23,7 @@ from app.scheduler.domain.candidate import (
     SchedulingStrategy,
 )
 from app.scheduler.domain.candidate_validation import ValidationReport
+from app.scheduler.domain.capacity import unreservable_debt_assignments
 from app.scheduler.domain.debt import RecoveryAllocation
 from app.scheduler.domain.diagnostics import Diagnosis, DiagnosisCode, EvidenceKind
 from app.scheduler.domain.priorities import CRITERION_KEYS, UNIT_COSTS, PriorityWeights
@@ -383,3 +384,65 @@ def test_allocations_reject_open_debt_beyond_the_candidate_credit():
 
     with pytest.raises(ValueError, match="exceeds the candidate credit"):
         plan_recovery_allocations(snapshot, candidate)
+
+
+def _protected_block():
+    """Three consecutive protected 50-minute lessons: 150 minutes, 50 left as residual."""
+    return tuple(
+        replace(
+            _credit_lesson(lesson_id, date(2026, 9, day), 50),
+            slices=(ModuleSlice(lesson_id, 1, offset, 50),),
+        )
+        for lesson_id, day, offset in ((1, 7, 0), (2, 8, 50), (3, 9, 100))
+    )
+
+
+def _window_snapshot(debt, claims, protected, reservations=()):
+    """Adaptive snapshot whose protected lessons already cover part of the unit."""
+    return replace(
+        _adaptive_snapshot(debt, claims),
+        protected_dates=frozenset(lesson.period.school_date for lesson in protected),
+        protected_lessons=protected,
+        reservations=reservations,
+    )
+
+
+def test_debt_that_fits_the_unprotected_residual_is_reservable():
+    snapshot = _window_snapshot({7: 50}, {7: 1}, _protected_block())
+
+    assert unreservable_debt_assignments(snapshot) == ()
+
+
+def test_debt_only_coverable_inside_the_window_is_unreservable():
+    snapshot = _window_snapshot({7: 80}, {7: 1}, _protected_block())
+
+    assert unreservable_debt_assignments(snapshot) == (1,)
+
+
+def test_a_committed_reservation_inside_the_window_counts_as_capacity():
+    snapshot = _window_snapshot(
+        {7: 80}, {7: 1}, _protected_block(), reservations=(RecoveryAllocation(1, 1, 7, 30),)
+    )
+
+    assert unreservable_debt_assignments(snapshot) == ()
+
+
+def test_open_debt_is_compared_per_class_of_a_joint_unit():
+    joint = replace(ASSIGNMENT, class_ids=(1, 2))
+    snapshot = replace(
+        _window_snapshot({7: 30, 8: 30}, {7: 1, 8: 1}, _protected_block()),
+        assignments=(joint,),
+        claim_classes={7: 1, 8: 2},
+    )
+
+    assert unreservable_debt_assignments(snapshot) == ()
+    assert unreservable_debt_assignments(replace(snapshot, claim_classes={7: 1, 8: 1})) == (1,)
+
+
+def test_nothing_is_unreservable_without_a_published_version_or_open_debt():
+    no_version = replace(
+        _window_snapshot({7: 80}, {7: 1}, _protected_block()), active_version_id=None
+    )
+
+    assert unreservable_debt_assignments(no_version) == ()
+    assert unreservable_debt_assignments(_snapshot(())) == ()
