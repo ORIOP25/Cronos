@@ -38,6 +38,7 @@ from tests._support.scheduler_v1 import (
     add_version,
     run_generation,
     seed_generatable_school,
+    seed_joint_school,
     seed_published_baseline,
 )
 
@@ -231,6 +232,45 @@ async def test_dashboard_identifies_conflicting_published_lessons(db_session):
     health = (await get_dashboard_summary(db_session, seed.organization.id)).schedule_health
     assert health.duplicate_teacher_slots == health.duplicate_class_slots == 0
     assert health.conflicting_lessons == []
+
+
+async def test_dashboard_does_not_flag_joint_lessons_as_conflicts(db_session):
+    joint = await seed_joint_school(db_session)
+    seed = joint.base
+    version = await add_version(db_session, seed)
+    seed.organization.first_real_schedule_approved_at = MOMENT
+    key = f"J:{joint.group_id}:{seed.module.id}"
+    for index, assignment_id in enumerate(joint.assignment_ids):
+        await add_lesson(
+            db_session,
+            seed,
+            version,
+            stable_key=f"joint-{index}",
+            school_date=MOMENT.date(),
+            start=MOMENT,
+            end=MOMENT + timedelta(minutes=50),
+            assignment_id=assignment_id,
+            teaching_unit_key=key,
+        )
+    await db_session.commit()
+    health = (await get_dashboard_summary(db_session, seed.organization.id)).schedule_health
+    assert health.duplicate_teacher_slots == health.duplicate_class_slots == 0
+    assert health.conflicting_lessons == []
+
+    await add_lesson(
+        db_session,
+        seed,
+        version,
+        stable_key="solo",
+        school_date=MOMENT.date(),
+        start=MOMENT,
+        end=MOMENT + timedelta(minutes=50),
+        assignment_id=joint.assignment_ids[0],
+    )
+    await db_session.commit()
+    health = (await get_dashboard_summary(db_session, seed.organization.id)).schedule_health
+    assert health.duplicate_teacher_slots == 1
+    assert len(health.conflicting_lessons) == 3
 
 
 async def _lessons(db_session, seed: V1Seed) -> list[SchedulerLessonV1]:

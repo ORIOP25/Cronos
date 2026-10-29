@@ -292,6 +292,7 @@ def _get_v1_schedule_health(
             SchedulerLessonV1.school_date,
             SchedulerLessonV1.starts_at,
             SchedulerLessonV1.ends_at,
+            SchedulerLessonV1.teaching_unit_key,
             models.Class.is_archived,
             models.Class.name.label("class_name"),
             models.Teacher.name.label("teacher_name"),
@@ -341,12 +342,16 @@ def _get_v1_schedule_health(
     week_start = today - timedelta(days=today.weekday())
     week_end = week_start + timedelta(days=6)
     weekly_counts = defaultdict(int)
-    teacher_slots = defaultdict(int)
+    teacher_slots = defaultdict(set)
     class_slots = defaultdict(int)
     for row in rows:
         if week_start <= row.school_date <= week_end:
             weekly_counts[row.class_id] += 1
-        teacher_slots[(row.teacher_id, row.school_date, row.starts_at, row.ends_at)] += 1
+        # Joint lessons of one group share a unit key: the teacher teaches them once.
+        occupancy = (
+            row.teaching_unit_key if row.teaching_unit_key.startswith("J:") else row.lesson_id
+        )
+        teacher_slots[(row.teacher_id, row.school_date, row.starts_at, row.ends_at)].add(occupancy)
         class_slots[(row.class_id, row.school_date, row.starts_at, row.ends_at)] += 1
     classes_total = len(class_ids)
     values = list(weekly_counts.values())
@@ -369,7 +374,7 @@ def _get_v1_schedule_health(
             ends_at=row.ends_at,
         )
         for row in rows
-        if teacher_slots[(row.teacher_id, row.school_date, row.starts_at, row.ends_at)] > 1
+        if len(teacher_slots[(row.teacher_id, row.school_date, row.starts_at, row.ends_at)]) > 1
         or class_slots[(row.class_id, row.school_date, row.starts_at, row.ends_at)] > 1
     ]
     return schemas.ScheduleHealthWidget(
@@ -380,7 +385,7 @@ def _get_v1_schedule_health(
         classes_archived=len({row.class_id for row in rows if row.is_archived}),
         classes_empty_week=classes_total - len(weekly_counts),
         week_slots_avg=round(mean, 1),
-        duplicate_teacher_slots=sum(count > 1 for count in teacher_slots.values()),
+        duplicate_teacher_slots=sum(len(units) > 1 for units in teacher_slots.values()),
         duplicate_class_slots=sum(count > 1 for count in class_slots.values()),
         weekly_fairness_spread=round(variance**0.5, 1),
         teacher_week_slots_avg=(round(week_total / len(teacher_ids), 1) if teacher_ids else 0.0),

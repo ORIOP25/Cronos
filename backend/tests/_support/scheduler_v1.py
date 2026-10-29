@@ -353,6 +353,7 @@ async def add_lesson(
     credit_minutes: int | None = None,
     room_id: int | None = None,
     assignment_id: int | None = None,
+    teaching_unit_key: str | None = None,
 ) -> SchedulerLessonV1:
     duration = int((end - start).total_seconds() // 60)
     lesson = SchedulerLessonV1(
@@ -367,6 +368,7 @@ async def add_lesson(
         room_id=room_id or seed.room.id,
         physical_minutes=duration,
         credit_minutes=duration if credit_minutes is None else credit_minutes,
+        teaching_unit_key=teaching_unit_key,
     )
     db_session.add(lesson)
     await db_session.flush()
