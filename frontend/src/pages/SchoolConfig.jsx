@@ -31,7 +31,7 @@ const SchoolConfig = () => {
 
   return (
     <div className="p-4">
-      <PageHeader preTitle="Configuração" title={organization.name} />
+      <PageHeader title={organization.name} />
       <CTabs activeItemKey={activeTab} onChange={setActiveTab}>
         <CTabList variant="tabs" className="mb-4">
           {TAB_DEFINITIONS.map((tab) => (

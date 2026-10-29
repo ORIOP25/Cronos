@@ -186,7 +186,7 @@ function readyMarker(page, path) {
   const heading = exactMarkers.get(path)
   if (!heading) return null
   if (path === '/config') {
-    return page.locator('.page-header__pretitle', { hasText: heading }).first()
+    return page.locator('.app-sidebar__link.active', { hasText: heading }).first()
   }
   return page.getByRole('heading', { name: heading }).first()
 }

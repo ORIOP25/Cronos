@@ -1129,7 +1129,7 @@ const Occurrences = ({
       data-tutorial-navigation-disabled={navigationDisabled || undefined}
     >
       {/* Cabeçalho */}
-      <PageHeader preTitle="Operações" title="Faltas e Ocorrências" />
+      <PageHeader title="Faltas e Ocorrências" />
 
       {/* Filtros globais */}
       <div className="mb-4">

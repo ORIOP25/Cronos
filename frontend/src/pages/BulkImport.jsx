@@ -155,7 +155,6 @@ const BulkImport = () => {
   return (
     <div className="p-4">
       <PageHeader
-        preTitle="Administração"
         title="Importar dados"
         description="Descarregue um modelo, preencha e escolha os ficheiros a importar."
       />
