@@ -8,6 +8,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app import models, schemas
 from app.core.exceptions import AppError
+from app.scheduler.domain.candidate import SchedulingStrategy
 from app.scheduler.infrastructure import occurrences as occurrences_v1
 from app.scheduler.infrastructure.models import (
     CurricularAssignment,
@@ -16,10 +17,16 @@ from app.scheduler.infrastructure.models import (
     SchedulerLessonSliceV1,
 )
 from app.scheduler.infrastructure.operations import record_lesson_log, week_schedule
+from app.scheduler.infrastructure.snapshot import load_snapshot
 from app.services import internship_flow_service, room_type_service, settings_service
 from app.services.scheduler_fingerprint_service import SchedulerFingerprintService
 from tests._support.db_fixtures import get_school_room_type_id
-from tests._support.scheduler_v1 import add_lesson, add_version
+from tests._support.scheduler_v1 import (
+    MOMENT,
+    add_lesson,
+    add_version,
+    seed_generatable_school,
+)
 
 pytestmark = pytest.mark.postgresql
 
@@ -749,6 +756,115 @@ async def test_previous_year_flows_stay_visible_but_do_not_apply(db_session):
         models.ScheduleGenerationStrategy.COMPLETE_GENERATION,
     )
     assert fingerprint.snapshot["calendar_events"] == []
+
+
+PREVIOUS_YEAR_EVENT_DAY = date(2026, 10, 6)
+CURRENT_YEAR_EVENT_DAY = date(2026, 10, 13)
+
+
+async def _planning_snapshot(db_session, seed):
+    bundle = await load_snapshot(
+        db_session,
+        seed.organization.id,
+        strategy=SchedulingStrategy.COMPLETE_GENERATION,
+        now_utc=MOMENT,
+        school_year_id=seed.year.id,
+    )
+    return bundle.snapshot
+
+
+async def test_previous_year_holiday_does_not_block_the_planning_snapshot(db_session):
+    seed = await seed_generatable_school(db_session, clerk_org_id="calendar_previous_holiday")
+    db_session.add(
+        models.SchoolCalendarEvent(
+            organization_id=seed.organization.id,
+            school_year_start_year=2025,
+            name="Feriado do ano anterior",
+            start_date=PREVIOUS_YEAR_EVENT_DAY,
+            end_date=PREVIOUS_YEAR_EVENT_DAY,
+            event_type=models.CalendarEventType.national_holiday,
+            source=models.CalendarEventSource.manual,
+        )
+    )
+    await db_session.commit()
+
+    snapshot = await _planning_snapshot(db_session, seed)
+
+    assert PREVIOUS_YEAR_EVENT_DAY not in snapshot.blocked_dates
+
+
+async def test_current_year_holiday_blocks_the_planning_snapshot(db_session):
+    seed = await seed_generatable_school(db_session, clerk_org_id="calendar_current_holiday")
+    db_session.add(
+        models.SchoolCalendarEvent(
+            organization_id=seed.organization.id,
+            school_year_start_year=2026,
+            name="Feriado do ano atual",
+            start_date=CURRENT_YEAR_EVENT_DAY,
+            end_date=CURRENT_YEAR_EVENT_DAY,
+            event_type=models.CalendarEventType.national_holiday,
+            source=models.CalendarEventSource.manual,
+        )
+    )
+    await db_session.commit()
+
+    snapshot = await _planning_snapshot(db_session, seed)
+
+    assert CURRENT_YEAR_EVENT_DAY in snapshot.blocked_dates
+
+
+async def test_previous_year_flow_does_not_block_its_classes_in_the_planning_snapshot(db_session):
+    seed = await seed_generatable_school(db_session, clerk_org_id="calendar_previous_flow")
+    event = models.SchoolCalendarEvent(
+        organization_id=seed.organization.id,
+        school_year_start_year=2025,
+        name="Estágio do ano anterior",
+        start_date=PREVIOUS_YEAR_EVENT_DAY,
+        end_date=PREVIOUS_YEAR_EVENT_DAY,
+        event_type=models.CalendarEventType.internship_flow,
+        source=models.CalendarEventSource.manual,
+    )
+    db_session.add(event)
+    await db_session.flush()
+    db_session.add(
+        models.SchoolCalendarEventClass(
+            organization_id=seed.organization.id,
+            calendar_event_id=event.id,
+            class_id=seed.class_.id,
+        )
+    )
+    await db_session.commit()
+
+    snapshot = await _planning_snapshot(db_session, seed)
+
+    assert seed.class_.id not in snapshot.class_blocked_dates
+
+
+async def test_current_year_flow_blocks_its_classes_in_the_planning_snapshot(db_session):
+    seed = await seed_generatable_school(db_session, clerk_org_id="calendar_current_flow")
+    event = models.SchoolCalendarEvent(
+        organization_id=seed.organization.id,
+        school_year_start_year=2026,
+        name="Estágio do ano atual",
+        start_date=CURRENT_YEAR_EVENT_DAY,
+        end_date=CURRENT_YEAR_EVENT_DAY,
+        event_type=models.CalendarEventType.internship_flow,
+        source=models.CalendarEventSource.manual,
+    )
+    db_session.add(event)
+    await db_session.flush()
+    db_session.add(
+        models.SchoolCalendarEventClass(
+            organization_id=seed.organization.id,
+            calendar_event_id=event.id,
+            class_id=seed.class_.id,
+        )
+    )
+    await db_session.commit()
+
+    snapshot = await _planning_snapshot(db_session, seed)
+
+    assert CURRENT_YEAR_EVENT_DAY in snapshot.class_blocked_dates[seed.class_.id]
 
 
 async def test_flow_fingerprint_includes_class_associations(db_session):

@@ -22,6 +22,7 @@ from sqlalchemy import (
     and_,
     event,
     func,
+    or_,
     select,
     text,
 )
@@ -1627,6 +1628,14 @@ class SchoolCalendarEvent(Base):
         if links is None:
             return []
         return sorted(link.class_id for link in links)
+
+    @classmethod
+    def applies_to_school_year(cls, school_year_start_year: int):
+        """Events without a school year apply to every year; others only to their own."""
+        return or_(
+            cls.school_year_start_year.is_(None),
+            cls.school_year_start_year == school_year_start_year,
+        )
 
     def __repr__(self) -> str:
         return f"<SchoolCalendarEvent(id={self.id}, name='{self.name}', date='{self.start_date}')>"
