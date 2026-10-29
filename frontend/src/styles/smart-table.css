@@ -3,7 +3,7 @@
   .zen-table, .zen-table tbody, .zen-table tr, .zen-table td { display: block; width: 100%; }
   .zen-table tr { padding: 12px 16px; border-bottom: 1px solid var(--cronos-border); }
   .zen-table tbody td { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; padding: 7px 0; border-bottom: 0; text-align: right; }
-  .zen-table tbody td::before { content: attr(data-label); color: var(--cronos-ink-muted); font-size: .74rem; font-weight: 700; text-align: left; }
+  .zen-table tbody td::before { content: attr(data-label); color: var(--cronos-ink-muted); font-size: var(--cronos-text-small); font-weight: 700; text-align: left; }
   .zen-table tbody td:last-child { justify-content: flex-end; }
   .zen-table tbody td:last-child::before { display: none; }
   .zen-table .zen-table-action-trigger { opacity: 1; }
@@ -12,13 +12,8 @@
   .zen-table--selectable thead th:not(.selection-column) { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); border: 0; }
   .zen-table--selectable thead .selection-column { padding: 0; }
   .zen-table--selectable .selection-column { width: auto; }
-  .zen-table--selectable .selection-column__label { display: inline; font-size: .8rem; text-transform: none; letter-spacing: normal; }
+  .zen-table--selectable .selection-column__label { display: inline; font-size: var(--cronos-text-small); text-transform: none; letter-spacing: normal; }
   .zen-table.zen-table--selectable tbody tr { position: relative; padding-left: 56px; }
   .zen-table--selectable tbody .selection-column { position: absolute; top: 8px; left: 8px; width: 44px; padding: 0; }
   .zen-table--selectable tbody .selection-column::before { display: none; }
-}
-
-@media (max-width: 767px) {
-  .zen-table tbody td { padding: 5px 0; gap: 10px; }
-  .zen-table tbody tr { padding: 8px 10px; }
 }

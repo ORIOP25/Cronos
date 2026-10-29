@@ -59,7 +59,8 @@
 }
 
 .modal-footer {
-  gap: 8px;
+  --cui-modal-footer-gap: 0;
+  gap: var(--cronos-space-actions);
   justify-content: flex-end;
   padding: 12px 20px;
   border-top: 1px solid var(--cronos-border);

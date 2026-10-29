@@ -451,7 +451,7 @@ const Members = ({ readOnly = false, allowedActions }) => {
                       : '-'}
                   </td>
                   <td className="text-end">
-                    <CButton color="secondary" variant="ghost" size="sm" aria-label="Editar membro" disabled={!canUpdate} onClick={() => openModal(member)} data-tutorial-target={`edit-member-${member.id}`}><CIcon icon={cilPencil} /></CButton>
+                    <CButton color="primary" variant="ghost" size="sm" aria-label="Editar membro" disabled={!canUpdate} onClick={() => openModal(member)} data-tutorial-target={`edit-member-${member.id}`}><CIcon icon={cilPencil} /></CButton>
                   </td>
                 </tr>
               )

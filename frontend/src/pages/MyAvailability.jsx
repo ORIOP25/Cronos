@@ -96,7 +96,7 @@ export default function MyAvailability({ readOnly = false, allowedActions, warnO
         changedCount={draft.changedCount}
         disabled={!canSave || saveMutation.isPending}
       >
-        {isDirty && <button type="button" className="btn btn-link" onClick={draft.reset} disabled={!canSave || saveMutation.isPending}>Repor alterações</button>}
+        {isDirty && <button type="button" className="btn btn-outline-secondary" onClick={draft.reset} disabled={!canSave || saveMutation.isPending}>Repor alterações</button>}
       </AvailabilityToolbar>
       <AvailabilityGrid timeslots={timeslots} availabilityMap={draft.draftMap} onChange={draft.handleGridChange} selectedMode={draft.selectedScore} />
       <div className="d-flex justify-content-end mt-4">

@@ -30,7 +30,7 @@ const RowActions = ({
         {actions && (
           <>
             {allowEdit && <button
-              className="btn-zen-ghost zen-table-action-trigger"
+              className="btn btn-ghost-primary btn-sm zen-table-action-trigger"
               onClick={(e) => { e.stopPropagation(); onEdit(item) }}
               title={readOnly ? 'Consultar' : TXT.EDIT}
               data-tutorial-target={`edit-record-${item.id}`}
@@ -40,7 +40,7 @@ const RowActions = ({
               <CIcon icon={cilPencil} size="sm"/>
             </button>}
             {allowDelete && <button
-              className="btn-zen-ghost zen-table-action-trigger text-danger"
+              className="btn btn-ghost-danger btn-sm zen-table-action-trigger"
               onClick={(e) => { e.stopPropagation(); onRequestDelete(item) }}
               title={TXT.REMOVE}
               aria-label={`${TXT.REMOVE} ${label}`.trim()}

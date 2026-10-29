@@ -7,7 +7,7 @@ import {
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import {
-  cilArrowLeft, cilPencil, cilSave, cilX,
+  cilArrowLeft, cilPencil, cilSave,
   cilPeople, cilBook, cilCheckCircle,
   cilBookmark, cilChevronRight, cilSettings, cilCalendar,
 } from '@coreui/icons'
@@ -119,7 +119,7 @@ const ModuleRow = ({ module, isEditing, editValue, onChangeHours }) => {
           {module.is_completed && !isEditing && (
             <CIcon icon={cilCheckCircle} className="text-success flex-shrink-0" size="sm" />
           )}
-          <span className="text-truncate fw-medium" style={{ fontSize: '0.9rem' }}>
+          <span className="text-truncate fw-medium" style={{ fontSize: 'var(--cronos-text-body)' }}>
             {module.code && <span className="text-muted me-1">{module.code}</span>}
             {module.name}
           </span>
@@ -137,12 +137,12 @@ const ModuleRow = ({ module, isEditing, editValue, onChangeHours }) => {
                 size="sm"
                 style={{ width: '70px', textAlign: 'center' }}
               />
-              <span className="text-muted fw-medium" style={{ fontSize: '0.85rem', whiteSpace: 'nowrap' }}>
+              <span className="text-muted fw-medium" style={{ fontSize: 'var(--cronos-text-small)', whiteSpace: 'nowrap' }}>
                 / {module.hours_total}h
               </span>
             </div>
           ) : (
-            <span className="text-muted" style={{ fontSize: '0.85rem', whiteSpace: 'nowrap' }}>
+            <span className="text-muted" style={{ fontSize: 'var(--cronos-text-small)', whiteSpace: 'nowrap' }}>
               {displayHours}/{module.hours_total}h
             </span>
           )}
@@ -175,11 +175,11 @@ const SubjectCard = ({ subject, isEditing, editMap, onChangeHours }) => {
         <div className="d-flex justify-content-between align-items-center">
           <div className="d-flex align-items-center gap-2">
             <CIcon icon={cilBook} className="text-info" size="sm" />
-            <strong style={{ fontSize: '0.95rem' }}>{subject.name}</strong>
+            <strong style={{ fontSize: 'var(--cronos-text-body)' }}>{subject.name}</strong>
             <RoomTypeBadge roomType={subject.room_type} />
           </div>
           <div className="d-flex align-items-center gap-2">
-            <span className="text-muted" style={{ fontSize: '0.85rem' }}>
+            <span className="text-muted" style={{ fontSize: 'var(--cronos-text-small)' }}>
               {subject.completed_hours}/{subject.total_hours}h
             </span>
             <CBadge
@@ -209,7 +209,7 @@ const SubjectCard = ({ subject, isEditing, editMap, onChangeHours }) => {
             />
           ))}
         {subject.modules.length === 0 && (
-          <p className="text-muted text-center py-2 mb-0" style={{ fontSize: '0.85rem' }}>
+          <p className="text-muted text-center py-2 mb-0" style={{ fontSize: 'var(--cronos-text-small)' }}>
             Nenhum módulo selecionado para esta turma.
           </p>
         )}
@@ -397,7 +397,7 @@ const ClassDetails = () => {
         <div className="mb-3"><FeedbackBanner tone="danger">
           <strong>Erro:</strong> {getApiErrorMessage(error, 'Turma não encontrada.')}
         </FeedbackBanner></div>
-        <CButton color="light" onClick={() => navigate(`/courses/${numCourseId}`)}>
+        <CButton color="secondary" variant="outline" onClick={() => navigate(`/courses/${numCourseId}`)}>
           <CIcon icon={cilArrowLeft} className="me-1" /> Voltar ao Curso
         </CButton>
       </div>
@@ -483,13 +483,13 @@ const ClassDetails = () => {
                   <CFormFeedback id="header-home-room-error" invalid className="d-block" role="alert">{homeRoomError}</CFormFeedback>
                 )}
               </CCol>
-              <CCol md={3} className="d-flex gap-2">
+              <CCol md={3} className="form-actions">
+                <CButton color="secondary" variant="outline" onClick={cancelEditHeader} disabled={updateClass.isPending}>
+                  Cancelar
+                </CButton>
                 <CButton color="primary" onClick={saveHeader} disabled={updateClass.isPending}>
                   {updateClass.isPending ? <CSpinner size="sm" /> : <CIcon icon={cilSave} className="me-1" />}
                   Guardar
-                </CButton>
-                <CButton color="light" onClick={cancelEditHeader} disabled={updateClass.isPending}>
-                  <CIcon icon={cilX} />
                 </CButton>
               </CCol>
             </CRow>
@@ -505,14 +505,14 @@ const ClassDetails = () => {
                   </CBadge>
                 </div>
                 {classData.course && (
-                  <div className="d-flex align-items-center gap-1 mb-2 text-muted" style={{ fontSize: '0.9rem' }}>
+                  <div className="d-flex align-items-center gap-1 mb-2 text-muted" style={{ fontSize: 'var(--cronos-text-body)' }}>
                     <CIcon icon={cilBookmark} size="sm" />
                     <span>{classData.course.name}</span>
                     <CBadge color="light" className="text-dark ms-1">{classData.course.abbreviation}</CBadge>
                   </div>
                 )}
                 {/* --- STATS RÁPIDOS --- */}
-                <div className="d-flex gap-4 mt-1" style={{ fontSize: '0.85rem' }}>
+                <div className="d-flex gap-4 mt-1" style={{ fontSize: 'var(--cronos-text-small)' }}>
                   <div className="d-flex align-items-center gap-1 text-muted">
                     <CIcon icon={cilPeople} size="sm" />
                     <span>{classData.size} alunos</span>
@@ -530,7 +530,7 @@ const ClassDetails = () => {
                 )}
               </div>
               <div className="d-flex gap-2">
-                <CButton color="light" size="sm" onClick={startEditHeader} title="Editar nome e capacidade">
+                <CButton color="primary" variant="outline" size="sm" onClick={startEditHeader} title="Editar nome e capacidade">
                   <CIcon icon={cilPencil} className="me-1" />
                   Editar
                 </CButton>
@@ -588,7 +588,7 @@ const ClassDetails = () => {
             </p>
           ) : (
             <div className="table-responsive">
-              <table className="table table-sm table-hover mb-0 align-middle" style={{ fontSize: '0.9rem' }}>
+              <table className="table table-sm table-hover mb-0 align-middle" style={{ fontSize: 'var(--cronos-text-body)' }}>
                 <thead>
                   <tr className="text-muted">
                     <th style={{ fontWeight: 600 }}>Disciplina</th>
@@ -650,18 +650,18 @@ const ClassDetails = () => {
             <strong>Progresso por Disciplina</strong>
           </div>
           {editingProgress ? (
-            <div className="d-flex gap-1">
+            <div className="form-actions">
+              <CButton color="secondary" variant="outline" size="sm" onClick={cancelEditProgress} disabled={updateProgress.isPending}>
+                Cancelar
+              </CButton>
               <CButton color="primary" size="sm" onClick={saveProgress} disabled={updateProgress.isPending}>
                 {updateProgress.isPending ? <CSpinner size="sm" /> : <CIcon icon={cilSave} size="sm" className="me-1" />}
                 Guardar
               </CButton>
-              <CButton color="light" size="sm" onClick={cancelEditProgress} disabled={updateProgress.isPending}>
-                <CIcon icon={cilX} size="sm" />
-              </CButton>
             </div>
           ) : (
             <CButton
-              color="light"
+              color="primary" variant="outline"
               size="sm"
               onClick={startEditProgress}
               disabled={(classData.subjects || []).length === 0}
@@ -680,11 +680,11 @@ const ClassDetails = () => {
             <>
               <div className="mb-4">
                 <div className="d-flex justify-content-between align-items-center mb-2">
-                  <strong style={{ fontSize: '0.9rem' }}>Progresso Global</strong>
+                  <strong style={{ fontSize: 'var(--cronos-text-body)' }}>Progresso Global</strong>
                   <CBadge
                     shape="rounded-pill"
                     className="zen-badge-progress"
-                    style={{ fontSize: '0.85rem', backgroundColor: getProgressColor(globalStats.pct) }}
+                    style={{ fontSize: 'var(--cronos-text-small)', backgroundColor: getProgressColor(globalStats.pct) }}
                   >
                     {globalStats.pct}%
                   </CBadge>

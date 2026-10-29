@@ -230,9 +230,8 @@ const Timesheets = ({ initialWeekStart, readOnly = false, allowedActions, naviga
                       {canManageWeek && selectedTeacher.status === 'SUBMITTED' && (
                         <>
                           <CButton
-                            color="success"
+                            color="primary"
                             size="sm"
-                            className="text-white"
                             disabled={updateMutation.isPending}
                             onClick={handleApprove}
                           >
@@ -240,9 +239,8 @@ const Timesheets = ({ initialWeekStart, readOnly = false, allowedActions, naviga
                             Aprovar
                           </CButton>
                           <CButton
-                            color="warning"
+                            color="secondary" variant="outline"
                             size="sm"
-                            className="text-white"
                             disabled={updateMutation.isPending}
                             onClick={handleReopen}
                             title="Reabrir a semana — o professor poderá editar novamente"
@@ -255,9 +253,8 @@ const Timesheets = ({ initialWeekStart, readOnly = false, allowedActions, naviga
 
                       {canManageWeek && selectedTeacher.status === 'APPROVED' && (
                         <CButton
-                          color="warning"
+                          color="secondary" variant="outline"
                           size="sm"
-                          className="text-white"
                           disabled={updateMutation.isPending}
                           onClick={handleReopen}
                         >

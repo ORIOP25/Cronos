@@ -40,7 +40,7 @@ const RoomTypeActions = ({ roomType, onEdit, onRemove }) => {
   return (
     <div className="d-flex justify-content-end align-items-center gap-2">
       <button
-        className="btn-zen-ghost zen-table-action-trigger"
+        className="btn btn-ghost-primary btn-sm zen-table-action-trigger"
         onClick={() => onEdit(roomType)}
         title={TXT.EDIT}
         aria-label={`${TXT.EDIT} ${roomType.name}`}
@@ -49,7 +49,7 @@ const RoomTypeActions = ({ roomType, onEdit, onRemove }) => {
         <CIcon icon={cilPencil} size="sm" />
       </button>
       <button
-        className="btn-zen-ghost zen-table-action-trigger text-danger"
+        className="btn btn-ghost-danger btn-sm zen-table-action-trigger"
         onClick={() => onRemove(roomType)}
         title={TXT.REMOVE}
         aria-label={`${TXT.REMOVE} ${roomType.name}`}
@@ -199,7 +199,7 @@ const RoomTypesModal = ({ onClose, embedded = false }) => {
               {editing ? 'Guardar nome' : 'Novo tipo'}
             </CButton>
             {editing && (
-              <CButton type="button" color="secondary" variant="ghost" onClick={resetForm}>
+              <CButton type="button" color="secondary" variant="outline" onClick={resetForm}>
                 Cancelar edição
               </CButton>
             )}
@@ -220,7 +220,7 @@ const RoomTypesModal = ({ onClose, embedded = false }) => {
   if (embedded) return <section aria-labelledby="room-types-title">
     <div className="d-flex align-items-center justify-content-between gap-3 mb-3">
       <h3 id="room-types-title" className="h5 mb-0">Tipos de sala</h3>
-      <CButton type="button" color="secondary" variant="ghost" disabled={isSaving || deleteMutation.isPending} onClick={onClose}>Voltar à sala</CButton>
+      <CButton type="button" color="secondary" variant="outline" disabled={isSaving || deleteMutation.isPending} onClick={onClose}>Voltar à sala</CButton>
     </div>
     {body}
   </section>

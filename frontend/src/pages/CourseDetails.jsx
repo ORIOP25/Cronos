@@ -6,7 +6,7 @@ import {
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import {
-  cilArrowLeft, cilPencil, cilSave, cilX, cilTrash,
+  cilArrowLeft, cilPencil, cilSave, cilTrash,
   cilPeople, cilPlus,
 } from '@coreui/icons'
 import { toast } from 'react-hot-toast'
@@ -57,8 +57,8 @@ const ClassRow = ({ cls, onNavigate, onEdit, onDelete, bulk, navigationDisabled 
           <div className="d-flex align-items-center gap-1">
             {canEdit && <CButton
               size="sm"
-              color="light"
-              className="d-flex align-items-center gap-1 text-primary"
+              color="primary" variant="ghost"
+              className="d-flex align-items-center gap-1"
               onClick={() => onEdit(cls)}
               aria-label={`Editar ${cls.name}`}
               data-tutorial-target={`edit-class-${cls.id}`}
@@ -259,7 +259,7 @@ const CourseDetails = ({ courseIdOverride, readOnly = false, allowedActions, nav
         <div className="mb-3"><FeedbackBanner tone="danger">
           <strong>Erro:</strong> {getApiErrorMessage(error, 'Curso não encontrado.')}
         </FeedbackBanner></div>
-        <CButton color="light" onClick={() => navigate('/courses')}>
+        <CButton color="secondary" variant="outline" onClick={() => navigate('/courses')}>
           <CIcon icon={cilArrowLeft} className="me-1" /> Voltar aos Cursos
         </CButton>
       </div>
@@ -318,7 +318,10 @@ const CourseDetails = ({ courseIdOverride, readOnly = false, allowedActions, nav
                     maxLength={10}
                   />
                 </CCol>
-                <CCol md={3} className="d-flex gap-2">
+                <CCol md={3} className="form-actions">
+                  <CButton color="secondary" variant="outline" onClick={cancelEditHeader} disabled={updateCourse.isPending}>
+                    Cancelar
+                  </CButton>
                   <CButton
                     color="primary"
                     onClick={saveHeader}
@@ -326,9 +329,6 @@ const CourseDetails = ({ courseIdOverride, readOnly = false, allowedActions, nav
                   >
                     {updateCourse.isPending ? <CSpinner size="sm" /> : <CIcon icon={cilSave} className="me-1" />}
                     Guardar
-                  </CButton>
-                  <CButton color="light" onClick={cancelEditHeader} disabled={updateCourse.isPending}>
-                    <CIcon icon={cilX} />
                   </CButton>
                 </CCol>
               </CRow>
@@ -339,7 +339,7 @@ const CourseDetails = ({ courseIdOverride, readOnly = false, allowedActions, nav
               <div>
                 <div className="d-flex align-items-center gap-2 mb-1">
                   <h3 className="mb-0 fw-bold">{course.name}</h3>
-                  <CBadge color="primary" shape="rounded-pill" style={{ fontSize: '0.9rem' }}>
+                  <CBadge color="primary" shape="rounded-pill" style={{ fontSize: 'var(--cronos-text-small)' }}>
                     {course.abbreviation}
                   </CBadge>
                 </div>
@@ -348,7 +348,7 @@ const CourseDetails = ({ courseIdOverride, readOnly = false, allowedActions, nav
                 </small>
               </div>
               <div className="d-flex gap-2">
-                {canEditCourse && <CButton color="light" size="sm" className="d-flex align-items-center gap-1 text-primary" onClick={startEditHeader} title="Editar nome e sigla">
+                {canEditCourse && <CButton color="primary" variant="outline" size="sm" className="d-flex align-items-center gap-1" onClick={startEditHeader} title="Editar nome e sigla">
                   <CIcon icon={cilPencil} size="sm" />
                   Editar
                 </CButton>}
@@ -392,7 +392,7 @@ const CourseDetails = ({ courseIdOverride, readOnly = false, allowedActions, nav
               ) : (
                 sortedGrades.map(grade => (
                   <div key={grade} className="mb-4">
-                    <h6 className="text-muted fw-bold mb-3 text-uppercase" style={{ fontSize: '0.8rem', letterSpacing: '0.5px' }}>
+                    <h6 className="text-muted fw-bold mb-3 text-uppercase" style={{ fontSize: 'var(--cronos-text-small)', letterSpacing: '0.5px' }}>
                       {grade}.º Ano
                     </h6>
                     <div className="compact-list">

@@ -233,7 +233,7 @@ const BulkImport = () => {
         >
           {validateMutation.isPending ? <><CSpinner size="sm" className="me-2" />A verificar…</> : 'Verificar ficheiros'}
         </CButton>
-        {validation?.can_commit && <CButton color="success" disabled={validateMutation.isPending || commitMutation.isPending} onClick={() => void commit()}>
+        {validation?.can_commit && <CButton color="primary" disabled={validateMutation.isPending || commitMutation.isPending} onClick={() => void commit()}>
           {commitMutation.isPending ? <><CSpinner size="sm" className="me-2" />A importar…</> : 'Confirmar importação'}
         </CButton>}
         {issues.length > 0 && (

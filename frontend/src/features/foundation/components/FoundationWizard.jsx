@@ -1,6 +1,8 @@
 import { useEffect, useReducer, useCallback, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { CButton, CSpinner, CBadge } from '@coreui/react'
+import CIcon from '@coreui/icons-react'
+import { cilArrowLeft, cilArrowRight } from '@coreui/icons'
 import {
   useFoundationStatus,
   useFoundationDraft,
@@ -488,7 +490,7 @@ export function FoundationWizard() {
             disabled={state.currentStep === 1 || isBlocked}
             onClick={handlePrev}
           >
-            ← Anterior
+            <CIcon icon={cilArrowLeft} className="me-1" /> Anterior
           </CButton>
 
           <div className="d-flex gap-2">
@@ -503,7 +505,7 @@ export function FoundationWizard() {
                 || (state.currentStep === STEP_INTERNSHIP
                   && (state.values.internship_flows || []).length === 0)
                   ? 'Ignorar por agora'
-                  : 'Seguinte →'}
+                  : <>Seguinte <CIcon icon={cilArrowRight} className="ms-1" /></>}
               </CButton>
             ) : (
               <CButton

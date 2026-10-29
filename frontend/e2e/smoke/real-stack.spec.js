@@ -34,6 +34,17 @@ async function ensureFoundationComplete(page) {
   }
 }
 
+async function settleContent(page) {
+  await expect(page.locator('.app-main .spinner-border, .app-main .state-panel__spinner')).toHaveCount(0)
+  await page.locator('.app-main').evaluate(async (element) => {
+    await document.fonts.ready
+    const finiteAnimations = element.getAnimations({ subtree: true }).filter((animation) => (
+      Number.isFinite(animation.effect.getComputedTiming().endTime)
+    ))
+    await Promise.allSettled(finiteAnimations.map((animation) => animation.finished))
+  })
+}
+
 test.describe('Real stack smoke', () => {
   test('admin can complete Foundation and click every admin sidebar route', async ({ page }, testInfo) => {
     attachRuntimeGuards(page)
@@ -55,7 +66,15 @@ test.describe('Real stack smoke', () => {
     ]) {
       await clickSidebarRoute(page, path)
       await expectNoAppCrash(page)
-      await expect(page.locator('.app-main .spinner-border')).toHaveCount(0)
+      await settleContent(page)
+      const controlStyles = await page.locator('.app-main .btn:visible').evaluateAll((buttons) => buttons.map((button) => {
+        const style = getComputedStyle(button)
+        return { text: button.textContent.trim(), fontSize: style.fontSize, height: button.getBoundingClientRect().height }
+      }))
+      for (const control of controlStyles) {
+        expect(control.fontSize, `${path}: ${control.text}`).toBe('14px')
+        expect(control.height, `${path}: ${control.text}`).toBeGreaterThanOrEqual(44)
+      }
       for (const width of [375, 768, 1440]) {
         await page.setViewportSize({ width, height: 1000 })
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
@@ -73,7 +92,7 @@ test.describe('Real stack smoke', () => {
     for (const path of ['/my-availability', '/my-schedules', '/my-progress']) {
       await clickSidebarRoute(page, path)
       await expectNoAppCrash(page)
-      await expect(page.locator('.app-main .spinner-border')).toHaveCount(0)
+      await settleContent(page)
       for (const width of [375, 768, 1440]) {
         await page.setViewportSize({ width, height: 1000 })
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)

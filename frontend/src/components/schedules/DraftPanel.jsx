@@ -85,7 +85,7 @@ const DraftPanel = ({ draft, onApprove, onReject, isApproving, isRejecting, allo
             <CBadge color="primary">
               {draft.strategy === 'ADAPTIVE_RECOVERY' ? 'Atualização do horário' : 'Primeiro horário'}
             </CBadge>
-            {!stale && <CBadge color="success">Resultado completo</CBadge>}
+            {!stale && <CBadge color="primary">Resultado completo</CBadge>}
             {stale && <CBadge color="danger">Desatualizada</CBadge>}
           </div>
 

@@ -502,15 +502,10 @@
   padding: 18px 20px;
   border-bottom: 1px solid var(--zen-table-border);
   color: #1a1512;
-  font-size: 0.94rem;
+  font-size: var(--cronos-text-body);
 }
 
 .zen-table-action-trigger {
-  opacity: 0.3;
-  transition: opacity 0.2s ease;
-}
-
-.zen-table tbody tr:hover .zen-table-action-trigger {
   opacity: 1;
 }
 
@@ -647,6 +642,23 @@ textarea {
   --cui-btn-focus-box-shadow: 0 0 0 .25rem var(--color-focus-ring);
   --cui-btn-disabled-color: var(--rs-disabled);
   --cui-btn-disabled-border-color: var(--rs-disabled);
+}
+
+.btn-ghost-primary, .btn-ghost-secondary, .btn-ghost-danger {
+  --cui-btn-hover-bg: var(--cronos-surface-muted);
+  --cui-btn-active-bg: var(--cronos-surface-muted);
+  --cui-btn-focus-box-shadow: 0 0 0 .25rem var(--color-focus-ring);
+  --cui-btn-disabled-color: var(--rs-disabled);
+}
+.btn-ghost-primary, .btn-ghost-secondary {
+  --cui-btn-color: var(--cronos-ink);
+  --cui-btn-hover-color: var(--cronos-ink);
+  --cui-btn-active-color: var(--cronos-ink);
+}
+.btn-ghost-danger {
+  --cui-btn-color: var(--cronos-danger);
+  --cui-btn-hover-color: var(--cronos-danger);
+  --cui-btn-active-color: var(--cronos-danger);
 }
 
 .btn-danger, .btn-outline-danger {
