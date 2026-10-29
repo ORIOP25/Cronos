@@ -86,7 +86,7 @@ Provider and webhook states remain queryable through their persisted status fiel
 ## Verification Procedure
 
 1. Query both health endpoints.
-2. Inspect worker tasks with Celery inspect. Confirm one solver worker, one `scheduler-supervisor` worker and one Beat replica.
+2. Inspect worker tasks with Celery inspect. Confirm one solver worker, and one `scheduler-supervisor` worker, which also runs the only Beat.
 3. Run the trigger and integrity audits with the migrator role, as the [Command Reference](../00_getting_started/COMMAND_REFERENCE.md#backend-checks-outside-the-runner) shows.
 4. Record incident evidence before changing data.
 
@@ -99,7 +99,7 @@ WHERE status = 'QUEUED'
 ORDER BY queued_at ASC;
 ```
 
-Before recovery or replay, verify that the API, worker, Beat, and frontend
+Before recovery or replay, verify that the API, worker, supervisor, and frontend
 are running the same intended revision and that the broker contains the
 corresponding dispatch message.
 

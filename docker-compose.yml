@@ -116,22 +116,8 @@ services:
 
   scheduler-supervisor:
     image: cronos-backend:local
-    command: ["celery", "-A", "app.celery_worker.celery_app", "worker", "--loglevel=info", "--include=app.scheduler_recovery_worker", "--pool=solo", "--concurrency=1", "--prefetch-multiplier=1", "--queues=scheduler-supervisor", "--hostname=scheduler-supervisor@%h"]
+    command: ["celery", "-A", "app.celery_worker.celery_app", "worker", "--loglevel=info", "--include=app.scheduler_recovery_worker", "--pool=solo", "--concurrency=1", "--prefetch-multiplier=1", "--queues=scheduler-supervisor", "--hostname=scheduler-supervisor@%h", "--beat", "--schedule", "/tmp/celerybeat-schedule"]
     env_file: ./backend/.env
-    environment:
-      <<: *backend-environment
-      DATABASE_POOLING_ENABLED: "false"
-    restart: unless-stopped
-    depends_on:
-      db: {condition: service_healthy}
-      redis: {condition: service_healthy}
-    read_only: true
-    tmpfs: [/tmp]
-    <<: *runtime-security
-
-  beat:
-    image: cronos-backend:local
-    command: ["celery", "-A", "app.celery_worker.celery_app", "beat", "--loglevel=info", "--schedule", "/tmp/celerybeat-schedule"]
     environment:
       <<: *backend-environment
       DATABASE_POOLING_ENABLED: "false"

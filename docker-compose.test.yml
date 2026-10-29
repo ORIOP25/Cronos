@@ -99,9 +99,9 @@ services:
       db: {condition: service_healthy}
       redis: {condition: service_healthy}
 
-  beat:
+  scheduler-supervisor:
     image: cronos-backend-test:local
-    command: ["celery", "-A", "app.celery_worker.celery_app", "beat", "--loglevel=warning", "--schedule", "/tmp/celerybeat-schedule"]
+    command: ["celery", "-A", "app.celery_worker.celery_app", "worker", "--loglevel=warning", "--include=app.scheduler_recovery_worker", "--pool=solo", "--concurrency=1", "--prefetch-multiplier=1", "--queues=scheduler-supervisor", "--hostname=scheduler-supervisor@%h", "--beat", "--schedule", "/tmp/celerybeat-schedule"]
     environment:
       <<: *test-backend-environment
     depends_on:

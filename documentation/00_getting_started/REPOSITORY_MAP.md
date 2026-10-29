@@ -43,7 +43,7 @@ MeuProjeto/
 │   │   ├── services/             # Business logic and domain services
 │   │   └── scheduler/            # Scheduler domain and infrastructure adapters
 │   ├── railway/                  # Railway service deployment definitions
-│   │   └── *.json                # api, beat, bootstrap, supervisor, and worker services
+│   │   └── *.json                # api, bootstrap, supervisor, and worker services
 │   ├── scripts/                  # Database provisioning, audits, privacy, and E2E preparation
 │   ├── tests/                    # Pytest test suite
 │   ├── Dockerfile                # Multi-stage BuildKit backend image file

@@ -19,7 +19,7 @@ Cronos combines a React SPA, a FastAPI API, PostgreSQL, Redis, and Celery proces
 The API serves HTTP requests and publishes named Celery tasks.
 It does not import the solver or OR-Tools to dispatch a job.
 The worker executes generation and repair.
-Beat dispatches member reconciliation hourly, privacy maintenance daily, and scheduler supervision every 60 seconds.
+Beat runs inside the supervisor process and dispatches member reconciliation hourly, privacy maintenance daily, and scheduler supervision every 60 seconds.
 
 ## Why the Behavior Exists
 
@@ -58,8 +58,7 @@ flowchart TD
     Redis --> Worker[Celery worker]
     Worker --> Solver[OR-Tools CP-SAT]
     Worker --> DB
-    Supervisor[Scheduler supervisor] --> Redis
-    Beat[Celery Beat] --> Redis
+    Supervisor[Scheduler supervisor + Celery Beat] --> Redis
     Clerk[Clerk] -->|Svix webhook| API
 ```
 
