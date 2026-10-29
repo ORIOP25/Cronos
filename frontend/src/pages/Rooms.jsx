@@ -92,7 +92,7 @@ const Rooms = ({ readOnly = false, allowedActions }) => {
 
   return (
     <div className="p-4">
-      <PageHeader preTitle="Gestão" title="Salas">
+      <PageHeader title="Salas">
       {canCreate && <>
         <CButton color="secondary" variant="outline" onClick={() => navigate('/imports?resource=rooms')}>Importar CSV</CButton>
         <CButton color="primary" onClick={handleCreate} className="d-flex align-items-center gap-2" data-tutorial-target="new-room">

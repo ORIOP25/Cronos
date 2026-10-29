@@ -21,7 +21,6 @@ export default function Dashboard() {
   const currentDate = new Intl.DateTimeFormat('pt-PT', { dateStyle: 'long' }).format(new Date())
   const header = (
     <PageHeader
-      preTitle="Operação Diária"
       title={user?.firstName ? `Olá, ${user.firstName}` : 'O dia na escola'}
       context={data?.organization_name || undefined}
       description={`Hoje, ${currentDate}.`}

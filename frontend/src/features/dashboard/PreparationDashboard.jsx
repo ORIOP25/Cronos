@@ -64,7 +64,6 @@ export function PreparationDashboard({
   return (
     <div className="preparation-dashboard p-4" data-testid="preparation-dashboard">
       <PageHeader
-        preTitle="Fase de Preparação"
         title="Preparação da Escola"
         context={organizationName || 'a sua escola'}
         description={`Complete os ${stepCount} passos de preparação antes de gerar o horário.`}

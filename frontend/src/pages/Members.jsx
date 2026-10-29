@@ -352,7 +352,7 @@ const Members = ({ readOnly = false, allowedActions }) => {
 
   return (
     <div className="p-4">
-      <PageHeader preTitle="Gestão" title="Equipa" />
+      <PageHeader title="Equipa" />
       <div className="d-flex justify-content-between align-items-center mb-4 gap-3 flex-wrap">
         <div className="d-flex gap-2 flex-wrap">
           <CFormInput

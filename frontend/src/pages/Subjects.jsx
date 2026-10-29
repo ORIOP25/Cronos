@@ -90,7 +90,7 @@ const Subjects = ({ readOnly = false, allowedActions }) => {
 
   return (
     <div className="p-4">
-      <PageHeader preTitle="Gestão" title="Disciplinas">
+      <PageHeader title="Disciplinas">
       {canCreate && <>
         <CButton color="secondary" variant="outline" onClick={() => navigate('/imports?resource=subjects')}>Importar CSV</CButton>
         <CButton color="primary" onClick={handleCreate} className="d-flex align-items-center gap-2" data-tutorial-target="new-subject">

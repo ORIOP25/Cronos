@@ -136,7 +136,7 @@ const DefaultLayout = ({ children, activePath, navigationDisabled = false, navig
         </COffcanvasBody>
       </COffcanvas>}
       <main className="app-main">
-        {!navigationDisabled && <div className="d-flex justify-content-end px-4 pt-3" role="group" aria-label="Selecionar escola">
+        {!navigationDisabled && <div className="app-main__org" role="group" aria-label="Selecionar escola">
           <OrganizationSwitcher hidePersonal afterCreateOrganizationUrl="/foundation" afterSelectOrganizationUrl="/" afterLeaveOrganizationUrl="/" />
         </div>}
         {accessDeniedMessage && <div className="app-main__access-message"><FeedbackBanner tone="warning">{accessDeniedMessage}</FeedbackBanner></div>}

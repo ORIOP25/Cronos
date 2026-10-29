@@ -105,19 +105,20 @@
 
 .page-header {
   display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 24px;
-  margin-bottom: 28px;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 16px;
 }
 
 .page-header__copy { min-width: 0; }
-.page-header__pretitle { display: block; margin-bottom: 8px; color: var(--cronos-ink-muted); font-size: .72rem; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; }
-.page-header__title { margin: 0; color: var(--cronos-ink); font: 600 clamp(2rem, 4vw, 3.25rem)/1.05 var(--cronos-font-display); }
-.page-header__description, .page-header__context { margin: 10px 0 0; color: var(--cronos-ink-muted); }
+.page-header__title { margin: 0; color: var(--cronos-ink); font: 600 1.5rem/1.2 var(--cronos-font-display); }
+.page-header__description, .page-header__context { margin: 4px 0 0; color: var(--cronos-ink-muted); }
 .page-header__context { font-size: .9rem; }
 .page-header__actions { display: flex; align-items: center; justify-content: flex-end; gap: 12px; flex-wrap: wrap; }
-.page-header__rule { width: 72px; height: 1px; margin-right: 4px; background: var(--cronos-accent); }
+
+@media (min-width: 992px) {
+  .page-header__copy { display: flex; flex-direction: column; justify-content: center; min-height: 44px; padding-right: 280px; }
+}
 
 .skeleton {
   display: block;
@@ -135,9 +136,7 @@
 }
 
 @media (max-width: 767px) {
-  .page-header { align-items: stretch; flex-direction: column; gap: 16px; margin-bottom: 20px; }
   .page-header__actions { justify-content: flex-start; }
-  .page-header__rule { display: none; }
 }
 
 .schedules-page .page-header { margin-bottom: 16px; }

@@ -66,6 +66,7 @@ Cronos employs a warm, authoritative visual identity designed for educational tr
 - Course classes and class assignments use divided rows. Teacher progress and class module progress use native compact disclosures.
 - Progress editing exposes module controls automatically. Optional proposal analysis starts closed; required warnings and approval controls remain visible.
 - Weekly review uses selectable teacher rows with `aria-pressed`; filters keep their visible label associations.
+- Every application page opens with `PageHeader`: one compact `h1` with the page name, shown beside the school selector on desktop. The sidebar already names the section, so the header has no section label. Page actions sit in a toolbar below the title, aligned to the right.
 - Authenticated application tokens live in `frontend/src/index.css`.
 - Canonical shared tokens live in `frontend/src/styles/brand.tokens.css`.
 - Marketing-specific tokens live in `frontend/src/features/marketing/styles/`.

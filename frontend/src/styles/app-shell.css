@@ -29,7 +29,12 @@
 .app-sidebar.is-collapsed .app-sidebar__brand-name, .app-sidebar.is-collapsed .app-sidebar__section, .app-sidebar.is-collapsed .app-sidebar__profile-copy, .app-sidebar.is-collapsed .app-sidebar__logout span { display: none; }
 .app-sidebar.is-collapsed .app-sidebar__profile { justify-content: center; }
 .app-mobile-header { display: none; }
-.app-main { flex: 1; min-width: 0; width: 100%; max-width: 1600px; margin: 0 auto; padding: 32px; overflow-x: clip; }
+.app-main { flex: 1; min-width: 0; width: 100%; max-width: 1600px; margin: 0 auto; padding: 8px 32px 32px; overflow-x: clip; }
+.app-main__org { display: flex; justify-content: flex-end; padding-bottom: 12px; }
+@media (min-width: 992px) {
+  .app-main { position: relative; }
+  .app-main__org { position: absolute; top: 8px; right: 32px; z-index: 5; height: 44px; align-items: center; padding-bottom: 0; }
+}
 .app-main__access-message { margin-bottom: 20px; }
 .app-drawer-open { overflow: hidden; }
 .app-drawer .app-sidebar { position: static; width: 280px; height: 100%; border: 0; }

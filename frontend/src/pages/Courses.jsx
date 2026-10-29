@@ -67,7 +67,7 @@ const Courses = () => {
 
   return (
     <div className="p-4">
-      <PageHeader preTitle="Gestão" title="Cursos">
+      <PageHeader title="Cursos">
         <CButton color="secondary" variant="outline" onClick={() => navigate('/imports?resource=courses')}>Importar CSV</CButton>
         <CButton color="primary" onClick={handleCreate} className="d-flex align-items-center gap-2" data-tutorial-target="new-course">
           <CIcon icon={cilPlus} />

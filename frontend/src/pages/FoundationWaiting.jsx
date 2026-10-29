@@ -31,7 +31,7 @@ export default function FoundationWaiting() {
 
   return (
     <div className="container py-5">
-      <PageHeader preTitle="Acesso pendente" title="A escola ainda está a ser configurada" context={`Escola: ${organization?.name || 'a sua escola'}`} />
+      <PageHeader title="A escola ainda está a ser configurada" context={`Escola: ${organization?.name || 'a sua escola'}`} />
       <p role="status">As áreas operacionais ficarão disponíveis depois de a fundação escolar ser concluída por um administrador.</p>
     </div>
   )
