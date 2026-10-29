@@ -73,6 +73,7 @@ Saving changed priorities invalidates a pending proposal. Saving identical value
 - Withdrawn lessons remain in version history and are excluded from operational scheduling and weekly submission requirements.
 - Each withdrawn lesson also receives an `OCCURRENCE` log with a `GAP` decision, so the absence appears in `/absences`.
 - Withdrawn lessons are not carried into a new version. Their absences stay listed on the version that withdrew them.
+- A class linked to an internship flow has no lessons on the flow's start and end dates, or on any date between them, in the schedule after the flow, after every later update, and after a new generation. The withdrawn hours are re-placed outside the flow.
 - Foundation status is `NOT_STARTED`, `IN_PROGRESS`, or `COMPLETED`.
 - A `class_availability` row stores a level different from Neutral; a missing row means Neutral.
 - Saving class availability replaces the class grid in the version visible on `on_date`.
