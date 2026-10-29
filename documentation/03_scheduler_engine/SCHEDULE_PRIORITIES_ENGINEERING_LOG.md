@@ -563,6 +563,45 @@ Pontos abertos no gerador atual, medidos na escola do laboratório:
 - Uma aula conjunta grava-se uma linha por turma em [`scheduler_lesson_v1`](../../backend/app/scheduler/infrastructure/models.py), com o mesmo `stable_key` e o mesmo `teaching_unit_key`. Contar furos dessa tabela sem agrupar pela unidade de ensino erra os números. Foi um erro de contagem da coordenação a 26 de outubro.
 - Os dados de produção leem-se a partir do contentor da API, em transação só de leitura, com o contexto do tenant definido. Sem esse contexto, o RLS esconde todas as linhas. Ver [Cloud Operations](../09_ops_observability/CLOUD_OPERATIONS.md#read-only-inspection) e [isolamento de tenant](../08_security_quality/SECURITY_AND_TENANT_ISOLATION.md).
 
+O responsável de produto fechou os dias curtos a 28 de outubro de 2026: cerca de 3 por turma por ano é pouco relevante, e houve duas tentativas falhadas. Os 2+ furos criados pelas atualizações foram corrigidos no #212.
+
+### Ocorrências ao longo do ano (28–29 de outubro de 2026)
+
+Doze casos de atualização a meio do ano na escola do laboratório `pilot@1.0` (cerca de 1 050 h por turma), com o motor do `main` sem alterações. Fim previsto do horário publicado: 8 de junho. Todos os casos acabam completos, com 0 violações e 0 aulas por colocar.
+
+| Caso | Aulas publicadas mantidas | Fim |
+| :--- | ---: | :--- |
+| 1–4, 6, 7: faltas curtas e baixa de um mês | 96–99% | 8 de junho (baixa de um mês: 18 de junho) |
+| 5: um professor perde todas as quartas-feiras | 44% | 8 de junho |
+| 8: estágio de uma turma (fluxo de estágio real) | 97% | 8 de junho |
+| 9: escola fechada um dia | 42% | 9 de junho |
+| 10: faltas no fim de maio | 100% | 2 de julho |
+| 11: laboratório fechado | 43% | 7 de junho |
+| 12: atualização mensal de outubro a maio, com os eventos acima | 97–100% por passo | 8 de junho até fevereiro; 29 de junho no fim |
+
+- O fluxo de estágio deixa a turma sem aulas durante o fluxo. A turma parceira perde 30 aulas conjuntas e recupera-as todas. Dois defeitos encontrados foram corrigidos no #213 e no #214.
+- Nos casos 5, 9 e 11 ganha a reconstrução: muda cerca de 60% das células visíveis (mediana por professor 57%), mas acaba a tempo. A reparação acaba a 20 de julho (caso 5) e a 23 de junho (caso 9), e no caso 11 não completa: um professor com regra de presença fica com 60 minutos que não formam um dia válido.
+- No caso 12 a reparação ganha em todos os passos. Uma primeira corrida mostrou reconstruções sem eventos; a causa era o ensaio, que levava o `source_lesson_id` para o passo seguinte.
+- Cada atualização troca 150 a 800 aulas de sala, sem mudar hora, disciplina nem professor. Segue a regra de salas de 18 de outubro: sala da turma e mesma sala no dia antes da sala publicada ([`room_assignment.py`](../../backend/app/scheduler/infrastructure/room_assignment.py)).
+- No caso 10 a janela de estabilidade impede repor as faltas em horas livres das duas semanas seguintes. Com a janela aberta só para inserções, o fim passa de 2 de julho para 15 de junho, com as mesmas 91 inserções e nenhuma aula publicada movida. A decisão é do responsável de produto.
+
+#### Reconstrução local
+
+Ensaio de um terceiro candidato: refazer só as turmas e os professores do evento, com o resto fixo, alargando por anéis até 3. Código de laboratório, não integrado.
+
+| Caso | Anel 0 (turmas, professores) | Resultado |
+| :--- | :--- | :--- |
+| 2 | 12, 3 | A reparação ganha; o anel 2 já é a escola inteira. |
+| 5 | 6, 1 | O anel 1 (6 turmas, 29 professores) é válido mas acaba a 17 de junho. O anel 3 ganha com 9 074 aulas mudadas, contra 9 136 da reconstrução. |
+| 9 | 48, 62 | Igual à reconstrução. |
+| 11 | 26, 15 | O anel 1 já tem 44 turmas e 67 professores; 9 171 aulas mudadas contra 9 295. |
+
+Fixar só os professores (modo turma) dá candidatos inválidos no caso 5. O resultado repete-se em duas corridas. Veredicto: não integrar. As turmas e os professores ligados a um evento grande cobrem quase toda a escola, por isso a reconstrução local não muda menos que a reconstrução completa.
+
+#### Janela de estabilidade sem valor
+
+Sem valor configurado, o snapshot usa uma janela de 0 dias ([`snapshot.py`](../../backend/app/scheduler/infrastructure/snapshot.py), `_stability_window`). A impressão digital de prontidão e a mudança de grelha usam 14 dias ([`task_keys.py`](../../backend/app/core/task_keys.py)). Os testes de integração não configuram a janela, por isso correm com 0 dias. Com os 14 dias por omissão, 9 testes falham: as regenerações depois de mudar a configuração, a redução manual de progresso e a remoção de módulos. Em dois casos o snapshot lança um `ValueError` ou um `TypeError`, em vez de um erro de configuração. A correção ficou por fazer.
+
 ## Failure Modes
 
 ### Boas decisões
