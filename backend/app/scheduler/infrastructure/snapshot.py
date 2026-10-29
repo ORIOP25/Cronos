@@ -45,7 +45,7 @@ from app.scheduler.domain.candidate import (
     UnavailableResource,
     split_consumed_lessons,
 )
-from app.scheduler.domain.capacity import unreservable_debt_assignments
+from app.scheduler.domain.capacity import is_released_from_window, unreservable_debt_assignments
 from app.scheduler.domain.constraint_policy import (
     SchoolConstraintPolicy,
     assess_room_eligibility,
@@ -318,6 +318,8 @@ async def load_snapshot(
         unit_keys=unit_plan.unit_ids,
         class_ids_by_unit=class_ids_by_unit,
         accounting_classes=accounting_classes,
+        calendar=calendar,
+        unavailable=unavailable,
     )
     priority_levels = await db.scalar(
         select(models.OrganizationSettings.schedule_priorities).where(
@@ -1442,6 +1444,8 @@ async def _load_baseline(
     unit_keys: Mapping[str, int] | None = None,
     class_ids_by_unit: Mapping[int, tuple[int, ...]] | None = None,
     accounting_classes: Mapping[int, int] | None = None,
+    calendar: _CalendarData,
+    unavailable: tuple[Unavailability, ...],
 ) -> tuple[
     tuple[ScheduledLesson, ...],
     tuple[ScheduledLesson, ...],
@@ -1511,7 +1515,14 @@ async def _load_baseline(
                     Unavailability(resource_type, resource_id, lesson.period)
                 )
         baseline = _reproject_baseline(
-            baseline,
+            _without_released_lessons(
+                baseline,
+                assignments,
+                now_utc=now_utc,
+                protected_dates=protected_dates,
+                calendar=calendar,
+                unavailable=unavailable,
+            ),
             assignments,
             executed,
             now_utc=now_utc,
@@ -1596,6 +1607,37 @@ async def split_version_history(
     # Manual ledger corrections change future demand. A hypothetical future
     # lesson covered by those minutes was never operational history.
     return (*history, *consumed), (*protected, *future)
+
+
+def _without_released_lessons(
+    lessons: Sequence[ScheduledLesson],
+    assignments: Mapping[int, Assignment],
+    *,
+    now_utc: datetime,
+    protected_dates: frozenset[date],
+    calendar: _CalendarData,
+    unavailable: tuple[Unavailability, ...],
+) -> tuple[ScheduledLesson, ...]:
+    """Drop the future lessons the configuration rules out, even inside the window.
+
+    The window forbids new lessons, not removals.
+    """
+    window_unavailable = tuple(
+        row for row in unavailable if row.period.school_date in protected_dates
+    )
+    return tuple(
+        lesson
+        for lesson in lessons
+        if not is_released_from_window(
+            lesson,
+            assignments[lesson.assignment_id],
+            now_utc=now_utc,
+            protected_dates=protected_dates,
+            blocked_dates=calendar.blocked_dates,
+            class_blocked_dates=calendar.class_blocked_dates,
+            unavailable=window_unavailable,
+        )
+    )
 
 
 def _reproject_baseline(

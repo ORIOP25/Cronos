@@ -22,7 +22,8 @@ from app.scheduler.infrastructure.jobs import (
     request_cancellation,
 )
 from app.scheduler.infrastructure.models import SchedulerJobV1, SchedulerLessonV1
-from app.scheduler.infrastructure.queries import get_job
+from app.scheduler.infrastructure.proposals import approve_proposal
+from app.scheduler.infrastructure.queries import current_proposal, get_job
 from app.services.scheduler_state_service import SchedulerStateService
 from tests._support.scheduler_v1 import (
     MOMENT,
@@ -121,7 +122,7 @@ async def test_an_isolated_joint_unit_persists_class_and_subject_ids(db_session,
     assert all(row["subject_name"] == seed.base.subject.name for row in diagnostics)
 
 
-async def test_protected_class_availability_conflict_reaches_the_job_without_replacing_publication(
+async def test_protected_class_availability_conflict_releases_the_joint_lesson(
     db_session, monkeypatch
 ):
     seed = await seed_joint_school(db_session)
@@ -146,6 +147,7 @@ async def test_protected_class_availability_conflict_reaches_the_job_without_rep
         .order_by(SchedulerLessonV1.starts_at)
         .limit(1)
     )
+    released_key = first.stable_key
     slot = await db_session.scalar(
         select(models.Timeslot).where(
             models.Timeslot.organization_id == organization_id,
@@ -169,11 +171,24 @@ async def test_protected_class_availability_conflict_reaches_the_job_without_rep
 
     await db_session.refresh(queued.job)
     payload = await get_job(db_session, organization_id, queued.job.id)
-    assert payload["status"] == "INFEASIBLE"
-    assert {row["code"] for row in payload["diagnostics"]} == {"PROTECTED_AVAILABILITY_CONFLICT"}
-    assert {row["class_name"] for row in payload["diagnostics"]} == {"A", "B"}
+    assert payload["status"] == "SUCCEEDED"
+    proposal = await current_proposal(db_session, organization_id)
+    await approve_proposal(
+        db_session,
+        organization_id=organization_id,
+        proposal_id=proposal["proposal_id"],
+        decided_by_membership_id=seed.base.membership.id,
+        now_utc=MOMENT,
+    )
     await db_session.refresh(seed.base.state)
-    assert int(seed.base.state.active_schedule_version_id) == version_id
+    assert int(seed.base.state.active_schedule_version_id) != version_id
+    replaced = await db_session.scalars(
+        select(SchedulerLessonV1.stable_key).where(
+            SchedulerLessonV1.organization_id == organization_id,
+            SchedulerLessonV1.version_id == int(seed.base.state.active_schedule_version_id),
+        )
+    )
+    assert released_key not in set(replaced.all())
 
 
 async def test_a_generic_deficit_keeps_the_generic_job_code(db_session, monkeypatch):

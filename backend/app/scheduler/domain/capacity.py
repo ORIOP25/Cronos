@@ -10,15 +10,17 @@ duplicates are collapsed before any model uses them.
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
 
 from app.scheduler.domain.calendar import Period
 from app.scheduler.domain.candidate import (
     Assignment,
     PlanningSnapshot,
+    ScheduledLesson,
     SchedulingStrategy,
+    Unavailability,
     UnavailableResource,
 )
 
@@ -119,6 +121,41 @@ def is_physically_protected(snapshot: PlanningSnapshot, period: Period) -> bool:
     if period.school_date in snapshot.protected_dates:
         return True
     return snapshot.now_utc is not None and period.start_utc <= snapshot.now_utc
+
+
+def is_released_from_window(
+    lesson: ScheduledLesson,
+    assignment: Assignment,
+    *,
+    now_utc: datetime,
+    protected_dates: frozenset[date],
+    blocked_dates: frozenset[date],
+    class_blocked_dates: Mapping[int, frozenset[date]],
+    unavailable: Iterable[Unavailability],
+) -> bool:
+    """A future published lesson inside the window that the configuration rules out.
+
+    The window keeps a published lesson in place, but it only forbids new lessons.
+    A lesson on a school or class closure, or overlapping a hard unavailability of
+    its teacher, one of its classes or its room, cannot stay, so it is released.
+    """
+    school_date = lesson.period.school_date
+    if lesson.period.start_utc <= now_utc or school_date not in protected_dates:
+        return False
+    if school_date in blocked_dates or any(
+        school_date in class_blocked_dates.get(class_id, frozenset())
+        for class_id in assignment.class_ids
+    ):
+        return True
+    resources = {
+        (UnavailableResource.TEACHER, lesson.teacher_id or assignment.teacher_id),
+        (UnavailableResource.ROOM, lesson.room_id),
+        *((UnavailableResource.CLASS, class_id) for class_id in assignment.class_ids),
+    }
+    return any(
+        (row.resource_type, row.resource_id) in resources and row.overlaps(lesson.period)
+        for row in unavailable
+    )
 
 
 def _is_unavailable(snapshot: PlanningSnapshot, assignment: Assignment, period: Period) -> bool:
