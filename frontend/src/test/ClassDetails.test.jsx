@@ -146,14 +146,14 @@ describe('ClassDetails composition', () => {
     fireEvent.click(zeta.querySelector('summary'))
     expect(zeta).not.toHaveAttribute('open')
 
-    fireEvent.click(screen.getByRole('button', { name: 'Editar Progresso' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Editar progresso' }))
     expect(zeta).toHaveAttribute('open')
     const hours = within(zeta).getAllByRole('spinbutton')
     expect(hours).toHaveLength(2)
     expect(hours[0]).toHaveValue(null)
     expect(hours[1]).toHaveValue(25)
     fireEvent.change(hours[0], { target: { value: '10' } })
-    fireEvent.click(within(progressCard).getByRole('button', { name: 'Guardar' }))
+    fireEvent.click(within(progressCard).getByRole('button', { name: 'Guardar alterações' }))
     expect(mutation.mutate).toHaveBeenCalledWith({ classId: 11, progress: [{ module_id: 21, hours_completed: 10 }] }, expect.any(Object))
   })
 
@@ -163,9 +163,9 @@ describe('ClassDetails composition', () => {
     renderClassDetails()
 
     fireEvent.click(screen.getByTitle('Editar nome e capacidade'))
-    fireEvent.change(screen.getByLabelText('Nome da Turma'), { target: { value: ' 10.º B ' } })
+    fireEvent.change(screen.getByLabelText('Nome da turma'), { target: { value: ' 10.º B ' } })
     fireEvent.change(screen.getByLabelText('Capacidade (alunos)'), { target: { value: '25' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Guardar' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar alterações' }))
 
     expect(mutation.mutate).toHaveBeenCalledWith({
       courseId: 7,
@@ -220,7 +220,7 @@ describe('ClassDetails composition', () => {
 
       openEditHeader()
       fireEvent.change(screen.getByLabelText('Sala da turma'), { target: { value: '' } })
-      fireEvent.click(screen.getByRole('button', { name: 'Guardar' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Guardar alterações' }))
 
       expect(mutation.mutate).toHaveBeenCalledWith({
         courseId: 7,
@@ -237,7 +237,7 @@ describe('ClassDetails composition', () => {
 
       openEditHeader()
       fireEvent.change(screen.getByLabelText('Sala da turma'), { target: { value: '33' } })
-      fireEvent.click(screen.getByRole('button', { name: 'Guardar' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Guardar alterações' }))
 
       expect(mutation.mutate).toHaveBeenCalledWith({
         courseId: 7,
@@ -255,7 +255,7 @@ describe('ClassDetails composition', () => {
 
       openEditHeader()
       fireEvent.change(screen.getByLabelText('Sala da turma'), { target: { value: '33' } })
-      fireEvent.click(screen.getByRole('button', { name: 'Guardar' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Guardar alterações' }))
 
       expect(mutation.mutate.mock.calls[0][0].data).toStrictEqual({ name: '10.º A', size: 24, home_room_id: 33 })
     })
@@ -269,7 +269,7 @@ describe('ClassDetails composition', () => {
 
       openEditHeader()
       fireEvent.change(screen.getByLabelText('Capacidade (alunos)'), { target: { value: '31' } })
-      fireEvent.click(screen.getByRole('button', { name: 'Guardar' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Guardar alterações' }))
 
       expect(mutation.mutate.mock.calls[0][0].data).toStrictEqual({ name: '10.º A', size: 31 })
     })
@@ -368,7 +368,7 @@ describe('ClassDetails composition', () => {
 
       openEditHeader()
       fireEvent.change(screen.getByLabelText('Sala da turma'), { target: { value: '31' } })
-      fireEvent.click(screen.getByRole('button', { name: 'Guardar' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Guardar alterações' }))
 
       expect(screen.getByText('A Sala 101 tem 20 lugares e a turma tem 24 alunos.')).toBeInTheDocument()
     })
@@ -385,7 +385,7 @@ describe('ClassDetails composition', () => {
 
       openEditHeader()
       fireEvent.change(screen.getByLabelText('Sala da turma'), { target: { value: '31' } })
-      fireEvent.click(screen.getByRole('button', { name: 'Guardar' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Guardar alterações' }))
 
       expect(screen.getByText('A sala P2 tem 20 lugares e a turma tem 24 alunos.')).toBeInTheDocument()
     })
@@ -402,7 +402,7 @@ describe('ClassDetails composition', () => {
 
       openEditHeader()
       fireEvent.change(screen.getByLabelText('Sala da turma'), { target: { value: '31' } })
-      fireEvent.click(screen.getByRole('button', { name: 'Guardar' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Guardar alterações' }))
 
       expect(screen.getByText('Sala não encontrada.')).toBeInTheDocument()
     })
@@ -419,7 +419,7 @@ describe('ClassDetails composition', () => {
 
       openEditHeader()
       fireEvent.change(screen.getByLabelText('Sala da turma'), { target: { value: '31' } })
-      fireEvent.click(screen.getByRole('button', { name: 'Guardar' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Guardar alterações' }))
 
       expect(screen.queryByText('Sala não encontrada.')).toBeNull()
       expect(screen.queryByRole('alert')).toBeNull()

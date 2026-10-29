@@ -122,7 +122,7 @@ const GenerationStatusPanel = ({ jobId }) => {
         <FeedbackBanner tone="info">
           <span className="d-inline-flex align-items-center gap-2">
             <CSpinner size="sm" />
-            A aguardar...
+            A aguardar…
           </span>
         </FeedbackBanner>
       </div>

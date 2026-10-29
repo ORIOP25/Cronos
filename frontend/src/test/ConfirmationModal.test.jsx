@@ -23,8 +23,8 @@ describe('ConfirmationModal', () => {
 
   it('mostra título e mensagem padrão', () => {
     render(<ConfirmationModal {...defaultProps} />)
-    expect(screen.getByText('Confirmar Remoção')).toBeInTheDocument()
-    expect(screen.getByRole('dialog', { name: 'Confirmar Remoção' })).toBeInTheDocument()
+    expect(screen.getByText('Confirmar remoção')).toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: 'Confirmar remoção' })).toBeInTheDocument()
     expect(screen.getByText(/Tem a certeza/)).toBeInTheDocument()
   })
 
@@ -59,7 +59,7 @@ describe('ConfirmationModal', () => {
 
   it('desabilita botões durante loading', () => {
     render(<ConfirmationModal {...defaultProps} isLoading={true} />)
-    expect(screen.getByText('A guardar…')).toBeInTheDocument()
+    expect(screen.getByText('A processar…')).toBeInTheDocument()
   })
 
   it('anuncia que o pedido continua em processamento após cinco segundos', () => {

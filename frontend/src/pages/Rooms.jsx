@@ -97,7 +97,7 @@ const Rooms = ({ readOnly = false, allowedActions }) => {
         <CButton color="secondary" variant="outline" onClick={() => navigate('/imports?resource=rooms')}>Importar CSV</CButton>
         <CButton color="primary" onClick={handleCreate} className="d-flex align-items-center gap-2" data-tutorial-target="new-room">
           <CIcon icon={cilPlus} />
-          Nova Sala
+          Nova sala
         </CButton>
       </>}
       </PageHeader>

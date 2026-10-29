@@ -57,6 +57,17 @@ describe('ClassAvailabilityModal', () => {
     mocks.courses.mockReset().mockReturnValue({ data: COURSES, isLoading: false, error: null })
   })
 
+  it('names a close without changes Fechar and a close with an unsaved draft Cancelar', () => {
+    const onClose = vi.fn()
+    renderWithProviders(<ClassAvailabilityModal schoolClass={{ id: 9, name: '10.º A' }} onClose={onClose} />)
+    expect(screen.getByRole('button', { name: 'Fechar', exact: true })).toBeEnabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Impossível' }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: /Segunda, 09:00/i }))
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar', exact: true }))
+    expect(onClose).toHaveBeenCalledOnce()
+    expect(mocks.save).not.toHaveBeenCalled()
+  })
+
   it('keeps the draft and shows a blocking error when saving fails', async () => {
     mocks.save.mockRejectedValueOnce({
       response: { status: 400, data: { detail: { code: 'bad_request', message: 'Pedido inválido.' } } },
@@ -153,6 +164,18 @@ describe('ClassAvailabilityModal', () => {
     expect(screen.getByRole('button', { name: 'Voltar' })).toBeInTheDocument()
   })
 
+  it('uses the singular turma in the action, confirmation and result for one target', async () => {
+    mocks.copy.mockResolvedValue({ updated_class_ids: [2] })
+    renderModal({ withToaster: true })
+    openCopyView()
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Alfa' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Aplicar a 1 turma', exact: true }))
+    expect(await screen.findByText('Vai substituir a disponibilidade de 1 turma pela grelha de 10.º A.')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Aplicar', exact: true }))
+    expect(await within(document.querySelector('[data-rht-toaster]')).findByText('Disponibilidade aplicada a 1 turma.')).toBeInTheDocument()
+    expect(mocks.copy).toHaveBeenCalledWith({ classId: 9, targetClassIds: [2] })
+  })
+
   it('shows a blocking inline error when the copy is rejected', async () => {
     mocks.copy.mockRejectedValueOnce({
       response: { status: 400, data: { detail: { code: 'bad_request', message: 'Pedido inválido.' } } },
@@ -161,7 +184,7 @@ describe('ClassAvailabilityModal', () => {
     openCopyView()
 
     fireEvent.click(await screen.findByRole('checkbox', { name: 'Alfa' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Aplicar a 1 turmas' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Aplicar a 1 turma' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Aplicar' }))
 
     await waitFor(() => expect(screen.getByText('Não foi possível concluir o pedido. Tente novamente.')).toBeInTheDocument())
@@ -174,7 +197,7 @@ describe('ClassAvailabilityModal', () => {
     openCopyView()
 
     fireEvent.click(await screen.findByRole('checkbox', { name: 'Alfa' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Aplicar a 1 turmas' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Aplicar a 1 turma' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Aplicar' }))
 
     expect(

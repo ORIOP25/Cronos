@@ -111,10 +111,12 @@ describe('TeacherAvailabilityModal', () => {
 
     expect(screen.getByText('Presença na escola')).toBeInTheDocument()
     expect(screen.getByLabelText('Mínimo de horas por presença')).toHaveValue(3)
-    expect(screen.getByLabelText('Furo máximo dentro da presença')).toHaveValue(1)
+    expect(screen.getByLabelText('Tempo máximo sem aulas por presença')).toHaveValue(1)
     expect(screen.getByText('Vale para todas as grelhas e anos letivos.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Fechar', exact: true })).toBeEnabled()
 
     fireEvent.click(screen.getByRole('radio', { name: 'Não' }))
+    expect(screen.getByRole('button', { name: 'Cancelar', exact: true })).toBeEnabled()
     const saveButton = screen.getByRole('button', { name: /guardar disponibilidade/i })
     await waitFor(() => expect(saveButton).toBeEnabled())
     fireEvent.click(saveButton)
@@ -124,6 +126,7 @@ describe('TeacherAvailabilityModal', () => {
       payload: { lunch_required: false, minimum_hours: 3, max_gap_hours: 1 },
     }))
     expect(mocks.save).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: 'Fechar', exact: true })).toBeEnabled()
   })
 
   it('defaults the gap to 1 when a minimum is set and clears it when the minimum is removed (R11)', async () => {
@@ -131,16 +134,16 @@ describe('TeacherAvailabilityModal', () => {
     renderWithProviders(<TeacherAvailabilityModal teacher={{ id: 7, name: 'Prof. QA' }} onClose={vi.fn()} />)
 
     const minInput = screen.getByLabelText('Mínimo de horas por presença')
-    expect(screen.queryByLabelText('Furo máximo dentro da presença')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Tempo máximo sem aulas por presença')).not.toBeInTheDocument()
 
     fireEvent.change(minInput, { target: { value: '4' } })
-    expect(screen.getByLabelText('Furo máximo dentro da presença')).toHaveValue(1)
+    expect(screen.getByLabelText('Tempo máximo sem aulas por presença')).toHaveValue(1)
 
     fireEvent.change(minInput, { target: { value: '' } })
-    expect(screen.queryByLabelText('Furo máximo dentro da presença')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Tempo máximo sem aulas por presença')).not.toBeInTheDocument()
 
     fireEvent.change(minInput, { target: { value: '4' } })
-    expect(screen.getByLabelText('Furo máximo dentro da presença')).toHaveValue(1)
+    expect(screen.getByLabelText('Tempo máximo sem aulas por presença')).toHaveValue(1)
 
     fireEvent.click(screen.getByRole('button', { name: /guardar disponibilidade/i }))
     await waitFor(() => expect(mocks.savePresence).toHaveBeenCalledWith({
@@ -160,18 +163,18 @@ describe('TeacherAvailabilityModal', () => {
     expect(mocks.savePresence).not.toHaveBeenCalled()
 
     fireEvent.change(minInput, { target: { value: '3' } })
-    fireEvent.change(screen.getByLabelText('Furo máximo dentro da presença'), { target: { value: '13' } })
+    fireEvent.change(screen.getByLabelText('Tempo máximo sem aulas por presença'), { target: { value: '13' } })
     fireEvent.click(screen.getByRole('button', { name: /guardar disponibilidade/i }))
 
-    expect(await screen.findByText('O furo máximo tem de estar entre 0 e 12 horas.')).toBeInTheDocument()
+    expect(await screen.findByText('O tempo máximo sem aulas tem de estar entre 0 e 12 horas.')).toBeInTheDocument()
     expect(mocks.savePresence).not.toHaveBeenCalled()
   })
 
   it('requires the minimum and gap together when only one is filled', () => {
     expect(validatePresenceDraft({ lunch_required: true, minimum_hours: 3, max_gap_hours: '' }))
-      .toEqual({ max_gap_hours: 'Indique o mínimo e o furo máximo, ou deixe os dois vazios.' })
+      .toEqual({ max_gap_hours: 'Indique o mínimo de horas e o tempo máximo sem aulas, ou deixe os dois campos em branco.' })
     expect(validatePresenceDraft({ lunch_required: true, minimum_hours: '', max_gap_hours: 2 }))
-      .toEqual({ max_gap_hours: 'Indique o mínimo e o furo máximo, ou deixe os dois vazios.' })
+      .toEqual({ max_gap_hours: 'Indique o mínimo de horas e o tempo máximo sem aulas, ou deixe os dois campos em branco.' })
     expect(validatePresenceDraft({ lunch_required: false, minimum_hours: 12, max_gap_hours: 0 })).toEqual({})
   })
 
@@ -255,11 +258,11 @@ describe('TeacherAvailabilityModal', () => {
     renderWithProviders(<TeacherAvailabilityModal teacher={{ id: 7, name: 'Prof. QA' }} onClose={vi.fn()} />)
 
     fireEvent.change(screen.getByLabelText('Mínimo de horas por presença'), { target: { value: '3' } })
-    fireEvent.change(screen.getByLabelText('Furo máximo dentro da presença'), { target: { value: '13' } })
+    fireEvent.change(screen.getByLabelText('Tempo máximo sem aulas por presença'), { target: { value: '13' } })
     fireEvent.click(screen.getByRole('button', { name: /guardar disponibilidade/i }))
-    await screen.findByText('O furo máximo tem de estar entre 0 e 12 horas.')
+    await screen.findByText('O tempo máximo sem aulas tem de estar entre 0 e 12 horas.')
 
-    expect(screen.getByLabelText('Furo máximo dentro da presença')).toHaveAttribute(
+    expect(screen.getByLabelText('Tempo máximo sem aulas por presença')).toHaveAttribute(
       'aria-describedby',
       'teacher-presence-maximum-gap-feedback',
     )

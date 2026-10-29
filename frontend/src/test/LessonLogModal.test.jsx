@@ -75,7 +75,7 @@ describe('LessonLogModal permissions', () => {
     expect(screen.getByLabelText('Sumário')).toBeDisabled()
     expect(screen.getByLabelText('Notas Opcionais')).toBeDisabled()
     expect(screen.queryByRole('button', { name: 'Guardar alterações' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Reabrir Semana' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Reabrir semana' })).not.toBeInTheDocument()
     expect(mutations.upsert).not.toHaveBeenCalled()
   })
 

@@ -8,6 +8,7 @@ import { useCurrentMember } from '../features/members/data'
 import { useTimeslots } from '../features/catalog/data'
 import { useMyAvailability, useMyPresence, useSaveAvailability } from '../features/operations/data'
 import { useAttemptScope } from '../hooks/useAttemptScope'
+import { TXT } from '../utils/terminology'
 import { useAvailabilityDraft } from '../hooks/useAvailabilityDraft'
 
 // The teacher sees the direction rule only when it differs from the default
@@ -28,10 +29,10 @@ const describePresenceRule = (presence) => {
 
 const mapAvailabilityApiMessage = (err, context) => {
   const status = err?.response?.status
-  if (status === 403) return context === 'load' ? 'Sem permissões para consultar a disponibilidade.' : 'Sem permissões para gravar disponibilidade desta conta.'
-  if (status === 404) return 'Perfil de professor não encontrado na organização autenticada.'
+  if (status === 403) return context === 'load' ? 'Sem permissões para consultar a disponibilidade.' : 'Sem permissões para guardar a disponibilidade desta conta.'
+  if (status === 404) return 'Perfil de professor não encontrado nesta escola.'
   if (status === 400) return 'Dados de disponibilidade inválidos. Atualize a página e tente novamente.'
-  return context === 'load' ? 'Falha ao carregar a disponibilidade. Tente novamente.' : 'Erro ao gravar disponibilidade. Tente novamente.'
+  return context === 'load' ? 'Não foi possível carregar a disponibilidade. Tente novamente.' : 'Não foi possível guardar a disponibilidade. Tente novamente.'
 }
 
 export default function MyAvailability({ readOnly = false, allowedActions, warnOnUnsavedChanges = true }) {
@@ -78,13 +79,13 @@ export default function MyAvailability({ readOnly = false, allowedActions, warnO
   }
 
   const queryError = timeslotsQuery.error || availabilityQuery.error
-  if (timeslotsQuery.isLoading || availabilityQuery.isLoading) return <><PageHeader preTitle="Professor" title="Minha Disponibilidade" /><StatePanel state="loading" title="A carregar disponibilidade" description="Estamos a preparar a grelha de disponibilidade." /></>
-  if (queryError) return <><PageHeader preTitle="Professor" title="Minha Disponibilidade" /><StatePanel state="error" title="Não foi possível carregar a grelha" description={mapAvailabilityApiMessage(queryError, 'load')} action={<button type="button" className="btn btn-outline-primary" onClick={() => { void timeslotsQuery.refetch(); void availabilityQuery.refetch() }}>Tentar novamente</button>} /></>
-  if (!timeslots.length) return <><PageHeader preTitle="Professor" title="Minha Disponibilidade" /><StatePanel state="empty" title="A escola ainda não configurou blocos" description="A disponibilidade aparece depois de configurar a grelha horária." /></>
+  if (timeslotsQuery.isLoading || availabilityQuery.isLoading) return <><PageHeader preTitle="Professor" title="Minha disponibilidade" /><StatePanel state="loading" title="A carregar disponibilidade" description="Estamos a preparar a grelha de disponibilidade." /></>
+  if (queryError) return <><PageHeader preTitle="Professor" title="Minha disponibilidade" /><StatePanel state="error" title="Não foi possível carregar a grelha" description={mapAvailabilityApiMessage(queryError, 'load')} action={<button type="button" className="btn btn-outline-primary" onClick={() => { void timeslotsQuery.refetch(); void availabilityQuery.refetch() }}>Tentar novamente</button>} /></>
+  if (!timeslots.length) return <><PageHeader preTitle="Professor" title="Minha disponibilidade" /><StatePanel state="empty" title="A escola ainda não configurou blocos" description="A disponibilidade aparece depois de configurar a grelha horária." /></>
 
   return (
     <div data-tutorial-target="availability-workspace">
-      <PageHeader preTitle="Professor" title="Minha Disponibilidade" description="Escolha uma ferramenta e pinte os blocos. Pode usar rato, toque ou teclado." />
+      <PageHeader preTitle="Professor" title="Minha disponibilidade" description="Escolha uma ferramenta e pinte os blocos. Pode usar rato, toque ou teclado." />
       {isNonDefaultPresence(presenceQuery.data) && (
         <div className="text-muted mb-3" role="note" aria-label="Regra de presença">
           <p className="mb-0">{describePresenceRule(presenceQuery.data)}</p>
@@ -96,12 +97,12 @@ export default function MyAvailability({ readOnly = false, allowedActions, warnO
         changedCount={draft.changedCount}
         disabled={!canSave || saveMutation.isPending}
       >
-        {isDirty && <button type="button" className="btn btn-outline-secondary" onClick={draft.reset} disabled={!canSave || saveMutation.isPending}>Repor alterações</button>}
+        {isDirty && <button type="button" className="btn btn-outline-secondary" onClick={draft.reset} disabled={!canSave || saveMutation.isPending}>{TXT.DISCARD_CHANGES}</button>}
       </AvailabilityToolbar>
       <AvailabilityGrid timeslots={timeslots} availabilityMap={draft.draftMap} onChange={draft.handleGridChange} selectedMode={draft.selectedScore} />
       <div className="d-flex justify-content-end mt-4">
         <button type="button" className="btn btn-primary" onClick={() => { void handleSave() }} disabled={!canSave || !isDirty || saveMutation.isPending}>
-          {saveMutation.isPending ? 'A guardar' : 'Guardar disponibilidade'}
+          {saveMutation.isPending ? TXT.SAVING : 'Guardar disponibilidade'}
         </button>
       </div>
     </div>

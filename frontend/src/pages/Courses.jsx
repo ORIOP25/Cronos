@@ -30,7 +30,7 @@ const Courses = () => {
 
   // 2. Colunas da Tabela
   const columns = [
-    { key: 'name', label: 'Nome do Curso' },
+    { key: 'name', label: 'Nome do curso' },
     { key: 'abbreviation', label: 'Sigla' },
     {
       key: 'classes_count',
@@ -71,7 +71,7 @@ const Courses = () => {
         <CButton color="secondary" variant="outline" onClick={() => navigate('/imports?resource=courses')}>Importar CSV</CButton>
         <CButton color="primary" onClick={handleCreate} className="d-flex align-items-center gap-2" data-tutorial-target="new-course">
           <CIcon icon={cilPlus} />
-          Novo Curso
+          Novo curso
         </CButton>
       </PageHeader>
 

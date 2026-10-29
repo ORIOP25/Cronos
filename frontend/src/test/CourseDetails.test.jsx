@@ -48,7 +48,7 @@ describe('CourseDetails compact class list', () => {
     renderCourse()
     fireEvent.click(screen.getByRole('button', { name: 'Editar 10.º A' }))
     const dialog = await screen.findByRole('dialog')
-    expect(within(dialog).getByLabelText('Nome da Turma')).toHaveValue('10.º A')
+    expect(within(dialog).getByLabelText('Nome da turma')).toHaveValue('10.º A')
     fireEvent.click(within(dialog).getByRole('button', { name: 'Cancelar' }))
     fireEvent.click(screen.getByRole('button', { name: 'Remover 10.º A' }))
     expect(removeClass).not.toHaveBeenCalled()
@@ -61,14 +61,14 @@ describe('CourseDetails compact class list', () => {
   it('has one class creation entry point when the list is empty', () => {
     courseQuery.mockReturnValue({ data: { id: 7, name: 'Informática', abbreviation: 'TGEI', classes: [] }, isLoading: false })
     renderCourse()
-    expect(screen.getAllByRole('button', { name: /Nova Turma|Criar primeira turma/ })).toHaveLength(1)
+    expect(screen.getAllByRole('button', { name: /Nova turma|Criar primeira turma/ })).toHaveLength(1)
     expect(screen.getByText('Nenhuma turma criada para este curso.')).toBeInTheDocument()
   })
 
   it('offers a named cancel action that discards an inline course draft', () => {
     renderCourse()
     fireEvent.click(screen.getByRole('button', { name: 'Editar', exact: true }))
-    fireEvent.change(screen.getByLabelText('Nome do Curso'), { target: { value: 'Rascunho' } })
+    fireEvent.change(screen.getByLabelText('Nome do curso'), { target: { value: 'Rascunho' } })
     fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }))
     expect(screen.queryByDisplayValue('Rascunho')).not.toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Informática' })).toBeInTheDocument()

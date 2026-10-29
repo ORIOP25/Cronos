@@ -529,7 +529,7 @@ describe('ClassSubjects', () => {
     expect(dialog.getByLabelText('M2 Módulo 2 · 30 h')).toBeChecked()
     expect(screen.getByText('Já começou')).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Criar junção' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Criar aula conjunta' }))
 
     expect(jointCandidatesMock).toHaveBeenCalledWith(1, 11, undefined, true)
     expect(mutation.mutate).toHaveBeenCalledWith(
@@ -566,10 +566,10 @@ describe('ClassSubjects', () => {
 
     expect(screen.getByLabelText('Professor da aula conjunta')).toBeInTheDocument()
     expect(screen.getByText(/Esta alteração também muda 10\.º MAS/)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Criar junção' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Criar aula conjunta' })).toBeDisabled()
 
     fireEvent.change(screen.getByLabelText('Professor da aula conjunta'), { target: { value: '7' } })
-    expect(screen.getByRole('button', { name: 'Criar junção' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Criar aula conjunta' })).toBeEnabled()
   })
 
   it('requires an explicit teacher when no member has an assigned teacher', () => {
@@ -610,7 +610,7 @@ describe('ClassSubjects', () => {
     fireEvent.click(screen.getByLabelText(/10\.º MAS/))
 
     expect(screen.getByLabelText('Professor da aula conjunta')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Criar junção' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Criar aula conjunta' })).toBeDisabled()
   })
 
   it('shows a joint API error next to the class field', () => {
@@ -636,7 +636,7 @@ describe('ClassSubjects', () => {
 
     fireEvent.click(screen.getAllByRole('button', { name: /Dar em conjunto com/ })[0])
     fireEvent.click(screen.getByLabelText(/10\.º MAS/))
-    fireEvent.click(screen.getByRole('button', { name: 'Criar junção' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Criar aula conjunta' }))
 
     const turmas = screen.getByText('Turmas').closest('fieldset')
     expect(within(turmas).getByRole('alert')).toHaveTextContent(/atualize a página/i)

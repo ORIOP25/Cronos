@@ -31,12 +31,12 @@ export default function SchedulePrioritiesSection() {
   const save = () => updateMutation.mutate({ levels })
 
   if (prioritiesQuery.isLoading) {
-    return <div className="d-flex justify-content-center p-5" role="status">A carregar prioridades…</div>
+    return <div className="d-flex justify-content-center p-5" role="status">A carregar as prioridades…</div>
   }
 
   if (prioritiesQuery.isError) {
     return <div className="alert alert-danger" role="alert">
-      {getApiErrorMessage(prioritiesQuery.error, 'Erro ao carregar prioridades do horário.')}
+      {getApiErrorMessage(prioritiesQuery.error, 'Não foi possível carregar as prioridades do horário.')}
     </div>
   }
 
@@ -103,7 +103,7 @@ export default function SchedulePrioritiesSection() {
       )}
       {updateMutation.isError && (
         <div className="alert alert-danger mt-4" role="alert">
-          {getApiErrorMessage(updateMutation.error, 'Erro ao guardar prioridades do horário.')}
+          {getApiErrorMessage(updateMutation.error, 'Não foi possível guardar as prioridades do horário.')}
         </div>
       )}
 

@@ -238,7 +238,7 @@ describe('SchoolConfig scheduler settings', () => {
   })
 
   it('shows only the API error and keeps the button reusable after a conflict', async () => {
-    apiClient.post.mockRejectedValueOnce({ response: { status: 409, data: { detail: 'Use Recomeçar Ano Letivo.' } } })
+    apiClient.post.mockRejectedValueOnce({ response: { status: 409, data: { detail: 'Use Recomeçar ano letivo.' } } })
     const { queryClient } = renderWithProviders(<SchoolConfig />, { withToaster: true })
     const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
 

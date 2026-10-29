@@ -50,7 +50,7 @@ describe('SubjectForm', () => {
     fireEvent.click(screen.getByRole('button', { name: /editar M1/i }))
     fireEvent.change(screen.getByLabelText(/nome do módulo/i), { target: { value: ' Módulo 1 ' } })
     fireEvent.click(screen.getByRole('button', { name: 'Guardar' }))
-    fireEvent.click(screen.getByRole('button', { name: /guardar disciplina/i }))
+    fireEvent.click(screen.getByRole('button', { name: /criar disciplina/i }))
     expect(onSubmit).toHaveBeenCalledWith({
       name: 'Programação',
       room_type_id: 11,
@@ -85,7 +85,7 @@ describe('SubjectForm', () => {
     const user = userEvent.setup()
     renderForm()
 
-    await user.click(screen.getByRole('button', { name: /guardar disciplina/i }))
+    await user.click(screen.getByRole('button', { name: /criar disciplina/i }))
 
     const nameInput = screen.getByLabelText(/nome da disciplina/i)
     expect(screen.getByRole('alert')).toHaveTextContent(/nome da disciplina é obrigatório/i)
@@ -110,7 +110,9 @@ describe('SubjectForm', () => {
 
     expect(screen.getByLabelText(/nome da disciplina/i)).toBeDisabled()
     expect(screen.getByText('Fundamentos de programação')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /guardar disciplina/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /criar disciplina/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Guardar alterações' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Fechar', exact: true })).toBeEnabled()
     expect(screen.queryByRole('button', { name: /editar fundamentos/i })).not.toBeInTheDocument()
   })
 
@@ -136,7 +138,7 @@ describe('SubjectForm', () => {
     expect(screen.getByRole('option', { name: 'Oficina' })).toBeInTheDocument()
     fireEvent.change(screen.getByLabelText(/tipo de sala/i), { target: { value: '24' } })
     fireEvent.change(screen.getByLabelText(/nome da disciplina/i), { target: { value: 'Cerâmica' } })
-    fireEvent.click(screen.getByRole('button', { name: /guardar disciplina/i }))
+    fireEvent.click(screen.getByRole('button', { name: /criar disciplina/i }))
 
     expect(onSubmit).toHaveBeenCalledWith({ name: 'Cerâmica', room_type_id: 24, modules: [] })
   })
@@ -148,7 +150,7 @@ describe('SubjectForm', () => {
     expect(screen.getByRole('status')).toHaveTextContent(/a carregar tipos de sala/i)
     expect(screen.getByLabelText(/tipo de sala/i)).toBeDisabled()
     expect(screen.getByLabelText(/tipo de sala/i)).toHaveAttribute('aria-describedby', 'room-types-loading')
-    expect(screen.getByRole('button', { name: /guardar disciplina/i })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /criar disciplina/i })).toBeDisabled()
   })
 
   it('anuncia o erro e permite voltar a carregar os tipos', () => {
@@ -161,6 +163,6 @@ describe('SubjectForm', () => {
     expect(screen.getByLabelText(/tipo de sala/i)).toHaveAttribute('aria-describedby', 'room-types-error')
     fireEvent.click(screen.getByRole('button', { name: /tentar novamente/i }))
     expect(refetch).toHaveBeenCalledOnce()
-    expect(screen.getByRole('button', { name: /guardar disciplina/i })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /criar disciplina/i })).toBeDisabled()
   })
 })

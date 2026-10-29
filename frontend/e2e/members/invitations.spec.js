@@ -40,7 +40,7 @@ async function saveAndExpect(page, expectedStatus) {
     response.url().includes('/api/v1/members')
       && ['POST', 'PATCH'].includes(response.request().method())
   ))
-  await page.getByRole('button', { name: 'Guardar' }).click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Adicionar membro', exact: true }).click()
   const response = await responsePromise
   expect(response.status()).toBe(expectedStatus)
   const body = await response.json()

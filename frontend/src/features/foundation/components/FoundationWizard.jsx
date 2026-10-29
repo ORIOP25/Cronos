@@ -289,7 +289,7 @@ export function FoundationWizard() {
       } else {
         dispatch({
           type: 'COMPLETE_FAILED',
-          error: apiErrorMessage(err?.response?.data?.detail, 'Falha ao ativar a escola. Tente novamente.'),
+          error: apiErrorMessage(err?.response?.data?.detail, 'Não foi possível ativar a escola. Tente novamente.'),
           errorCode: getApiErrorCode(err),
         })
       }
@@ -367,11 +367,11 @@ export function FoundationWizard() {
           <div className="ms-3 text-end" style={{ minWidth: '120px' }}>
             {state.status === 'saving' && (
               <span className="small text-muted d-flex align-items-center gap-1 justify-content-end" role="status">
-                <CSpinner size="sm" /> A guardar...
+                <CSpinner size="sm" /> A guardar…
               </span>
             )}
             {state.status === 'error' && (
-              <CBadge color="danger" shape="rounded-pill" role="alert">Erro ao guardar</CBadge>
+              <CBadge color="danger" shape="rounded-pill" role="alert">Não foi possível guardar</CBadge>
             )}
           </div>
         </div>

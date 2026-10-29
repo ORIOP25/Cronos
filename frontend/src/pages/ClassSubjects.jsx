@@ -471,7 +471,7 @@ const JointGroupModal = ({
           {candidatesLoading ? (
             <CSpinner size="sm" />
           ) : classRows.length === 0 ? (
-            <p className="text-muted small mb-0">Não há turmas candidatas para esta junção.</p>
+            <p className="text-muted small mb-0">Não há turmas candidatas para esta aula conjunta.</p>
           ) : (
             classRows.map((row) => (
               <CFormCheck
@@ -552,7 +552,7 @@ const JointGroupModal = ({
           Cancelar
         </CButton>
         <CButton color="primary" onClick={handleSubmit} disabled={!canSubmit || isPending}>
-          {jointGroup ? 'Guardar junção' : 'Criar junção'}
+          {jointGroup ? 'Guardar alterações' : 'Criar aula conjunta'}
         </CButton>
       </CModalFooter>
     </CModal>
@@ -888,7 +888,7 @@ const ClassSubjects = ({ courseIdOverride, classIdOverride, navigationDisabled =
               data-tutorial-target="add-class-subject"
             >
               <CIcon icon={cilPlus} className="me-1" />
-              Adicionar Disciplina
+              Adicionar disciplina
             </CButton>
           </div>
         </CCardBody>
@@ -907,7 +907,7 @@ const ClassSubjects = ({ courseIdOverride, classIdOverride, navigationDisabled =
               <p className="text-muted mb-3">Nenhuma disciplina associada a esta turma.</p>
               <CButton color="primary" onClick={() => setShowAddModal(true)} disabled={!canAdd} data-tutorial-target="add-class-subject">
                 <CIcon icon={cilPlus} className="me-1" />
-                Adicionar Primeira Disciplina
+                Adicionar primeira disciplina
               </CButton>
             </div>
           ) : (
@@ -936,10 +936,10 @@ const ClassSubjects = ({ courseIdOverride, classIdOverride, navigationDisabled =
         </CCardBody>
       </CCard>
 
-      {/* Modal: Adicionar Disciplina */}
+      {/* Modal: Adicionar disciplina */}
       <CModal visible={showAddModal} onClose={() => setShowAddModal(false)}>
         <CModalHeader>
-          <CModalTitle>Adicionar Disciplina</CModalTitle>
+          <CModalTitle>Adicionar disciplina</CModalTitle>
         </CModalHeader>
         <CModalBody>
           {renderAddModalBody()}
@@ -964,6 +964,7 @@ const ClassSubjects = ({ courseIdOverride, classIdOverride, navigationDisabled =
         title="Confirmar remoção da disciplina"
         message={`Remover ${subjectToRemove?.subject_name || 'esta disciplina'} desta turma?`}
         confirmText="Remover"
+        pendingText="A remover…"
         isLoading={removeSubject.isPending}
         variant="danger"
       />

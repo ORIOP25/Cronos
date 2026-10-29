@@ -95,7 +95,7 @@ const Subjects = ({ readOnly = false, allowedActions }) => {
         <CButton color="secondary" variant="outline" onClick={() => navigate('/imports?resource=subjects')}>Importar CSV</CButton>
         <CButton color="primary" onClick={handleCreate} className="d-flex align-items-center gap-2" data-tutorial-target="new-subject">
           <CIcon icon={cilPlus} />
-          Nova Disciplina
+          Nova disciplina
         </CButton>
       </>}
       </PageHeader>

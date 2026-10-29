@@ -50,7 +50,7 @@ const CRITERIA = [
   'Manter a turma na mesma sala.',
   'Manter o horário igual de semana para semana.',
   'Avançar as disciplinas ao mesmo ritmo.',
-  'Nas atualizações, mexer pouco no horário publicado.',
+  'Reduzir alterações ao horário publicado.',
 ]
 
 const PRIORITIES_RESPONSE = { levels: DEFAULTS, defaults: DEFAULTS }

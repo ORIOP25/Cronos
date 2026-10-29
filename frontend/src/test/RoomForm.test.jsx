@@ -33,9 +33,9 @@ describe('RoomForm', () => {
     const onSubmit = vi.fn()
     render(<RoomForm {...defaultProps} onSubmit={onSubmit} />)
     fireEvent.change(screen.getByLabelText(/nome da sala/i), { target: { value: 'Sala Artes' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Adicionar tipo' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Adicionar tipo de sala' }))
     fireEvent.change(screen.getByLabelText('Nome do novo tipo'), { target: { value: 'Artes' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Criar tipo' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Criar tipo de sala' }))
     expect(await screen.findByRole('option', { name: 'Artes' })).toBeInTheDocument()
     expect(screen.getByLabelText(/tipo de sala/i)).toHaveValue('37')
     expect(createType).toHaveBeenCalledWith({ name: 'Artes' })
@@ -48,9 +48,9 @@ describe('RoomForm', () => {
     const onSubmit = vi.fn()
     render(<RoomForm {...defaultProps} onSubmit={onSubmit} />)
     fireEvent.change(screen.getByLabelText(/nome da sala/i), { target: { value: 'Sala Artes' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Adicionar tipo' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Adicionar tipo de sala' }))
     fireEvent.change(screen.getByLabelText('Nome do novo tipo'), { target: { value: 'Artes' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Criar tipo' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Criar tipo de sala' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Já existe um tipo de sala com este nome.')
     expect(screen.getByLabelText('Nome do novo tipo')).toHaveValue('Artes')
     expect(screen.getByLabelText(/nome da sala/i)).toHaveValue('Sala Artes')
@@ -63,7 +63,7 @@ describe('RoomForm', () => {
     useRoomTypesMock.mockReturnValue({ data: [roomTypes[0]], isLoading: false, isError: false, refetch: vi.fn() })
     view.rerender(<RoomForm {...defaultProps} initialData={{ name: 'Sala X', room_type: roomTypes[1], capacity: 25 }} onSubmit={onSubmit} />)
     expect(screen.getByLabelText(/tipo de sala/i)).toHaveValue('11')
-    fireEvent.click(screen.getByRole('button', { name: 'Atualizar Sala' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar alterações' }))
     expect(onSubmit).toHaveBeenCalledWith({ name: 'Sala X', room_type_id: 11, capacity: 25 })
   })
 
@@ -91,7 +91,7 @@ describe('RoomForm', () => {
       target: { value: '24' },
     })
 
-    fireEvent.click(screen.getByText('Criar Sala'))
+    fireEvent.click(screen.getByText('Criar sala'))
 
     expect(onSubmit).toHaveBeenCalledWith({
       name: 'Lab 3',
@@ -117,11 +117,11 @@ describe('RoomForm', () => {
     expect(onCancel).toHaveBeenCalledTimes(1)
   })
 
-  it('mostra "Atualizar Sala" em modo edicao', () => {
+  it('mostra "Guardar alterações" em modo edicao', () => {
     const editData = { name: 'Sala X', room_type: roomTypes[0], capacity: 25 }
     render(<RoomForm {...defaultProps} initialData={editData} />)
 
-    expect(screen.getByText('Atualizar Sala')).toBeInTheDocument()
+    expect(screen.getByText('Guardar alterações')).toBeInTheDocument()
   })
 
   it('anuncia o carregamento e impede submissao enquanto carrega os tipos', () => {
@@ -131,7 +131,7 @@ describe('RoomForm', () => {
     expect(screen.getByRole('status')).toHaveTextContent(/a carregar tipos de sala/i)
     expect(screen.getByLabelText(/tipo de sala/i)).toBeDisabled()
     expect(screen.getByLabelText(/tipo de sala/i)).toHaveAttribute('aria-describedby', 'room-types-loading')
-    expect(screen.getByRole('button', { name: 'Criar Sala' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Criar sala' })).toBeDisabled()
   })
 
   it('anuncia o erro e permite voltar a carregar os tipos', () => {
@@ -144,6 +144,6 @@ describe('RoomForm', () => {
     expect(screen.getByLabelText(/tipo de sala/i)).toHaveAttribute('aria-describedby', 'room-types-error')
     fireEvent.click(screen.getByRole('button', { name: /tentar novamente/i }))
     expect(refetch).toHaveBeenCalledOnce()
-    expect(screen.getByRole('button', { name: 'Criar Sala' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Criar sala' })).toBeDisabled()
   })
 })

@@ -14,7 +14,7 @@ describe('KPISidebar', () => {
     render(<KPISidebar subjects={[]} isError={true} />)
 
     expect(screen.getByTestId('kpi-error')).toBeInTheDocument()
-    expect(screen.getByText('Erro ao carregar o progresso da turma.')).toBeInTheDocument()
+    expect(screen.getByText('Não foi possível carregar o progresso da turma.')).toBeInTheDocument()
   })
 
   it('renders empty state when subjects list is empty and not loading or error', () => {

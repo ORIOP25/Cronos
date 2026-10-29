@@ -18,7 +18,7 @@ export const SCHEDULE_PRIORITY_CRITERIA = [
   {
     key: 'class_gaps',
     title: 'Evitar tempos livres das turmas.',
-    description: 'Horas sem aula entre duas aulas da mesma turma no mesmo dia. Um furo num dia tolera-se; dois ou mais no mesmo dia o Cronos evita sempre.',
+    description: 'Horas sem aula entre duas aulas da mesma turma no mesmo dia. Um tempo livre num dia é tolerado; o Cronos evita sempre dois ou mais no mesmo dia.',
     lowest: 'A turma pode ficar com horas vazias, e os alunos saem ou esperam na escola.',
     highest: 'Os dias da turma ficam compactos. Os professores podem ficar com mais tempos livres e vir mais vezes para uma só aula.',
   },
@@ -76,7 +76,7 @@ export const SCHEDULE_PRIORITY_CRITERIA = [
   },
   {
     key: 'update_stability',
-    title: 'Nas atualizações, mexer pouco no horário publicado.',
+    title: 'Reduzir alterações ao horário publicado.',
     description: 'Só conta quando o administrador atualiza um horário já publicado. As aulas dentro da janela de estabilidade nunca mudam, em nenhum valor.',
     lowest: 'O Cronos refaz o futuro livremente para melhorar os outros critérios. O horário publicado pode mudar muito, e professores e alunos têm de o rever.',
     highest: 'O Cronos muda só o necessário. Os outros critérios melhoram menos, e as horas perdidas podem demorar mais a recuperar.',

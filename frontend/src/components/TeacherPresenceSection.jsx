@@ -5,8 +5,8 @@ import FeedbackBanner from './FeedbackBanner'
 const EMPTY_PRESENCE_DRAFT = { lunch_required: true, minimum_hours: '', max_gap_hours: '' }
 
 const PRESENCE_MIN_HOURS_MESSAGE = 'O mínimo tem de estar entre 1 e 12 horas.'
-const PRESENCE_GAP_HOURS_MESSAGE = 'O furo máximo tem de estar entre 0 e 12 horas.'
-const PRESENCE_PAIR_MESSAGE = 'Indique o mínimo e o furo máximo, ou deixe os dois vazios.'
+const PRESENCE_GAP_HOURS_MESSAGE = 'O tempo máximo sem aulas tem de estar entre 0 e 12 horas.'
+const PRESENCE_PAIR_MESSAGE = 'Indique o mínimo de horas e o tempo máximo sem aulas, ou deixe os dois campos em branco.'
 
 const asHours = (value) => (value === '' || value == null ? '' : Number(value))
 const isEmptyHours = (value) => value === '' || value == null
@@ -141,7 +141,7 @@ export default function TeacherPresenceSection({
             onChange={(event) => onChange(changeMinimumHours(value, event.target.value))}
           />
           <small id="teacher-presence-minimum-hours-help" className="text-muted d-block mt-1">
-            Vazio = sem mínimo. Uma presença é a manhã ou a tarde, separadas pelo almoço. Sem hora de almoço, o dia inteiro conta como uma presença.
+            Deixe em branco para não definir um mínimo. Uma presença é a manhã ou a tarde, separadas pelo almoço. Sem hora de almoço, o dia inteiro conta como uma presença.
           </small>
           {fieldErrors.minimum_hours && (
             <CFormFeedback id="teacher-presence-minimum-hours-feedback" className="d-block" invalid>
@@ -155,7 +155,7 @@ export default function TeacherPresenceSection({
             <CFormInput
               type="number"
               id="teacher-presence-maximum-gap"
-              label="Furo máximo dentro da presença"
+              label="Tempo máximo sem aulas por presença"
               min={0}
               max={12}
               value={value.max_gap_hours}

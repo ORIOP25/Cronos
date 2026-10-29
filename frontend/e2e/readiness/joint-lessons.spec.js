@@ -157,7 +157,7 @@ test.describe('Joint lessons — shared modules', () => {
     for (const [index, code] of sharedLabels.entries()) {
       await expect(dialog.getByLabel(`${code} E2E Joint M${index + 1} · 2 h`)).toBeChecked()
     }
-    await dialog.getByRole('button', { name: 'Criar junção', exact: true }).click()
+    await dialog.getByRole('button', { name: 'Criar aula conjunta', exact: true }).click()
     await expect(dialog).toBeHidden()
 
     // Manual step 3: both members show the joint summary.
@@ -226,7 +226,7 @@ test.describe('Joint lessons — shared modules', () => {
         new URL(response.url()).pathname === `/api/v1/schedule/lessons/${movedLesson.scheduler_lesson_id}/log`
         && response.request().method() === 'PUT'
       ))
-      await logDialog.getByRole('button', { name: 'Aula Dada', exact: true }).click()
+      await logDialog.getByRole('button', { name: 'Aula dada', exact: true }).click()
       const savedResponse = await saved
       expect(savedResponse.status()).toBe(200)
       expect(savedResponse.request().postDataJSON()).toMatchObject({

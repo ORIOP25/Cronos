@@ -11,6 +11,7 @@ import {
 } from '@coreui/react'
 import { EMPTY_MODULE, normalizeModule } from '../../utils/subjectModules'
 import { useRoomTypes } from '../../features/catalog/data'
+import { TXT } from '../../utils/terminology'
 
 const SUBJECT_FEEDBACK_ID = 'subjectNameFeedback'
 const MODULES_FEEDBACK_ID = 'subjectModulesFeedback'
@@ -109,6 +110,8 @@ const SubjectForm = ({ initialData, onSubmit, isLoading, onCancel, readOnly = fa
     'aria-describedby': modulesInvalid ? MODULES_FEEDBACK_ID : undefined,
   }
 
+  const submitLabel = initialData ? TXT.SAVE_CHANGES : 'Criar disciplina'
+
   return (
     <CForm onSubmit={submit} noValidate>
       <fieldset className="mb-4">
@@ -117,7 +120,7 @@ const SubjectForm = ({ initialData, onSubmit, isLoading, onCancel, readOnly = fa
           <CCol md={8}>
             <CFormInput
               id="subject-name"
-              label="Nome da Disciplina"
+              label="Nome da disciplina"
               value={subject.name}
               onChange={(event) => updateSubject('name', event.target.value)}
               disabled={readOnly}
@@ -182,8 +185,8 @@ const SubjectForm = ({ initialData, onSubmit, isLoading, onCancel, readOnly = fa
       </fieldset>
 
       <CModalFooter className="px-0 mt-4 border-0 pb-0">
-        <CButton type="button" color="secondary" variant="outline" onClick={onCancel}>Cancelar</CButton>
-        {!readOnly && <CButton type="submit" color="primary" disabled={isLoading || roomTypesLoading || roomTypesUnavailable}>{isLoading ? 'A guardar...' : 'Guardar Disciplina'}</CButton>}
+        <CButton type="button" color="secondary" variant="outline" onClick={onCancel}>{readOnly ? TXT.CLOSE : TXT.CANCEL}</CButton>
+        {!readOnly && <CButton type="submit" color="primary" disabled={isLoading || roomTypesLoading || roomTypesUnavailable}>{isLoading ? TXT.SAVING : submitLabel}</CButton>}
       </CModalFooter>
     </CForm>
   )

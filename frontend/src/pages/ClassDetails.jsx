@@ -26,6 +26,7 @@ import RoomTypeBadge from '../components/RoomTypeBadge'
 import ClassAvailabilityModal from '../components/ClassAvailabilityModal'
 import { getApiErrorMessage, getClassHomeRoomErrorMessage, joinNames } from '../utils/apiErrors'
 import { useAttemptScope } from '../hooks/useAttemptScope'
+import { TXT } from '../utils/terminology'
 import { formatGradeLevel, homeRoomHeading, homeRoomSentenceSubject } from '../utils/presentation'
 
 // ==========================================
@@ -431,7 +432,7 @@ const ClassDetails = () => {
             /* --- MODO EDIÇÃO --- */
             <CRow className="g-3 align-items-end">
               <CCol md={4}>
-                <label htmlFor="header-name" className="form-label fw-semibold">Nome da Turma</label>
+                <label htmlFor="header-name" className="form-label fw-semibold">Nome da turma</label>
                 <CFormInput
                   id="header-name"
                   value={headerForm.name}
@@ -489,7 +490,7 @@ const ClassDetails = () => {
                 </CButton>
                 <CButton color="primary" onClick={saveHeader} disabled={updateClass.isPending}>
                   {updateClass.isPending ? <CSpinner size="sm" /> : <CIcon icon={cilSave} className="me-1" />}
-                  Guardar
+                  {TXT.SAVE_CHANGES}
                 </CButton>
               </CCol>
             </CRow>
@@ -656,7 +657,7 @@ const ClassDetails = () => {
               </CButton>
               <CButton color="primary" size="sm" onClick={saveProgress} disabled={updateProgress.isPending}>
                 {updateProgress.isPending ? <CSpinner size="sm" /> : <CIcon icon={cilSave} size="sm" className="me-1" />}
-                Guardar
+                {TXT.SAVE_CHANGES}
               </CButton>
             </div>
           ) : (
@@ -667,7 +668,7 @@ const ClassDetails = () => {
               disabled={(classData.subjects || []).length === 0}
             >
               <CIcon icon={cilPencil} size="sm" className="me-1" />
-              Editar Progresso
+              Editar progresso
             </CButton>
           )}
         </CCardHeader>

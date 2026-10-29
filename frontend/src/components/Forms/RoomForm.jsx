@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { TXT } from '../../utils/terminology'
 import { toast } from 'react-hot-toast'
 import {
   CForm, CFormFeedback, CRow, CCol, CFormInput, CButton, CModalFooter, CFormSelect
@@ -83,9 +84,9 @@ const RoomForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
     })
   }
 
-  let submitLabel = 'Criar Sala'
-  if (isLoading) submitLabel = 'A gravar...'
-  else if (initialData) submitLabel = 'Atualizar Sala'
+  let submitLabel = 'Criar sala'
+  if (isLoading) submitLabel = TXT.SAVING
+  else if (initialData) submitLabel = TXT.SAVE_CHANGES
 
   return (
     <>
@@ -95,7 +96,7 @@ const RoomForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
           <CFormInput
             id="room-name"
             type="text"
-            label="Nome da Sala"
+            label="Nome da sala"
             name="name"
             value={formData.name}
             onChange={handleChange}
@@ -126,7 +127,7 @@ const RoomForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
         <CCol md={12}>
           <CFormSelect
             id="room-type"
-            label="Tipo de Sala"
+            label="Tipo de sala"
             name="room_type_id"
             value={String(selectedRoomTypeId)}
             onChange={handleChange}
@@ -138,14 +139,14 @@ const RoomForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
             {availableTypes.map((roomType) => <option key={roomType.id} value={roomType.id}>{roomType.name}</option>)}
           </CFormSelect>
           <div className="d-flex gap-3 mt-1">
-            <CButton type="button" color="link" className="p-0" disabled={isLoading || roomTypesLoading || createType.isPending} onClick={() => setAddingType(true)}>Adicionar tipo</CButton>
+            <CButton type="button" color="link" className="p-0" disabled={isLoading || roomTypesLoading || createType.isPending} onClick={() => setAddingType(true)}>Adicionar tipo de sala</CButton>
             <CButton type="button" color="link" className="p-0" disabled={isLoading || createType.isPending} onClick={() => { setCreatedType(null); setManagingTypes(true) }}>Gerir tipos existentes</CButton>
           </div>
           {addingType && <div className="mt-3">
             <CFormInput id="room-new-type" label="Nome do novo tipo" value={typeName} autoFocus disabled={createType.isPending} onChange={(event) => { setTypeName(event.target.value); setTypeError('') }} aria-invalid={Boolean(typeError)} aria-describedby={typeError ? 'room-new-type-error' : undefined} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void addType() } }} />
             {typeError && <div id="room-new-type-error" className="invalid-feedback d-block" role="alert">{typeError}</div>}
             <div className="d-flex gap-2 mt-2">
-              <CButton type="button" color="primary" disabled={createType.isPending} onClick={() => void addType()}>{createType.isPending ? 'A criar…' : 'Criar tipo'}</CButton>
+              <CButton type="button" color="primary" disabled={createType.isPending} onClick={() => void addType()}>{createType.isPending ? 'A criar…' : 'Criar tipo de sala'}</CButton>
               <CButton type="button" color="secondary" variant="outline" disabled={createType.isPending} onClick={() => { setAddingType(false); setTypeError('') }}>Cancelar tipo</CButton>
             </div>
           </div>}

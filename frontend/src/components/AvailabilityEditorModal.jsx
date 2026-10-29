@@ -16,6 +16,7 @@ import StatePanel from './StatePanel'
 import { getApiErrorMessage, isApiErrorTransient } from '../utils/apiErrors'
 import { useAttemptScope } from '../hooks/useAttemptScope'
 import { useAvailabilityDraft } from '../hooks/useAvailabilityDraft'
+import { TXT } from '../utils/terminology'
 
 /**
  * Shared weekly availability editor: loading, error and empty states, the
@@ -166,7 +167,7 @@ export default function AvailabilityEditorModal({
           <>
             {footerStartNode}
             <CButton color="secondary" variant="outline" onClick={onClose} disabled={isSaving}>
-              Fechar
+              {draft.isDirty || extraDirty ? TXT.CANCEL : TXT.CLOSE}
             </CButton>
             <CButton color="primary" onClick={() => { void handleSave() }} disabled={(!draft.isDirty && !extraDirty) || isSaving}>
               {isSaving ? <><CSpinner size="sm" className="me-1" />A guardar…</> : saveLabel}

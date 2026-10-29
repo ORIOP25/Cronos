@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { TXT } from '../../utils/terminology'
 import {
   CForm,
   CRow,
@@ -66,9 +67,9 @@ const ClassInCourseForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
     onSubmit(result.value)
   }
 
-  let submitLabel = 'Criar Turma'
-  if (isLoading) submitLabel = 'A gravar...'
-  else if (initialData) submitLabel = 'Atualizar Turma'
+  let submitLabel = 'Criar turma'
+  if (isLoading) submitLabel = TXT.SAVING
+  else if (initialData) submitLabel = TXT.SAVE_CHANGES
 
   return (
     <CForm onSubmit={handleSubmit} noValidate>
@@ -77,7 +78,7 @@ const ClassInCourseForm = ({ initialData, onSubmit, isLoading, onCancel }) => {
           <CFormInput
             id={FIELD_IDS.name}
             type="text"
-            label="Nome da Turma"
+            label="Nome da turma"
             name="name"
             value={formData.name}
             onChange={handleChange}

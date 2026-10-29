@@ -238,7 +238,7 @@ const CourseDetails = ({ courseIdOverride, readOnly = false, allowedActions, nav
 
   const deleteMessage = deleteConfirmation?.type === 'class'
     ? `Remover a turma ${deleteConfirmation.classData.name}? As associações de configuração serão retiradas e o histórico (horários, sumários e progresso) será preservado. Se estiver no horário atual, a remoção é bloqueada.`
-    : 'Remover este curso? As associações de configuração serão retiradas e o histórico será preservado. Apague primeiro as turmas atuais.'
+    : 'Remover este curso? As associações de configuração serão retiradas e o histórico será preservado. Remova primeiro as turmas atuais.'
 
   // ==========================================
   //  RENDER: Loading / Error
@@ -280,13 +280,13 @@ const CourseDetails = ({ courseIdOverride, readOnly = false, allowedActions, nav
       {/* ---- ALERTAS DE BLOQUEIOS PERSISTENTES ---- */}
       {deleteCourse.isError && (
         <div className="mb-3"><FeedbackBanner tone="danger">
-          <strong>Erro ao apagar:</strong>{' '}
-          {getApiErrorMessage(deleteCourse.error, 'Não é possível apagar este curso.')}
+          <strong>Não foi possível remover o curso:</strong>{' '}
+          {getApiErrorMessage(deleteCourse.error, 'Não é possível remover este curso.')}
         </FeedbackBanner></div>
       )}
       {deleteCourseClass.isError && (
         <div className="mb-3"><FeedbackBanner tone="danger">
-          <strong>Erro ao remover turma:</strong>{' '}
+          <strong>Não foi possível remover a turma:</strong>{' '}
           {getApiErrorMessage(deleteCourseClass.error)}
         </FeedbackBanner></div>
       )}
@@ -299,7 +299,7 @@ const CourseDetails = ({ courseIdOverride, readOnly = false, allowedActions, nav
             <div>
               <CRow className="g-3 align-items-end">
                 <CCol md={6}>
-                  <label htmlFor="courseNameInput" className="form-label fw-semibold">Nome do Curso</label>
+                  <label htmlFor="courseNameInput" className="form-label fw-semibold">Nome do curso</label>
                   <CFormInput
                     id="courseNameInput"
                     value={headerForm.name}
@@ -328,7 +328,7 @@ const CourseDetails = ({ courseIdOverride, readOnly = false, allowedActions, nav
                     disabled={updateCourse.isPending}
                   >
                     {updateCourse.isPending ? <CSpinner size="sm" /> : <CIcon icon={cilSave} className="me-1" />}
-                    Guardar
+                    {TXT.SAVE_CHANGES}
                   </CButton>
                 </CCol>
               </CRow>
@@ -352,7 +352,7 @@ const CourseDetails = ({ courseIdOverride, readOnly = false, allowedActions, nav
                   <CIcon icon={cilPencil} size="sm" />
                   Editar
                 </CButton>}
-                {canDelete && <CButton color="danger" variant="ghost" size="sm" className="d-flex align-items-center" onClick={handleDeleteCourse} title="Apagar curso">
+                {canDelete && <CButton color="danger" variant="ghost" size="sm" className="d-flex align-items-center" onClick={handleDeleteCourse} title="Remover curso">
                   <CIcon icon={cilTrash} size="sm" />
                 </CButton>}
               </div>
@@ -380,7 +380,7 @@ const CourseDetails = ({ courseIdOverride, readOnly = false, allowedActions, nav
                 data-tutorial-target="new-class"
               >
                 <CIcon icon={cilPlus} size="sm" />
-                Nova Turma
+                Nova turma
               </CButton>
             </CCardHeader>
             <CCardBody>
@@ -439,6 +439,7 @@ const CourseDetails = ({ courseIdOverride, readOnly = false, allowedActions, nav
         title={deleteConfirmation?.type === 'class' ? 'Confirmar remoção da turma' : 'Confirmar remoção do curso'}
         message={deleteMessage}
         confirmText="Remover"
+        pendingText="A remover…"
         isLoading={deleteCourse.isPending || deleteCourseClass.isPending}
         variant="danger"
       />

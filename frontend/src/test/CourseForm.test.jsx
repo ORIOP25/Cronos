@@ -90,7 +90,7 @@ describe('CourseForm', () => {
   it('supports cancel and loading state', () => {
     const onCancel = vi.fn()
     renderForm({ onCancel, isLoading: true })
-    expect(screen.getByRole('button', { name: /a gravar/i })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /a guardar/i })).toBeDisabled()
     fireEvent.click(screen.getByRole('button', { name: /cancelar/i }))
     expect(onCancel).toHaveBeenCalledOnce()
   })

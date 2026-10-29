@@ -51,8 +51,8 @@ describe('MySchedules query-key failures', () => {
     expect(within(week).getByText('Horário publicado')).toBeVisible()
     const navigation = within(week).getByRole('group', { name: 'Navegar entre semanas' })
     expect(within(navigation).getAllByRole('button')).toHaveLength(3)
-    expect(within(navigation).queryByRole('button', { name: 'Submeter Semana' })).not.toBeInTheDocument()
-    expect(within(week).getByRole('button', { name: 'Submeter Semana' })).toBeVisible()
+    expect(within(navigation).queryByRole('button', { name: 'Submeter semana' })).not.toBeInTheDocument()
+    expect(within(week).getByRole('button', { name: 'Submeter semana' })).toBeVisible()
   })
 
   it('retains the lower horizon bound after regrouping the week controls', () => {

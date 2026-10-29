@@ -62,7 +62,7 @@ describe('MyAvailability', () => {
   it('renders the availability page with the unified title and grid name', () => {
     renderWithProviders(<MyAvailability />)
 
-    expect(screen.getByRole('heading', { name: 'Minha Disponibilidade' })).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Minha disponibilidade' })).toBeVisible()
     expect(screen.getByRole('region', { name: 'Grelha de disponibilidade' })).toBeInTheDocument()
     expect(screen.queryByText(/Algo correu mal|Ocorreu um erro inesperado/i)).not.toBeInTheDocument()
   })
@@ -71,7 +71,7 @@ describe('MyAvailability', () => {
     mocks.timeslots = { data: [], isLoading: true, error: null }
     renderWithProviders(<MyAvailability />)
 
-    expect(screen.getByRole('heading', { name: 'Minha Disponibilidade' })).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Minha disponibilidade' })).toBeVisible()
     expect(screen.getByText('A carregar disponibilidade')).toBeInTheDocument()
   })
 
@@ -79,7 +79,7 @@ describe('MyAvailability', () => {
     mocks.availability = { data: [], isLoading: false, error: { response: { status: 403 } } }
     renderWithProviders(<MyAvailability />)
 
-    expect(screen.getByRole('heading', { name: 'Minha Disponibilidade' })).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Minha disponibilidade' })).toBeVisible()
     expect(screen.getByText('Sem permissões para consultar a disponibilidade.')).toBeInTheDocument()
   })
 
@@ -87,15 +87,15 @@ describe('MyAvailability', () => {
     mocks.availability = { data: [], isLoading: false, error: { response: { status: 500 } } }
     renderWithProviders(<MyAvailability />)
 
-    expect(screen.getByRole('heading', { name: 'Minha Disponibilidade' })).toBeVisible()
-    expect(screen.getByText('Falha ao carregar a disponibilidade. Tente novamente.')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Minha disponibilidade' })).toBeVisible()
+    expect(screen.getByText('Não foi possível carregar a disponibilidade. Tente novamente.')).toBeInTheDocument()
   })
 
   it('shows the empty grid with the availability text', () => {
     mocks.timeslots = { data: [], isLoading: false, error: null }
     renderWithProviders(<MyAvailability />)
 
-    expect(screen.getByRole('heading', { name: 'Minha Disponibilidade' })).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Minha disponibilidade' })).toBeVisible()
     expect(screen.getByText('A disponibilidade aparece depois de configurar a grelha horária.')).toBeInTheDocument()
   })
 
@@ -169,7 +169,7 @@ describe('MyAvailability', () => {
     fireEvent.keyDown(screen.getByRole('button', { name: /segunda, 08:00/i }), { key: 'Enter' })
     fireEvent.click(screen.getByRole('button', { name: /guardar disponibilidade/i }))
 
-    expect(await within(toastHost()).findByText('Erro ao gravar disponibilidade. Tente novamente.')).toBeInTheDocument()
+    expect(await within(toastHost()).findByText('Não foi possível guardar a disponibilidade. Tente novamente.')).toBeInTheDocument()
     expect(screen.getByText(/1 bloco alterado/i)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /segunda, 08:00/i })).toHaveAccessibleName(/Neutro/)
     expect(screen.getByRole('button', { name: /guardar disponibilidade/i })).toBeEnabled()

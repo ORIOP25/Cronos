@@ -124,7 +124,7 @@ export const CalendarSection = () => {
       setStalePreviewMsg('As aulas afetadas mudaram. Repita a pré-visualização antes de guardar.')
       return
     }
-    toast.error(getApiErrorMessage(error, 'Erro ao guardar o fluxo de estágio.'))
+    toast.error(getApiErrorMessage(error, 'Não foi possível guardar o fluxo de estágio.'))
   }
 
   const submitFlow = (fingerprint, removedCount = 0) => {
@@ -207,7 +207,7 @@ export const CalendarSection = () => {
           toast.success('Evento adicionado.')
         },
         onError: (error) => toast.error(
-          getApiErrorMessage(error, 'Erro ao adicionar evento. Verifique as datas e tente novamente.'),
+          getApiErrorMessage(error, 'Não foi possível adicionar evento. Verifique as datas e tente novamente.'),
         ),
       }),
     )
@@ -307,7 +307,7 @@ export const CalendarSection = () => {
                   variant="ghost"
                   size="sm"
                   disabled={deleteMutation.isPending}
-                  aria-label={`Eliminar ${ev.name}`}
+                  aria-label={`Remover ${ev.name}`}
                   onClick={() => setDeleteTarget(ev)}
                 >
                   <CIcon icon={cilTrash} />
@@ -320,7 +320,7 @@ export const CalendarSection = () => {
     )
 
   let submitLabel = 'Adicionar evento'
-  if (editingFlowId) submitLabel = isSavingFlow ? 'A guardar' : 'Guardar fluxo'
+  if (editingFlowId) submitLabel = isSavingFlow ? 'A guardar…' : 'Guardar fluxo'
   else if (isFlow) submitLabel = previewMutation.isPending ? 'A analisar' : 'Pré-visualizar e guardar'
 
   return (
@@ -343,7 +343,7 @@ export const CalendarSection = () => {
       )}
       {settingsMutation.isError && (
         <FeedbackBanner tone="danger">
-          {getApiErrorMessage(settingsMutation.error, 'Erro ao guardar a preferência de feriados automáticos.')}
+          {getApiErrorMessage(settingsMutation.error, 'Não foi possível guardar a preferência de feriados automáticos.')}
         </FeedbackBanner>
       )}
 
@@ -352,7 +352,7 @@ export const CalendarSection = () => {
         <h3 className="h6 fw-bold py-2 calendar-event-editor__header">
           <span>
             <CIcon icon={cilCalendar} className="me-2" />
-            {editingFlowId ? 'Editar Fluxo de Estágio' : 'Adicionar Evento'}
+            {editingFlowId ? 'Editar Fluxo de estágio' : 'Adicionar Evento'}
           </span>
         </h3>
         <div>
@@ -403,9 +403,9 @@ export const CalendarSection = () => {
                 disabled={Boolean(editingFlowId)}
                 onChange={(e) => setNewEvent((p) => ({ ...p, event_type: e.target.value, class_ids: [] }))}
               >
-                <option value="school_break">Pausa Escolar</option>
-                <option value="exam_period">Período de Exames</option>
-                <option value="internship_flow">Fluxo de Estágio</option>
+                <option value="school_break">Pausa escolar</option>
+                <option value="exam_period">Período de exames</option>
+                <option value="internship_flow">Fluxo de estágio</option>
                 <option value="other">Outro</option>
               </CFormSelect>
             </CCol>
@@ -551,7 +551,7 @@ export const CalendarSection = () => {
             )}
             disabled={isSavingFlow}
           >
-            {isSavingFlow ? 'A guardar' : 'Confirmar e guardar'}
+            {isSavingFlow ? 'A guardar…' : 'Confirmar e guardar'}
           </CButton>
         </CModalFooter>
       </CModal>
@@ -581,13 +581,14 @@ export const CalendarSection = () => {
             },
             onError: (error) => {
               setDeleteTarget(null)
-              toast.error(getApiErrorMessage(error, 'Não foi possível eliminar o evento. Tente novamente.'))
+              toast.error(getApiErrorMessage(error, 'Não foi possível remover o evento. Tente novamente.'))
             },
           }))
         }}
-        title="Eliminar evento"
+        title="Remover evento"
         message={deleteEventMessage(deleteTarget)}
-        confirmText="Eliminar evento"
+        confirmText="Remover"
+        pendingText="A remover…"
         isLoading={deleteMutation.isPending}
       />
     </div>
@@ -659,7 +660,7 @@ const SettingsEditor = ({ settings }) => {
         window.scrollTo(0, 0)
       },
       onError: (err) => {
-        setResetError(getApiErrorMessage(err, 'Erro ao recomeçar ano letivo.'))
+        setResetError(getApiErrorMessage(err, 'Não foi possível recomeçar ano letivo.'))
       },
     }))
   }
@@ -730,7 +731,7 @@ const SettingsEditor = ({ settings }) => {
               </CButton>
             )}
           >
-            {getApiErrorMessage(upsertMutation.error, 'Erro ao guardar configuração.')}
+            {getApiErrorMessage(upsertMutation.error, 'Não foi possível guardar a configuração.')}
           </FeedbackBanner>
         </div>
       )}
@@ -791,7 +792,7 @@ const SettingsEditor = ({ settings }) => {
         </CButton>
         <CButton color="primary" onClick={handleSave} disabled={upsertMutation.isPending}>
           <CIcon icon={cilSave} className="me-1" />
-           {upsertMutation.isPending ? 'A guardar' : 'Guardar alterações'}
+           {upsertMutation.isPending ? 'A guardar…' : 'Guardar alterações'}
         </CButton>
       </div>
 
@@ -874,7 +875,7 @@ export const GridSection = () => {
   }
   const queryError = configurationQuery.error || settingsQuery.error || timeslotsQuery.error
   if (queryError) {
-    return <FeedbackBanner tone="danger">{getApiErrorMessage(queryError, 'Erro ao carregar a grelha.')}</FeedbackBanner>
+    return <FeedbackBanner tone="danger">{getApiErrorMessage(queryError, 'Não foi possível carregar a grelha.')}</FeedbackBanner>
   }
 
   const storedConfiguration = configurationQuery.data?.source === 'VERSION'
@@ -1152,7 +1153,7 @@ const GridEditor = ({
         setStaleProposalMessage('')
       },
       onError: (error) => {
-        toast.error(getApiErrorMessage(error, 'Erro ao pré-visualizar a alteração da grelha.'))
+        toast.error(getApiErrorMessage(error, 'Não foi possível pré-visualizar a alteração da grelha.'))
       },
     }))
   }
@@ -1182,7 +1183,7 @@ const GridEditor = ({
           setStaleProposalMessage('A análise mudou desde a pré-visualização. Repita a pré-visualização antes de propor a alteração.')
           return
         }
-        toast.error(getApiErrorMessage(error, 'Erro ao propor a alteração da grelha.'))
+        toast.error(getApiErrorMessage(error, 'Não foi possível propor a alteração da grelha.'))
       },
     }))
   }
@@ -1205,7 +1206,7 @@ const GridEditor = ({
         toast.success(payload.message)
       },
       onError: (error) => {
-        toast.error(getApiErrorMessage(error, 'Erro ao guardar configuração da grelha.'))
+        toast.error(getApiErrorMessage(error, 'Não foi possível guardar a configuração da grelha.'))
       },
     }))
   }

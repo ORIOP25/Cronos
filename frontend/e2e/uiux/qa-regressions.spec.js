@@ -90,22 +90,22 @@ test('a room creates and selects its type in context while retaining its draft',
   try {
     await goTo(page, '/rooms')
     await expect(page.getByRole('button', { name: 'Tipos de sala', exact: true })).toHaveCount(0)
-    await page.getByRole('button', { name: 'Nova Sala', exact: true }).click()
+    await page.getByRole('button', { name: 'Nova sala', exact: true }).click()
     const dialog = page.getByRole('dialog')
-    await dialog.getByLabel('Nome da Sala', { exact: true }).fill('Sala rascunho UX')
-    await dialog.getByRole('button', { name: 'Adicionar tipo', exact: true }).click()
+    await dialog.getByLabel('Nome da sala', { exact: true }).fill('Sala rascunho UX')
+    await dialog.getByRole('button', { name: 'Adicionar tipo de sala', exact: true }).click()
     await dialog.getByLabel('Nome do novo tipo').fill(typeName)
     const created = page.waitForResponse((response) => response.url().endsWith('/room-types/') && response.request().method() === 'POST')
-    await dialog.getByRole('button', { name: 'Criar tipo', exact: true }).click()
+    await dialog.getByRole('button', { name: 'Criar tipo de sala', exact: true }).click()
     const response = await created
     expect(response.status()).toBe(201)
     createdType = await response.json()
-    await expect(dialog.getByLabel('Tipo de Sala', { exact: true })).toHaveValue(String(createdType.id))
+    await expect(dialog.getByLabel('Tipo de sala', { exact: true })).toHaveValue(String(createdType.id))
     await dialog.getByRole('button', { name: 'Gerir tipos existentes' }).click()
     await expect(dialog.getByRole('cell', { name: typeName, exact: true })).toBeVisible()
     await dialog.getByRole('button', { name: 'Voltar à sala' }).click()
-    await expect(dialog.getByLabel('Nome da Sala', { exact: true })).toHaveValue('Sala rascunho UX')
-    await expect(dialog.getByLabel('Tipo de Sala', { exact: true })).toHaveValue(String(createdType.id))
+    await expect(dialog.getByLabel('Nome da sala', { exact: true })).toHaveValue('Sala rascunho UX')
+    await expect(dialog.getByLabel('Tipo de sala', { exact: true })).toHaveValue(String(createdType.id))
     await dialog.getByRole('button', { name: 'Cancelar', exact: true }).click()
   } finally {
     if (createdType) await apiRequest(page, 'DELETE', `/room-types/${createdType.id}`)
@@ -185,7 +185,7 @@ test('the team screen exposes the school-presence rule and its CSV model without
   const memberDialog = page.getByRole('dialog')
   await expect(memberDialog.getByRole('button', { name: 'Cancelar', exact: true })).toHaveClass(/btn-outline-secondary/)
   const actionColor = await availabilityButton.evaluate((element) => getComputedStyle(element).color)
-  const primaryBackground = await memberDialog.getByRole('button', { name: 'Guardar', exact: true }).evaluate((element) => getComputedStyle(element).backgroundColor)
+  const primaryBackground = await memberDialog.getByRole('button', { name: 'Guardar alterações', exact: true }).evaluate((element) => getComputedStyle(element).backgroundColor)
   expect(actionColor).toBe(primaryBackground)
   const presenceRequest = page.waitForResponse((response) => (
     response.url().includes('/presence')
@@ -221,15 +221,15 @@ test('the team screen exposes the school-presence rule and its CSV model without
 
 test('creating a course preserves the filled initial class without Add class', async ({ page }) => {
   await goTo(page, '/courses')
-  await page.getByRole('button', { name: 'Novo Curso' }).click()
+  await page.getByRole('button', { name: 'Novo curso' }).click()
   const dialog = page.getByRole('dialog')
   const courseName = `Curso QA ${Date.now()}`
-  await dialog.getByLabel('Nome do Curso', { exact: true }).fill(courseName)
+  await dialog.getByLabel('Nome do curso', { exact: true }).fill(courseName)
   await dialog.getByLabel('Sigla', { exact: true }).fill('QAUX')
   await dialog.getByLabel('Nome Turma', { exact: true }).fill('QA UX 10')
   await dialog.getByLabel('Alunos', { exact: true }).fill('20')
   const responseEvent = page.waitForResponse((response) => response.url().endsWith('/api/v1/courses/') && response.request().method() === 'POST')
-  await dialog.getByRole('button', { name: 'Criar Curso' }).click()
+  await dialog.getByRole('button', { name: 'Criar curso' }).click()
   const response = await responseEvent
   expect(response.status()).toBe(200)
   const course = await response.json()
