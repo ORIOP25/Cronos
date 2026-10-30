@@ -1,4 +1,4 @@
-import { act, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   validate: vi.fn(),
   commit: vi.fn(),
   download: vi.fn(),
+  downloadBundle: vi.fn(),
 }))
 
 vi.mock('../ApiClientContext', () => ({
@@ -21,10 +22,31 @@ vi.mock('../features/imports/data', async () => {
   return {
     ...actual,
     downloadBulkImportTemplate: mocks.download,
+    downloadBulkImportTemplateBundle: mocks.downloadBundle,
     useValidateBulkImport: () => ({ mutateAsync: mocks.validate, isPending: false, isError: false }),
     useCommitBulkImport: () => ({ mutateAsync: mocks.commit, isPending: false, isError: false }),
   }
 })
+
+const HEADERS = {
+  rooms: 'Nome da sala;Tipo de sala;Capacidade',
+  class_availability: 'Sigla do curso;Nome da turma;Dia;08:30',
+  teacher_availability: 'Nome do professor;Email do professor;Dia;08:30',
+  teacher_presence: 'Nome do professor;Email do professor;Hora de almoço;Mínimo de horas por presença;Furo máximo (horas)',
+}
+
+function csv(resource, name, rows = '') {
+  return new File([`${HEADERS[resource]}\r\n${rows}`], name, { type: 'text/csv' })
+}
+
+function fileInput() {
+  return screen.getByLabelText('Selecionar ficheiros CSV')
+}
+
+async function upload(user, ...files) {
+  await user.upload(fileInput(), files)
+  for (const file of files) await screen.findByText(`${file.name} ·`, { exact: false })
+}
 
 describe('BulkImport', () => {
   it.each(['replace', 'remove', 'failure'])('ignores validation after a file selection change: %s', async change => {
@@ -36,10 +58,9 @@ describe('BulkImport', () => {
     }))
     const user = userEvent.setup()
     renderPage()
-    const input = screen.getByLabelText('Selecionar ficheiro CSV de salas')
-    await user.upload(input, new File(['old'], 'old.csv', { type: 'text/csv' }))
+    await upload(user, csv('rooms', 'old.csv'))
     await user.click(screen.getByRole('button', { name: 'Verificar ficheiros' }))
-    if (change === 'replace') await user.upload(input, new File(['new'], 'new.csv', { type: 'text/csv' }))
+    if (change === 'replace') await upload(user, csv('rooms', 'new.csv'))
     else await user.click(screen.getByRole('button', { name: 'Remover' }))
     await act(async () => finish({ can_commit: true, preview: { counts: { rooms: 1 }, items: [] }, issues: [] }))
     expect(screen.queryByRole('button', { name: 'Confirmar importação' })).not.toBeInTheDocument()
@@ -52,6 +73,8 @@ describe('BulkImport', () => {
     mocks.commit.mockReset()
     mocks.download.mockReset()
     mocks.download.mockResolvedValue(undefined)
+    mocks.downloadBundle.mockReset()
+    mocks.downloadBundle.mockResolvedValue(undefined)
     mocks.validate.mockResolvedValue({
       can_commit: true,
       preview: { counts: { rooms: 1 }, items: [] },
@@ -72,14 +95,94 @@ describe('BulkImport', () => {
     return screen.getByText(label).closest('.import-resource')
   }
 
-  it('keeps file inputs visible and resource guidance collapsed until requested', async () => {
+  function stepFor(title) {
+    return screen.getByRole('region', { name: title })
+  }
+
+  it('keeps one visible file picker and resource guidance collapsed until requested', async () => {
     renderPage()
+    expect(fileInput()).toBeVisible()
+    expect(fileInput()).toHaveAttribute('multiple')
     const row = cardFor('Salas')
+    expect(within(row).getByText('Sem ficheiro')).toBeInTheDocument()
     const guidance = within(row).getByText('Como preencher').closest('details')
     expect(guidance).not.toHaveAttribute('open')
-    expect(within(row).getByLabelText('Selecionar ficheiro CSV de salas')).toBeVisible()
     await userEvent.click(within(row).getByText('Como preencher'))
     expect(guidance).toHaveAttribute('open')
+  })
+
+  it('groups the eight sections into the two steps', () => {
+    renderPage()
+
+    const school = stepFor('1. Dados da escola')
+    const rules = stepFor('2. Regras do horário')
+    expect(within(school).getAllByRole('heading', { level: 3 }).map((heading) => heading.textContent)).toEqual([
+      'Salas', 'Disciplinas e módulos', 'Cursos e turmas', 'Professores e competências', 'Atribuições',
+    ])
+    expect(within(rules).getAllByRole('heading', { level: 3 }).map((heading) => heading.textContent)).toEqual([
+      'Disponibilidade das turmas', 'Disponibilidade dos professores', 'Presença dos professores',
+    ])
+  })
+
+  it('places every dropped file in its section by its column titles', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    const rooms = csv('rooms', 'as-minhas-salas.csv')
+    const presence = csv('teacher_presence', 'presenca.csv')
+
+    await upload(user, rooms, presence)
+
+    expect(within(cardFor('Salas')).getByText(/as-minhas-salas\.csv/)).toBeInTheDocument()
+    expect(within(cardFor('Presença dos professores')).getByText(/presenca\.csv/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Verificar ficheiros' }))
+    expect(mocks.validate).toHaveBeenCalledWith({ rooms, teacher_presence: presence })
+  })
+
+  it('accepts files dragged onto the drop area', async () => {
+    renderPage()
+    const rooms = csv('rooms', 'arrastado.csv')
+
+    fireEvent.drop(screen.getByText(/Arraste os ficheiros CSV/).closest('.import-dropzone'), { dataTransfer: { files: [rooms] } })
+
+    expect(await within(cardFor('Salas')).findByText(/arrastado\.csv/)).toBeInTheDocument()
+  })
+
+  it('names a file it cannot recognise and leaves it out of the import', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    const unknown = new File(['Nome;Idade\r\n'], 'outra-coisa.csv', { type: 'text/csv' })
+
+    await user.upload(fileInput(), [unknown, csv('rooms', 'salas.csv')])
+
+    expect(await screen.findByText(
+      'outra-coisa.csv: não reconhecemos este ficheiro. Use um modelo do Cronos sem alterar os títulos das colunas.',
+    )).toBeInTheDocument()
+    await screen.findByText(/salas\.csv/)
+    await user.click(screen.getByRole('button', { name: 'Verificar ficheiros' }))
+    expect(mocks.validate).toHaveBeenCalledWith({ rooms: expect.any(File) })
+  })
+
+  it('says which file was replaced when a section receives a second file', async () => {
+    const user = userEvent.setup()
+    renderPage()
+
+    await upload(user, csv('rooms', 'primeiro.csv'))
+    await upload(user, csv('rooms', 'segundo.csv'))
+
+    expect(screen.getByText('Salas: segundo.csv substituiu primeiro.csv.')).toBeInTheDocument()
+    expect(within(cardFor('Salas')).queryByText(/primeiro\.csv ·/)).not.toBeInTheDocument()
+  })
+
+  it('downloads every model of a step at once', async () => {
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.click(within(stepFor('2. Regras do horário')).getByRole('button', { name: 'Descarregar os modelos deste passo' }))
+
+    expect(mocks.downloadBundle).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ title: 'Regras do horário' }))
+    expect(
+      await within(document.querySelector('[data-rht-toaster]')).findByText(/Transferência iniciada/i),
+    ).toBeInTheDocument()
   })
 
   it('presents plain-language instructions without technical implementation terms', () => {
@@ -88,11 +191,12 @@ describe('BulkImport', () => {
     expect(screen.getByRole('heading', { name: 'Importar dados' })).toBeInTheDocument()
     expect(
       screen.getByText(
-        'Descarregue um modelo, preencha e escolha os ficheiros a importar.',
+        'Descarregue os modelos, preencha e escolha os ficheiros a importar.',
       ),
     ).toBeInTheDocument()
-    expect(screen.getByText('Descarregue o modelo da secção pretendida.')).toBeInTheDocument()
+    expect(screen.getByText('Descarregue os modelos do passo ou só o modelo da secção que precisa.')).toBeInTheDocument()
     expect(screen.getAllByRole('button', { name: 'Descarregar modelo' })).toHaveLength(8)
+    expect(screen.getAllByRole('button', { name: 'Descarregar os modelos deste passo' })).toHaveLength(2)
     expect(screen.queryByText(/UTF-8|BOM|backend|atómica|Recurso|JSON/i)).not.toBeInTheDocument()
   })
 
@@ -117,9 +221,9 @@ describe('BulkImport', () => {
     })
     renderPage()
 
-    const file = new File(['x'], 'Cronos_Salas_Template.csv', { type: 'text/csv' })
+    const file = csv('rooms', 'Cronos_Salas_Template.csv')
 
-    await user.upload(screen.getByLabelText('Selecionar ficheiro CSV de salas'), file)
+    await upload(user, file)
     await user.click(screen.getByRole('button', { name: 'Verificar ficheiros' }))
 
     expect(await screen.findByText('Tipos de sala novos: 1')).toBeInTheDocument()
@@ -138,9 +242,7 @@ describe('BulkImport', () => {
         'Não apague colunas de hora. Se a grelha mudar, descarregue um modelo novo.',
       ),
     ).toBeInTheDocument()
-    expect(
-      screen.getByLabelText('Selecionar ficheiro CSV de disponibilidade das turmas'),
-    ).toBeInTheDocument()
+    expect(within(cardFor('Disponibilidade das turmas')).getByText('Sem ficheiro')).toBeInTheDocument()
   })
 
   it('lists the teacher availability section with its instructions', () => {
@@ -152,9 +254,7 @@ describe('BulkImport', () => {
         'O email identifica o professor. O nome serve só para ler o ficheiro.',
       ),
     ).toBeInTheDocument()
-    expect(
-      screen.getByLabelText('Selecionar ficheiro CSV de disponibilidade dos professores'),
-    ).toBeInTheDocument()
+    expect(within(cardFor('Disponibilidade dos professores')).getByText('Sem ficheiro')).toBeInTheDocument()
   })
 
   it('lists the teacher presence section with its instructions', () => {
@@ -169,9 +269,7 @@ describe('BulkImport', () => {
         'Cada linha substitui os três valores desse professor. Os professores ausentes ficam iguais.',
       ),
     ).toBeInTheDocument()
-    expect(
-      screen.getByLabelText('Selecionar ficheiro CSV de presença dos professores'),
-    ).toBeInTheDocument()
+    expect(within(cardFor('Presença dos professores')).getByText('Sem ficheiro')).toBeInTheDocument()
   })
 
   it('lists the class availability preview rows with course, class and changed blocks', async () => {
@@ -201,12 +299,9 @@ describe('BulkImport', () => {
       issues: [],
     })
     renderPage()
-    const file = new File(['x'], 'Cronos_DisponibilidadeTurmas_Template.csv', { type: 'text/csv' })
+    const file = csv('class_availability', 'Cronos_DisponibilidadeTurmas_Template.csv')
 
-    await user.upload(
-      screen.getByLabelText('Selecionar ficheiro CSV de disponibilidade das turmas'),
-      file,
-    )
+    await upload(user, file)
     await user.click(screen.getByRole('button', { name: 'Verificar ficheiros' }))
 
     const table = await screen.findByRole('table', {
@@ -254,12 +349,9 @@ describe('BulkImport', () => {
       issues: [],
     })
     renderPage()
-    const file = new File(['x'], 'Cronos_DisponibilidadeProfessores_Template.csv', { type: 'text/csv' })
+    const file = csv('teacher_availability', 'Cronos_DisponibilidadeProfessores_Template.csv')
 
-    await user.upload(
-      screen.getByLabelText('Selecionar ficheiro CSV de disponibilidade dos professores'),
-      file,
-    )
+    await upload(user, file)
     await user.click(screen.getByRole('button', { name: 'Verificar ficheiros' }))
 
     const table = await screen.findByRole('table', {
@@ -304,17 +396,11 @@ describe('BulkImport', () => {
       issues: [],
     })
     renderPage()
-    const classFile = new File(['x'], 'Cronos_DisponibilidadeTurmas_Template.csv', { type: 'text/csv' })
-    const teacherFile = new File(['x'], 'Cronos_DisponibilidadeProfessores_Template.csv', { type: 'text/csv' })
+    const classFile = csv('class_availability', 'Cronos_DisponibilidadeTurmas_Template.csv')
+    const teacherFile = csv('teacher_availability', 'Cronos_DisponibilidadeProfessores_Template.csv')
 
-    await user.upload(
-      screen.getByLabelText('Selecionar ficheiro CSV de disponibilidade das turmas'),
-      classFile,
-    )
-    await user.upload(
-      screen.getByLabelText('Selecionar ficheiro CSV de disponibilidade dos professores'),
-      teacherFile,
-    )
+    await upload(user, classFile)
+    await upload(user, teacherFile)
     await user.click(screen.getByRole('button', { name: 'Verificar ficheiros' }))
 
     const classTable = await screen.findByRole('table', {
@@ -344,12 +430,9 @@ describe('BulkImport', () => {
       issues: [],
     })
     renderPage()
-    const file = new File(['x'], 'Cronos_DisponibilidadeProfessores_Template.csv', { type: 'text/csv' })
+    const file = csv('teacher_availability', 'Cronos_DisponibilidadeProfessores_Template.csv')
 
-    await user.upload(
-      screen.getByLabelText('Selecionar ficheiro CSV de disponibilidade dos professores'),
-      file,
-    )
+    await upload(user, file)
     await user.click(screen.getByRole('button', { name: 'Verificar ficheiros' }))
 
     const table = await screen.findByRole('table', {
@@ -376,12 +459,9 @@ describe('BulkImport', () => {
       ],
     })
     renderPage()
-    const file = new File(['x'], 'Cronos_DisponibilidadeTurmas_Template.csv', { type: 'text/csv' })
+    const file = csv('class_availability', 'Cronos_DisponibilidadeTurmas_Template.csv')
 
-    await user.upload(
-      screen.getByLabelText('Selecionar ficheiro CSV de disponibilidade das turmas'),
-      file,
-    )
+    await upload(user, file)
     await user.click(screen.getByRole('button', { name: 'Verificar ficheiros' }))
 
     expect(
@@ -400,7 +480,7 @@ describe('BulkImport', () => {
       { type: 'text/csv' },
     )
 
-    await user.upload(screen.getByLabelText('Selecionar ficheiro CSV de salas'), file)
+    await upload(user, file)
     await user.click(screen.getByRole('button', { name: 'Verificar ficheiros' }))
 
     await waitFor(() => expect(screen.getByText('Resultado da verificação')).toBeInTheDocument())
@@ -413,13 +493,12 @@ describe('BulkImport', () => {
   it('allows selecting the same file after removing it', async () => {
     const user = userEvent.setup()
     renderPage()
-    const input = screen.getByLabelText('Selecionar ficheiro CSV de salas')
-    const file = new File(['x'], 'salas.csv', { type: 'text/csv' })
-    await user.upload(input, file)
+    const file = csv('rooms', 'salas.csv')
+    await upload(user, file)
+    expect(fileInput().files).toHaveLength(0)
     await user.click(within(cardFor('Salas')).getByRole('button', { name: 'Remover' }))
-    expect(input.files).toHaveLength(0)
-    await user.upload(input, file)
-    expect(screen.getByText(/salas.csv/)).toBeInTheDocument()
+    expect(within(cardFor('Salas')).getByText('Sem ficheiro')).toBeInTheDocument()
+    await upload(user, file)
     await user.click(screen.getByRole('button', { name: 'Verificar ficheiros' }))
     expect(mocks.validate).toHaveBeenCalledWith({ rooms: file })
   })

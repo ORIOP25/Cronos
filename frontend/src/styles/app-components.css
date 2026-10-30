@@ -8,6 +8,11 @@
 }
 .context-details > summary:focus-visible { outline: 2px solid var(--cronos-accent); outline-offset: 3px; }
 .context-details[open] > summary { color: var(--cronos-ink); }
+.import-dropzone { padding: 20px 24px; border: 2px dashed var(--cronos-border-strong); border-radius: var(--cronos-radius-panel); background: var(--cronos-surface-muted); }
+.import-dropzone--active { border-color: var(--cronos-accent); background: var(--cronos-surface); }
+.import-step { margin-top: 32px; }
+.import-step__heading { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.import-step__heading h2 { font-family: var(--cronos-font-body); }
 .import-resources { border: 1px solid var(--cronos-border); border-radius: var(--cronos-radius-panel); background: var(--cronos-surface); }
 .import-resource { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(240px, 1fr); gap: 0 32px; padding: var(--cronos-space-row) 24px; }
 .import-resource + .import-resource { border-top: 1px solid var(--cronos-border); }

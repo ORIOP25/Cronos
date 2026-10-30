@@ -242,7 +242,7 @@ Invariants: removal returns `409 resource_in_use`, archives with history, or del
 | :--- | :--- |
 | Page | `pages/BulkImport.jsx` (`/imports`) |
 | Hooks | `features/imports/data.js` |
-| Endpoints | `api/v1/endpoints/imports.py` (`/imports/templates/{resource}`, `/validate`, `/commit`; 8 MiB body limit in `main.py`) |
+| Endpoints | `api/v1/endpoints/imports.py` (`/imports/templates` ZIP, `/imports/templates/{resource}`, `/validate`, `/commit`; 8 MiB body limit in `main.py`) |
 | Services | Pure policy `services/bulk_import_policy.py`; orchestration `services/bulk_import_service.py`, which reuses the catalog, member, and availability services |
 | Persistence | No own tables; writes catalog, member, class availability, and teacher availability rows in one transaction |
 | Tests | `unit/test_bulk_import_policy.py`; `integration/committed/test_bulk_import.py`; `frontend/src/test/BulkImport.test.jsx` |

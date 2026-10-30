@@ -251,7 +251,7 @@ test('an all-impossible class blocks generation until a neutral grid is copied o
       let model = Buffer.concat(chunks).toString('utf8')
       for (const target of targets) model = editTeacherBlock(model, target.email, 'Impossível')
 
-      await page.locator('#import-teacher_availability').setInputFiles({
+      await page.getByLabel('Selecionar ficheiros CSV').setInputFiles({
         name: 'Cronos_DisponibilidadeProfessores_Template.csv',
         mimeType: 'text/csv',
         buffer: Buffer.from(model, 'utf8'),

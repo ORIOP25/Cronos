@@ -46,7 +46,9 @@ from app.services.bulk_import_policy import (
     render_availability_template,
     render_teacher_presence_template,
     render_template,
+    template_filename,
     validate_import,
+    zip_templates,
 )
 
 NO_GRID_BLOCKS_MESSAGE = "A escola ainda não configurou blocos."
@@ -209,6 +211,16 @@ async def template_bytes(db: AsyncSession, organization_id: int, resource: str) 
             code="resource_not_found",
             detail="Secção de importação desconhecida.",
         ) from exc
+
+
+async def template_bundle_bytes(
+    db: AsyncSession, organization_id: int, resources: list[str]
+) -> bytes:
+    templates = []
+    for resource in resources:
+        content = await template_bytes(db, organization_id, resource)
+        templates.append((template_filename(resource), content))
+    return zip_templates(templates)
 
 
 def _parsed_files(request: schemas.BulkImportFilesRequest) -> dict[str, ParsedResourceFile]:

@@ -9,12 +9,21 @@ Pode utilizar Excel ou Google Sheets.
 O sistema aceita vírgula ou ponto e vírgula como separador.
 O sistema aceita UTF-8 com ou sem BOM.
 Cada ficheiro pode ter até 1 MB.
+A página agrupa as secções em dois passos: `Dados da escola` (salas, disciplinas, cursos, professores, atribuições) e `Regras do horário` (disponibilidades e presença).
+`IMPORT_STEPS` em `frontend/src/features/imports/data.js` define os passos.
+Uma única área recebe todos os ficheiros, escolhidos ou arrastados.
+O ecrã lê a primeira linha de cada ficheiro e coloca-o na secção cujos cabeçalhos coincidem (`detectImportResource`).
+Um ficheiro sem cabeçalhos reconhecidos fica de fora e o ecrã indica o nome.
+Um segundo ficheiro para a mesma secção substitui o primeiro e o ecrã indica a troca.
+O servidor continua a validar cada ficheiro.
 Depois de remover um ficheiro selecionado, pode selecionar o mesmo ficheiro novamente.
 Alterar ou remover ficheiros limpa a pré-visualização. Respostas de verificações anteriores não apresentam resultados nem erros dessa seleção antiga.
 
 ## Modelos oficiais
 
 Os modelos estão disponíveis em `/api/v1/imports/templates/{resource}`.
+`/api/v1/imports/templates?resource=…&resource=…` devolve vários modelos num ZIP; cada passo da página usa-o no botão `Descarregar os modelos deste passo`.
+Um modelo que não se pode gerar, por exemplo uma disponibilidade sem blocos na grelha, faz falhar o ZIP com o mesmo erro do modelo isolado.
 Cada modelo fixo usa ponto e vírgula, CRLF, BOM e uma linha de exemplo.
 Substitua ou apague a linha de exemplo antes de importar.
 Os dois modelos de disponibilidade são a exceção: são gerados a partir dos dados da escola e não têm linha de exemplo; sem dados trazem só o cabeçalho.

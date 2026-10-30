@@ -7,6 +7,7 @@ import csv
 import io
 import re
 import unicodedata
+import zipfile
 from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -518,6 +519,14 @@ def template_filename(resource: str) -> str:
     if resource == TEACHER_PRESENCE:
         return TEACHER_PRESENCE_FILENAME
     return TEMPLATE_DEFINITIONS[resource].filename
+
+
+def zip_templates(templates: list[tuple[str, bytes]]) -> bytes:
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as bundle:
+        for filename, content in templates:
+            bundle.writestr(filename, content)
+    return output.getvalue()
 
 
 def render_availability_template(

@@ -16,10 +16,13 @@ import { getApiErrorMessage } from '../utils/apiErrors'
 import {
   createBulkImportReport,
   downloadBlob,
+  detectImportResource,
   downloadBulkImportTemplate,
+  downloadBulkImportTemplateBundle,
   formatImportIssue,
   getImportCountLabel,
   IMPORT_RESOURCES,
+  IMPORT_STEPS,
   useCommitBulkImport,
   useValidateBulkImport,
 } from '../features/imports/data'
@@ -44,6 +47,10 @@ const TEACHER_AVAILABILITY_COLUMNS = [
   { header: 'Blocos que mudam', value: (item) => changedBlocksLabel(item.changed_blocks) },
 ]
 
+function resourceLabel(key) {
+  return IMPORT_RESOURCES.find((item) => item.key === key).label
+}
+
 function errorContext(error) {
   return error?.response?.data?.detail?.context || {}
 }
@@ -63,17 +70,19 @@ const BulkImport = () => {
   const [validationError, setValidationError] = useState(null)
   const [localError, setLocalError] = useState('')
   const [downloadingResource, setDownloadingResource] = useState('')
+  const [fileNotices, setFileNotices] = useState([])
+  const [dragging, setDragging] = useState(false)
   const validateMutation = useValidateBulkImport()
   const commitMutation = useCommitBulkImport()
   const attemptScope = useAttemptScope()
 
-  const downloadTemplate = async (resourceKey) => {
+  const startDownload = async (key, request) => {
     if (downloadingResource) return
     setLocalError('')
-    setDownloadingResource(resourceKey)
+    setDownloadingResource(key)
     const attempt = attemptScope.capture()
     try {
-      await downloadBulkImportTemplate(apiClient, resourceKey)
+      await request()
       if (!attemptScope.isCurrent(attempt)) return
       toast.success('Transferência iniciada. Verifique a pasta de transferências.')
     } catch (error) {
@@ -88,16 +97,39 @@ const BulkImport = () => {
     initialInput.current?.focus()
   }, [])
 
-  const selectFile = (resource, file) => {
+  const resetValidation = () => {
     validationVersion.current += 1
     setLocalError('')
     setValidation(null)
     setValidationError(null)
-    if (!file) document.getElementById(`import-${resource}`).value = ''
+  }
+
+  const addFiles = async (selected) => {
+    const detected = await Promise.all(
+      Array.from(selected).map(async (file) => [file, await detectImportResource(file)]),
+    )
+    if (!detected.length) return
+    resetValidation()
+    const notices = []
+    const next = { ...files }
+    for (const [file, resource] of detected) {
+      if (!resource) {
+        notices.push(`${file.name}: não reconhecemos este ficheiro. Use um modelo do Cronos sem alterar os títulos das colunas.`)
+        continue
+      }
+      if (next[resource]) notices.push(`${resourceLabel(resource)}: ${file.name} substituiu ${next[resource].name}.`)
+      next[resource] = file
+    }
+    setFileNotices(notices)
+    setFiles(next)
+  }
+
+  const removeFile = (resource) => {
+    resetValidation()
+    setFileNotices([])
     setFiles((current) => {
       const next = { ...current }
-      if (file) next[resource] = file
-      else delete next[resource]
+      delete next[resource]
       return next
     })
   }
@@ -156,15 +188,16 @@ const BulkImport = () => {
     <div className="p-4">
       <PageHeader
         title="Importar dados"
-        description="Descarregue um modelo, preencha e escolha os ficheiros a importar."
+        description="Descarregue os modelos, preencha e escolha os ficheiros a importar."
       />
 
       <details className="context-details mb-4">
         <summary>Como preparar os ficheiros</summary>
         <ol className="mb-2">
-          <li>Descarregue o modelo da secção pretendida.</li>
+          <li>Descarregue os modelos do passo ou só o modelo da secção que precisa.</li>
+          <li>Os modelos de um passo chegam numa pasta comprimida. Extraia a pasta antes de abrir os ficheiros.</li>
           <li>Preencha as linhas sem alterar os títulos das colunas.</li>
-          <li>Guarde como CSV, selecione o ficheiro e escolha “Verificar ficheiros”.</li>
+          <li>Guarde como CSV, largue os ficheiros na área abaixo e escolha “Verificar ficheiros”.</li>
         </ol>
         <p className="small text-muted mb-0">
           Pode utilizar Excel ou Google Sheets. São aceites ficheiros separados por vírgulas ou ponto e vírgula, até 1 MB cada.
@@ -173,56 +206,109 @@ const BulkImport = () => {
 
       {localError && <div className="mb-3"><FeedbackBanner tone="warning">{localError}</FeedbackBanner></div>}
 
-      <section className="import-resources" aria-label="Ficheiros a importar">
-        {IMPORT_RESOURCES.map((resource) => {
-          const file = files[resource.key]
-          return (
-            <div className="import-resource" key={resource.key}>
-                <div className="import-resource__heading">
-                  <h2 className="h6 mb-0">{resource.label}</h2>
-                  <CButton
-                    color="link"
-                    size="sm"
-                    disabled={Boolean(downloadingResource)}
-                    onClick={() => void downloadTemplate(resource.key)}
-                  >
-                    {downloadingResource === resource.key ? (
-                      <><CSpinner size="sm" className="me-1" />A preparar…</>
-                    ) : (
-                      'Descarregar modelo'
-                    )}
-                  </CButton>
-                </div>
-                <div className="import-resource__file">
-                  <label className="visually-hidden" htmlFor={`import-${resource.key}`}>
-                    Selecionar ficheiro CSV de {resource.label.toLowerCase()}
-                  </label>
-                  <CFormInput
-                    ref={resource.key === initialResource ? initialInput : undefined}
-                    id={`import-${resource.key}`}
-                    type="file"
-                    accept=".csv,text/csv"
-                    onChange={(event) => selectFile(resource.key, event.target.files?.[0])}
-                  />
-                  {file && (
-                    <div className="d-flex align-items-center justify-content-between mt-2 small">
-                      <span>{file.name} · {formatMegabytes(file.size)}</span>
-                      <CButton color="link" size="sm" onClick={() => selectFile(resource.key, null)}>
-                        Remover
+      <div
+        className={`import-dropzone${dragging ? ' import-dropzone--active' : ''}`}
+        onDragOver={(event) => { event.preventDefault(); setDragging(true) }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={(event) => {
+          event.preventDefault()
+          setDragging(false)
+          void addFiles(event.dataTransfer.files)
+        }}
+      >
+        <p className="mb-2">Arraste os ficheiros CSV para aqui ou escolha-os. O Cronos coloca cada ficheiro na sua secção.</p>
+        <label className="visually-hidden" htmlFor="import-files">Selecionar ficheiros CSV</label>
+        <CFormInput
+          ref={initialInput}
+          id="import-files"
+          type="file"
+          accept=".csv,text/csv"
+          multiple
+          onChange={(event) => {
+            const selected = Array.from(event.target.files)
+            event.target.value = ''
+            void addFiles(selected)
+          }}
+        />
+      </div>
+
+      {fileNotices.length > 0 && (
+        <div className="mt-3">
+          <FeedbackBanner tone="warning">
+            <ul className="mb-0 ps-3">{fileNotices.map((notice) => <li key={notice}>{notice}</li>)}</ul>
+          </FeedbackBanner>
+        </div>
+      )}
+
+      {IMPORT_STEPS.map((step, index) => {
+        const stepKey = `step-${index}`
+        return (
+          <section className="import-step" key={step.title} aria-labelledby={`import-${stepKey}`}>
+            <div className="import-step__heading">
+              <div>
+                <h2 className="h5 mb-1" id={`import-${stepKey}`}>{index + 1}. {step.title}</h2>
+                <p className="small text-muted mb-0">{step.description}</p>
+              </div>
+              <CButton
+                color="secondary"
+                variant="outline"
+                size="sm"
+                disabled={Boolean(downloadingResource)}
+                onClick={() => void startDownload(stepKey, () => downloadBulkImportTemplateBundle(apiClient, step))}
+              >
+                {downloadingResource === stepKey ? (
+                  <><CSpinner size="sm" className="me-1" />A preparar…</>
+                ) : (
+                  'Descarregar os modelos deste passo'
+                )}
+              </CButton>
+            </div>
+            <div className="import-resources">
+              {step.resources.map((key) => {
+                const resource = IMPORT_RESOURCES.find((item) => item.key === key)
+                const file = files[key]
+                return (
+                  <div className="import-resource" key={key}>
+                    <div className="import-resource__heading">
+                      <h3 className="h6 mb-0">{resource.label}</h3>
+                      <CButton
+                        color="link"
+                        size="sm"
+                        disabled={Boolean(downloadingResource)}
+                        onClick={() => void startDownload(key, () => downloadBulkImportTemplate(apiClient, key))}
+                      >
+                        {downloadingResource === key ? (
+                          <><CSpinner size="sm" className="me-1" />A preparar…</>
+                        ) : (
+                          'Descarregar modelo'
+                        )}
                       </CButton>
                     </div>
-                  )}
-                </div>
-                <details className="context-details import-resource__guidance">
-                  <summary>Como preencher</summary>
-                  <ul className="small text-muted ps-3 mt-2 mb-0">
-                    {resource.instructions.map((instruction) => <li key={instruction}>{instruction}</li>)}
-                  </ul>
-                </details>
+                    <div className="import-resource__file small">
+                      {file ? (
+                        <div className="d-flex align-items-center justify-content-between">
+                          <span>{file.name} · {formatMegabytes(file.size)}</span>
+                          <CButton color="link" size="sm" onClick={() => removeFile(key)}>
+                            Remover
+                          </CButton>
+                        </div>
+                      ) : (
+                        <span className="text-muted">Sem ficheiro</span>
+                      )}
+                    </div>
+                    <details className="context-details import-resource__guidance">
+                      <summary>Como preencher</summary>
+                      <ul className="small text-muted ps-3 mt-2 mb-0">
+                        {resource.instructions.map((instruction) => <li key={instruction}>{instruction}</li>)}
+                      </ul>
+                    </details>
+                  </div>
+                )
+              })}
             </div>
-          )
-        })}
-      </section>
+          </section>
+        )
+      })}
 
       <div className="d-flex flex-wrap gap-2 align-items-center mt-4">
         <CButton

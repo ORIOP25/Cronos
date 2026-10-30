@@ -20,7 +20,7 @@ test('compact imports and priorities fit mobile, tablet and desktop', async ({ p
     await expect(page.getByRole('heading', { name: 'Importar dados' })).toBeVisible()
     await expect(page.locator('.import-resource')).toHaveCount(8)
     await expect(page.locator('.import-resource details[open]')).toHaveCount(0)
-    await expect(page.getByLabel('Selecionar ficheiro CSV de salas')).toBeVisible()
+    await expect(page.getByLabel('Selecionar ficheiros CSV')).toBeVisible()
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
     await page.screenshot({ path: testInfo.outputPath(`imports-${width}.png`), fullPage: true })
   }
@@ -130,6 +130,14 @@ test('all CSV models download actual files with feedback visible in the viewport
     const feedback = page.locator('[data-rht-toaster]').getByText('Transferência iniciada. Verifique a pasta de transferências.', { exact: true }).first()
     await expect(feedback).toBeInViewport()
   }
+  const bundleEvent = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Descarregar os modelos deste passo' }).first().click()
+  const bundle = await bundleEvent
+  expect(await bundle.failure()).toBeNull()
+  expect(bundle.suggestedFilename()).toBe('Cronos_Modelos_DadosDaEscola.zip')
+  const zip = await readFile(await bundle.path())
+  expect(zip.subarray(0, 2).toString('latin1')).toBe('PK')
+  for (const name of filenames) expect(zip.includes(Buffer.from(`Cronos_${name}_Template.csv`))).toBe(true)
 })
 
 test('calendar action fits tablet and desktop; mobile debt cards stay inside the viewport', async ({ page }) => {

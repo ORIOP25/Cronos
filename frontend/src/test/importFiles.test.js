@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   createBulkImportReport,
+  detectImportResource,
   fileToBase64,
   filesToPayload,
   formatImportIssue,
@@ -13,6 +14,26 @@ function csvFile(content, name = 'Cronos_Salas_Template.csv') {
 }
 
 describe('bulk import file utilities', () => {
+  it.each([
+    ['rooms', '\ufeffNome da sala;Tipo de sala;Capacidade\r\nSala;Normal;20\r\n'],
+    ['courses', 'Sigla do curso,Nome do curso,Nome da turma,Ano escolar,Ano de início,Ano de fim,Número de alunos,Sala da turma\n'],
+    ['teachers', '"Nome do professor";"Email do professor";"Nome da disciplina"\r\n'],
+    ['assignments', 'Sigla do curso;Nome da turma;Nome da disciplina;Email do professor\r\n'],
+    ['class_availability', '\ufeffSigla do curso;Nome da turma;Dia;08:30;09:20\r\nTGEI;TGEI 25/28;Segunda;;\r\n'],
+    ['teacher_availability', 'Nome do professor;Email do professor;Dia;08:30\r\n'],
+    ['teacher_presence', 'Nome do professor;Email do professor;Hora de almoço;Mínimo de horas por presença;Furo máximo (horas)\r\n'],
+  ])('recognises the %s model by its column titles', async (resource, content) => {
+    await expect(detectImportResource(csvFile(content, 'qualquer.csv'))).resolves.toBe(resource)
+  })
+
+  it.each([
+    ['unknown titles', 'Nome;Idade\r\n'],
+    ['a missing column', 'Nome da sala;Tipo de sala\r\n'],
+    ['an empty file', ''],
+  ])('does not recognise a file with %s', async (_case, content) => {
+    await expect(detectImportResource(csvFile(content))).resolves.toBeNull()
+  })
+
   it('converts files with and without UTF-8 BOM to base64', async () => {
     const file = csvFile('\ufeffNome da sala;Tipo de sala;Capacidade\r\nSala;Normal;20\r\n')
     const fileWithoutBom = csvFile('Nome da sala;Tipo de sala;Capacidade\r\nSala;Normal;20\r\n')
