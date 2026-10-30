@@ -166,7 +166,7 @@ const RoomTypesModal = ({ onClose, embedded = false }) => {
     content = (
       <StatePanel
         state="error"
-        title="Erro ao carregar"
+        title="Não foi possível carregar"
         description={getApiErrorMessage(error, TXT.ERROR_LOADING)}
         action={<button className="btn btn-outline-primary" type="button" onClick={() => refetch()}>Tentar novamente</button>}
       />
@@ -196,7 +196,7 @@ const RoomTypesModal = ({ onClose, embedded = false }) => {
           )}
           <div className="d-flex gap-2 mt-3">
             <CButton type="submit" color="primary" disabled={isSaving}>
-              {editing ? 'Guardar nome' : 'Novo tipo'}
+              {editing ? TXT.SAVE_CHANGES : 'Criar tipo de sala'}
             </CButton>
             {editing && (
               <CButton type="button" color="secondary" variant="outline" onClick={resetForm}>
@@ -212,6 +212,8 @@ const RoomTypesModal = ({ onClose, embedded = false }) => {
         visible={removing !== null}
         onClose={() => setRemoving(null)}
         onConfirm={handleRemoveConfirm}
+        confirmText={TXT.REMOVE}
+        pendingText="A remover…"
         message={`Remover o tipo ${removing?.name ?? ''}? Se uma sala ou disciplina ativa o usar, a remoção fica bloqueada.`}
         isLoading={deleteMutation.isPending}
       />

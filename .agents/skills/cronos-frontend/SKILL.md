@@ -21,6 +21,18 @@ Copy Rooms for a new list-and-form feature:
 `frontend/src/pages/Rooms.jsx` + `frontend/src/components/Forms/RoomForm.jsx` + the `useRooms`, `useCreateRoom`, `useUpdateRoom`, and `useDeleteRoom` hooks in `frontend/src/features/catalog/data.js` + `frontend/src/test/RoomForm.test.jsx`.
 Drop the tutorial props (`allowedActions`, `readOnly`, `data-tutorial-target`) unless the tutorial uses the page.
 
+## UI and copy consistency
+
+- Read the [Design System](../../../documentation/06_frontend_ux/DESIGN_SYSTEM.md) before adding page-specific controls or styles. Reuse the existing pattern for equivalent actions.
+- Use `PageHeader` for the compact page title and action group. Do not add a second hero, greeting or section label above it.
+- Reuse the existing table, form modal, confirmation, feedback and disclosure components. Keep optional explanations collapsed; keep actions, validation and required warnings visible.
+- Use PT-PT and sentence case. Reuse common action labels from `frontend/src/utils/terminology.js`; follow the [copy contract](../../../documentation/06_frontend_ux/FRONTEND_ARCHITECTURE.md#contracts-and-invariants).
+- Distinguish opening a form, creating a record, saving edits and applying a local draft. Keep removal, archival and restoration distinct.
+- Use Cancelar for unsaved edits and Fechar for consultation or a clean availability editor. Preserve the existing close and partial-save behavior.
+- Name the action in confirmations and busy states. Keep impact warnings and specific recovery guidance; do not promise behavior the code does not guarantee.
+- Translate technical terms in the presentation layer. Preserve API/CSV field names, error codes and validation rules.
+- Update tooltips, accessible names, tutorial instructions and test selectors with the visible copy. Shared test helpers must target the correct creation or editing action.
+
 ## Minimal proof
 
 - `node scripts/test.mjs fast --scope frontend -- <test file>` during TDD.
@@ -46,10 +58,11 @@ Drop the tutorial props (`allowedActions`, `readOnly`, `data-tutorial-target`) u
 
 ## Done when
 
-- A failing Vitest test existed first and now passes.
+- For behavior changes, a failing Vitest test existed first and now passes.
 - `npm run verify:checks` passes, and the pull request names it.
 - The local frontend container is rebuilt.
 - [Routes and Permissions](../../../documentation/06_frontend_ux/ROUTES_AND_PERMISSIONS.md) and [Frontend Architecture](../../../documentation/06_frontend_ux/FRONTEND_ARCHITECTURE.md) reflect any route or data-ownership change.
+- New UI patterns and terminology follow the linked contracts. Update the owning guide when a new convention is necessary.
 
 ## Documentation
 

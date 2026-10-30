@@ -48,9 +48,9 @@ describe('terminology', () => {
 
   describe('EVENT_TYPE_LABELS', () => {
     it('tem todas as chaves de tipo de evento', () => {
-      expect(EVENT_TYPE_LABELS.national_holiday).toBe('Feriado Nacional')
-      expect(EVENT_TYPE_LABELS.school_break).toBe('Pausa Escolar')
-      expect(EVENT_TYPE_LABELS.exam_period).toBe('Período de Exames')
+      expect(EVENT_TYPE_LABELS.national_holiday).toBe('Feriado nacional')
+      expect(EVENT_TYPE_LABELS.school_break).toBe('Pausa escolar')
+      expect(EVENT_TYPE_LABELS.exam_period).toBe('Período de exames')
       expect(EVENT_TYPE_LABELS.other).toBe('Outro')
     })
   })

@@ -83,7 +83,7 @@ const Timesheets = ({ initialWeekStart, readOnly = false, allowedActions, naviga
       toast.success(status === 'APPROVED' ? 'Semana aprovada.' : status === 'OPEN' ? 'Semana reaberta.' : 'Estado atualizado.')
     } catch (err) {
       if (!attemptScope.isCurrent(attempt)) return
-      const message = getApiErrorMessage(err, 'Erro ao alterar estado. Tente novamente.')
+      const message = getApiErrorMessage(err, 'Não foi possível alterar estado. Tente novamente.')
       if (isApiErrorTransient(err)) toast.error(message)
       else setStatusActionError(message)
     }
@@ -121,7 +121,7 @@ const Timesheets = ({ initialWeekStart, readOnly = false, allowedActions, naviga
   return (
     <div className="p-4" data-tutorial-target="timesheets-workspace">
       {/* Header */}
-      <PageHeader title="Fecho Semanal" />
+      <PageHeader title="Fecho semanal" />
 
       {/* Filters */}
       <div className="page-toolbar">
@@ -152,7 +152,7 @@ const Timesheets = ({ initialWeekStart, readOnly = false, allowedActions, naviga
       )}
 
       {timesheetsError && (
-        <div className="mb-4"><FeedbackBanner tone="danger">Erro ao carregar as aprovações semanais.</FeedbackBanner></div>
+        <div className="mb-4"><FeedbackBanner tone="danger">Não foi possível carregar as aprovações semanais.</FeedbackBanner></div>
       )}
 
       {/* Two-panel layout */}
@@ -331,9 +331,10 @@ const Timesheets = ({ initialWeekStart, readOnly = false, allowedActions, naviga
         visible={showReopenConfirm}
         onClose={() => setShowReopenConfirm(false)}
         onConfirm={handleConfirmReopen}
-        title="Confirmar Reabertura"
+        title="Reabrir semana"
         message={TXT.WEEK_REOPEN_CONFIRM}
         confirmText="Sim, reabrir"
+        pendingText="A reabrir…"
         isLoading={updateMutation.isPending}
         variant="warning"
       />

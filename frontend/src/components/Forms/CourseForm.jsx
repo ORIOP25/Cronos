@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { TXT } from '../../utils/terminology'
 import {
   CButton,
   CCol,
@@ -130,7 +131,7 @@ const CourseForm = ({ onSubmit, isLoading, onCancel }) => {
           <CCol md={8}>
             <CFormInput
               id={COURSE_FIELDS.name}
-              label="Nome do Curso"
+              label="Nome do curso"
               value={course.name}
               onChange={(event) => updateCourse('name', event.target.value)}
               required
@@ -212,7 +213,7 @@ const CourseForm = ({ onSubmit, isLoading, onCancel }) => {
       <CModalFooter className="px-0 mt-4 border-0 pb-0">
         <CButton type="button" color="secondary" variant="outline" onClick={onCancel}>Cancelar</CButton>
         <CButton type="submit" color="primary" disabled={isLoading}>
-          {isLoading ? 'A gravar...' : 'Criar Curso'}
+          {isLoading ? TXT.SAVING : 'Criar curso'}
         </CButton>
       </CModalFooter>
     </CForm>

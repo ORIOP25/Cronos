@@ -452,6 +452,7 @@ const Schedules = ({ initialClassId = '', initialWeekStart, persistView = true, 
         title={generationConfirmation === 'regenerate' ? 'Confirmar nova geração' : 'Confirmar geração'}
         message={generationConfirmationMessage()}
         confirmText="Iniciar geração"
+        pendingText="A iniciar…"
         isLoading={generateMutation.isPending}
         variant="warning"
       />
@@ -557,7 +558,7 @@ const Schedules = ({ initialClassId = '', initialWeekStart, persistView = true, 
                 }
                 catch (err) {
                   if (!attemptScope.isCurrent(attempt)) return
-                  const message = getDraftMutationErrorMessage(err, 'Erro ao aprovar proposta.')
+                  const message = getDraftMutationErrorMessage(err, 'Não foi possível aprovar proposta.')
                   if (message === STALE_DRAFT_MESSAGE) setGenerationActionError(message)
                   else toast.error(message)
                 }
@@ -571,7 +572,7 @@ const Schedules = ({ initialClassId = '', initialWeekStart, persistView = true, 
                 }
                 catch (err) {
                   if (!attemptScope.isCurrent(attempt)) return
-                  const message = getDraftMutationErrorMessage(err, 'Erro ao rejeitar proposta.')
+                  const message = getDraftMutationErrorMessage(err, 'Não foi possível rejeitar proposta.')
                   if (message === STALE_DRAFT_MESSAGE) setGenerationActionError(message)
                   else toast.error(message)
                 }

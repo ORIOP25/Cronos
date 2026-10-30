@@ -59,7 +59,7 @@ describe('Subjects new-module warning', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /editar programação/i }))
     addModule('M2', '30')
-    fireEvent.click(screen.getByRole('button', { name: /guardar disciplina/i }))
+    fireEvent.click(screen.getByRole('button', { name: /guardar alterações/i }))
 
     expect(await toastRegion().findByText(NEW_MODULE_WARNING)).toBeInTheDocument()
     expect(toastRegion().getAllByRole('status')).toHaveLength(1)
@@ -81,7 +81,7 @@ describe('Subjects new-module warning', () => {
     fireEvent.click(screen.getByRole('button', { name: /editar M1/i }))
     fireEvent.change(screen.getByLabelText(/nome do módulo/i), { target: { value: 'M1 atualizado' } })
     fireEvent.click(screen.getByRole('button', { name: 'Guardar' }))
-    fireEvent.click(screen.getByRole('button', { name: /guardar disciplina/i }))
+    fireEvent.click(screen.getByRole('button', { name: /guardar alterações/i }))
 
     expect(await toastRegion().findByText('Disciplina atualizada.')).toBeInTheDocument()
     expect(toastRegion().queryByText(/não foram marcados nas turmas/i)).not.toBeInTheDocument()
@@ -94,7 +94,7 @@ describe('Subjects new-module warning', () => {
     fireEvent.click(screen.getByRole('button', { name: /nova disciplina/i }))
     fireEvent.change(screen.getByLabelText(/nome da disciplina/i), { target: { value: 'Matemática' } })
     addModule('M1', '25')
-    fireEvent.click(screen.getByRole('button', { name: /guardar disciplina/i }))
+    fireEvent.click(screen.getByRole('button', { name: /criar disciplina/i }))
 
     expect(await toastRegion().findByText('Disciplina criada.')).toBeInTheDocument()
     expect(toastRegion().queryByText(/não foram marcados nas turmas/i)).not.toBeInTheDocument()

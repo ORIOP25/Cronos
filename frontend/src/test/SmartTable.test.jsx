@@ -37,7 +37,7 @@ describe('SmartTable', () => {
     const { rerender } = renderWithProviders(renderTable(), { withToaster: true })
 
     fireEvent.click(screen.getByRole('button', { name: /remover sala e/i }))
-    fireEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Remover' }))
 
     act(() => { setClerkState({ orgId: 2 }) })
     rerender(renderTable())
@@ -66,7 +66,7 @@ describe('SmartTable', () => {
     expect(onEdit).toHaveBeenCalledWith(row)
 
     fireEvent.click(screen.getByTitle('Remover'))
-    fireEvent.click(await screen.findByRole('button', { name: 'Confirmar' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Remover' }))
     await waitFor(() => expect(onDelete).toHaveBeenCalledWith(7))
   })
 
@@ -75,9 +75,9 @@ describe('SmartTable', () => {
     const onDelete = vi.fn(() => new Promise((resolve) => { resolveDelete = resolve }))
     render(<SmartTable columns={[{ key: 'name', label: 'Nome' }]} data={[{ id: 1, name: 'Sala A' }]} actions onEdit={vi.fn()} onDelete={onDelete} />)
     fireEvent.click(screen.getByRole('button', { name: /remover sala a/i }))
-    const confirm = screen.getByRole('button', { name: 'Confirmar' })
+    const confirm = screen.getByRole('button', { name: 'Remover' })
     fireEvent.click(confirm)
-    expect(screen.getByRole('button', { name: /a guardar/i })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /a remover/i })).toBeDisabled()
     resolveDelete()
     await waitFor(() => expect(screen.queryByRole('button', { name: /a guardar/i })).not.toBeInTheDocument())
   })
@@ -89,11 +89,11 @@ describe('SmartTable', () => {
       { withToaster: true },
     )
     fireEvent.click(screen.getByRole('button', { name: /remover sala b/i }))
-    fireEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Remover' }))
 
     expect(await screen.findByText(/não foi possível remover/i)).toBeInTheDocument()
     expect(within(document.querySelector('[data-rht-toaster]')).getAllByText(/não foi possível remover/i)).toHaveLength(1)
-    expect(screen.getByRole('button', { name: 'Confirmar' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Remover' })).toBeEnabled()
   })
 
   it('keeps a business block in context instead of a toast', async () => {
@@ -103,7 +103,7 @@ describe('SmartTable', () => {
       { withToaster: true },
     )
     fireEvent.click(screen.getByRole('button', { name: /remover sala b/i }))
-    fireEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Remover' }))
 
     expect(await screen.findByText(/utilizado no horário atual/i)).toBeInTheDocument()
     expect(document.querySelector('[data-rht-toaster]')).toBeEmptyDOMElement()
@@ -116,7 +116,7 @@ describe('SmartTable', () => {
       { withToaster: true },
     )
     fireEvent.click(screen.getByRole('button', { name: /remover sala c/i }))
-    fireEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Remover' }))
     const toastHost = document.querySelector('[data-rht-toaster]')
     expect(await within(toastHost).findByText(/arquivado/i)).toBeInTheDocument()
     expect(within(toastHost).getByText(/histórico/i)).toBeInTheDocument()
@@ -129,7 +129,7 @@ describe('SmartTable', () => {
       { withToaster: true },
     )
     fireEvent.click(screen.getByRole('button', { name: /remover sala d/i }))
-    fireEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Remover' }))
     expect(await within(document.querySelector('[data-rht-toaster]')).findByText('Registo removido.')).toBeInTheDocument()
   })
 
@@ -149,7 +149,7 @@ describe('SmartTable', () => {
     }
     renderWithProviders(<ListPage />, { withToaster: true })
     fireEvent.click(screen.getByRole('button', { name: /remover última sala/i }))
-    fireEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Remover' }))
 
     expect(await within(document.querySelector('[data-rht-toaster]')).findByText('Registo removido.')).toBeInTheDocument()
     expect(await screen.findByText(/ainda sem registos/i)).toBeInTheDocument()

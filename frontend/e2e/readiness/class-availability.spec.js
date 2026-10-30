@@ -208,10 +208,10 @@ test('an all-impossible class blocks generation until a neutral grid is copied o
       await expect(page.getByText(`Disponibilidade — ${secondClass.name}`, { exact: true })).toBeVisible()
       await page.getByRole('button', { name: /aplicar a outras turmas/i }).click()
       await page.getByRole('checkbox', { name: firstClass.name, exact: true }).check()
-      await page.getByRole('button', { name: 'Aplicar a 1 turmas', exact: true }).click()
+      await page.getByRole('button', { name: 'Aplicar a 1 turma', exact: true }).click()
       const confirmation = page.getByRole('dialog').filter({ hasText: 'Vai substituir' })
       await confirmation.getByRole('button', { name: 'Aplicar', exact: true }).click()
-      await expect(page.getByText(/Disponibilidade aplicada a 1 turmas/)).toBeVisible({ timeout: 30_000 })
+      await expect(page.getByText('Disponibilidade aplicada a 1 turma.', { exact: true })).toBeVisible({ timeout: 30_000 })
 
       const copiedGrid = await apiRequest(page, 'GET', `/classes/${firstClass.id}/availability`)
       expect(copiedGrid).toEqual(sourceGrid)

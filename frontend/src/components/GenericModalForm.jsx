@@ -24,7 +24,7 @@ const GenericModalForm = ({
   const isEditing = !!initialData
   const isFeminine = ['Sala', 'Disciplina', 'Turma', 'Configuração'].some((word) => title?.includes(word))
   const prefix = readOnly ? 'Consultar' : isEditing ? 'Editar' : (isFeminine ? 'Nova' : 'Novo')
-  const modalTitle = `${prefix} ${title}`
+  const modalTitle = `${prefix} ${title?.toLocaleLowerCase('pt-PT')}`
   const isSlowRequest = useSlowRequest(Boolean(isLoading))
 
   const handleClose = () => {

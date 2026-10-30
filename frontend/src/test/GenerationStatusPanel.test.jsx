@@ -391,7 +391,7 @@ describe('GenerationStatusPanel', () => {
       screen.getByText(/Professores com mínimo de horas: Ana Silva, Bruno Costa\./),
     ).toBeInTheDocument()
     expect(
-      screen.getByText(/baixar o mínimo, aumentar o furo máximo ou alargar a disponibilidade/),
+      screen.getByText(/baixar o mínimo, aumentar o tempo máximo sem aulas ou alargar a disponibilidade/),
     ).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /abrir equipa/i })).toHaveAttribute('href', '/members')
   })

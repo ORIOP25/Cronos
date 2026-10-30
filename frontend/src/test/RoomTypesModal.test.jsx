@@ -58,7 +58,7 @@ describe('RoomTypesModal', () => {
     await screen.findByRole('table')
 
     fireEvent.change(screen.getByLabelText('Nome do tipo de sala'), { target: { value: 'Oficina Nova' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Novo tipo' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Criar tipo de sala' }))
 
     await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith('/room-types/', { name: 'Oficina Nova' }))
     expect(await screen.findByRole('cell', { name: 'Oficina Nova' })).toBeInTheDocument()
@@ -71,7 +71,7 @@ describe('RoomTypesModal', () => {
     await screen.findByRole('table')
 
     fireEvent.change(screen.getByLabelText('Nome do tipo de sala'), { target: { value: 'oficina' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Novo tipo' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Criar tipo de sala' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/^Já existe um tipo de sala com este nome\.$/)
     expect(screen.getByLabelText('Nome do tipo de sala')).toHaveAttribute('aria-invalid', 'true')
@@ -85,7 +85,7 @@ describe('RoomTypesModal', () => {
     const input = screen.getByLabelText('Nome do tipo de sala')
     expect(input).toHaveValue('Oficina')
     fireEvent.change(input, { target: { value: 'Oficina Técnica' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Guardar nome' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar alterações' }))
 
     await waitFor(() => expect(apiClient.patch).toHaveBeenCalledWith('/room-types/24', { name: 'Oficina Técnica' }))
   })
@@ -96,7 +96,7 @@ describe('RoomTypesModal', () => {
     await screen.findByRole('table')
 
     fireEvent.click(within(rowFor('Oficina')).getByRole('button', { name: 'Editar Oficina' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Guardar nome' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar alterações' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'O tipo Normal é fixo: não pode mudar de nome nem ser removido.',
@@ -113,7 +113,7 @@ describe('RoomTypesModal', () => {
     await screen.findByRole('table')
 
     fireEvent.click(within(rowFor('Oficina')).getByRole('button', { name: 'Remover Oficina' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Remover' }))
 
     await waitFor(() => expect(apiClient.delete).toHaveBeenCalledWith('/room-types/24'))
     expect(await screen.findByRole('alert')).toHaveTextContent(
@@ -125,12 +125,12 @@ describe('RoomTypesModal', () => {
     renderModal()
     await screen.findByRole('table')
 
-    fireEvent.click(screen.getByRole('button', { name: 'Novo tipo' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Criar tipo de sala' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Escreva um nome de tipo com até 60 caracteres.')
     expect(apiClient.post).not.toHaveBeenCalled()
 
     fireEvent.change(screen.getByLabelText('Nome do tipo de sala'), { target: { value: 'x'.repeat(61) } })
-    fireEvent.click(screen.getByRole('button', { name: 'Novo tipo' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Criar tipo de sala' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Escreva um nome de tipo com até 60 caracteres.')
     expect(apiClient.post).not.toHaveBeenCalled()
   })
@@ -140,13 +140,13 @@ describe('RoomTypesModal', () => {
     renderWithRouter(<Rooms />)
 
     expect(screen.queryByRole('button', { name: 'Tipos de sala' })).not.toBeInTheDocument()
-    fireEvent.click(await screen.findByRole('button', { name: 'Nova Sala' }))
-    fireEvent.change(screen.getByLabelText('Nome da Sala'), { target: { value: 'Sala rascunho' } })
+    fireEvent.click(await screen.findByRole('button', { name: 'Nova sala' }))
+    fireEvent.change(screen.getByLabelText('Nome da sala'), { target: { value: 'Sala rascunho' } })
     fireEvent.click(await screen.findByRole('button', { name: 'Gerir tipos existentes' }))
 
     expect(await screen.findByRole('heading', { name: 'Tipos de sala' })).toBeInTheDocument()
     expect(await screen.findByRole('cell', { name: 'Oficina' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Voltar à sala' }))
-    expect(screen.getByLabelText('Nome da Sala')).toHaveValue('Sala rascunho')
+    expect(screen.getByLabelText('Nome da sala')).toHaveValue('Sala rascunho')
   })
 })

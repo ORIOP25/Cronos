@@ -166,7 +166,7 @@ function MySchedules() {
       toast.success('Semana submetida.')
     } catch (err) {
       if (!attemptScope.isCurrent(attempt)) return
-      const message = getApiErrorMessage(err, 'Erro ao submeter a semana. Tente novamente.')
+      const message = getApiErrorMessage(err, 'Não foi possível submeter a semana. Tente novamente.')
       if (isApiErrorTransient(err)) toast.error(message)
       else setSubmitError(message)
     }
@@ -203,7 +203,7 @@ function MySchedules() {
 
   const pageHeader = (
     <PageHeader
-      title="Meus Horários"
+      title="Meus horários"
     />
   )
 
@@ -312,7 +312,7 @@ function MySchedules() {
               title={submitTooltip}
             >
               {submitMutation.isPending ? <CSpinner size="sm" className="me-1" /> : <CIcon icon={cilCalendar} className="me-1" />}
-              Submeter Semana
+              Submeter semana
             </CButton>
           </div>
         </CCardHeader>
@@ -358,9 +358,10 @@ function MySchedules() {
         visible={showSubmitConfirm}
         onClose={() => setShowSubmitConfirm(false)}
         onConfirm={handleConfirmSubmit}
-        title="Submeter Semana"
+        title="Submeter semana"
         message={TXT.WEEK_SUBMIT_CONFIRM}
-        confirmText="Submeter"
+        confirmText="Submeter semana"
+        pendingText="A submeter…"
         isLoading={submitMutation.isPending}
         variant="primary"
       />

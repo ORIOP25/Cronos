@@ -23,7 +23,7 @@ const defaultProps = {
 describe('ClassInCourseForm', () => {
   it('renderiza campos de nome, tamanho e ano', () => {
     render(<ClassInCourseForm {...defaultProps} />)
-    expect(screen.getByText('Nome da Turma')).toBeInTheDocument()
+    expect(screen.getByText('Nome da turma')).toBeInTheDocument()
     expect(screen.getByText('Nº Alunos')).toBeInTheDocument()
     expect(screen.getByText('Ano (10-12)')).toBeInTheDocument()
   })

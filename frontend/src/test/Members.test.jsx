@@ -92,7 +92,7 @@ describe('Members', () => {
     const dialog = await screen.findByRole('dialog')
     fireEvent.change(within(dialog).getByLabelText('Nome'), { target: { value: 'Ana editada' } })
     fireEvent.click(within(dialog).getByRole('button', { name: 'Reenviar convite' }))
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Guardar' }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Guardar alterações' }))
     await waitFor(() => expect(updateMock).toHaveBeenCalledWith(expect.objectContaining({ organization_display_name: 'Ana editada', lock_version: 2 })))
   })
 
@@ -106,7 +106,7 @@ describe('Members', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Editar membro' }))
     const dialog = await screen.findByRole('dialog')
     fireEvent.click(within(dialog).getByRole('button', { name: 'Reenviar convite' }))
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Guardar' }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Guardar alterações' }))
     await waitFor(() => expect(updateMock).toHaveBeenCalledWith(expect.objectContaining({ lock_version: 1 })))
   })
 
@@ -250,7 +250,7 @@ describe('Members', () => {
 
     expect(screen.getByText('Professor')).toBeInTheDocument()
     expect(screen.getByText('Sem almoço')).toBeInTheDocument()
-    expect(screen.getByText('Mín. 3h · furo 1h')).toBeInTheDocument()
+    expect(screen.getByText('Mín. 3h · máx. sem aulas: 1h')).toBeInTheDocument()
   })
 
   it('hides the rule badges for the default rule', () => {

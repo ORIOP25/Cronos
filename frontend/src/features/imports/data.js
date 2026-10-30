@@ -148,7 +148,7 @@ export const IMPORT_RESOURCES = Object.freeze([
       'O modelo já traz os professores ativos e a regra atual.',
       'O email identifica o professor; pode já existir ou vir no ficheiro de Professores.',
       'Hora de almoço: Sim ou Não. Uma célula vazia vale Sim.',
-      'Mínimo vazio quer dizer sem regra. Furo vazio com um mínimo vale 1 hora.',
+      'Deixe o mínimo em branco para não definir uma regra. Se definir um mínimo e deixar o tempo máximo sem aulas em branco, aplica-se 1 hora.',
       'Cada linha substitui os três valores desse professor. Os professores ausentes ficam iguais.',
     ],
     fields: {
@@ -156,7 +156,7 @@ export const IMPORT_RESOURCES = Object.freeze([
       email: 'Email do professor',
       lunch: 'Hora de almoço',
       minimum_hours: 'Mínimo de horas por presença',
-      max_gap_hours: 'Furo máximo (horas)',
+      max_gap_hours: 'Tempo máximo sem aulas (horas)',
     },
   },
 ])

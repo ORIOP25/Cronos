@@ -35,12 +35,12 @@ async function fillTeacher(page, { name, email, access }) {
   await page.getByLabel('Acesso do professor').selectOption(access)
 }
 
-async function saveAndExpect(page, expectedStatus) {
+async function saveAndExpect(page, expectedStatus, submitLabel = 'Adicionar membro') {
   const responsePromise = page.waitForResponse((response) => (
     response.url().includes('/api/v1/members')
       && ['POST', 'PATCH'].includes(response.request().method())
   ))
-  await page.getByRole('button', { name: 'Guardar' }).click()
+  await page.getByRole('dialog').getByRole('button', { name: submitLabel, exact: true }).click()
   const response = await responsePromise
   expect(response.status()).toBe(expectedStatus)
   const body = await response.json()
@@ -331,7 +331,7 @@ test.describe.serial('Member invitations — real Clerk', () => {
     await row.getByRole('button', { name: 'Editar membro' }).click()
     await expect(page.getByRole('heading', { name: 'Editar membro' })).toBeVisible()
     await page.getByLabel('Acesso do professor').selectOption('platform')
-    await saveAndExpect(page, 200)
+    await saveAndExpect(page, 200, 'Guardar alterações')
     await expect(row).toContainText('Convite pendente')
     await expect(row).toContainText('Convite enviado; aguarda aceitação.')
   })

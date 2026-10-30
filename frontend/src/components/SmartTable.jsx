@@ -125,7 +125,7 @@ const SmartTable = ({
   
   if (isError) {
     const msg = getApiErrorMessage(error, TXT.ERROR_LOADING)
-    return <StatePanel state="error" title="Erro ao carregar" description={msg} action={onRetry && <button className="btn btn-outline-primary" type="button" onClick={onRetry}>Tentar novamente</button>} />
+    return <StatePanel state="error" title="Não foi possível carregar" description={msg} action={onRetry && <button className="btn btn-outline-primary" type="button" onClick={onRetry}>Tentar novamente</button>} />
   }
 
   if (isLoading) {
@@ -198,6 +198,8 @@ const SmartTable = ({
         visible={deleteTarget !== null}
         onClose={() => setDeleteTarget(null)}
         onConfirm={handleDeleteConfirm}
+        confirmText={TXT.REMOVE}
+        pendingText="A remover…"
         message={typeof deleteMessage === 'function' ? deleteTarget && deleteMessage(deleteTarget) : deleteMessage}
         isLoading={isDeleting}
       />

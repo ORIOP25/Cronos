@@ -24,6 +24,7 @@ import { BulkRemovalActions, BulkSelectionCheckbox } from '../components/BulkRem
 import { useBulkRemoval } from '../hooks/useBulkRemoval'
 import { getApiErrorMessage, isApiErrorTransient } from '../utils/apiErrors'
 import { useAttemptScope } from '../hooks/useAttemptScope'
+import { TXT } from '../utils/terminology'
 import {
   useCreateMember,
   useMembers,
@@ -139,6 +140,8 @@ const MemberModal = ({ visible, member, subjects, onClose, onSave, isSaving, err
     onSave(payload)
   }
 
+  const submitLabel = member ? TXT.SAVE_CHANGES : 'Adicionar membro'
+
   return (
     <CModal visible={visible} onClose={isSaving || !visible ? undefined : onClose} keyboard={!isSaving} backdrop={isSaving ? 'static' : true} alignment="center" size="lg" className="app-modal" data-tutorial-target="member-form">
       <CModalHeader>
@@ -208,7 +211,7 @@ const MemberModal = ({ visible, member, subjects, onClose, onSave, isSaving, err
       <CModalFooter>
         <CButton color="secondary" variant="outline" onClick={onClose} disabled={isSaving}>Cancelar</CButton>
         <CButton color="primary" onClick={submit} disabled={!canEdit || isSaving || syncBlocked || adminRequiresConfirmation}>
-          {isSaving && <CSpinner size="sm" className="me-2" />}Guardar
+          {isSaving && <CSpinner size="sm" className="me-2" />}{isSaving ? TXT.SAVING : submitLabel}
         </CButton>
       </CModalFooter>
     </CModal>
@@ -427,7 +430,7 @@ const Members = ({ readOnly = false, allowedActions }) => {
                     )}
                     {member.capabilities.includes('teacher') && member.teacher_presence?.minimum_hours != null && (
                       <CBadge color="secondary" className="ms-1">
-                        {`Mín. ${member.teacher_presence.minimum_hours}h · furo ${member.teacher_presence.max_gap_hours}h`}
+                        {`Mín. ${member.teacher_presence.minimum_hours}h · máx. sem aulas: ${member.teacher_presence.max_gap_hours}h`}
                       </CBadge>
                     )}
                   </td>
@@ -477,6 +480,7 @@ const Members = ({ readOnly = false, allowedActions }) => {
           ? 'Este membro ainda não tem histórico e será removido definitivamente.'
           : 'Este membro tem histórico e será arquivado para preservar horários, aulas e auditoria.'}
         confirmText="Remover"
+        pendingText="A remover…"
         isLoading={removeMember.isPending}
       />
       {availabilityTeacher && (

@@ -14,7 +14,7 @@ const KPISidebar = ({ subjects, isLoading = false, isError = false }) => {
   if (isError) {
     return (
       <div className="text-danger text-center p-3" style={{ fontSize: '0.85rem' }} data-testid="kpi-error">
-        Erro ao carregar o progresso da turma.
+        Não foi possível carregar o progresso da turma.
       </div>
     )
   }

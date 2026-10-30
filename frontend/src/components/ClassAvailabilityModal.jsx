@@ -23,6 +23,7 @@ export default function ClassAvailabilityModal({ schoolClass, onDate, onClose })
   const [selectedIds, setSelectedIds] = useState([])
   const [copyError, setCopyError] = useState('')
   const [confirmVisible, setConfirmVisible] = useState(false)
+  const targetLabel = selectedIds.length === 1 ? 'turma' : 'turmas'
 
   const timeslotsQuery = useTimeslots({ onDate })
   const availabilityQuery = useClassAvailability({ classId, onDate })
@@ -58,7 +59,7 @@ export default function ClassAvailabilityModal({ schoolClass, onDate, onClose })
       const applied = result?.updated_class_ids?.length ?? selectedIds.length
       setConfirmVisible(false)
       setView('grid')
-      toast.success(`Disponibilidade aplicada a ${applied} turmas.`)
+      toast.success(`Disponibilidade aplicada a ${applied} ${applied === 1 ? 'turma' : 'turmas'}.`)
     } catch (error) {
       setConfirmVisible(false)
       const message = getApiErrorMessage(error, 'Não foi possível aplicar a disponibilidade.')
@@ -80,7 +81,7 @@ export default function ClassAvailabilityModal({ schoolClass, onDate, onClose })
         onClose={() => setConfirmVisible(false)}
         onConfirm={() => { void handleCopy() }}
         title="Aplicar disponibilidade"
-        message={`Vai substituir a disponibilidade de ${selectedIds.length} turmas pela grelha de ${schoolClass.name}.`}
+        message={`Vai substituir a disponibilidade de ${selectedIds.length} ${targetLabel} pela grelha de ${schoolClass.name}.`}
         confirmText="Aplicar"
         variant="primary"
         isLoading={copyMutation.isPending}
@@ -99,7 +100,7 @@ export default function ClassAvailabilityModal({ schoolClass, onDate, onClose })
         onClick={() => setConfirmVisible(true)}
         disabled={selectedIds.length === 0 || copyMutation.isPending}
       >
-        Aplicar a {selectedIds.length} turmas
+        Aplicar a {selectedIds.length} {targetLabel}
       </CButton>
     </>
   ) : null

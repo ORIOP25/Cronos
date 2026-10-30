@@ -24,7 +24,7 @@ import { getLessonLogStatus } from '../utils/presentation'
 
 /**
  * LessonLogModal — V4 simplified registration modal.
- * PENDING  → 3 buttons: Cancelar, Criar Ocorrência (c/ confirmação), Aula Dada
+ * PENDING  → 3 buttons: Cancelar, Criar ocorrência (c/ confirmação), Aula dada
  * COMPLETED → editable if week OPEN, readonly if locked
  * OCCURRENCE → readonly (always)
  */
@@ -95,7 +95,7 @@ const LessonLogModal = ({ onClose, slot, isAdmin = false, readOnly = false, allo
       toast.success('Registo guardado.')
     } catch (err) {
       if (!attemptScope.isCurrent(attempt)) return
-      const message = getApiErrorMessage(err, 'Erro ao guardar o registo. Tente novamente.')
+      const message = getApiErrorMessage(err, 'Não foi possível guardar o registo. Tente novamente.')
       if (isApiErrorTransient(err)) toast.error(message)
       else setErrorMessage(message)
     }
@@ -235,7 +235,7 @@ const LessonLogModal = ({ onClose, slot, isAdmin = false, readOnly = false, allo
                 >
                   {updateTimesheetStatusMutation.isPending && <CSpinner size="sm" className="me-1" />}
                   <CIcon icon={cilActionUndo} className="me-1" />
-                  Reabrir Semana
+                  Reabrir semana
                 </CButton>
               )}
             >
@@ -398,7 +398,7 @@ const LessonLogModal = ({ onClose, slot, isAdmin = false, readOnly = false, allo
                 title="Criar ocorrência para este bloco"
               >
                 <CIcon icon={cilXCircle} className="me-1" />
-                Criar Ocorrência
+                Criar ocorrência
               </CButton>
 
               {!isTutorial && <CButton
@@ -408,7 +408,7 @@ const LessonLogModal = ({ onClose, slot, isAdmin = false, readOnly = false, allo
                   title="Marcar aula como dada"
                 >
                   <CIcon icon={cilCheckCircle} className="me-1" />
-                  Aula Dada
+                  Aula dada
                 </CButton>}
             </>
           )}

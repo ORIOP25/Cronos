@@ -103,7 +103,7 @@ test('teacher records an occurrence in advance and the admin decides it once', a
 
     await test.step('teacher cannot execute a lesson or submit a week before the lessons end', async () => {
       await openTeacherWeek(teacherPage, horizon, week.weekStart)
-      const submit = teacherPage.getByRole('button', { name: 'Submeter Semana', exact: true })
+      const submit = teacherPage.getByRole('button', { name: 'Submeter semana', exact: true })
       await expect(submit).toBeDisabled()
       await expect(submit).toHaveAttribute('title', /aula futura.*não registada/)
       const dialog = await openLessonRecord(teacherPage, lesson, 'Planeado')
@@ -112,7 +112,7 @@ test('teacher records an occurrence in advance and the admin decides it once', a
         { exact: true },
       )).toBeVisible()
       await dialog.getByLabel('Sumário', { exact: true }).fill('CI: aula ainda por dar.')
-      await expect(dialog.getByRole('button', { name: 'Aula Dada', exact: true })).toBeDisabled()
+      await expect(dialog.getByRole('button', { name: 'Aula dada', exact: true })).toBeDisabled()
       await dialog.getByRole('button', { name: 'Cancelar', exact: true }).click()
       await expect(teacherPage.getByRole('dialog')).toHaveCount(0)
       expect(writes).toEqual([])
@@ -122,7 +122,7 @@ test('teacher records an occurrence in advance and the admin decides it once', a
     await test.step('teacher creates the occurrence in advance through the lesson dialog', async () => {
       const dialog = await openLessonRecord(teacherPage, lesson, 'Planeado')
       await dialog.getByLabel('Sumário', { exact: true }).fill('CI: falta prevista.')
-      await dialog.getByRole('button', { name: 'Criar Ocorrência', exact: true }).click()
+      await dialog.getByRole('button', { name: 'Criar ocorrência', exact: true }).click()
       await expect(dialog.getByText('Criar ocorrência?', { exact: true })).toBeVisible()
       const saved = teacherPage.waitForResponse((response) => isApi(response, `schedule/lessons/${lesson.scheduler_lesson_id}/log`, 'PUT'))
       await dialog.getByRole('button', { name: 'Sim, criar ocorrência', exact: true }).click()
