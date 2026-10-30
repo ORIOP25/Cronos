@@ -55,7 +55,7 @@ Use the same terms in visible labels, tooltips, accessible names, confirmations,
 - Use compact rows for related settings and import resources. Separate rows with a divider instead of repeated cards.
 - Keep essential controls visible. Put longer instructions and impact explanations inside native `details` elements.
 - Keep disclosure summaries keyboard accessible and preserve visible focus indicators.
-- Dashboard lists show a compact overview. Users can expand class progress or conflict details without losing access to entries.
+- Dashboard lists show a compact overview. Users can expand class progress without losing access to entries.
 - The team table has one edit entry per member. The editor groups profile, availability and permitted access actions.
 - Room forms create and select room types in context. Existing type management returns to the same room draft.
 - Primary actions use the shared primary button theme, including activation. Contextual edit actions use the outlined primary variant.
