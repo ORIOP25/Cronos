@@ -45,7 +45,7 @@ Read [Members and Access](../02_domain_model/MEMBERS_AND_ACCESS.md).
 | `/my-availability` | `MyAvailability.jsx` | Teacher | Teacher availability grid |
 | `/my-progress` | `MyProgress.jsx` | Teacher | Teacher assigned class progress |
 | `/config` | `SchoolConfig.jsx` | Admin | School parameters & shift settings; the post-Foundation settings surface for administrators |
-| `/imports` | `BulkImport.jsx` | Admin | Additive CSV validation and atomic commit |
+| `/imports` | `BulkImport.jsx` | Admin | Two-step page with one drop area; additive CSV validation and atomic commit |
 | `*` | `NotFoundPage.jsx` | Public | Not found view (404) |
 
 ## Route Guard Logic

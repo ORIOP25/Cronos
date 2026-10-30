@@ -158,8 +158,48 @@ export const IMPORT_RESOURCES = Object.freeze([
       minimum_hours: 'Mínimo de horas por presença',
       max_gap_hours: 'Tempo máximo sem aulas (horas)',
     },
+    // The file keeps the original column title; the screen uses the clearer name above.
+    headers: ['Nome do professor', 'Email do professor', 'Hora de almoço', 'Mínimo de horas por presença', 'Furo máximo (horas)'],
   },
 ])
+
+export const IMPORT_STEPS = Object.freeze([
+  {
+    title: 'Dados da escola',
+    description: 'Salas, disciplinas, cursos, professores e atribuições. Normalmente usa-se uma vez, no arranque.',
+    resources: ['rooms', 'subjects', 'courses', 'teachers', 'assignments'],
+    bundleFilename: 'Cronos_Modelos_DadosDaEscola.zip',
+  },
+  {
+    title: 'Regras do horário',
+    description: 'Disponibilidades e presença. Os modelos já trazem os dados atuais; ajuste-os ao longo do ano.',
+    resources: ['class_availability', 'teacher_availability', 'teacher_presence'],
+    bundleFilename: 'Cronos_Modelos_RegrasDoHorario.zip',
+  },
+])
+
+// The two weekly grids add one column per hour after their fixed titles.
+const GRID_RESOURCES = new Set(['class_availability', 'teacher_availability'])
+const HEADER_READ_BYTES = 4096
+
+function headerCells(text) {
+  const line = text.replace(/^\ufeff/, '').split(/\r?\n/, 1)[0]
+  return [';', ','].map((delimiter) => line.split(delimiter).map((cell) => cell.replace(/^"(.*)"$/, '$1')))
+}
+
+function matchesTitles(resource, cells) {
+  const titles = resource.headers ?? Object.values(resource.fields)
+  if (GRID_RESOURCES.has(resource.key) ? cells.length < titles.length : cells.length !== titles.length) return false
+  return titles.every((title, index) => cells[index] === title)
+}
+
+// Mirrors the backend header check so a dropped file lands in its section.
+// The backend still validates every file.
+export async function detectImportResource(file) {
+  const candidates = headerCells(await file.slice(0, HEADER_READ_BYTES).text())
+  const match = IMPORT_RESOURCES.find((resource) => candidates.some((cells) => matchesTitles(resource, cells)))
+  return match?.key ?? null
+}
 
 const IMPORT_COUNT_LABELS = Object.freeze({
   room_types: 'Tipos de sala novos',
@@ -302,6 +342,17 @@ export async function downloadBulkImportTemplate(apiClient, resource) {
     throw normalizeTemplateError(error)
   }
   downloadBlob(new Blob([bytes], { type: 'text/csv;charset=utf-8' }), definition.filename)
+}
+
+export async function downloadBulkImportTemplateBundle(apiClient, step) {
+  const query = new URLSearchParams(step.resources.map((resource) => ['resource', resource]))
+  let bytes
+  try {
+    bytes = await apiClient.get(`/imports/templates?${query}`, { responseType: 'arraybuffer' })
+  } catch (error) {
+    throw normalizeTemplateError(error)
+  }
+  downloadBlob(new Blob([bytes], { type: 'application/zip' }), step.bundleFilename)
 }
 
 function invalidateImports(queryClient, orgId) {

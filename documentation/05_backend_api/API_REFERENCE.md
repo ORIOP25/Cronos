@@ -142,6 +142,7 @@ A room or a subject takes the school type it needs as `room_type_id`. `POST /api
 
 | Method | Route | Access |
 | :--- | :--- | :--- |
+| `GET` | `/api/v1/imports/templates?resource=…` | Admin; ZIP with one model per repeated `resource` |
 | `GET` | `/api/v1/imports/templates/{resource}` | Admin |
 | `POST` | `/api/v1/imports/validate` | Admin; body limit 8 MiB |
 | `POST` | `/api/v1/imports/commit` | Admin; body limit 8 MiB; returns `201` |

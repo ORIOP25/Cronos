@@ -1,6 +1,7 @@
 import base64
 import csv
 import io
+import zipfile
 from datetime import date, time
 from uuid import uuid4
 
@@ -274,6 +275,38 @@ async def test_bulk_import_template_has_bom_and_safe_filename(
         f"{API}/imports/templates/unknown", headers=clerk_admin_headers
     )
     assert unknown.status_code == 404
+
+
+async def test_bulk_import_template_bundle_zips_the_requested_models(
+    async_client: AsyncClient, clerk_admin_headers: dict
+):
+    response = await async_client.get(
+        f"{API}/imports/templates",
+        params=[("resource", "rooms"), ("resource", "teachers")],
+        headers=clerk_admin_headers,
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/zip"
+    assert 'filename="Cronos_Modelos.zip"' in response.headers["content-disposition"]
+    with zipfile.ZipFile(io.BytesIO(response.content)) as bundle:
+        assert bundle.namelist() == [
+            "Cronos_Salas_Template.csv",
+            "Cronos_ProfessoresECompetencias_Template.csv",
+        ]
+        rooms = bundle.read("Cronos_Salas_Template.csv")
+    assert rooms.startswith(b"\xef\xbb\xbf")
+    assert rooms.decode("utf-8-sig").splitlines()[0] == "Nome da sala;Tipo de sala;Capacidade"
+
+    unknown = await async_client.get(
+        f"{API}/imports/templates",
+        params=[("resource", "rooms"), ("resource", "unknown")],
+        headers=clerk_admin_headers,
+    )
+    assert unknown.status_code == 404
+
+    empty = await async_client.get(f"{API}/imports/templates", headers=clerk_admin_headers)
+    assert empty.status_code == 422
 
 
 async def test_bulk_import_commit_rejects_invalid_revalidation(
