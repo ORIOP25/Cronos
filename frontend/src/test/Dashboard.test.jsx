@@ -157,8 +157,7 @@ describe('Dashboard', () => {
     const attention = within(screen.getByTestId('alert-bar'))
     expect(attention.getByRole('heading', { name: 'Sem tarefas pendentes' })).toBeInTheDocument()
     expect(attention.queryByText('A requerer atenção')).not.toBeInTheDocument()
-    expect(attention.getByText('Sumários desta semana: 90%')).toBeInTheDocument()
-    expect(attention.queryByText('Nenhuma falta de hoje por decidir')).not.toBeInTheDocument()
+    expect(attention.queryByRole('list')).not.toBeInTheDocument()
   })
 
   it('lists pending tasks by urgency with their age and opens the right page', async () => {

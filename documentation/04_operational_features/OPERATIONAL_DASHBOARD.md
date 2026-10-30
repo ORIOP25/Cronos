@@ -20,7 +20,7 @@ Both responses use the active school year and the active (published) v1 schedule
    An absence decision is urgent (red) when its lesson is today or later.
    Each task shows the age of its oldest item and opens the filtered page.
    A list of facts, such as the share of this week's lessons with a log, appears below the tasks.
-   With no pending task, the heading becomes "Sem tarefas pendentes" in green.
+   With no pending task, the panel shows only the heading "Sem tarefas pendentes", in green.
 2. **Esta semana**: four indicators for the current week so far, each with a line of the last 12 weeks.
 3. **Horas em dívida ao longo do ano**: a line of the open debt at the end of each school week.
    The administrator can filter it by course or class. "Ver detalhes" opens the debt tab with the same class.

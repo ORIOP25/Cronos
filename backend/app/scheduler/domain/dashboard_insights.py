@@ -130,6 +130,8 @@ def weekly_debt(
     """Open debt minutes per class at the end of each week.
 
     Each claim keeps its own balance and never goes below zero, as in the debt ledger.
+    The last week takes every remaining event: a gap decided ahead is dated on its
+    future lesson but is already owed, as in the debt ledger.
     """
     ordered = sorted(events, key=lambda event: event.day)
     balances: dict[int, int] = defaultdict(int)
@@ -137,7 +139,7 @@ def weekly_debt(
     series = []
     index = 0
     for start in _weeks(first_week, last_week):
-        week_end = start + timedelta(days=6)
+        week_end = date.max if start == last_week else start + timedelta(days=6)
         while index < len(ordered) and ordered[index].day <= week_end:
             event = ordered[index]
             balances[event.claim_id] += event.delta_minutes
