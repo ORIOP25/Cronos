@@ -11,6 +11,7 @@ from datetime import UTC, date, datetime, time
 from zoneinfo import ZoneInfo
 
 import pytest
+from sqlalchemy import event
 
 from app import models
 from app.scheduler.domain.calendar import Period, normalize_period
@@ -368,3 +369,36 @@ async def test_sister_with_different_modules_is_inconsistent(db_session):
         await _load(db_session, scenario)
 
     assert exc.value.code == "JOINT_LESSON_INCONSISTENT"
+
+
+async def test_slice_query_parameters_do_not_grow_with_the_lessons(db_session):
+    """A real school year has tens of thousands of lessons; PostgreSQL accepts 32 767 parameters."""
+    scenario = await _scenario(db_session)
+    assign_a, _ = scenario.joint.assignment_ids
+    for hour in range(8, 20):
+        lesson = await _add_lesson(
+            db_session,
+            scenario,
+            stable_key=str(8000 + hour),
+            teaching_unit_key=SINGLE_UNIT,
+            assignment_id=assign_a,
+            hour=hour,
+            minutes=30,
+        )
+        await _add_slices(db_session, scenario, lesson, ((scenario.module_a, 0, 30),))
+    await db_session.commit()
+    slice_parameters: list[int] = []
+
+    def record(_connection, _cursor, statement, parameters, _context, _many):
+        if "scheduler_lesson_slice_v1" in statement:
+            slice_parameters.append(len(parameters))
+
+    engine = db_session.bind.sync_engine
+    event.listen(engine, "before_cursor_execute", record)
+    try:
+        result = await _load(db_session, scenario, unit_keys={SINGLE_UNIT: 56})
+    finally:
+        event.remove(engine, "before_cursor_execute", record)
+
+    assert len(result.lessons) == 12
+    assert slice_parameters and max(slice_parameters) <= 5

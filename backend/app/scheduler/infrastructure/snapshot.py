@@ -1829,7 +1829,13 @@ async def load_version_lessons(
             .where(
                 SchedulerLessonSliceV1.organization_id == organization_id,
                 SchedulerLessonSliceV1.school_year_id == school_year_id,
-                SchedulerLessonSliceV1.lesson_id.in_([row.id for row in rows]),
+                # A subquery, not the id list: a school year exceeds the 32 767 bind limit.
+                SchedulerLessonSliceV1.lesson_id.in_(
+                    select(SchedulerLessonV1.id).where(
+                        SchedulerLessonV1.organization_id == organization_id,
+                        SchedulerLessonV1.version_id == version.id,
+                    )
+                ),
             )
             .order_by(SchedulerLessonSliceV1.id)
         )
