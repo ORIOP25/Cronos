@@ -56,7 +56,8 @@ export default function AlertBar({ alerts, currentWeek, isLoading }) {
   if (isLoading) return <div data-testid="alert-bar"><StatePanel state="loading" title="A verificar o que requer atenção" compact /></div>
   const items = attentionItems(alerts)
   const total = items.reduce((sum, item) => sum + item.count, 0)
-  const facts = healthyFacts(alerts, currentWeek)
+  // With no task the heading is the whole message.
+  const facts = items.length ? healthyFacts(alerts, currentWeek) : []
   return (
     <section className="attention-panel" data-testid="alert-bar" data-clear={items.length === 0} aria-labelledby="attention-heading">
       <div className="attention-panel__heading">

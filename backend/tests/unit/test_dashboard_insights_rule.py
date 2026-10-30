@@ -109,10 +109,19 @@ def test_weekly_debt_keeps_each_claim_balance_at_each_week_end():
         DebtEvent(claim_id=1, class_id=10, day=date(2026, 10, 27), delta_minutes=-60),
         DebtEvent(claim_id=2, class_id=11, day=date(2026, 10, 21), delta_minutes=50),
         DebtEvent(claim_id=2, class_id=11, day=date(2026, 10, 22), delta_minutes=-80),
-        DebtEvent(claim_id=3, class_id=10, day=date(2026, 11, 3), delta_minutes=30),
     ]
 
     assert weekly_debt(events, MONDAY, NEXT_MONDAY) == [{10: 100}, {10: 40}]
+
+
+def test_weekly_debt_counts_a_gap_decided_ahead_in_the_current_week():
+    # A gap decided today for a lesson next month is already in the ledger.
+    events = [
+        DebtEvent(claim_id=1, class_id=10, day=date(2026, 10, 20), delta_minutes=100),
+        DebtEvent(claim_id=3, class_id=11, day=date(2026, 11, 30), delta_minutes=60),
+    ]
+
+    assert weekly_debt(events, MONDAY, NEXT_MONDAY) == [{10: 100}, {10: 100, 11: 60}]
 
 
 def test_empty_ranges_give_no_weeks():
