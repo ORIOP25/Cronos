@@ -11,6 +11,8 @@ import { PreparationDashboard } from '../features/dashboard/PreparationDashboard
 import PageHeader from '../components/PageHeader'
 import StatePanel from '../components/StatePanel'
 import { getApiErrorMessage } from '../utils/apiErrors'
+import { isoToday } from '../features/dashboard/insights'
+import { formatDate } from '../utils/formatUtils'
 
 export default function Dashboard() {
   const { organization } = useOrganization()
@@ -93,6 +95,12 @@ export default function Dashboard() {
             title="Não foi possível carregar as tendências"
             description={getApiErrorMessage(insightsQuery.error, 'Tente novamente mais tarde.')}
             action={<button type="button" className="btn btn-link" onClick={() => void insightsQuery.refetch()}>Tentar novamente</button>}
+          />
+        ) : insights && !insights.weeks?.length && data?.schedule_health?.period_start > isoToday() ? (
+          <StatePanel
+            state="empty"
+            compact
+            title={`O ano letivo começa a ${formatDate(data.schedule_health.period_start)}. As tendências semanais aparecem a partir dessa semana.`}
           />
         ) : insights ? (
           <WeeklyPulse weeks={insights.weeks ?? []} />
