@@ -52,9 +52,14 @@ React Query manages server state while component state handles form and view sta
 
 ## Contracts and Invariants
 
-- Application copy uses PT-PT and sentence case. Reuse common action labels from [terminology.js](../../frontend/src/utils/terminology.js). Opening a creation form, creating a record and saving an edit have distinct labels. Removal, archival and restoration keep their distinct meanings and warnings.
-- Availability editors use Cancelar while changes remain unsaved and Fechar when no changes remain. Closing still calls the existing close handler; it does not undo successful saves after a partial failure.
-- Failure messages start with "Não foi possível" and name the action. Keep the specific recovery guidance and API-error classification. Busy labels use the action in progress and a single ellipsis character.
+- Application copy uses PT-PT and sentence case. Reuse common action labels from [terminology.js](../../frontend/src/utils/terminology.js).
+- Opening a creation form, creating a record and saving an edit have distinct labels. Removal, archival and restoration keep distinct meanings and warnings.
+- Availability editors use Cancelar while changes remain unsaved and Fechar when no changes remain. Closing preserves successful saves after a partial failure.
+- Action failure messages use "Não foi possível" and name the action. Preserve specific recovery guidance and API-error classification.
+- Busy labels name the action in progress and use a single ellipsis character. Keep singular and plural consistent across actions, confirmations and results.
+- Use aula conjunta consistently. Reserve Furo for operational states and counts; use tempos livres or tempo máximo sem aulas for scheduling gaps and presence rules.
+- Update visible copy, tooltips, accessible names and tutorial instructions together. Check affected browser selectors, including helpers shared by creation and editing.
+- Reuse the [Design System](DESIGN_SYSTEM.md) for action variants, icons, dimensions and layout. Do not introduce a new presentation for equivalent behavior.
 
 - `VITE_API_BASE_URL` defaults to `/api/v1`.
 - Class header edits use the course-scoped mutation in [catalog data hooks](../../frontend/src/features/catalog/data.js).

@@ -22,7 +22,7 @@ In accordance with ASD-STE100, technical concepts have single approved terms. Po
 | **Módulo** | Module | A self-contained instructional unit with a defined instructional time requirement. |
 | **Módulo selecionado** | Selected module | A module marked for a class/subject link in the current school year. Only selected modules are planned and counted in progress. |
 | **Módulo retirado** | Retired module | A module deselected on a class/subject link. With executed history it stays closed at the executed minutes and receives no new credit. Deselecting it annuls its open debt, which re-selecting does not restore. |
-| **Junção** | Joint lesson group | A subject, two or more member class/subject links, and a set of joint modules. A link belongs to at most one group. In the interface: "Aula conjunta". |
+| **Aula conjunta** | Joint lesson group | A subject, two or more member class/subject links, and a set of joint modules. A link belongs to at most one group. The domain also uses the term junção. Use Aula conjunta in the interface. |
 | **Aula conjunta** | Joint lesson | A lesson of a joint group, taught to every member class at the same time, by one teacher, in one room. Each member class has one sibling lesson row. |
 | **Módulo conjunto** | Joint module | A module of a joint lesson group. It must be selected on every member class and is taught to all of them together. |
 | **Sumário** | Lesson Log | Formal record of lesson execution, topics taught, and student attendance entered by a teacher. |
@@ -39,7 +39,7 @@ In accordance with ASD-STE100, technical concepts have single approved terms. Po
 | **Mudança de sala evitável** | Avoidable room change | A class changes room between two consecutive lessons of the same day, and neither lesson needs its own room. The proposal shows the count. |
 | **Tipo de sala** | Room type | A room type owned by one school, managed by administrators in `/room-types`. Foundation creates the initial types, including a fixed Normal type. No two types of a school share a name, compared with case and accents folded, and archived types count: creating a type with the name of an archived one restores it instead of adding a duplicate. |
 | **Presença** | Presence | A teacher's morning or afternoon, split by the lunch break the engine chooses that day; without lunch the whole day is one presence. Each presence has zero hours or at least the teacher's minimum. |
-| **Furo máximo** | Maximum gap | Maximum hours without a lesson allowed inside one presence, set per teacher together with the minimum hours per presence. |
+| **Tempo máximo sem aulas** | Maximum gap | Maximum hours without a lesson allowed inside one presence, set per teacher together with the minimum hours per presence. The technical field remains `max_gap_hours`. |
 | **Prioridade do horário** | Schedule priority | One of eleven organization-level criteria that administrators can rank from Ignorar to Prioridade máxima; it guides constructive schedule generation and is measured in the proposal summary. If construction cannot follow the priorities, the proposal says so without claiming it used recommended values. Mandatory rules remain binding. |
 
 ## Technical Terms and Abbreviations

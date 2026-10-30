@@ -10,30 +10,33 @@ This document targets UI designers and frontend engineers.
 Read [Frontend Architecture](FRONTEND_ARCHITECTURE.md).
 
 ## Aesthetic Foundation: The 60-30-10 Color Rule
-Cronos employs a warm, authoritative visual identity designed for educational trust and operational clarity:
-- **60% Dominant Base Surfaces**: Warm light yellow, `#fef9e7`.
-- **30% Structural Navigation**: Deep brown, `#3B2415`.
-- **10% Action Accents**: Amber gold, `#d4940b`.
-
-`frontend/src/index.css` defines these values (`--brand-50`, `--brand-950`, `--brand-500`). `frontend/src/styles/brand.tokens.css` defines the `--cronos-*` tokens and their aliases.
-
-## Color Palette Tokens Table
-
-| Token Name | Hex Value | Usage Purpose |
-| :--- | :--- | :--- |
-| `--cronos-bg` | `#faf8f5` | Main application background |
-| `--cronos-surface` | `#fffdf9` | Cards and table headers |
-| `--cronos-ink` | `#3d2b1f` | Primary controls and headings |
-| `--cronos-ink-muted` | `#67584c` | Muted text and secondary elements |
-| `--brand-500` | `#d4940b` | Calls to action and active states |
-| `--cronos-success` | `#23634f` | Toast success icon |
-| `--cronos-danger` | `#8f2d0b` | Toast error icon |
-| `--rs-teal` | `#15803d` | Success and completed states (`index.css`) |
-| `--rs-deep` | `#b91c1c` | Error and gap states (`index.css`) |
+Use warm neutral surfaces, deep brown structure and restrained amber accents.
+Treat the ratio as visual hierarchy, not a reason to recolor semantic states.
+The [canonical tokens](../../frontend/src/styles/brand.tokens.css) own current colors, aliases, text scales and control dimensions.
+The [application styles](../../frontend/src/index.css) own CoreUI themes and operational state colors.
+Do not restore historical hex values or copy token values into page-specific styles.
 
 ## Typography Pairings
 - **Headings**: `Playfair Display` (Editorial Serif, authoritative tone).
 - **Body & UI Controls**: `IBM Plex Sans` (clear operational text and controls).
+Page titles use the display font. Section and modal headings follow their shared component styles.
+Equivalent text roles use the shared scale; titles and supporting text retain distinct hierarchy.
+
+## Choosing an Application Pattern
+
+Inspect a comparable screen before adding a new layout or control.
+Reuse established web-app patterns through the existing Cronos components and tokens.
+Fix an inconsistency in the shared component when equivalent screens have the same problem.
+Avoid page-specific colors, sizes, spacing or icons for an equivalent action.
+Keep specialized grids and operational states distinct when their meaning requires it.
+
+## Application Copy
+
+Follow the [copy contract](FRONTEND_ARCHITECTURE.md#contracts-and-invariants) and reuse [shared terminology](../../frontend/src/utils/terminology.js).
+Use the same label, icon and variant for the same action.
+Distinguish opening a creation form from creating a record, and saving edits from applying a local draft.
+Keep removal, archival and restoration distinct, including their impact warnings.
+Use the same terms in visible labels, tooltips, accessible names, confirmations, help text and tutorial instructions.
 
 ## Marketing Landing Page Aesthetics & Performance
 - **CSS Namespace**: Marketing components use the `.cronos-marketing` root and `cronos-*` classes.
@@ -78,6 +81,10 @@ Cronos employs a warm, authoritative visual identity designed for educational tr
 Run `npm run lint` and `npm run test` inside `frontend/`, then review the changed screens in a browser at 375, 768, and 1440 px.
 
 ## Source Map
+- [Canonical tokens](../../frontend/src/styles/brand.tokens.css)
+- [Shared application controls and spacing](../../frontend/src/styles/app-components.css)
+- [Page header](../../frontend/src/components/PageHeader.jsx)
+- [Shared terminology](../../frontend/src/utils/terminology.js)
 - Global CSS Tokens: `frontend/src/index.css`
 - Marketing Styles: `frontend/src/features/marketing/styles/`
 - Marketing Components: `frontend/src/features/marketing/components/`
