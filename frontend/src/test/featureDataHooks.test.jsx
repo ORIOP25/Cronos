@@ -33,6 +33,7 @@ import {
   useWeekGridVersions,
 } from '../features/catalog/data'
 import {
+  useDashboardInsights,
   useDebts,
   useMyPresence,
   useOccurrences,
@@ -725,6 +726,16 @@ describe('vertical feature data hooks', () => {
       week_start_date: '2026-09-07',
       status: 'SUBMITTED',
     } })
+  })
+
+  it('reads dashboard insights under the dashboard root so operational changes refresh them', async () => {
+    apiClient.get.mockResolvedValue({ weeks: [] })
+    const { queryClient, wrapper } = createHarness()
+    const insights = renderHook(() => useDashboardInsights(), { wrapper })
+
+    await waitFor(() => expect(insights.result.current.isSuccess).toBe(true))
+    expect(apiClient.get).toHaveBeenCalledWith('/dashboard/insights')
+    expect(queryClient.getQueryData(['dashboard', 'org-a', 'insights'])).toEqual({ weeks: [] })
   })
 
   it('invalidates operational tenant roots after an occurrence update', async () => {

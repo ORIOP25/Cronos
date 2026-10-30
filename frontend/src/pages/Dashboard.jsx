@@ -1,11 +1,12 @@
 import { useOrganization, useUser } from '@clerk/react'
 import AnalyticsHeatmap from '../components/AnalyticsHeatmap'
 import AlertBar from '../components/dashboard/AlertBar'
-import ResourceCounts from '../components/dashboard/ResourceCounts'
-import ScheduleHealthCard from '../components/dashboard/ScheduleHealthCard'
 import ClassProgressOverview from '../components/dashboard/ClassProgressOverview'
+import DashboardRankings from '../components/dashboard/DashboardRankings'
 import DebtSummaryCard from '../components/dashboard/DebtSummaryCard'
-import { useDashboard } from '../features/operations/data'
+import SchoolOverviewCard from '../components/dashboard/SchoolOverviewCard'
+import WeeklyPulse from '../components/dashboard/WeeklyPulse'
+import { useDashboard, useDashboardInsights } from '../features/operations/data'
 import { PreparationDashboard } from '../features/dashboard/PreparationDashboard'
 import PageHeader from '../components/PageHeader'
 import StatePanel from '../components/StatePanel'
@@ -15,6 +16,9 @@ export default function Dashboard() {
   const { organization } = useOrganization()
   const { user } = useUser()
   const { data, isLoading, isError, error } = useDashboard()
+  // Insights load after the main payload, and only once the school is operational.
+  const insightsQuery = useDashboardInsights({ enabled: data?.mode === 'OPERATIONAL' })
+  const insights = insightsQuery.data
 
   const orgName = data?.organization_name || organization?.name || 'Escola'
 
@@ -80,34 +84,36 @@ export default function Dashboard() {
   return (
     <div className="p-4">
       {header}
-      <div className="mb-4">
-        <AlertBar alerts={data?.alerts} health={data?.schedule_health} isLoading={isLoading} />
-      </div>
-      <div className="dashboard-overview-grid mb-4">
-      <div>
-        <ScheduleHealthCard health={data?.schedule_health} isLoading={isLoading} />
-      </div>
-      <div>
-        <ClassProgressOverview progress={data?.class_progress} isLoading={isLoading} />
-      </div>
-      </div>
-      <div className="dashboard-secondary-grid mb-4">
-        <DebtSummaryCard debts={data?.debts} isLoading={isLoading} />
-        <div className="zen-card">
-          <div className="zen-card-header">
-            <h3 className="mb-0 dashboard-card-title">Disponibilidade</h3>
-          </div>
-          <div className="zen-card-body">
-            <AnalyticsHeatmap />
-          </div>
+      <div className="dashboard-stack">
+        <AlertBar alerts={data?.alerts} currentWeek={insights?.weeks?.at(-1)} isLoading={isLoading} />
+        {insightsQuery.isError ? (
+          <StatePanel
+            state="error"
+            compact
+            title="Não foi possível carregar as tendências"
+            description={getApiErrorMessage(insightsQuery.error, 'Tente novamente mais tarde.')}
+            action={<button type="button" className="btn btn-link" onClick={() => void insightsQuery.refetch()}>Tentar novamente</button>}
+          />
+        ) : insights ? (
+          <WeeklyPulse weeks={insights.weeks ?? []} />
+        ) : (
+          <StatePanel state="loading" compact title="A calcular as tendências da semana" />
+        )}
+        <div className="dashboard-overview-grid">
+          <DebtSummaryCard debts={data?.debts} debtWeeks={insights?.debt_weeks} progress={data?.class_progress} isLoading={isLoading || insightsQuery.isLoading} />
+          <ClassProgressOverview progress={data?.class_progress} plannedMinutes={insights?.planned_minutes_to_date} isLoading={isLoading} />
         </div>
-      </div>
-      <div className="zen-card">
-        <div className="zen-card-header">
-          <h3 className="mb-0 dashboard-card-title">A escola em números</h3>
-        </div>
-        <div className="zen-card-body">
-          <ResourceCounts resources={data?.resources} isLoading={isLoading} />
+        {insights && <DashboardRankings insights={insights} progress={data?.class_progress} />}
+        <div className="dashboard-overview-grid">
+          <div className="zen-card">
+            <div className="zen-card-header">
+              <h3 className="mb-0 dashboard-card-title">Disponibilidade</h3>
+            </div>
+            <div className="zen-card-body">
+              <AnalyticsHeatmap />
+            </div>
+          </div>
+          <SchoolOverviewCard resources={data?.resources} health={data?.schedule_health} isLoading={isLoading} />
         </div>
       </div>
     </div>
