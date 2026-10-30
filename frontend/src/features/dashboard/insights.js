@@ -1,3 +1,6 @@
+// Local calendar day as YYYY-MM-DD, comparable with the API's school dates.
+export const isoToday = () => new Date().toLocaleDateString('sv-SE')
+
 const percentage = (part, whole) => (whole > 0 ? Math.round((part / whole) * 100) : null)
 
 const sum = (items, field) => items.reduce((total, item) => total + item[field], 0)

@@ -50,6 +50,7 @@ The line can differ from the "Hoje" total below it, because the total also inclu
 
 ## Limits
 
+- Before the first school day, the weekly section says when the year starts, and the school card hides the values of this week.
 - The current week is partial. Absolute values, such as absence time, show last week's value without a coloured trend.
 - Classes that are archived count in the school-wide debt line, but not in the course and class filters or the class rankings.
 

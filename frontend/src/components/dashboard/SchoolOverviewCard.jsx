@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom'
 import { CButton } from '@coreui/react'
 import { formatDate } from '../../utils/formatUtils'
+import { isoToday } from '../../features/dashboard/insights'
 
 const decimal = new Intl.NumberFormat('pt-PT', { maximumFractionDigits: 1 })
 const ratio = (part, whole) => (whole > 0 ? decimal.format(part / whole) : '—')
@@ -16,10 +17,12 @@ export default function SchoolOverviewCard({ resources, health, isLoading }) {
     ['rooms', 'Salas', resources?.rooms_count ?? 0],
   ]
   const classes = resources?.classes_count ?? 0
+  // Before the first school day, "this week" has no lessons by design.
+  const yearStarted = !health?.period_start || health.period_start <= isoToday()
   const ratios = [
     [ratio(resources?.teachers_count ?? 0, classes), 'professores por turma'],
     [ratio(resources?.rooms_count ?? 0, classes), 'salas por turma'],
-    ...(health ? [
+    ...(health && yearStarted ? [
       [decimal.format(health.week_slots_avg), 'blocos por turma esta semana'],
       [decimal.format(health.teacher_week_slots_avg), 'blocos por professor esta semana'],
     ] : []),
@@ -40,7 +43,7 @@ export default function SchoolOverviewCard({ resources, health, isLoading }) {
           <p className="school-overview__schedule">
             Horário aprovado de {formatDate(health.period_start)} a {formatDate(health.period_end)}: {health.blocks_count} blocos,
             {' '}{decimal.format(health.annual_class_average)} por turma e {decimal.format(health.annual_teacher_average)} por professor no ano.
-            {health.classes_empty_week > 0 && <strong className="school-overview__warning"> {health.classes_empty_week} {health.classes_empty_week === 1 ? 'turma sem aulas' : 'turmas sem aulas'} esta semana.</strong>}
+            {yearStarted && health.classes_empty_week > 0 && <strong className="school-overview__warning"> {health.classes_empty_week} {health.classes_empty_week === 1 ? 'turma sem aulas' : 'turmas sem aulas'} esta semana.</strong>}
             {health.classes_archived > 0 && ` Inclui ${health.classes_archived} ${health.classes_archived === 1 ? 'turma arquivada' : 'turmas arquivadas'}.`}
           </p>
         ) : (

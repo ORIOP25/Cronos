@@ -36,7 +36,6 @@
 @media (max-width: 1100px) { .dashboard-overview-grid { grid-template-columns: 1fr; } }
 
 .dashboard-stack { display: grid; gap: 24px; }
-.dashboard-overview-grid { align-items: stretch; }
 
 .attention-panel__items { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
 .attention-item { grid-template-columns: auto 1fr; gap: 4px 12px; padding: 12px 14px; border: 1px solid var(--cronos-border); border-left: 4px solid var(--cronos-border-strong); border-radius: 0; background: var(--cronos-bg); }

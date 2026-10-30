@@ -256,6 +256,20 @@ describe('Dashboard', () => {
     expect(screen.getAllByTestId('class-progress-row')).toHaveLength(5)
   })
 
+  it('says when the school year starts instead of showing empty weekly trends', () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-10-30T12:00:00'))
+    Object.assign(useDashboard().data.schedule_health, { period_start: '2026-11-02', classes_empty_week: 48, week_slots_avg: 0 })
+    useDashboardInsights.mockReturnValue({ data: { weeks: [], debt_weeks: [], teacher_absence_minutes: [], teacher_missing_logs: [], planned_minutes_to_date: {} }, isLoading: false, isError: false })
+    renderWithRouter(<Dashboard />)
+    vi.useRealTimers()
+
+    expect(screen.getByText('O ano letivo começa a 02/11/2026. As tendências semanais aparecem a partir dessa semana.')).toBeInTheDocument()
+    const overview = within(screen.getByTestId('schedule-health'))
+    expect(overview.queryByText(/turmas sem aulas/)).not.toBeInTheDocument()
+    expect(overview.queryByText(/esta semana/)).not.toBeInTheDocument()
+  })
+
   it('keeps the daily tasks visible when the trends fail to load', async () => {
     const refetch = vi.fn()
     useDashboardInsights.mockReturnValue({ data: undefined, isLoading: false, isError: true, error: new Error('boom'), refetch })
