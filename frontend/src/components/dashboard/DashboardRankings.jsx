@@ -48,14 +48,14 @@ export default function DashboardRankings({ insights, progress }) {
         title="Professores com mais faltas" testId="ranking-teacher-absences" empty="Nenhuma falta registada este ano."
         rows={(insights.teacher_absence_minutes ?? []).map((row) => ({
           key: row.teacher_id, name: row.teacher_name, value: formatDurationMinutes(row.value),
-          to: `/schedules?teacherId=${row.teacher_id}`, detail: 'Tempo de aulas em falta no ano letivo',
+          to: `/schedules?teacherId=${row.teacher_id}`,
         }))}
       />
       <Ranking
         title="Professores com mais sumários em falta" testId="ranking-teacher-logs" empty="Todos os sumários estão registados."
         rows={(insights.teacher_missing_logs ?? []).map((row) => ({
           key: row.teacher_id, name: row.teacher_name, value: row.value,
-          to: `/schedules?teacherId=${row.teacher_id}`, detail: row.value === 1 ? 'aula terminada sem sumário' : 'aulas terminadas sem sumário',
+          to: `/schedules?teacherId=${row.teacher_id}`,
         }))}
       />
     </section>
