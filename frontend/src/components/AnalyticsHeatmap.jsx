@@ -22,9 +22,8 @@ export default function AnalyticsHeatmap() {
   if (!timeslots.length) return <StatePanel state="empty" title="Sem blocos configurados" description="A disponibilidade aparece depois de configurar a grelha horária." compact />
   const slotsByDay = timeslots.reduce((acc, slot) => { (acc[slot.day_of_week] ??= []).push(slot); return acc }, {})
   Object.values(slotsByDay).forEach((slots) => slots.sort((a, b) => a.start_time.localeCompare(b.start_time)))
-  const summary = heatmapData.length ? `A grelha mostra a disponibilidade de professores em ${heatmapData.length} blocos.` : 'Ainda não existem dados de disponibilidade para estes blocos.'
   return <div className="availability-heatmap">
-    <p className="text-muted small mb-3">{summary}</p>
+    {!heatmapData.length && <p className="text-muted small mb-3">Ainda não existem dados de disponibilidade para estes blocos.</p>}
     <div className="availability-heatmap__legend" aria-label="Legenda da disponibilidade"><span><i className="is-good" /> Boa</span><span><i className="is-medium" /> Intermédia</span><span><i className="is-critical" /> Crítica</span></div>
     <p className="availability-heatmap__hint d-lg-none small text-muted mb-1">Deslize horizontalmente para ver todos os dias.</p>
     <div className="availability-heatmap__days" role="region" aria-label="Disponibilidade por dia" tabIndex={0}>

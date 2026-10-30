@@ -155,9 +155,10 @@ describe('Dashboard', () => {
     renderWithRouter(<Dashboard />)
 
     const attention = within(screen.getByTestId('alert-bar'))
-    expect(attention.getByText('Sem tarefas pendentes')).toBeInTheDocument()
+    expect(attention.getByRole('heading', { name: 'Sem tarefas pendentes' })).toBeInTheDocument()
+    expect(attention.queryByText('A requerer atenção')).not.toBeInTheDocument()
     expect(attention.getByText('Sumários desta semana: 90%')).toBeInTheDocument()
-    expect(attention.getByText('Nenhuma falta de hoje por decidir')).toBeInTheDocument()
+    expect(attention.queryByText('Nenhuma falta de hoje por decidir')).not.toBeInTheDocument()
   })
 
   it('lists pending tasks by urgency with their age and opens the right page', async () => {
@@ -175,6 +176,7 @@ describe('Dashboard', () => {
     vi.useRealTimers()
 
     const attention = within(screen.getByTestId('alert-bar'))
+    expect(attention.getByRole('heading', { name: 'A requerer atenção' })).toBeInTheDocument()
     expect(attention.getByText('8 tarefas pendentes')).toBeInTheDocument()
     const occurrences = screen.getByTestId('alert-occurrences')
     expect(occurrences).toHaveAttribute('data-tone', 'danger')
@@ -233,7 +235,8 @@ describe('Dashboard', () => {
     const debt = within(screen.getByTestId('ranking-classes-debt'))
     expect(debt.getAllByRole('link').map((link) => link.textContent)).toEqual(['TI 102 h', 'TUR 1130 min'])
     expect(within(screen.getByTestId('ranking-teacher-absences')).getByRole('link', { name: /Nuno Ramos/ })).toHaveAttribute('href', '/schedules?teacherId=7')
-    expect(within(screen.getByTestId('ranking-teacher-logs')).getByText('aulas terminadas sem sumário')).toBeInTheDocument()
+    expect(screen.getByTestId('ranking-teacher-absences')).not.toHaveTextContent('Tempo de aulas em falta')
+    expect(screen.getByTestId('ranking-teacher-logs')).not.toHaveTextContent('sem sumário')
   })
 
   it('marks where each class should be today in the curricular progress', () => {

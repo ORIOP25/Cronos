@@ -44,7 +44,8 @@ function healthyFacts(alerts, currentWeek) {
     const logged = currentWeek.lessons_due - currentWeek.missing_logs
     facts.push(`Sumários desta semana: ${Math.round((logged / currentWeek.lessons_due) * 100)}%`)
   }
-  if (Number(alerts?.pending_occurrences_today ?? 0) === 0) facts.push('Nenhuma falta de hoje por decidir')
+  // Only reassuring when older absences are still open; with no tasks the heading says it.
+  if (Number(alerts?.pending_occurrences_total ?? 0) > 0 && Number(alerts?.pending_occurrences_today ?? 0) === 0) facts.push('Nenhuma falta de hoje por decidir')
   const substitutions = Number(alerts?.active_substitutions_today ?? 0)
   if (substitutions > 0) facts.push(`${substitutions} ${substitutions === 1 ? 'substituição' : 'substituições'} hoje`)
   return facts
@@ -55,11 +56,16 @@ export default function AlertBar({ alerts, currentWeek, isLoading }) {
   if (isLoading) return <div data-testid="alert-bar"><StatePanel state="loading" title="A verificar o que requer atenção" compact /></div>
   const items = attentionItems(alerts)
   const total = items.reduce((sum, item) => sum + item.count, 0)
+  const facts = healthyFacts(alerts, currentWeek)
   return (
-    <section className="attention-panel" data-testid="alert-bar" aria-labelledby="attention-heading">
+    <section className="attention-panel" data-testid="alert-bar" data-clear={items.length === 0} aria-labelledby="attention-heading">
       <div className="attention-panel__heading">
-        <h2 id="attention-heading">A requerer atenção</h2>
-        <span>{items.length ? `${total} ${total === 1 ? 'tarefa pendente' : 'tarefas pendentes'}` : 'Sem tarefas pendentes'}</span>
+        {items.length ? (
+          <>
+            <h2 id="attention-heading">A requerer atenção</h2>
+            <span>{`${total} ${total === 1 ? 'tarefa pendente' : 'tarefas pendentes'}`}</span>
+          </>
+        ) : <h2 id="attention-heading">Sem tarefas pendentes</h2>}
       </div>
       {items.length > 0 && (
         <div className="attention-panel__items">
@@ -72,9 +78,11 @@ export default function AlertBar({ alerts, currentWeek, isLoading }) {
           ))}
         </div>
       )}
-      <ul className="attention-panel__facts" aria-label="Estado operacional">
-        {healthyFacts(alerts, currentWeek).map((fact) => <li key={fact}>{fact}</li>)}
-      </ul>
+      {facts.length > 0 && (
+        <ul className="attention-panel__facts" aria-label="Estado operacional">
+          {facts.map((fact) => <li key={fact}>{fact}</li>)}
+        </ul>
+      )}
     </section>
   )
 }
