@@ -21,3 +21,13 @@ async def get_dashboard(
     """
 
     return await dashboard_service.get_dashboard_summary(db, current_user.organization_id)
+
+
+@router.get("/dashboard/insights", response_model=schemas.DashboardInsightsResponse)
+async def get_dashboard_insights(
+    db: deps.DbSession,
+    current_user: deps.AdminActor,
+):
+    """Tendências semanais, dívida ao longo do ano e rankings de professores."""
+
+    return await dashboard_service.get_dashboard_insights(db, current_user.organization_id)

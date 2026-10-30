@@ -70,6 +70,7 @@ Stable route families keep frontend features and provider webhooks independent f
 | Method | Route | Access |
 | :--- | :--- | :--- |
 | `GET` | `/api/v1/dashboard` | Admin |
+| `GET` | `/api/v1/dashboard/insights` | Admin |
 | `GET` | `/api/v1/analytics/availability-heatmap` | Active |
 | `GET` | `/api/v1/courses/` | Active |
 | `POST` | `/api/v1/courses/` | Admin |
@@ -236,6 +237,7 @@ All paths below are relative to `/api/v1`.
 | `GET` | `/readiness/bases` | Active administrator | Read cumulative readiness depth and issues. |
 | `GET` | `/readiness/prevalidation` | Active administrator | Check blockers and warnings before generation. |
 | `GET` | `/dashboard` | Active administrator | Read `PREPARATION` or `OPERATIONAL` dashboard data. |
+| `GET` | `/dashboard/insights` | Active administrator | Read weekly trends, the debt line, and rankings. See [Operational Dashboard](../04_operational_features/OPERATIONAL_DASHBOARD.md). |
 
 `GET /readiness/prevalidation` accepts the optional `strategy` query parameter from
 [`ScheduleGenerationStrategy`](../../backend/app/models.py). It defaults to

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
 from itertools import pairwise
+from zoneinfo import ZoneInfo
 
 import pytest
 from sqlalchemy import select
@@ -28,7 +29,7 @@ from app.scheduler.infrastructure.operations import (
 )
 from app.scheduler.infrastructure.progress import load_executed_minutes, load_open_debt, record_debt
 from app.scheduler.infrastructure.snapshot import load_snapshot
-from app.services.dashboard_service import get_dashboard_summary
+from app.services.dashboard_service import get_dashboard_insights, get_dashboard_summary
 from app.services.teacher_service import get_teacher_progress
 from tests._support.db_fixtures import create_teacher_profile, get_school_room_type_id
 from tests._support.scheduler_v1 import (
@@ -353,6 +354,32 @@ async def _decide(db_session, seed: V1Seed, item, status, *, now, **extra):
     )
     await db_session.commit()
     return decided
+
+
+async def test_dashboard_insights_follow_a_real_gap_decision(db_session):
+    seed = await _school(db_session, suffix="_insights")
+    await db_session.commit()
+    await seed_published_baseline(db_session, seed)
+    lesson = (await _lessons(db_session, seed))[0]
+    await _occurrence(db_session, seed, lesson)
+    item = (await occurrences_v1.list_occurrences(db_session, seed.organization.id))["items"][0]
+    await _decide(db_session, seed, item, models.LessonOccurrenceStatus.GAP, now=lesson.ends_at)
+    now = lesson.ends_at + timedelta(days=1)
+
+    insights = await get_dashboard_insights(db_session, seed.organization.id, now=now)
+
+    lesson_week = lesson.school_date - timedelta(days=lesson.school_date.weekday())
+    week = next(week for week in insights.weeks if week.week_start == lesson_week)
+    assert week.absence_minutes == lesson.physical_minutes
+    assert week.substituted_minutes == 0
+    assert week.lessons_given == 0
+    debt_week = next(week for week in insights.debt_weeks if week.week_start == lesson_week)
+    assert debt_week.minutes_by_class == {seed.class_.id: lesson.credit_minutes}
+    assert [(row.teacher_id, row.value) for row in insights.teacher_absence_minutes] == [
+        (seed.assignment.teacher_id, lesson.physical_minutes)
+    ]
+    assert insights.planned_minutes_to_date[seed.class_.id] >= lesson.credit_minutes
+    assert insights.as_of_date == now.astimezone(ZoneInfo(seed.year.timezone)).date()
 
 
 async def test_future_gap_history_does_not_overlap_repaired_lessons(db_session, monkeypatch):

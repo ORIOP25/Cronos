@@ -204,6 +204,9 @@ async def test_dashboard_overview_counts_pending_v1_occurrences(db_session):
 
     assert alerts.pending_occurrences_today == 1
     assert alerts.pending_occurrences_total == 2
+    assert alerts.pending_occurrences_upcoming == 1
+    assert alerts.oldest_pending_occurrence_date == date(2026, 9, 21)
+    assert alerts.oldest_pending_timesheet_week is None
 
 
 async def test_dashboard_class_progress_uses_v1_execution_credits(db_session):

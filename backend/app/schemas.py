@@ -2137,6 +2137,11 @@ class AlertCounts(BaseModel):
     pending_timesheets: int = Field(ge=0, description="Timesheets SUBMITTED por aprovar")
     pending_drafts: int = Field(ge=0, description="Rascunhos de horário pendentes")
     active_substitutions_today: int = Field(ge=0, description="Substituições ativas hoje")
+    pending_occurrences_upcoming: int = Field(
+        0, ge=0, description="Ocorrências por decidir com aula hoje ou mais tarde"
+    )
+    oldest_pending_occurrence_date: date | None = None
+    oldest_pending_timesheet_week: date | None = None
 
 
 class ResourceCounts(BaseModel):
@@ -2218,6 +2223,35 @@ class OperationalDashboardResponse(BaseModel):
     schedule_health: ScheduleHealthWidget | None = None
     class_progress: list[ClassProgressSummary] = Field(default_factory=list)
     debts: DebtSummary | None = None
+
+
+class DashboardWeekPulse(BaseModel):
+    week_start: date
+    lessons_due: int = Field(ge=0, description="Aulas já terminadas")
+    lessons_given: int = Field(ge=0, description="Aulas dadas ou substituídas")
+    absence_minutes: int = Field(ge=0, description="Tempo de faltas de professores")
+    substituted_minutes: int = Field(ge=0, description="Tempo de faltas coberto por substituição")
+    missing_logs: int = Field(ge=0, description="Aulas terminadas sem sumário")
+
+
+class DashboardDebtWeek(BaseModel):
+    week_start: date
+    minutes_by_class: dict[int, int] = Field(default_factory=dict)
+
+
+class DashboardTeacherRank(BaseModel):
+    teacher_id: int
+    teacher_name: str
+    value: int = Field(ge=0)
+
+
+class DashboardInsightsResponse(BaseModel):
+    as_of_date: date | None = None
+    weeks: list[DashboardWeekPulse] = Field(default_factory=list)
+    debt_weeks: list[DashboardDebtWeek] = Field(default_factory=list)
+    teacher_absence_minutes: list[DashboardTeacherRank] = Field(default_factory=list)
+    teacher_missing_logs: list[DashboardTeacherRank] = Field(default_factory=list)
+    planned_minutes_to_date: dict[int, int] = Field(default_factory=dict)
 
 
 DashboardResponse = Annotated[

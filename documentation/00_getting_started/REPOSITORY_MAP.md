@@ -209,6 +209,19 @@ Invariants: only `GAP` or `SUBSTITUTED` creates debt; execution only after the l
 
 Invariants: `OPEN` -> `SUBMITTED` -> `APPROVED`, admins reopen; history is append-only; settlement is oldest-origin-first.
 
+### Operational dashboard
+
+| Layer | Location |
+| :--- | :--- |
+| Page | `pages/Dashboard.jsx` (`/dashboard`); cards in `components/dashboard/`; pure helpers in `features/dashboard/insights.js` |
+| Hooks | `useDashboard`, `useDashboardInsights` in `features/operations/data.js` |
+| Endpoints | `api/v1/endpoints/dashboard.py` (`/dashboard`, `/dashboard/insights`) |
+| Services | `services/dashboard_service.py`; pure rules `scheduler/domain/dashboard_insights.py` |
+| Tests | `unit/test_dashboard_insights_rule.py`; `integration/committed/test_scheduler_v1_occurrences.py`, `test_query_budgets.py`; `frontend/src/test/Dashboard.test.jsx`, `dashboardInsights.test.js` |
+| Guide | [Operational Dashboard](../04_operational_features/OPERATIONAL_DASHBOARD.md) |
+
+Invariants: insights read only the active school year and active schedule version; each debt claim stays at or above zero.
+
 ### Curriculum catalog
 
 | Layer | Location |

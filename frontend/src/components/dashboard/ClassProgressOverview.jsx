@@ -1,10 +1,21 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { formatGradeLevel } from '../../utils/presentation'
+import { expectedPercentage } from '../../features/dashboard/insights'
 
 const RowSkeleton = () => <div className="dashboard-row-skeleton" />
 
-export default function ClassProgressOverview({ progress, isLoading }) {
+function ProgressTrack({ item, expected }) {
+  const behind = expected !== null && item.overall_percentage < expected
+  return (
+    <div className="dashboard-progress-track" data-behind={behind} title={expected === null ? undefined : `Previsto até hoje: ${expected}%`}>
+      <span style={{ width: `${Math.min(item.overall_percentage, 100)}%` }} />
+      {expected !== null && <i className="dashboard-progress-track__expected" style={{ left: `${expected}%` }} role="img" aria-label={`Previsto até hoje: ${expected}%`} />}
+    </div>
+  )
+}
+
+export default function ClassProgressOverview({ progress, plannedMinutes, isLoading }) {
   const navigate = useNavigate()
   const [courseId, setCourseId] = useState('all')
   const [band, setBand] = useState('all')
@@ -27,10 +38,11 @@ export default function ClassProgressOverview({ progress, isLoading }) {
             <label>Curso<select value={courseId} onChange={(event) => setCourseId(event.target.value)}><option value="all">Todos</option>{courses.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select></label>
             <label>Faixa de progresso<select value={band} onChange={(event) => setBand(event.target.value)}><option value="all">Todas</option><option value="low">0% a 49%</option><option value="medium">50% a 79%</option><option value="high">80% a 100%</option></select></label>
           </div>
+          {plannedMinutes && <p className="dashboard-progress-legend">A marca vertical indica onde a turma devia estar hoje, segundo o horário aprovado.</p>}
           <div id="dashboard-class-list" className={expanded ? 'dashboard-class-list is-expanded' : 'dashboard-class-list'}>
           {!filteredProgress.length ? <p className="text-center text-muted py-4 mb-0">Não há turmas nesta seleção.</p> : (expanded ? filteredProgress : filteredProgress.slice(0, 5)).map((item) => <button key={item.class_id} type="button" data-testid="class-progress-row" className="dashboard-progress-row" onClick={() => navigate(`/courses/${item.course_id}/classes/${item.class_id}`)}>
             <div className="text-start flex-grow-1 text-truncate"><strong className="d-block text-truncate">{item.class_name}</strong><small className="text-muted">{item.course_name || '—'} · {formatGradeLevel(item.grade_level)}</small></div>
-            <div className="dashboard-progress-track" aria-hidden="true"><span style={{ width: `${Math.min(item.overall_percentage, 100)}%` }} /></div>
+            <ProgressTrack item={item} expected={plannedMinutes ? expectedPercentage(item, plannedMinutes) : null} />
             <strong aria-label={`${item.overall_percentage}% concluído`}>{item.overall_percentage}%</strong>
           </button>)}
           </div>

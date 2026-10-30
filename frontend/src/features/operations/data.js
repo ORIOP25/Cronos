@@ -232,6 +232,21 @@ export const useDashboard = ({ enabled = true } = {}) => {
 }
 
 /**
+ * Tendências semanais, dívida ao longo do ano e rankings do painel operacional.
+ */
+export const useDashboardInsights = ({ enabled = true } = {}) => {
+  const apiClient = useApiClient()
+  const orgId = useOrganization().organization?.id
+  return useQuery({
+    queryKey: orgQueryKey('dashboard', orgId, 'insights'),
+    queryFn: () => apiClient.get('/dashboard/insights'),
+    enabled: Boolean(orgId) && enabled,
+    ...DYNAMIC_OPTS,
+    refetchOnWindowFocus: false,
+  })
+}
+
+/**
  * Progresso curricular do professor autenticado.
  * Retorna turmas com disciplinas e módulos + progresso.
  */

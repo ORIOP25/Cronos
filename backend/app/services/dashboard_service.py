@@ -1,16 +1,29 @@
 """Serviço de Dashboard V1 — agrega métricas chave para o painel do diretor."""
 
 from collections import defaultdict
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 from app import models, schemas
+from app.scheduler.domain.dashboard_insights import (
+    DebtEvent,
+    LessonFact,
+    planned_minutes_to_date,
+    teacher_totals,
+    week_start,
+    weekly_debt,
+    weekly_pulse,
+)
 from app.scheduler.infrastructure import occurrences as occurrences_v1
 from app.scheduler.infrastructure.models import (
     CurricularAssignment,
+    CurricularDebt,
+    CurricularDebtRevision,
+    CurricularDebtSettlement,
     CurricularExecution,
     CurricularExecutionCredit,
     SchedulerLessonLogV1,
@@ -135,6 +148,194 @@ def get_dashboard_summary_sync(
     )
 
 
+RANKING_SIZE = 10
+
+
+async def get_dashboard_insights(
+    db: AsyncSession,
+    organization_id: int,
+    *,
+    now: datetime | None = None,
+) -> schemas.DashboardInsightsResponse:
+    """Tendências semanais, dívida ao longo do ano e rankings de professores."""
+    moment = now or datetime.now(UTC)
+    return await db.run_sync(lambda sync_db: _get_insights(sync_db, organization_id, moment))
+
+
+def _get_insights(
+    db: Session, organization_id: int, now: datetime
+) -> schemas.DashboardInsightsResponse:
+    context = db.execute(
+        select(
+            models.SchedulerSchoolYear.id,
+            models.SchedulerSchoolYear.start_date,
+            models.SchedulerSchoolYear.timezone,
+            SchedulerVersionV1.id,
+        )
+        .join(
+            SchedulerVersionV1,
+            (SchedulerVersionV1.organization_id == organization_id)
+            & (SchedulerVersionV1.school_year_id == models.SchedulerSchoolYear.id)
+            & (SchedulerVersionV1.status == "ACTIVE"),
+        )
+        .where(
+            models.SchedulerSchoolYear.organization_id == organization_id,
+            models.SchedulerSchoolYear.is_active.is_(True),
+        )
+    ).first()
+    if context is None:
+        return schemas.DashboardInsightsResponse()
+    year_id, start_date, timezone, version_id = context
+    tz = ZoneInfo(timezone)
+    today = now.astimezone(tz).date()
+    first_week, last_week = week_start(start_date), week_start(today)
+
+    lessons = _lesson_facts(db, organization_id, version_id)
+    absence, missing = teacher_totals(lessons, now)
+    debt_series = weekly_debt(_debt_events(db, organization_id, year_id, tz), first_week, last_week)
+    ranked_absence = absence.most_common(RANKING_SIZE)
+    ranked_missing = missing.most_common(RANKING_SIZE)
+    names = dict(
+        db.execute(
+            select(models.Teacher.id, models.Teacher.name).where(
+                models.Teacher.organization_id == organization_id,
+                models.Teacher.id.in_({teacher for teacher, _ in ranked_absence + ranked_missing}),
+            )
+        ).all()
+    )
+
+    def ranking(rows: list[tuple[int, int]]) -> list[schemas.DashboardTeacherRank]:
+        return [
+            schemas.DashboardTeacherRank(
+                teacher_id=teacher_id, teacher_name=names.get(teacher_id, ""), value=value
+            )
+            for teacher_id, value in rows
+        ]
+
+    return schemas.DashboardInsightsResponse(
+        as_of_date=today,
+        weeks=[
+            schemas.DashboardWeekPulse(**vars(week))
+            for week in weekly_pulse(lessons, first_week, last_week, now)
+        ],
+        debt_weeks=[
+            schemas.DashboardDebtWeek(
+                week_start=first_week + timedelta(weeks=index), minutes_by_class=by_class
+            )
+            for index, by_class in enumerate(debt_series)
+        ],
+        teacher_absence_minutes=ranking(ranked_absence),
+        teacher_missing_logs=ranking(ranked_missing),
+        planned_minutes_to_date=dict(planned_minutes_to_date(lessons, today)),
+    )
+
+
+def _lesson_facts(db: Session, organization_id: int, version_id: int) -> list[LessonFact]:
+    rows = db.execute(
+        select(
+            SchedulerLessonV1.id,
+            SchedulerLessonV1.school_date,
+            SchedulerLessonV1.ends_at,
+            SchedulerLessonV1.physical_minutes,
+            SchedulerLessonV1.credit_minutes,
+            SchedulerLessonV1.teaching_unit_key,
+            CurricularAssignment.teacher_id,
+            CurricularAssignment.class_id,
+            SchedulerLessonLogV1.status,
+            SchedulerLessonLogV1.decision,
+        )
+        .join(
+            CurricularAssignment,
+            (CurricularAssignment.organization_id == organization_id)
+            & (CurricularAssignment.id == SchedulerLessonV1.assignment_id),
+        )
+        .outerjoin(
+            SchedulerLessonLogV1,
+            (SchedulerLessonLogV1.organization_id == organization_id)
+            & (SchedulerLessonLogV1.lesson_id == SchedulerLessonV1.id),
+        )
+        .where(
+            SchedulerLessonV1.organization_id == organization_id,
+            SchedulerLessonV1.version_id == version_id,
+        )
+    ).all()
+    return [LessonFact(*row) for row in rows]
+
+
+def _debt_events(db: Session, organization_id: int, year_id: int, tz: ZoneInfo) -> list[DebtEvent]:
+    """Debt ledger movements, dated when they happened in the school's timezone."""
+    claim_rows = db.execute(
+        select(
+            CurricularDebt.id,
+            CurricularAssignment.class_id,
+            CurricularDebt.origin_date,
+            CurricularDebt.created_minutes,
+        )
+        .join(
+            CurricularAssignment,
+            (CurricularAssignment.organization_id == organization_id)
+            & (CurricularAssignment.id == CurricularDebt.assignment_id)
+            & (CurricularAssignment.school_year_id == year_id),
+        )
+        .where(
+            CurricularDebt.organization_id == organization_id,
+            or_(
+                CurricularDebt.origin.like("lesson-occurrence:%"),
+                CurricularDebt.origin.like(occurrences_v1.DEBT_LIKE),
+            ),
+        )
+    ).all()
+    if not claim_rows:
+        return []
+    claims = {
+        claim_id: (class_id, origin_date) for claim_id, class_id, origin_date, _ in claim_rows
+    }
+
+    def movement(claim_id: int, recorded_at: datetime, minutes: int) -> DebtEvent:
+        class_id, origin_date = claims[claim_id]
+        # A movement never counts before the absence that created the debt.
+        moved_on = max(origin_date, recorded_at.astimezone(tz).date())
+        return DebtEvent(claim_id, class_id, moved_on, minutes)
+
+    revisions = db.execute(
+        select(
+            CurricularDebtRevision.debt_id,
+            CurricularDebtRevision.recorded_at,
+            CurricularDebtRevision.delta_minutes,
+        ).where(
+            CurricularDebtRevision.organization_id == organization_id,
+            CurricularDebtRevision.debt_id.in_(claims),
+        )
+    ).all()
+    settlements = db.execute(
+        select(
+            CurricularDebtSettlement.debt_id,
+            CurricularExecution.recorded_at,
+            CurricularDebtSettlement.minutes,
+        )
+        .join(
+            CurricularExecution,
+            (CurricularExecution.organization_id == organization_id)
+            & (CurricularExecution.id == CurricularDebtSettlement.execution_id),
+        )
+        .where(
+            CurricularDebtSettlement.organization_id == organization_id,
+            CurricularDebtSettlement.debt_id.in_(claims),
+        )
+    ).all()
+    return [
+        *(
+            DebtEvent(claim_id, class_id, day, minutes)
+            for claim_id, class_id, day, minutes in claim_rows
+        ),
+        *(movement(debt_id, recorded_at, delta) for debt_id, recorded_at, delta in revisions),
+        *(
+            movement(debt_id, recorded_at, -minutes)
+            for debt_id, recorded_at, minutes in settlements
+        ),
+    ]
+
+
 def _count(model, *criteria):
     return select(func.count(model.id)).where(*criteria).scalar_subquery()
 
@@ -238,6 +439,33 @@ def _get_overview(
                 models.Room.is_archived.is_(False),
             ),
             rooms_by_type,
+            _count(
+                SchedulerLessonLogV1,
+                SchedulerLessonLogV1.organization_id == organization_id,
+                SchedulerLessonLogV1.lesson_id.in_(
+                    active_lessons.where(SchedulerLessonV1.school_date >= today)
+                ),
+                SchedulerLessonLogV1.status == "OCCURRENCE",
+                SchedulerLessonLogV1.decision.is_(None),
+            ),
+            select(func.min(SchedulerLessonV1.school_date))
+            .join(
+                SchedulerLessonLogV1,
+                (SchedulerLessonLogV1.organization_id == organization_id)
+                & (SchedulerLessonLogV1.lesson_id == SchedulerLessonV1.id),
+            )
+            .where(
+                SchedulerLessonV1.id.in_(active_lessons),
+                SchedulerLessonLogV1.status == "OCCURRENCE",
+                SchedulerLessonLogV1.decision.is_(None),
+            )
+            .scalar_subquery(),
+            select(func.min(models.TeacherWeeklyTimesheet.week_start_date))
+            .where(
+                models.TeacherWeeklyTimesheet.organization_id == organization_id,
+                models.TeacherWeeklyTimesheet.status == models.TimesheetStatus.SUBMITTED,
+            )
+            .scalar_subquery(),
         ).where(models.Organization.id == organization_id)
     ).one()
     return (
@@ -247,6 +475,9 @@ def _get_overview(
             pending_timesheets=row[4],
             pending_drafts=row[5],
             active_substitutions_today=row[6],
+            pending_occurrences_upcoming=row[13],
+            oldest_pending_occurrence_date=row[14],
+            oldest_pending_timesheet_week=row[15],
         ),
         schemas.ResourceCounts(
             teachers_count=row[7],
