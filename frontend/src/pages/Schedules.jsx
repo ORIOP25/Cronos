@@ -458,7 +458,6 @@ const Schedules = ({ initialClassId = '', initialWeekStart, persistView = true, 
       />
 
       <PageHeader
-        preTitle="Operações"
         title="Horários Escolares"
       >
         {/* Status-driven generation controls */}

@@ -44,7 +44,7 @@ describe('SchoolConfig scheduler settings', () => {
     renderWithProviders(<SchoolConfig />)
 
     expect(screen.getByRole('heading', { name: 'Test Org' })).toBeInTheDocument()
-    expect(screen.getByText('Configuração')).toBeInTheDocument()
+    expect(screen.queryByText('Configuração')).not.toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Escola' })).not.toBeInTheDocument()
     expect(screen.queryByText('Organização: Test Org')).not.toBeInTheDocument()
   })

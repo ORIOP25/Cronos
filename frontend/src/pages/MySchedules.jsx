@@ -203,7 +203,6 @@ function MySchedules() {
 
   const pageHeader = (
     <PageHeader
-      preTitle="Professor"
       title="Meus horários"
     />
   )

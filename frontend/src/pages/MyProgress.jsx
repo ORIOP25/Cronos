@@ -166,7 +166,7 @@ function MyProgress() {
 
   return (
     <div className="p-4">
-      <PageHeader preTitle="Professor" title="Meu progresso" />
+      <PageHeader title="Meu progresso" />
       <div className="d-flex justify-content-end mb-4">
         <CBadge color="info" className="px-3 py-2">
           {classes.length} turma{classes.length === 1 ? '' : 's'}

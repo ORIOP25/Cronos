@@ -121,7 +121,7 @@ const Timesheets = ({ initialWeekStart, readOnly = false, allowedActions, naviga
   return (
     <div className="p-4" data-tutorial-target="timesheets-workspace">
       {/* Header */}
-      <PageHeader preTitle="Operações" title="Fecho semanal" />
+      <PageHeader title="Fecho semanal" />
 
       {/* Filters */}
       <div className="page-toolbar">
